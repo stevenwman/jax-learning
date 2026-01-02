@@ -6,8 +6,11 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "flax>=0.12.2",
+    "grain>=0.2.15",
     "ipykernel>=7.1.0",
     "jax[cuda13]>=0.8.2",
+    "matplotlib>=3.10.8",
+    "pandas>=2.3.3",
 ]
 
 [dependency-groups]
