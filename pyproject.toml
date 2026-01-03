@@ -5,16 +5,16 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "fastparquet>=2025.12.0",
     "flax>=0.12.2",
     "grain>=0.2.15",
     "ipykernel>=7.1.0",
-    "jax[cuda13]>=0.8.2",
+    "jax[cuda12]>=0.8.2",
     "matplotlib>=3.10.8",
+    "mujoco==3.2.3",
+    "mujoco-mjx==3.2.3",
     "pandas>=2.3.3",
-]
-
-[dependency-groups]
-dev = [
-    "tensorflow>=2.20.0",
-    "tensorflow-datasets>=4.9.9",
+    "pillow>=12.1.0",
+    "playground>=0.0.1",
+    "pyarrow>=22.0.0",
 ]
