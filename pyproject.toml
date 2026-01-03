@@ -8,6 +8,7 @@ dependencies = [
     "fastparquet>=2025.12.0",
     "flax>=0.12.2",
     "grain>=0.2.15",
+    "imageio[ffmpeg]>=2.37.2",
     "ipykernel>=7.1.0",
     "jax[cuda12]>=0.8.2",
     "matplotlib>=3.10.8",
