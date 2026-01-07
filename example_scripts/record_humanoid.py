@@ -9,18 +9,17 @@ from brax.training.agents.ppo import train as ppo
 from brax.io import model
 from brax.envs import Wrapper, State
 
-# --- 1. CRITICAL: ENABLE x64 (Must match training) ---
+# --- 1. CRITICAL CONFIG ---
 jax.config.update("jax_enable_x64", True)
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
 
-# --- 2. ROBUST PSEUDOSTATE ---
+# --- 2. ADAPTERS ---
 _PseudoStateBase = namedtuple('PseudoState', ['data', 'obs', 'reward', 'done', 'metrics', 'info'])
 
 class PseudoState(_PseudoStateBase):
     def replace(self, **kwargs):
         return self._replace(**kwargs)
 
-# --- 3. ADAPTER ---
 class BraxAdapter(Wrapper):
     def reset(self, rng):
         state = self.env.reset(rng)
@@ -48,14 +47,14 @@ class BraxAdapter(Wrapper):
             info=play_state.info
         )
 
-# --- 4. LOAD ---
+# --- 3. LOAD ---
 env_name = 'HumanoidRun'
 print(f"Loading {env_name} (x64)...")
 raw_env = registry.load(env_name)
 env = BraxAdapter(raw_env)
 
 print("Loading Policy...")
-# Reconstruct network structure
+# Reconstruct network
 make_inference_fn, _, _ = ppo.train(
     environment=env,
     num_timesteps=0,
@@ -65,20 +64,23 @@ make_inference_fn, _, _ = ppo.train(
     num_envs=1,
     seed=0
 )
-
-# Load parameters
 params = model.load_params('/tmp/mjx_humanoid_policy')
 inference_fn = make_inference_fn(params)
 jit_inference_fn = jax.jit(inference_fn)
 
-# --- 5. RECORD ---
+# --- 4. RENDER SETUP ---
 print("Rendering Humanoid... (This may take 45s)")
 mj_model = raw_env.mj_model
+
+# FIX 1: Increase Framebuffer for HD Video
+mj_model.vis.global_.offwidth = 1280
+mj_model.vis.global_.offheight = 720
+
 mj_data = mujoco.MjData(mj_model)
 renderer = mujoco.Renderer(mj_model, height=720, width=1280)
 
 frames = []
-rng = jax.random.PRNGKey(1) 
+rng = jax.random.PRNGKey(1)
 jit_reset = jax.jit(env.reset)
 jit_step = jax.jit(env.step)
 
@@ -87,18 +89,18 @@ state = jit_reset(rng)
 # Run for 1000 steps
 for i in range(1000):
     rng, key = jax.random.split(rng)
-    
     action, _ = jit_inference_fn(state.obs, key)
     state = jit_step(state, action)
     
     if i % 2 == 0:
-        # Sync x64 physics to CPU
         mj_data.qpos = np.array(state.pipeline_state.qpos)
         mj_data.qvel = np.array(state.pipeline_state.qvel)
         mujoco.mj_forward(mj_model, mj_data)
         
-        # Track the torso
-        renderer.update_scene(mj_data, camera="track")
+        # FIX 2: Use default camera (Removed 'camera="track"')
+        # This will follow the "Free Camera" view.
+        renderer.update_scene(mj_data) 
+        
         frames.append(renderer.render())
 
 output_name = 'humanoid_run.mp4'

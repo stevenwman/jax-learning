@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "distrax>=0.1.7",
     "fastparquet>=2025.12.0",
     "flax>=0.12.2",
     "grain>=0.2.15",
