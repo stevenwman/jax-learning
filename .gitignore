@@ -10,5 +10,6 @@ wheels/
 .venv
 
 content/
-
+sac_checkpoints/
 madrona_mjx/
+wandb/

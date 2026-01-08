@@ -19,4 +19,5 @@ dependencies = [
     "pillow>=12.1.0",
     "playground>=0.0.1",
     "pyarrow>=22.0.0",
+    "wandb>=0.23.1",
 ]
