@@ -1,12 +1,19 @@
-from config import EncoderConfig
 from encoder import MLPEncoder
+from heads import GaussianHead
+from config import EncoderConfig
 from flax import nnx
+import jax.numpy as jnp
 
 config = EncoderConfig(obs_dim=17)
-encoder = MLPEncoder(config, rngs=nnx.Rngs(0))
+rngs = nnx.Rngs(0)
 
-# Check shapes
-import jax.numpy as jnp
-obs = jnp.ones((32, 17))  # batch of 32, obs_dim=17
-out = encoder(obs)
-print(out.shape)  # Should be (32, 256)
+encoder = MLPEncoder(config, rngs=rngs)
+head = GaussianHead(feature_dim=256, action_dim=6, rngs=rngs)
+
+obs = jnp.ones((32, 17))
+features = encoder(obs)
+mean, log_std = head(features)
+
+print(features.shape)  # (32, 256)
+print(mean.shape)      # (32, 6)
+print(log_std.shape)   # (32, 6)
