@@ -1,6 +1,5 @@
 from flax import nnx
 import jax
-import jax.numpy as jnp
 
 class GaussianHead(nnx.Module):
 
