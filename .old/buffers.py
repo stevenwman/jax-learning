@@ -8,16 +8,16 @@ class RolloutBuffer:
         self.num_steps = num_steps
         self.obs = jnp.zeros((num_steps, num_envs, obs_dim))
         self.actions = jnp.zeros((num_steps, num_envs, act_dim))
-        self.reward = jnp.zeros((num_steps, num_envs))
-        self.dones = jnp.zeros_like(self.reward)
-        self.log_prob = jnp.zeros_like(self.reward)
-        self.values = jnp.zeros_like(self.reward)
+        self.rewards = jnp.zeros((num_steps, num_envs))
+        self.dones = jnp.zeros_like(self.rewards)
+        self.log_prob = jnp.zeros_like(self.rewards)
+        self.values = jnp.zeros_like(self.rewards)
         self.ptr = 0
 
     def add(self, obs, action, reward, done, log_prob, value) -> None:
         self.obs = self.obs.at[self.ptr].set(obs)
         self.actions = self.actions.at[self.ptr].set(action)
-        self.reward = self.reward.at[self.ptr].set(reward)
+        self.rewards = self.rewards.at[self.ptr].set(reward)
         self.dones = self.dones.at[self.ptr].set(done)
         self.log_prob = self.log_prob.at[self.ptr].set(log_prob)
         self.values = self.values.at[self.ptr].set(value)

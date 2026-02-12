@@ -1,0 +1,53 @@
+"""Network configuration dataclasses."""
+
+from dataclasses import dataclass
+
+
+@dataclass
+class EncoderConfig:
+    """Configuration for encoder networks (MLP, CNN, etc.)."""
+
+    obs_dim: int
+    hidden_dim: tuple[int, ...] = (256, 256)
+    activation: str = "relu"
+
+    # Normalization (for future FastTD3/SAC)
+    norm: str | None = None  # None, "layer", "spectral"
+    norm_placement: str = "pre"  # "pre" or "post" activation
+
+    # Context handling (for future goal-conditioned, USD)
+    context_dim: int | None = None
+    context_fusion: str = "concat"  # "concat", "film", "cross_attn"
+
+
+@dataclass
+class PolicyHeadConfig:
+    """Configuration for policy heads (Gaussian, Deterministic)."""
+
+    action_dim: int
+    # For Gaussian policies
+    log_std_min: float = -20.0
+    log_std_max: float = 2.0
+    # For squashing (tanh transform)
+    squash: bool = True  # Output in [-1, 1] for bounded action spaces
+
+
+@dataclass
+class ValueHeadConfig:
+    """Configuration for value heads V(s)."""
+
+    # Currently simple, but can add options later
+    # (e.g., multiple output heads for ensemble)
+    pass
+
+
+@dataclass
+class QHeadConfig:
+    """Configuration for Q-value heads."""
+
+    # Standard vs distributional
+    distributional: bool = False
+    # For distributional (C51)
+    num_atoms: int = 51
+    v_min: float = -10.0
+    v_max: float = 10.0
