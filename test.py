@@ -1,7 +1,7 @@
 from encoder import MLPEncoder
 from heads import GaussianHead
 from config import EncoderConfig
-from policy import policy
+from policy import Policy
 from flax import nnx
 import jax.numpy as jnp
 import jax
@@ -23,7 +23,8 @@ print(log_std.shape)   # (32, 6)
 key = jax.random.PRNGKey(0)
 key, subkey = jax.random.split(key)
 
-policy = policy(encoder, head, rngs)
-sample = policy.sample(obs, subkey)
-
-print(sample.shape)
+policy = Policy(encoder, head, squash=True)
+obs = jnp.ones((32, 17))
+key = jax.random.PRNGKey(0)
+action, log_prob = policy.sample(obs, key)
+print(action.min(), action.max())  # Should be in [-1, 1]

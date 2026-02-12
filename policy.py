@@ -17,7 +17,7 @@ class Policy(nnx.Module):
         mu, log_std = self(obs)
         base_distr = distrax.Normal(loc=mu, scale=jnp.exp(log_std))
 
-        if self.squuash: 
+        if self.squash: 
             distr = distrax.Transformed(base_distr, distrax.Tanh())
         else:
             distr = base_distr
