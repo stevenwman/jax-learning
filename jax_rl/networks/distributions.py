@@ -17,7 +17,7 @@ ATANH_EPSILON = 1e-6
 def sample_gaussian(
     mean: jax.Array,
     log_std: jax.Array,
-    key: jax.random.PRNGKey,
+    key: jax.Array,
     squash: bool = True,
 ) -> tuple[jax.Array, jax.Array]:
     """Sample from Gaussian distribution (optionally squashed with tanh).

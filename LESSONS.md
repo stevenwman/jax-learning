@@ -90,6 +90,23 @@ actions, log_probs, values = batched_action_select(obs, keys, False)
 
 ---
 
+#### **4. Array Reshaping with `-1`**
+`-1` means "infer this dimension from the rest."
+
+```python
+x.reshape(-1)                    # Flatten everything to 1D: (32, 4) → (128,)
+x.reshape(-1, x.shape[-1])      # Flatten all dims except last: (32, 4, 17) → (128, 17)
+```
+
+**Common pattern in PPO:** Flatten (num_steps, num_envs, ...) → (num_steps * num_envs, ...) before SGD updates. PPO doesn't care about temporal order during updates — all transitions are independent samples.
+
+```python
+obs = batch.obs.reshape(-1, batch.obs.shape[-1])   # (32, 4, 17) → (128, 17)
+advantages = batch.advantages.reshape(-1)            # (32, 4) → (128,)
+```
+
+---
+
 ### 🏗️ **Architecture Insights**
 
 #### **1. When to Use Squashing**

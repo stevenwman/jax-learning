@@ -22,6 +22,7 @@ class PPOConfig:
     num_epochs: int = 4
     batch_size: int = 2048
     max_grad_norm: float = 0.5
+    minibatch_size: int = 32
 
     # Environment
     num_envs: int = 4096

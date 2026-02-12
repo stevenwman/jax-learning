@@ -51,7 +51,7 @@ class Actor(nnx.Module):
         return self.head(features)
 
     def sample(
-        self, obs: jax.Array, key: jax.random.PRNGKey
+        self, obs: jax.Array, key: jax.Array
     ) -> tuple[jax.Array, jax.Array]:
         """Sample action from policy.
 

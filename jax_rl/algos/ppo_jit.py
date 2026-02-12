@@ -106,33 +106,26 @@ class PPO:
 
         # Track metrics across epochs
         metrics_accum = {
-            "policy_loss": 0.0,
-            "value_loss": 0.0,
-            "entropy": 0.0,
-            "approx_kl": 0.0,
-            "clip_fraction": 0.0,
+            "policy_loss": jnp.array([0]),
+            "value_loss": jnp.array([0]),
+            "entropy": jnp.array([0]),
+            "approx_kl": jnp.array([0]),
+            "clip_fraction": jnp.array([0]),
         }
 
-        # Run multiple epochs over the data
-        for epoch in range(self.config.num_epochs):
-            # Shuffle data for minibatch training
+        def epoch_loop(epoch, metrics_accum=metrics_accum):
             key, subkey = jax.random.split(key)
-            perm = jax.random.permutation(subkey, obs.shape[0])
+            perm = jax.random.permutation(subkey)
 
-            for start in range(0, obs.shape[0], self.config.minibatch_size):
-                # minibatch sampling
-                mb = perm[start:start+self.config.minibatch_size]
+            def minibatch_loop(minibatch):
+                mb = perm[minibatch : minibatch + self.config.minibatch_size]
                 mb_adv = advantages[mb]
-                
+
                 if self.config.normalize_advantage:
                     mb_adv = (mb_adv - mb_adv.mean()) / (mb_adv.std() + 1e-8)
 
-                # Update both networks
                 policy_metrics = self._update_policy(
-                    obs[mb],
-                    actions[mb],
-                    old_log_probs[mb],
-                    mb_adv,
+                    obs[mb], actions[mb], old_log_probs[mb], mb_adv
                 )
 
                 value_metrics = self._update_critic(obs[mb], returns[mb])
@@ -144,10 +137,10 @@ class PPO:
                 metrics_accum["approx_kl"] += policy_metrics["approx_kl"]
                 metrics_accum["clip_fraction"] += policy_metrics["clip_fraction"]
 
-        # Average metrics across epochs
-        num_minibatches = obs.shape[0] // self.config.minibatch_size
-        num_updates = self.config.num_epochs * num_minibatches
-        return {k: v / num_updates for k, v in metrics_accum.items()}
+
+            return jax.lax.fori_loop(0, obs.shape[0] // self.config.minibatch_size, minibatch_loop)
+
+        return jax.lax.fori_loop(0, self.config.num_epochs , epoch_loop)
 
     @nnx.jit
     def _update_policy(
@@ -260,7 +253,7 @@ class PPO:
     def select_action(
         self,
         obs: jax.Array,
-        key: jax.Array,
+        key: jax.random.PRNGKey,
         deterministic: bool = False,
     ) -> tuple[jax.Array, jax.Array, jax.Array]:
         """Select action from policy.

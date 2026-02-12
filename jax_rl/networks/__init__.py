@@ -1,6 +1,5 @@
 """Neural network components."""
 
-from jax_rl.networks import protocols
 from jax_rl.networks.builders import Actor, Critic, build_actor_critic
 from jax_rl.networks.distributions import (
     sample_gaussian,
@@ -9,7 +8,6 @@ from jax_rl.networks.distributions import (
 )
 
 __all__ = [
-    "protocols",
     "Actor",
     "Critic",
     "build_actor_critic",

@@ -82,8 +82,9 @@ def test_ppo_update(ppo: PPO, config):
     action_dim = config.policy_head.action_dim
 
     key = jax.random.PRNGKey(123)
+    key, obs_key, reward_key, adv_key, ret_key, update_key = jax.random.split(key, 6)
     keys = jax.random.split(key, num_steps)
-    obs = jax.random.normal(key, (num_steps, num_envs, obs_dim))
+    obs = jax.random.normal(obs_key, (num_steps, num_envs, obs_dim))
 
     # Sample stochastically from policy
     batched_action_select = jax.vmap(ppo.select_action, in_axes=(0, 0, None))
@@ -93,16 +94,16 @@ def test_ppo_update(ppo: PPO, config):
     batch = RolloutBatch(
         obs=obs,
         actions=actions,
-        rewards=jax.random.normal(key, (num_steps, num_envs)),
+        rewards=jax.random.normal(reward_key, (num_steps, num_envs)),
         dones=jnp.zeros((num_steps, num_envs)),
         log_probs=log_probs,
         values=values,
-        advantages=jax.random.normal(key, (num_steps, num_envs)),
-        returns=jax.random.normal(key, (num_steps, num_envs)),
+        advantages=jax.random.normal(adv_key, (num_steps, num_envs)),
+        returns=jax.random.normal(ret_key, (num_steps, num_envs)),
     )
 
     # Run update
-    metrics = ppo.update(batch)
+    metrics = ppo.update(batch, update_key)
 
     print(f"✓ PPO update successful")
     print(f"  - Policy loss: {metrics['policy_loss']:.4f}")
@@ -131,17 +132,20 @@ def test_buffer_and_gae(config):
     # Fill buffer with dummy data
     key = jax.random.PRNGKey(456)
     for step in range(num_steps):
+        key, subkey = jax.random.split(key)
+        keys = jax.random.split(subkey, 5)
         buffer.add(
-            obs=jax.random.normal(key, (num_envs, obs_dim)),
-            action=jax.random.normal(key, (num_envs, action_dim)),
-            reward=jax.random.normal(key, (num_envs,)),
+            obs=jax.random.normal(keys[0], (num_envs, obs_dim)),
+            action=jax.random.normal(keys[1], (num_envs, action_dim)),
+            reward=jax.random.normal(keys[2], (num_envs,)),
             done=jnp.zeros((num_envs,)),
-            log_prob=jax.random.normal(key, (num_envs,)),
-            value=jax.random.normal(key, (num_envs,)),
+            log_prob=jax.random.normal(keys[3], (num_envs,)),
+            value=jax.random.normal(keys[4], (num_envs,)),
         )
 
     # Compute advantages
-    next_value = jax.random.normal(key, (num_envs,))
+    key, subkey = jax.random.split(key)
+    next_value = jax.random.normal(subkey, (num_envs,))
     batch = buffer.get(next_value, gamma=config.gamma, gae_lambda=config.gae_lambda)
 
     print(f"✓ Buffer and GAE computation successful")
