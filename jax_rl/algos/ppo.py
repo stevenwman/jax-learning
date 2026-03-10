@@ -1,26 +1,24 @@
 """Proximal Policy Optimization (PPO) algorithm."""
 
-from flax import nnx
+from flax import linen as nn
+import flax
 import jax
 import jax.numpy as jnp
 import optax
 from typing import NamedTuple
 
 from jax_rl.configs import PPOConfig
-from jax_rl.networks.builders import Actor, Critic, build_actor_critic
+from jax_rl.networks.builders import Actor, Critic
 from jax_rl.buffers import RolloutBuffer, RolloutBatch
-from jax_rl.networks.distributions import entropy_gaussian
+from jax_rl.networks.distributions import entropy_gaussian, gaussian_log_prob, sample_gaussian
 
 
-class PPOMetrics(NamedTuple):
-    """Metrics returned from PPO update."""
-
-    policy_loss: float
-    value_loss: float
-    entropy: float
-    total_loss: float
-    approx_kl: float
-    clip_fraction: float
+@flax.struct.dataclass
+class TrainingState:
+    actor_params: nn.Params
+    critic_params: nn.Params
+    actor_opt_state: optax.OptState
+    critic_opt_state: optax.OptState
 
 
 class PPO:
@@ -40,7 +38,6 @@ class PPO:
         config: PPOConfig,
         obs_dim: int,
         action_dim: int,
-        rngs: nnx.Rngs,
     ) -> None:
         """Initialize PPO.
 
@@ -55,146 +52,54 @@ class PPO:
         # Update encoder config with obs/action dims
         encoder_config = config.encoder
         encoder_config.obs_dim = obs_dim
-
         policy_config = config.policy_head
         policy_config.action_dim = action_dim
 
+        self.num_envs = config.num_envs
+        self.obs_dim = obs_dim
+
         # Build actor and critic networks
-        self.actor, self.critic = build_actor_critic(
-            encoder_config,
-            policy_config,
-            config.value_head,
-            rngs,
+        self.actor = Actor(encoder_config, policy_config)
+        self.critic = Critic(encoder_config, config.value_head)
+        self.actor_optimizer = optax.chain(optax.clip_by_global_norm(config.max_grad_norm), optax.adam(config.actor_lr))
+        self.critic_optimizer = optax.chain(optax.clip_by_global_norm(config.max_grad_norm), optax.adam(config.critic_lr))
+
+    def init(self, key: jax.Array) -> TrainingState:
+        actor_key, critic_key = jax.random.split(key, 2)
+        dummy_obs = jnp.zeros(self.obs_dim)
+
+        actor_params = self.actor.init(actor_key, dummy_obs)
+        critic_params = self.critic.init(critic_key, dummy_obs)
+        
+        return TrainingState(
+            actor_params=actor_params,
+            critic_params=critic_params,
+            actor_opt_state=self.actor_optimizer.init(actor_params),
+            critic_opt_state=self.critic_optimizer.init(critic_params),
         )
 
-        # Create separate optimizers for actor and critic
-        actor_tx = optax.chain(
-            optax.clip_by_global_norm(config.max_grad_norm),
-            optax.adam(config.actor_lr),
-        )
-        critic_tx = optax.chain(
-            optax.clip_by_global_norm(config.max_grad_norm),
-            optax.adam(config.critic_lr),
-        )
+    def update(self, state: TrainingState, batch: RolloutBatch, key: jax.Array) -> tuple[TrainingState, dict]:
+        
+        def value_loss_fn(critic_params):
+            values = self.critic.apply(critic_params, batch.obs)
+            value_loss = jnp.mean((values - batch.returns) ** 2)
+            return value_loss
 
-        self.actor_optimizer = nnx.Optimizer(self.actor, actor_tx, wrt=nnx.Param)
-        self.critic_optimizer = nnx.Optimizer(self.critic, critic_tx, wrt=nnx.Param)
-
-        # Rollout buffer
-        self.buffer = RolloutBuffer(
-            num_steps=config.num_steps,
-            num_envs=config.num_envs,
-            obs_dim=obs_dim,
-            action_dim=action_dim,
-        )
-
-    def update(self, batch: RolloutBatch, key: jax.Array) -> dict[str, float]:
-        """Update policy and value function using PPO.
-
-        Args:
-            batch: Rollout batch with computed advantages and returns
-
-        Returns:
-            Dictionary of training metrics
-        """
-        # Flatten batch: (num_steps, num_envs, ...) -> (num_steps * num_envs, ...)
-        obs = batch.obs.reshape(-1, batch.obs.shape[-1])
-        actions = batch.actions.reshape(-1, batch.actions.shape[-1])
-        old_log_probs = batch.log_probs.reshape(-1)
-        advantages = batch.advantages.reshape(-1)
-        returns = batch.returns.reshape(-1)
-
-        # Track metrics across epochs
-        metrics_accum = {
-            "policy_loss": 0.0,
-            "value_loss": 0.0,
-            "entropy": 0.0,
-            "approx_kl": 0.0,
-            "clip_fraction": 0.0,
-        }
-
-        # Run multiple epochs over the data
-        for epoch in range(self.config.num_epochs):
-            # Shuffle data for minibatch training
-            key, subkey = jax.random.split(key)
-            perm = jax.random.permutation(subkey, obs.shape[0])
-
-            for start in range(0, obs.shape[0], self.config.minibatch_size):
-                # minibatch sampling
-                mb = perm[start:start+self.config.minibatch_size]
-                mb_adv = advantages[mb]
-                
-                if self.config.normalize_advantage:
-                    mb_adv = (mb_adv - mb_adv.mean()) / (mb_adv.std() + 1e-8)
-
-                # Update both networks
-                policy_metrics = self._update_policy(
-                    obs[mb],
-                    actions[mb],
-                    old_log_probs[mb],
-                    mb_adv,
-                )
-
-                value_metrics = self._update_critic(obs[mb], returns[mb])
-
-                # Accumulate metrics
-                metrics_accum["policy_loss"] += policy_metrics["policy_loss"]
-                metrics_accum["value_loss"] += value_metrics["value_loss"]
-                metrics_accum["entropy"] += policy_metrics["entropy"]
-                metrics_accum["approx_kl"] += policy_metrics["approx_kl"]
-                metrics_accum["clip_fraction"] += policy_metrics["clip_fraction"]
-
-        # Average metrics across epochs
-        num_minibatches = obs.shape[0] // self.config.minibatch_size
-        num_updates = self.config.num_epochs * num_minibatches
-        return {k: v / num_updates for k, v in metrics_accum.items()}
-
-    @nnx.jit
-    def _update_policy(
-        self,
-        obs: jax.Array,
-        actions: jax.Array,
-        old_log_probs: jax.Array,
-        advantages: jax.Array,
-    ) -> dict[str, float]:
-        """Update policy network using clipped surrogate objective.
-
-        Args:
-            obs: Observations, shape (batch, obs_dim)
-            actions: Actions taken, shape (batch, action_dim)
-            old_log_probs: Log probs under old policy, shape (batch,)
-            advantages: Advantages, shape (batch,)
-
-        Returns:
-            Dictionary of policy metrics
-        """
-
-        def policy_loss_fn(actor: Actor) -> tuple[jax.Array, dict]:
-            """Compute PPO clipped surrogate loss."""
-            # Get current policy distribution
-            mean, log_std = actor(obs)
-
-            # Compute log prob of actions under current policy
-            log_probs = actor.log_prob(obs, actions)
-
-            # Compute ratio: π(a|s) / π_old(a|s)
-            ratio = jnp.exp(log_probs - old_log_probs)
-
-            # Clipped surrogate objective
-            surr1 = ratio * advantages
-            surr2 = jnp.clip(ratio, 1 - self.config.clip_eps, 1 + self.config.clip_eps) * advantages
+        def actor_loss_fn(actor_params):
+            mean, log_std = self.actor.apply(actor_params, batch.obs)
+            log_probs = gaussian_log_prob(mean, log_std, batch.actions, squash=self.config.policy_head.squash)
+            ratio = jnp.exp(log_probs - batch.log_probs)
+            surr1 = ratio * batch.advantages
+            surr2 = jnp.clip(ratio, 1 - self.config.clip_eps, 1 + self.config.clip_eps) * batch.advantages
             policy_loss = -jnp.mean(jnp.minimum(surr1, surr2))
+            entropy = 0.0
+            if self.config.entropy_coef > 0:
+                entropy = entropy_gaussian(log_std).mean()
+                entropy_loss = -self.config.entropy_coef * entropy
+                policy_loss += entropy_loss
 
-            # Entropy bonus (encourages exploration)
-            entropy = entropy_gaussian(log_std).mean()
-            entropy_loss = -self.config.entropy_coef * entropy
-
-            # Total loss
-            total_loss = policy_loss + entropy_loss
-
-            # Metrics
-            approx_kl = ((ratio - 1) - jnp.log(ratio)).mean()
             clip_fraction = ((jnp.abs(ratio - 1) > self.config.clip_eps).astype(jnp.float32)).mean()
+            approx_kl = ((ratio - 1) - jnp.log(ratio)).mean()
 
             metrics = {
                 "policy_loss": policy_loss,
@@ -202,63 +107,29 @@ class PPO:
                 "approx_kl": approx_kl,
                 "clip_fraction": clip_fraction,
             }
+            
+            return policy_loss, metrics
 
-            return total_loss, metrics
+        (actor_loss, actor_metrics), actor_grads = jax.value_and_grad(actor_loss_fn, has_aux=True)(state.actor_params)
+        actor_updates, new_actor_opt_state = self.actor_optimizer.update(actor_grads, state.actor_opt_state)
+        new_actor_params = optax.apply_updates(state.actor_params, actor_updates)
 
-        # Compute gradients and update
-        grad_fn = nnx.value_and_grad(policy_loss_fn, has_aux=True)
-        (loss, metrics), grads = grad_fn(self.actor)
-        self.actor_optimizer.update(self.actor, grads)
+        value_loss, value_grads = jax.value_and_grad(value_loss_fn)(state.critic_params)
+        value_updates, new_value_opt_state = self.critic_optimizer.update(value_grads, state.critic_opt_state)
+        new_critic_params = optax.apply_updates(state.critic_params, value_updates)
 
-        return metrics
+        new_state = state.replace(
+            actor_params=new_actor_params,
+            critic_params=new_critic_params,
+            actor_opt_state=new_actor_opt_state,
+            critic_opt_state=new_value_opt_state,
+        )
 
-    @nnx.jit
-    def _update_critic(
-        self,
-        obs: jax.Array,
-        returns: jax.Array,
-    ) -> dict[str, float]:
-        """Update critic network using value loss.
+        return new_state, {**actor_metrics, "value_loss": value_loss}
 
-        Args:
-            obs: Observations, shape (batch, obs_dim)
-            returns: Target returns, shape (batch,)
-
-        Returns:
-            Dictionary of value metrics
-        """
-
-        def value_loss_fn(critic: Critic) -> jax.Array:
-            """Compute value function loss."""
-            values = critic(obs)
-
-            if self.config.clip_value_loss:
-                # Clipped value loss (like clipped policy loss)
-                # Not commonly used, but available
-                values_clipped = jnp.clip(
-                    values,
-                    returns - self.config.clip_eps,
-                    returns + self.config.clip_eps,
-                )
-                loss1 = (values - returns) ** 2
-                loss2 = (values_clipped - returns) ** 2
-                value_loss = jnp.mean(jnp.maximum(loss1, loss2))
-            else:
-                # Standard MSE loss
-                value_loss = jnp.mean((values - returns) ** 2)
-
-            return value_loss
-
-        # Compute gradients and update
-        val_and_grad = nnx.value_and_grad(value_loss_fn)
-        loss, grads = val_and_grad(self.critic)
-        self.critic_optimizer.update(self.critic, grads)
-
-        return {"value_loss": loss}
-
-    @nnx.jit(static_argnums=(3,))
     def select_action(
         self,
+        state: TrainingState,
         obs: jax.Array,
         key: jax.Array,
         deterministic: bool = False,
@@ -273,13 +144,14 @@ class PPO:
         Returns:
             (action, log_prob, value) tuple
         """
+
+        mean, log_std = self.actor.apply(state.actor_params, obs)
+
         if deterministic:
-            mean, _ = self.actor(obs)
             action = mean
-            log_prob = self.actor.log_prob(obs, action)
+            log_prob = gaussian_log_prob(mean, log_std, action, squash=self.config.policy_head.squash)
         else:
-            action, log_prob = self.actor.sample(obs, key)
+            action, log_prob = sample_gaussian(mean, log_std, key, squash=self.config.policy_head.squash)
 
-        value = self.critic(obs)
-
+        value = self.critic.apply(state.critic_params, obs)
         return action, log_prob, value

@@ -18,7 +18,7 @@ def sample_gaussian(
     mean: jax.Array,
     log_std: jax.Array,
     key: jax.Array,
-    squash: bool = True,
+    squash: bool = False,
 ) -> tuple[jax.Array, jax.Array]:
     """Sample from Gaussian distribution (optionally squashed with tanh).
 
@@ -54,7 +54,7 @@ def gaussian_log_prob(
     mean: jax.Array,
     log_std: jax.Array,
     action: jax.Array,
-    squash: bool = True,
+    squash: bool = False,
 ) -> jax.Array:
     """Compute log probability of action under Gaussian distribution.
 

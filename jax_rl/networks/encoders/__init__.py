@@ -1,5 +1,5 @@
 """Encoder implementations."""
 
-from jax_rl.networks.encoders.mlp import MLPEncoder
+from jax_rl.networks.encoders.mlp import MlpEncoder
 
-__all__ = ["MLPEncoder"]
+__all__ = ["MlpEncoder"]
