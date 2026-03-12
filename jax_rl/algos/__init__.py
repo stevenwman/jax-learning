@@ -1,5 +1,5 @@
 """Algorithm implementations."""
 
-from jax_rl.algos.ppo import PPO, PPOMetrics
+from jax_rl.algos.ppo import PPO, TrainingState
 
-__all__ = ["PPO", "PPOMetrics"]
+__all__ = ["PPO", "TrainingState"]

@@ -2,7 +2,6 @@
 
 import jax
 import jax.numpy as jnp
-from flax import nnx
 
 from jax_rl.configs import PPOConfig, EncoderConfig, PolicyHeadConfig
 from jax_rl.algos import PPO
@@ -39,18 +38,19 @@ def test_ppo_initialization():
     )
 
     # Initialize PPO
-    rngs = nnx.Rngs(0)
-    ppo = PPO(config, obs_dim, action_dim, rngs)
+    ppo = PPO(config, obs_dim, action_dim)
+    key = jax.random.PRNGKey(0)
+    state = ppo.init(key)
 
     print(f"✓ PPO initialized successfully")
     print(f"  - Actor encoder: {encoder_config.hidden_dim}")
     print(f"  - Critic encoder: {encoder_config.hidden_dim}")
     print(f"  - Action dim: {action_dim}")
 
-    return ppo, config
+    return ppo, config, state
 
 
-def test_action_selection(ppo, num_envs=4, obs_dim=17):
+def test_action_selection(ppo, state, num_envs=4, obs_dim=17):
     """Test action selection."""
     print("\nTesting action selection...")
 
@@ -60,7 +60,7 @@ def test_action_selection(ppo, num_envs=4, obs_dim=17):
 
     # Select actions
     key, subkey = jax.random.split(key)
-    action, log_prob, value = ppo.select_action(obs, subkey, deterministic=False)
+    action, log_prob, value = ppo.select_action(state, obs, subkey, deterministic=False)
 
     print(f"✓ Action selection successful")
     print(f"  - Action shape: {action.shape}")
@@ -71,7 +71,7 @@ def test_action_selection(ppo, num_envs=4, obs_dim=17):
     return action, log_prob, value
 
 
-def test_ppo_update(ppo: PPO, config):
+def test_ppo_update(ppo: PPO, state, config):
     """Test PPO update."""
     print("\nTesting PPO update...")
 
@@ -82,28 +82,22 @@ def test_ppo_update(ppo: PPO, config):
     action_dim = config.policy_head.action_dim
 
     key = jax.random.PRNGKey(123)
-    key, obs_key, reward_key, adv_key, ret_key, update_key = jax.random.split(key, 6)
-    keys = jax.random.split(key, num_steps)
-    obs = jax.random.normal(obs_key, (num_steps, num_envs, obs_dim))
-
-    # Sample stochastically from policy
-    batched_action_select = jax.vmap(ppo.select_action, in_axes=(0, 0, None))
-    actions, log_probs, values = batched_action_select(obs, keys, False)
-
+    key, obs_key, action_key, log_prob_key, value_key, advantage_key, return_key = jax.random.split(key, 7)
+    
     # Generate random rollout data
     batch = RolloutBatch(
-        obs=obs,
-        actions=actions,
-        rewards=jax.random.normal(reward_key, (num_steps, num_envs)),
+        obs=jax.random.normal(obs_key, (num_steps, num_envs, obs_dim)),
+        actions=jax.random.normal(action_key, (num_steps, num_envs, action_dim)),
+        rewards=jax.random.normal(key, (num_steps, num_envs)),
         dones=jnp.zeros((num_steps, num_envs)),
-        log_probs=log_probs,
-        values=values,
-        advantages=jax.random.normal(adv_key, (num_steps, num_envs)),
-        returns=jax.random.normal(ret_key, (num_steps, num_envs)),
+        log_probs=jax.random.normal(log_prob_key, (num_steps, num_envs)),
+        values=jax.random.normal(value_key, (num_steps, num_envs)),
+        advantages=jax.random.normal(advantage_key, (num_steps, num_envs)),
+        returns=jax.random.normal(return_key, (num_steps, num_envs)),
     )
 
     # Run update
-    metrics = ppo.update(batch, update_key)
+    new_state, metrics = ppo.update(state, batch, key)
 
     print(f"✓ PPO update successful")
     print(f"  - Policy loss: {metrics['policy_loss']:.4f}")
@@ -112,7 +106,7 @@ def test_ppo_update(ppo: PPO, config):
     print(f"  - Approx KL: {metrics['approx_kl']:.4f}")
     print(f"  - Clip fraction: {metrics['clip_fraction']:.4f}")
 
-    return metrics
+    return new_state, metrics
 
 
 def test_buffer_and_gae(config):
@@ -162,16 +156,16 @@ def main():
     print("=" * 60)
 
     # Test 1: Initialization
-    ppo, config = test_ppo_initialization()
+    ppo, config, state = test_ppo_initialization()
 
     # Test 2: Action selection
-    action, log_prob, value = test_action_selection(ppo)
+    action, log_prob, value = test_action_selection(ppo, state)
 
     # Test 3: Buffer and GAE
     test_buffer_and_gae(config)
 
     # Test 4: Update
-    metrics = test_ppo_update(ppo, config)
+    new_state, metrics = test_ppo_update(ppo, state, config)
 
     print("\n" + "=" * 60)
     print("All tests passed! ✓")

@@ -1,143 +1,105 @@
 # JAX RL Framework
 
-A modular, JAX-native reinforcement learning library built on Flax NNX, designed to make **efficient robot learning accessible**.
+A modular, JAX-native reinforcement learning library built on Flax Linen, designed to make **efficient robot learning accessible**.
+
+This framework is both a **learning vehicle** and a **lab tool** — every algorithm is implemented from fundamentals with clear mappings to the papers. A new lab member should be able to read a single algorithm file and understand what's happening without chasing abstractions across ten modules.
 
 ## Design Philosophy
 
-- **Accessible**: Clean code you can actually read and modify
-- **Efficient**: JAX-native with support for FastTD3/SAC
+- **Learnable**: Heavily commented, clear mappings to papers. No magic.
+- **Accessible**: Clean code the whole lab can read, modify, and extend
+- **Efficient**: JAX-native with FastTD3/SAC for training in minutes, not hours
 - **Robot-first**: Built for the sim-to-real pipeline
-- **Modular**: Encoder+head architecture - swap components without rewriting algorithms
-- **Type-safe**: Protocols for clean interfaces, dataclasses for configs
+- **Modular**: Encoder+head architecture — swap components without rewriting algorithms
 
 ## Project Structure
 
 ```
 jax_rl/
-├── configs/              # Configuration dataclasses
-│   ├── networks.py       # EncoderConfig, PolicyHeadConfig, ValueHeadConfig
-│   └── ppo.py            # PPOConfig
+├── configs/
+│   ├── networks_config.py   # EncoderConfig, PolicyHeadConfig, ValueHeadConfig
+│   └── ppo_config.py        # PPOConfig
 │
-├── networks/             # Neural network components
-│   ├── protocols.py      # Encoder, PolicyHead, ValueHead protocols
+├── networks/
 │   ├── encoders/
-│   │   └── mlp.py        # MLPEncoder with optional LayerNorm
+│   │   └── mlp.py           # MLPEncoder with optional LayerNorm
 │   ├── heads/
-│   │   ├── gaussian.py   # GaussianHead for stochastic policies
-│   │   └── value.py      # ValueHead for state values
-│   ├── builders.py       # Actor/Critic builders
-│   └── distributions.py  # Distribution utilities (TanhNormal, etc.)
+│   │   ├── gaussian.py      # GaussianHead for stochastic policies
+│   │   └── value.py         # ValueHead for state values
+│   ├── builders.py          # Actor/Critic Linen modules
+│   └── distributions.py     # Gaussian sampling, log_prob, entropy
 │
-├── algos/                # Algorithm implementations
-│   └── ppo.py            # PPO with separate actor/critic
+├── algos/
+│   └── ppo.py               # PPO (Linen functional style)
 │
-├── buffers/              # Replay/rollout buffers
-│   └── rollout.py        # RolloutBuffer with GAE
+├── buffers/
+│   └── rollout.py           # RolloutBuffer with GAE
 │
 └── [future]
-    ├── envs/             # Environment adapters
-    ├── training/         # Trainer, logger, checkpointing
-    └── utils/            # Helper functions
+    ├── envs/                # MuJoCo Playground adapter, Gymnasium fallback
+    ├── training/            # Trainer, Wandb logger, Orbax checkpointing
+    └── utils/               # RNG helpers, pytree utils, metrics
 ```
 
-## Current Implementation Status
+## Current Status
 
-### ✅ Phase 1 - Foundation (Complete)
-- [x] Config dataclasses with proper defaults
-- [x] Network protocols (Encoder, PolicyHead, ValueHead)
-- [x] MLPEncoder with LayerNorm support
+### Phase 1 - Foundation (done)
+- [x] Config dataclasses
+- [x] MLPEncoder with LayerNorm
 - [x] GaussianHead and ValueHead
-- [x] Actor/Critic builders
+- [x] Actor/Critic builders (Linen modules)
 - [x] Distribution utilities (sample_gaussian, log_prob, entropy)
-- [x] RolloutBuffer with GAE computation
+- [x] RolloutBuffer with GAE
 
-### ✅ Phase 2 - PPO Implementation (Complete)
-- [x] PPO algorithm class
+### Phase 2 - PPO (~90%)
+- [x] PPO algorithm class (Linen functional: TrainingState in, TrainingState out)
 - [x] Clipped surrogate objective
 - [x] Separate actor/critic optimizers
-- [x] Entropy bonus
-- [x] Gradient clipping
-- [x] Optional value clipping
-- [x] Advantage normalization
-
-### 🔲 Phase 3 - Next Steps
-- [ ] Environment adapters (MuJoCo Playground, Gymnasium)
-- [ ] Training loop / Trainer class
+- [x] Entropy bonus, gradient clipping, advantage normalization
+- [ ] Jitted training loop (collect + update via `jax.lax.scan`)
+- [ ] MuJoCo Playground env adapter
 - [ ] Wandb logger
-- [ ] Example training script
-- [ ] Test on dm_control environments
+- [ ] Validate on CartpoleBalance / CheetahRun
 
 ## Quick Example
 
 ```python
-from flax import nnx
+import jax
+import jax.numpy as jnp
 from jax_rl.configs import PPOConfig, EncoderConfig, PolicyHeadConfig
-from jax_rl.algos import PPO
+from jax_rl.algos.ppo import PPO, TrainingState
 
-# Configure PPO
+# Configure
 config = PPOConfig(
-    encoder=EncoderConfig(
-        obs_dim=17,
-        hidden_dim=(256, 256),
-    ),
-    policy_head=PolicyHeadConfig(
-        action_dim=6,
-        squash=True,
-    ),
+    encoder=EncoderConfig(obs_dim=17, hidden_dim=(256, 256)),
+    policy_head=PolicyHeadConfig(action_dim=6, squash=True),
     num_envs=4096,
     num_steps=32,
 )
 
-# Initialize PPO
-rngs = nnx.Rngs(0)
-ppo = PPO(config, obs_dim=17, action_dim=6, rngs=rngs)
+# Initialize (Linen style: params are separate pytrees)
+ppo = PPO(config, obs_dim=17, action_dim=6)
+key = jax.random.PRNGKey(0)
+training_state = ppo.init(key)
 
 # Select actions
-action, log_prob, value = ppo.select_action(obs, key)
+obs = jnp.zeros((4096, 17))
+action, log_prob, value = ppo.select_action(training_state, obs, key)
 
-# Update from rollout
-metrics = ppo.update(batch)
+# Update from rollout batch
+new_state, metrics = ppo.update(training_state, batch, key)
 ```
 
-## Key Architectural Decisions
+## Why Flax Linen?
 
-### 1. Protocols for Modularity
-All network components follow protocols, making it easy to swap implementations.
-
-### 2. Separate Actor/Critic
-No `value_coef` mixing - each network has its own optimizer and loss.
-
-### 3. Encoder + Head Composition
-Networks are composed from modular pieces.
-
-### 4. Configurable Everything
-Dataclasses for type-safe configs.
-
-## Testing
-
-Run the test suite to verify the implementation:
-```bash
-python test_ppo_setup.py
-```
-
-## Design Documentation
-
-See `.context/rl_framework_plan.md` for the full design document.
+Linen's explicit functional pattern (`model.init(key, x)` -> params, `model.apply(params, x)`) maps cleanly onto RL's "params-in, metrics-out" training loop. Params are plain pytrees that flow through `jax.jit`, `jax.grad`, `jax.vmap` with zero Python overhead. This matches Brax, FastTD3, and CleanRL-JAX. See the [design doc](.context/rl_framework_plan.md) for the full rationale.
 
 ## Dependencies
 
 ```bash
-pip install jax flax optax distrax
+pip install jax flax optax
 ```
 
-## Next: Training Loop
+## Design Documentation
 
-The next step is to implement:
-1. Environment adapters (MuJoCo Playground with MJWarp backend)
-2. Trainer class (collect -> update -> log loop)
-3. Wandb integration
-4. Example training script for CartPole or HalfCheetah
-
----
-
-Built with ❤️ for robot learning research.
+See [.context/rl_framework_plan.md](.context/rl_framework_plan.md) for the full design document including architecture, implementation phases, benchmark targets, and reference implementations.

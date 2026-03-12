@@ -2,17 +2,21 @@
 
 ## Overview
 
-A modular, JAX-native reinforcement learning library built on Flax NNX, designed to make **efficient robot learning accessible**.
+A modular, JAX-native reinforcement learning library built on Flax Linen, designed to make **efficient robot learning accessible**.
+
+This framework is both a **learning vehicle** and a **lab tool**. Building it is an opportunity to develop deep fluency with JAX, Flax Linen, and RL algorithms by implementing them from scratch. The resulting codebase will be shared across the lab, so every design decision prioritizes interpretability — a new lab member should be able to read a single algorithm file and understand what's happening without chasing abstractions across ten modules.
 
 ### Why this framework?
-- **Accessible**: Clean code you can actually read and modify, not research spaghetti
+- **Learnable**: Every algorithm is implemented from fundamentals, heavily commented, with clear mappings to the papers. No magic, no "just trust the base class."
+- **Accessible**: Clean code the whole lab can read, modify, and extend — not research spaghetti
 - **Efficient**: JAX-native with FastTD3/SAC for training in minutes, not hours
 - **Robot-first**: Built for the sim-to-real pipeline — train fast in sim, deploy on hardware
 
 ### Core design principles
-1. Understand the code → modify it → run experiments → deploy on robot
-2. Modular encoder+head architecture — swap components without rewriting algorithms
-3. Sim-to-real as first-class citizen, not afterthought
+1. **Fast code, clear explanations** — use every JAX trick that improves performance, but comment the non-obvious ones so the lab can learn from them. The code should be efficient *and* educational.
+2. Understand the code → modify it → run experiments → deploy on robot
+3. Modular encoder+head architecture — swap components without rewriting algorithms
+4. Sim-to-real as first-class citizen, not afterthought
 
 ### Target workflow
 ```
@@ -123,14 +127,30 @@ FastTD3 + SimbaV2 (hyperspherical normalization) is recommended for best results
 
 ### Stack
 - **JAX** for autodiff, jit, vmap, scan
-- **Flax NNX** for neural networks (not Linen)
+- **Flax Linen** for neural networks (not NNX — see rationale below)
 - **Optax** for optimizers
 - **Orbax** for checkpointing
 - **Wandb** for logging
 
+### Why Flax Linen over NNX?
+
+NNX is the newer, more Pythonic Flax API and is recommended for new projects in general. However, **Linen is the better choice for high-throughput RL** for several specific reasons:
+
+1. **Performance on small models**: `nnx.jit` traverses the object graph in pure Python on every call, adding overhead that primarily affects small-to-medium models — exactly the 256-512 hidden dim MLPs we use. Benchmarks show ~3x overhead for NNX on MLP workloads vs. Equinox/Linen. Mitigations exist (`nnx.cached_partial`, functional training loops via `nnx.split`/`nnx.merge`) but at that point you're writing Linen-style code with extra indirection.
+
+2. **Ecosystem alignment**: Brax training (the reference PPO/SAC used by MuJoCo Playground) uses Flax Linen. FastTD3, CleanRL-JAX, and RSL-RL all use functional params-as-pytrees patterns. Linen means we can lift code directly from these references.
+
+3. **RL-native pattern**: Linen's `model.apply(params, obs)` maps cleanly onto RL's "params-in, metrics-out" training loop. Params are plain pytrees that flow through `jax.jit`, `jax.grad`, `jax.vmap` with zero Python overhead inside the compiled path. No graph traversal, no hidden state mutation.
+
+4. **Immutability = safety**: Linen's stateless design makes it impossible to accidentally mutate shared state across parallel environments or between actor/critic networks — a common RL bug source. The explicit params threading is more verbose but removes an entire class of errors.
+
+**Note**: Linen is not being deprecated. The Flax team has stated it will continue to be supported, and major projects (MaxText, MaxDiffusion, Brax) still rely on it.
+
+**Learning benefit**: Linen's explicit functional pattern (init → params → apply) forces you to understand how JAX actually works — pytrees, pure functions, JIT compilation boundaries. NNX hides this behind Pythonic sugar. For a codebase that's meant to teach the lab JAX fundamentals, the explicitness is a feature.
+
 ### Config System
 - **Dataclasses** for type safety and IDE support
-- Structured for future Hydra compatibility
+- Pure Python, no framework dependency — Hydra is a Phase 7+ consideration only if experiment management becomes a bottleneck
 - Nested configs (AlgoConfig contains NetworkConfig)
 
 ```python
@@ -153,6 +173,15 @@ class PPOConfig:
 - JAX-native for off-policy algorithms
 - Fixed size, jittable sampling
 - On-policy uses simple rollout buffer
+
+**Off-policy replay buffer design decisions:**
+
+- **Fully on-device (GPU)**: Buffer lives entirely in GPU memory, matching the Brax SAC pattern. No CPU↔GPU transfer during training. This is the key to high throughput — the entire collect→sample→update loop stays on-device and can be compiled into a single jitted function.
+- **Memory layout**: Struct-of-arrays (SoA) — separate arrays for obs, action, reward, next_obs, done, truncation. This is more efficient for batched sampling than array-of-structs because each `jnp.take` pulls a contiguous slice. Fields stored as `jax.Array` of shape `(buffer_size, *field_shape)`.
+- **Circular buffer with uniform sampling**: Fixed-size pre-allocated arrays with a write pointer that wraps. Sampling is `jax.random.randint` for indices, then `jnp.take` — fully jittable, no Python control flow. Start simple with uniform random sampling.
+- **Capacity**: Sized to fit in GPU memory. For typical RL (obs_dim ~100, action_dim ~20, float32): 1M transitions ≈ 1.5 GB. At 16K parallel envs this fills fast — may need 100K-500K capacity with high replay ratio instead of 1M.
+- **Prioritized replay**: Deferred. Uniform sampling is sufficient for TD3/SAC/FastTD3. PER adds significant complexity (sum-tree on device) for marginal gains in the massively parallel setting where data is abundant.
+- **N-step returns**: Support configurable n-step return computation at insertion time (FastTD3 uses this).
 
 ### Environment Interface
 Two backends with common interface:
@@ -195,23 +224,23 @@ jax_rl/
 │   └── networks.py          # NetworkConfig variants
 │
 ├── networks/
-│   ├── protocols.py         # Encoder, QHead, PolicyHead protocols
+│   ├── types.py             # TrainingState, Params type aliases
 │   ├── encoders/
-│   │   ├── mlp.py           # Standard MLP encoder (configurable LayerNorm)
+│   │   ├── mlp.py           # Standard MLP encoder (nn.Module, configurable LayerNorm)
 │   │   ├── cnn.py           # Conv encoder for pixels
-│   │   └── simba.py         # SimbaV2 (hyperspherical norm) — future
+│   │   └── simba.py         # SimbaV2 (hyperspherical norm) — Phase 3
 │   ├── heads/
 │   │   ├── q_scalar.py      # Standard Q output
 │   │   ├── q_distributional.py  # C51 distributional Q
 │   │   ├── gaussian.py      # Gaussian policy (mean + log_std)
 │   │   ├── deterministic.py # Deterministic policy (TD3 actor)
-│   │   ├── discriminator.py # Skill classifier q(z|s) — USD, future
+│   │   ├── discriminator.py # Skill classifier q(z|s) — Phase 6 (USD)
 │   │   └── value.py         # State value V(s) — PPO
-│   ├── builders.py          # Compose encoder + head from config
+│   ├── builders.py          # Compose encoder + head from config, init params
 │   └── distributions.py     # TanhNormal, rsample helpers
 │
 ├── algos/
-│   ├── base.py              # BaseAlgorithm ABC
+│   ├── base.py              # BaseAlgorithm (stateless, functional)
 │   ├── ppo.py               # PPO implementation
 │   ├── sac.py               # SAC implementation
 │   ├── td3.py               # TD3 implementation
@@ -245,9 +274,18 @@ jax_rl/
 
 ### Key Interfaces
 
-#### Encoder Protocol
+#### Encoder (Linen Module)
 ```python
-class Encoder(Protocol):
+class MLPEncoder(nn.Module):
+    """MLP encoder with configurable LayerNorm and context fusion."""
+    hidden_dim: int = 256
+    num_layers: int = 2
+    activation: str = "relu"
+    norm: str | None = "layer"
+    context_dim: int | None = None
+    context_fusion: str = "concat"
+
+    @nn.compact
     def __call__(
         self, 
         obs: jax.Array, 
@@ -262,7 +300,12 @@ class Encoder(Protocol):
         ...
 ```
 
+All network modules follow this pattern: `nn.Module` subclass with `@nn.compact`, called via `model.apply(params, obs, ...)`. The module itself is stateless — a template that defines the computation graph. Params are initialized once via `model.init(key, dummy_obs)` and threaded explicitly through the training loop.
+
 #### Encoder Config (with context fusion)
+
+Config dataclasses are used to construct Linen modules. The config is not the module — it's a recipe for building one:
+
 ```python
 @dataclass
 class EncoderConfig:
@@ -276,6 +319,12 @@ class EncoderConfig:
     # Context handling (goal, skill, task)
     context_dim: int | None = None
     context_fusion: str = "concat"       # "concat", "film", "cross_attn"
+
+# Builder pattern: config -> Linen module + initialized params
+def build_policy(config: PPOConfig, key: PRNGKey, obs_dim: int, action_dim: int):
+    model = GaussianPolicy(encoder_config=config.encoder, action_dim=action_dim)
+    params = model.init(key, jnp.zeros(obs_dim))
+    return model, params
 ```
 
 **Fusion methods:**
@@ -283,102 +332,168 @@ class EncoderConfig:
 - `film`: Feature-wise Linear Modulation — context scales/shifts features
 - `cross_attn`: Cross-attention between obs and context tokens (for transformers)
 
-#### Q Head Protocols
+#### Q Head Modules
 ```python
-class QHead(Protocol):
+class ScalarQHead(nn.Module):
+    """Standard Q output: features -> scalar."""
+    @nn.compact
     def __call__(self, features: jax.Array) -> jax.Array:
-        """Returns scalar Q-value."""
-        ...
-    
-class DistributionalQHead(Protocol):
+        return nn.Dense(1)(features).squeeze(-1)
+
+class DistributionalQHead(nn.Module):
+    """C51 distributional Q: features -> (batch, num_atoms) logits."""
+    num_atoms: int = 51
+    v_min: float = -10.0
+    v_max: float = 10.0
+
+    @nn.compact
     def __call__(self, features: jax.Array) -> jax.Array:
-        """Returns (batch, num_atoms) logits for C51."""
-        ...
-    
-    def q_value(self, features: jax.Array) -> jax.Array:
-        """Returns expected Q-value from distribution."""
-        ...
+        """Returns (batch, num_atoms) logits."""
+        return nn.Dense(self.num_atoms)(features)
+
+    def q_value(self, logits: jax.Array) -> jax.Array:
+        """Expected Q-value from distribution."""
+        support = jnp.linspace(self.v_min, self.v_max, self.num_atoms)
+        probs = jax.nn.softmax(logits, axis=-1)
+        return jnp.sum(probs * support, axis=-1)
 ```
 
-#### Policy Head Protocol
+#### Policy Head Modules
 ```python
-class GaussianHead(Protocol):
-    def __call__(self, features: jax.Array) -> tuple[jax.Array, jax.Array]:
-        """Returns (mean, log_std)."""
-        ...
+class GaussianHead(nn.Module):
+    """Gaussian policy: features -> (mean, log_std)."""
+    action_dim: int
+    log_std_min: float = -5.0
+    log_std_max: float = 2.0
 
-class DeterministicHead(Protocol):
+    @nn.compact
+    def __call__(self, features: jax.Array) -> tuple[jax.Array, jax.Array]:
+        mean = nn.Dense(self.action_dim)(features)
+        log_std = nn.Dense(self.action_dim)(features)
+        log_std = jnp.clip(log_std, self.log_std_min, self.log_std_max)
+        return mean, log_std
+
+class DeterministicHead(nn.Module):
+    """Deterministic policy: features -> action (for TD3)."""
+    action_dim: int
+
+    @nn.compact
     def __call__(self, features: jax.Array) -> jax.Array:
-        """Returns action directly (for TD3)."""
-        ...
+        return nn.tanh(nn.Dense(self.action_dim)(features))
 ```
 
 #### Composed Networks (built from encoder + head)
+
+In Linen, composed networks are modules that contain sub-modules. The key pattern: `model.apply(params, obs)` — the model object is a stateless template, params are a separate pytree.
+
 ```python
-class Policy(Protocol):
+class GaussianPolicy(nn.Module):
+    """Encoder + GaussianHead, composed as a single Linen module."""
+    encoder_config: EncoderConfig
+    action_dim: int
+
+    @nn.compact
     def __call__(
         self, obs: jax.Array, context: jax.Array | None = None
     ) -> tuple[jax.Array, jax.Array]:
-        """Returns (mean, log_std) or (action, None) for deterministic."""
-        ...
-    
-    def sample(
-        self, obs: jax.Array, key: PRNGKey, context: jax.Array | None = None
-    ) -> tuple[jax.Array, jax.Array]:
-        """Returns (action, log_prob)."""
-        ...
+        """Returns (mean, log_std)."""
+        features = MLPEncoder(**asdict(self.encoder_config))(obs, context=context)
+        return GaussianHead(self.action_dim)(features)
 
-class QFunction(Protocol):
+class QFunction(nn.Module):
+    """Encoder + QHead, composed as a single Linen module."""
+    encoder_config: EncoderConfig
+    distributional: bool = False
+
+    @nn.compact
     def __call__(
         self, obs: jax.Array, action: jax.Array, context: jax.Array | None = None
     ) -> jax.Array:
-        """Returns Q-value (scalar, even for distributional — returns expected value)."""
-        ...
-    
-    def distributional(
-        self, obs: jax.Array, action: jax.Array, context: jax.Array | None = None
-    ) -> jax.Array | None:
-        """Returns distribution logits if distributional, else None."""
-        ...
+        """Returns Q-value (scalar). For distributional, returns expected value."""
+        features = MLPEncoder(**asdict(self.encoder_config))(obs, action=action, context=context)
+        if self.distributional:
+            head = DistributionalQHead()
+            logits = head(features)
+            return head.q_value(logits)
+        return ScalarQHead()(features)
 ```
+
+**Usage pattern (Linen functional style):**
+```python
+# 1. Create module (stateless template)
+policy = GaussianPolicy(encoder_config=enc_cfg, action_dim=env.action_size)
+
+# 2. Initialize params (once)
+policy_params = policy.init(rng_key, dummy_obs)
+
+# 3. Forward pass (inside jitted training loop)
+mean, log_std = policy.apply(policy_params, obs)
+
+# 4. Sampling (pass RNG explicitly)
+action, log_prob = policy.apply(policy_params, obs, rngs={'sample': sample_key},
+                                method=policy.sample)
+```
+
+This is the same pattern Brax uses. Params are plain pytrees — they flow through `jax.jit`, `jax.grad`, and `jax.vmap` with zero overhead.
 
 
 #### Algorithm Interface
+
+Algorithms operate on `TrainingState` — a flax dataclass containing all params and optimizer state as pytrees. This makes the entire training loop jittable.
+
 ```python
+@flax.struct.dataclass
+class TrainingState:
+    """All mutable state for training, as a single pytree."""
+    policy_params: Params
+    critic_params: Params
+    target_critic_params: Params
+    optimizer_state: optax.OptState
+    normalizer_state: RunningStatisticsState
+    env_steps: int
+
 class BaseAlgorithm(ABC):
+    """Stateless algorithm — all state lives in TrainingState."""
+    
     @abstractmethod
-    def update(self, batch: Batch) -> dict[str, float]:
-        """Perform gradient update, return metrics"""
+    def init(self, key: PRNGKey, env: JaxEnv) -> TrainingState:
+        """Initialize all params and optimizer state."""
         ...
     
-    @property
     @abstractmethod
-    def state(self) -> AlgoState:
-        """Return serializable state for checkpointing"""
+    def update(self, state: TrainingState, batch: Batch) -> tuple[TrainingState, dict[str, float]]:
+        """Perform gradient update, return new state and metrics."""
         ...
 
 class OnlineAlgorithm(BaseAlgorithm):
-    """RL algorithms that collect from environment"""
+    """RL algorithms that collect from environment."""
     @abstractmethod
-    def collect(self, env, env_state, key) -> tuple[Batch, EnvState, PRNGKey]:
-        """Collect rollout/samples"""
+    def collect(
+        self, state: TrainingState, env: JaxEnv, env_state: EnvState, key: PRNGKey
+    ) -> tuple[Batch, EnvState, PRNGKey]:
+        """Collect rollout/samples using current policy params."""
         ...
 
 class OfflineAlgorithm(BaseAlgorithm):
-    """BC, offline RL — data comes from dataset, no collect method"""
+    """BC, offline RL — data comes from dataset, no collect method."""
     pass
 ```
 
+**Key difference from the NNX pattern**: Algorithms don't hold mutable state. `update()` takes a state in and returns a new state out — pure functional, fully jittable. This matches how Brax structures its training loops.
+
 **BC → RL Finetuning:**
-Encoder+head design enables weight transfer naturally:
+Encoder+head design enables weight transfer naturally. Since params are plain pytrees, transferring weights is just copying the right subtree:
 ```python
 # Pretrain with BC
-bc = BC(policy=policy)
-train_offline(bc, dataset)
+bc_state = bc_algo.init(key, env)
+bc_state = train_offline(bc_algo, bc_state, dataset)
 
-# Finetune with RL — same policy network, weights carry over
-sac = SAC(policy=bc.policy, ...)
-train_online(sac, env)
+# Finetune with RL — extract policy params, initialize SAC state with them
+sac_state = sac_algo.init(key, env)
+sac_state = sac_state.replace(
+    policy_params=bc_state.policy_params  # weights carry over
+)
+sac_state = train_online(sac_algo, sac_state, env)
 ```
 
 #### Algorithm Config Pattern (Q aggregation, etc.)
@@ -401,6 +516,17 @@ class SACConfig:
 
 #### Environment Interface
 ```python
+@flax.struct.dataclass
+class EnvState:
+    """All env state as a pytree. Mirrors brax.envs.State."""
+    pipeline_state: Any          # Physics engine internal state (MJX data)
+    obs: jax.Array               # Current observation
+    reward: jax.Array            # Reward from last step
+    done: jax.Array              # True on terminal states (bool)
+    truncation: jax.Array        # True on timeout (bool) — distinct from done
+    info: dict[str, jax.Array]   # Extra info (reward components, contacts, etc.)
+    metrics: dict[str, jax.Array]  # Logging metrics (episode return, length, etc.)
+
 class JaxEnv(Protocol):
     def reset(self, key: PRNGKey) -> EnvState:
         ...
@@ -418,13 +544,27 @@ class JaxEnv(Protocol):
     def action_bounds(self) -> tuple[jax.Array, jax.Array]: 
         """(low, high) for continuous actions. Policies output tanh, scaled to bounds."""
         ...
+    
+    @property
+    def episode_length(self) -> int:
+        """Max steps per episode. Needed for GAE timeout handling."""
+        ...
+    
+    @property
+    def auto_reset(self) -> bool:
+        """Whether env auto-resets on done/truncation (MuJoCo Playground does)."""
+        ...
 ```
 
-**Action handling:** Policies output in [-1, 1] (tanh), env wrapper scales to actual bounds. This is standard practice and simplifies the policy.
+**Key design decisions:**
+- **done vs truncation**: Critical for correct GAE. `done=True` means the episode ended naturally (don't bootstrap). `truncation=True` means the episode hit the time limit (bootstrap the value). PPO implementations that conflate these will learn incorrect value functions.
+- **info dict**: Carries per-step metadata — reward components, contact forces, privileged observations. Needed for logging, curriculum learning, and asymmetric actor-critic.
+- **auto-reset**: MuJoCo Playground environments auto-reset when done. The adapter must handle this correctly — the "next obs" after a done is the first obs of the new episode, not a terminal observation.
+- **Action handling:** Policies output in [-1, 1] (tanh), env wrapper scales to actual bounds. This is standard practice and simplifies the policy.
 
-### Trainer Pattern (Hybrid)
+### Trainer Pattern (Functional)
 
-Algorithms own the math (collect, update). Trainer owns infrastructure:
+Algorithms own the math (collect, update) as pure functions. Trainer owns infrastructure. All mutable state flows through `TrainingState` — no hidden mutation.
 
 ```python
 class Trainer:
@@ -436,27 +576,36 @@ class Trainer:
         self.checkpointer = checkpointer
     
     def train(self, num_steps: int):
-        env_state = self.env.reset(self.key)
+        key = jax.random.PRNGKey(self.config.seed)
+        key, init_key, env_key = jax.random.split(key, 3)
+        
+        # Initialize all state as pytrees
+        training_state = self.algo.init(init_key, self.env)
+        env_state = self.env.reset(env_key)
         
         for step in range(num_steps):
-            # Algo handles collection
-            batch, env_state, self.key = self.algo.collect(
-                self.env, env_state, self.key
+            key, collect_key = jax.random.split(key)
+            
+            # Algo handles collection (pure function)
+            batch, env_state, collect_key = self.algo.collect(
+                training_state, self.env, env_state, collect_key
             )
             
-            # Algo handles update
-            metrics = self.algo.update(batch)
+            # Algo handles update (pure function, returns new state)
+            training_state, metrics = self.algo.update(training_state, batch)
             
             # Trainer handles infrastructure
             self.logger.log(metrics, step)
             
             if step % self.config.eval_freq == 0:
-                eval_metrics = self.evaluate()
+                eval_metrics = self.evaluate(training_state)
                 self.logger.log(eval_metrics, step)
             
             if step % self.config.checkpoint_freq == 0:
-                self.checkpointer.save(self.algo.state, step)
+                self.checkpointer.save(training_state, step)
 ```
+
+**Note**: The inner loop (collect + update) can be wrapped in `jax.lax.scan` for maximum throughput, compiling the entire training loop into a single XLA program — this is what Brax does.
 
 ---
 
@@ -464,13 +613,15 @@ class Trainer:
 
 ### Phase 1: Foundation
 - [ ] Config dataclasses (EncoderConfig, PPOConfig, etc.)
-- [ ] MLP encoder (with configurable LayerNorm + context fusion)
+- [ ] TrainingState `flax.struct.dataclass` (params + optimizer state as pytree)
+- [ ] MLP encoder (nn.Module with configurable LayerNorm + context fusion)
 - [ ] Scalar Q head
 - [ ] Value head V(s)
 - [ ] Gaussian policy head
 - [ ] Deterministic policy head
-- [ ] Network builder (compose encoder + head)
+- [ ] Network builder (compose encoder + head from config, init params)
 - [ ] Distribution utilities (TanhNormal, rsample)
+- [ ] Observation normalization (running mean/std, required for benchmarking against Brax)
 - [ ] Rollout buffer
 - [ ] Wandb logger
 
@@ -479,8 +630,8 @@ class Trainer:
 - [ ] TD3 implementation (standard, min Q)
 - [ ] SAC implementation (standard, min Q)
 - [ ] MuJoCo Playground adapter
-- [ ] Test on dm_control (CartpoleBalance, HalfCheetah)
-- [ ] Verify scores match reference (CleanRL/Brax)
+- [ ] Test on dm_control (CartpoleBalance, CheetahRun)
+- [ ] Verify scores match reference (see benchmark table below)
 - [ ] Basic README + example script (ongoing, not deferred)
 
 **PPO Implementation Details (from RSL-RL / Huang et al. 2022):**
@@ -492,20 +643,54 @@ class Trainer:
 - Adaptive LR schedule: if KL > target × 1.5 → decrease LR, if KL < target / 1.5 → increase LR
 - Random early termination at init to decorrelate parallel env rollouts
 
+**Evaluation Protocol:**
+- Use **deterministic policy** for eval (mean action for Gaussian, direct output for deterministic)
+- Run **10 full episodes** per eval, report mean and std of episode reward
+- Eval frequency: every N env steps (configurable, default ~every 1% of total training)
+- Track: mean reward, std reward, min/max reward, mean episode length
+- For off-policy (SAC/TD3): also log critic loss, actor loss, entropy (SAC), Q-values
+- For on-policy (PPO): also log approx KL, clip fraction, explained variance, entropy
+
+**Benchmark Targets (Phase 2 validation — MuJoCo Playground DM Control, 5 seeds, A100):**
+
+DM Control rewards are normalized 0–1000. These targets are approximate — within ~10% of reference means is a pass.
+
+| Algo | Env | Target Reward | Env Steps | Reference |
+|------|-----|--------------|-----------|-----------|
+| PPO | CartpoleBalance | ≥950 | 10M | MuJoCo Playground paper |
+| PPO | CartpoleSwingup | ≥800 | 20M | MuJoCo Playground paper |
+| PPO | CheetahRun | ≥700 | 60M | MuJoCo Playground paper |
+| PPO | HopperStand | ≥800 | 60M | MuJoCo Playground paper |
+| PPO | WalkerRun | ≥600 | 60M | MuJoCo Playground paper |
+| SAC | CartpoleBalance | ≥950 | 2M | MuJoCo Playground paper |
+| SAC | CartpoleSwingup | ≥800 | 5M | MuJoCo Playground paper |
+| SAC | CheetahRun | ≥700 | 5M | MuJoCo Playground paper |
+| TD3 | CheetahRun | ≥700 | 5M | CleanRL / Spinning Up |
+
+**Fast Variant Benchmark Targets (Phase 3 — wall-clock comparison):**
+
+| Algo | Env | Metric | Target | Reference |
+|------|-----|--------|--------|-----------|
+| FastTD3 | CheetahRun | Wall-clock to 700 reward | ≤5 min (single GPU) | FastTD3 paper |
+| FastTD3 vs TD3 | CheetahRun | Speedup | ≥5x wall-clock | Internal ablation |
+| FastSAC vs SAC | CheetahRun | Speedup | ≥3x wall-clock | Internal ablation |
+
 ### Phase 3: Fast Variants
+- [ ] SimbaV2 encoder (hyperspherical normalization — recommended for FastTD3)
 - [ ] Distributional Q head (C51)
-- [ ] FastTD3 (C51 + avg Q + large batch + LayerNorm)
+- [ ] FastTD3 (C51 + avg Q + large batch + LayerNorm + optional SimbaV2)
 - [ ] FastSAC (same recipe)
 - [ ] JAX-native replay buffer (for high throughput)
-- [ ] Benchmark: compare wall-clock time vs standard
+- [ ] Benchmark: compare wall-clock time vs standard (see table above)
 
 ### Phase 4: Behavioral Cloning
+- [ ] Gymnasium adapter (Python-loop fallback for CPU envs like Robomimic)
 - [ ] MLP BC
 - [ ] Flow matching policy
-- [ ] Dataset loading utilities
+- [ ] Dataset loading utilities (HDF5/Robomimic format)
 
 ### Phase 5: Sim-to-Real Pipeline
-- [ ] Normalization wrappers
+- [ ] Reward normalization wrapper
 - [ ] Curriculum learning wrapper
 - [ ] Domain randomization wrapper
 - [ ] Observation groups (actor vs critic asymmetric obs)
@@ -524,10 +709,31 @@ Actor and critic can receive different observations (e.g., critic sees privilege
 - Unitree SDK, robot arm controllers, etc. — depends on target hardware
 
 ### Phase 6: Goal-Conditioned & Unsupervised RL
+
+This is the primary motivation for the framework. Each algorithm has concrete milestones:
+
+**Milestone 6a — Goal-Conditioned RL:**
 - [ ] Goal-conditioned wrappers (HER-style relabeling)
-- [ ] DIAYN (skill discriminator + SAC)
-- [ ] METRA (metric-aware abstraction)
-- [ ] Factorized USD (if needed for real robot)
+- [ ] Validate: goal-conditioned SAC on a reaching/navigation task
+- Success criteria: agent reliably reaches commanded goals in MuJoCo env
+
+**Milestone 6b — DIAYN:**
+- [ ] Skill discriminator head q(z|s)
+- [ ] Intrinsic reward hook (reward = discriminator log-prob)
+- [ ] DIAYN wrapping SAC
+- [ ] Validate: discover diverse locomotion skills on Ant/HalfCheetah
+- Success criteria: visually distinct skills, discriminator accuracy >80%
+
+**Milestone 6c — METRA:**
+- [ ] Contrastive encoder for temporal distance learning
+- [ ] Metric-aware skill abstraction
+- [ ] Validate: learn skills with metric structure (not just discriminability)
+- Success criteria: skills form meaningful embedding space, reproduce METRA paper results on standard benchmarks
+
+**Milestone 6d — Factorized USD:**
+- [ ] Factorized skill discovery (if needed for real robot)
+- [ ] Validate: transfer discovered skills to downstream tasks
+- Success criteria: skill pretraining improves sample efficiency on downstream task vs training from scratch
 
 **USD Architectural Notes:**
 When implementing USD, we'll need:
@@ -540,11 +746,10 @@ The `context` argument in Encoder already supports skill/goal conditioning — t
 
 ### Phase 7: Polish & Extensions
 - [ ] CNN encoder
-- [ ] SimbaV2 encoder (hyperspherical norm)
 - [ ] RND (Random Network Distillation) for curiosity-driven exploration
 - [ ] Symmetry augmentation (for legged robots)
 - [ ] Recurrent policies (LSTM/GRU)
-- [ ] Hydra config integration (optional)
+- [ ] Hydra config integration (optional — only if experiment management becomes a bottleneck; pure dataclasses are sufficient until then)
 - [ ] Multi-GPU support
 - [ ] Full documentation site (basic docs are ongoing from Phase 2)
 - [ ] Tutorial notebooks
@@ -564,11 +769,18 @@ The `context` argument in Encoder already supports skill/goal conditioning — t
 
 ## Reference Implementations
 
-- **CleanRL**: Single-file reference for algorithm correctness
-- **Brax**: JAX-native RL, good for PPO/SAC patterns
+- **Brax** (`brax/training`): JAX-native RL, PPO/SAC — **uses Flax Linen**, primary reference for our training patterns
+- **CleanRL**: Single-file reference for algorithm correctness — excellent for learning since each algo is one readable file
+- **FastTD3**: High-throughput TD3/SAC — functional JAX patterns, directly compatible
 - **RSL-RL**: Robotics-focused, PPO + distillation, observation groups
-- **MuJoCo Playground**: Env interface and training scripts
+- **MuJoCo Playground**: Env interface and training scripts (trains via Brax PPO)
 - **37 PPO Details**: https://iclr-blog-track.github.io/2022/03/25/ppo-implementation-details/
+
+### Learning Resources (JAX / Flax / RL)
+- **JAX 101**: https://jax.readthedocs.io/en/latest/jax-101/ — start here for JAX fundamentals (pytrees, jit, vmap, grad)
+- **Flax Linen quickstart**: https://flax-linen.readthedocs.io/ — Linen module patterns, init/apply, train state
+- **Spinning Up in Deep RL**: https://spinningup.openai.com/ — best conceptual intro to PPO, SAC, TD3 with math
+- **The 37 PPO Details**: essential reading before implementing PPO — documents every implementation trick that affects performance
 
 ---
 
@@ -594,8 +806,49 @@ python export.py --policy deployable_policy --format onnx
 
 ## Development Principles
 
-- **Start flat** — one file per component during learning, refactor into packages as they stabilize
+- **Full structure from day one** — every component lives at its final address; no big refactors later
 - **Test incrementally** — verify each component before building on it
 - **Correctness first** — match CleanRL scores before optimizing for speed
 - **Document as you go** — if you figured something out, write it down
-- **Accessibility matters** — if the code is hard to understand, simplify it
+- **Readability is a feature** — if the code is hard to understand, simplify it. A lab member picking up this codebase should be productive within a day.
+
+### Code Style for Interpretability
+
+The audience for this code is *the lab* — people who know Python and ML but may not know JAX or RL internals. Every file should be self-contained enough that someone can read it top-to-bottom and learn something.
+
+**Commenting philosophy:**
+- Every algorithm file starts with a docstring linking to the paper and summarizing the key equations
+- Non-obvious JAX patterns get inline comments explaining *why* (e.g., "# jax.lax.stop_gradient here because we don't want critic gradients flowing into the actor")
+- Each loss function includes the equation number from the paper it implements
+- Type annotations everywhere — they're free documentation
+
+**Naming:**
+- Prefer full names over abbreviations (`policy_params` not `pi_p`, `critic_loss` not `q_loss`)
+- Variable names should match paper notation where it helps (`log_pi` for log π(a|s), `advantage` for Â)
+- Config fields are self-documenting (`clip_eps` not `ce`, `entropy_coef` not `ec`)
+
+**JAX-specific readability:**
+- Use `jax.lax.scan`, `jax.lax.cond`, `vmap`, etc. wherever they improve performance — but always include a comment explaining what the operation does in plain English and what the naive version would look like
+- When using `vmap`, comment what axis is being mapped over and the shape transformation
+- Keep `jit` boundaries at the highest level possible (whole train step, not individual sub-functions) — this is both faster and easier to debug
+- Include shape annotations in comments for non-obvious tensor operations (e.g., `# (batch, num_atoms) -> (batch,)`)
+- For debugging: keep a `DEBUG` flag or config option that disables `jit` so you can use standard Python debugging tools. Fast by default, debuggable when needed.
+**File structure per algorithm:**
+```
+# ppo.py
+"""
+Proximal Policy Optimization (PPO)
+
+Paper: https://arxiv.org/abs/1707.06347
+Reference: Brax PPO, CleanRL ppo_continuous_action.py
+
+Key equations:
+  L^CLIP(θ) = E[min(r_t(θ) * A_t, clip(r_t(θ), 1-ε, 1+ε) * A_t)]  (Eq. 7)
+  where r_t(θ) = π_θ(a_t|s_t) / π_θ_old(a_t|s_t)
+
+Implementation notes:
+  - Uses GAE for advantage estimation (see utils/metrics.py)
+  - Observation normalization via running statistics (Phase 1 foundation)
+  - Timeout vs termination handled separately in GAE (see EnvState.truncation)
+"""
+```
