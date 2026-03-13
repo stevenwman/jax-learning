@@ -405,18 +405,186 @@ Params = Any
 
 ---
 
+## Session 3: JIT Performance & First Training Curve (Mar 2026)
+
+### ⚡ **The 600× Speedup: `jax.jit(env.step)`**
+
+**What happened:**
+- PPO training on CartpoleBalance took ~184s per iteration (64 envs × 64 steps)
+- GPU usage was 0%. Suspected JIT retracing in PPO update.
+
+**Root cause:**
+- MuJoCo Playground's `env.step` dispatches ~200 MJX physics primitives **eagerly** when called from a Python loop
+- Each `env.step` call took **2.8s** for 64 envs — the physics kernel wasn't fused
+- 64 steps × 2.8s = ~180s per iteration. The PPO update was fine (~0.05s). **99% of time was in env.step.**
+
+**The fix — one line:**
+```python
+env_step = jax.jit(env.step)  # Fuse ~200 MJX primitives into one GPU kernel
+# Then use env_step(env_state, action) instead of env.step(env_state, action)
+```
+
+**Result:** 184s/iter → 0.3s/iter. Training completed 1M steps in ~85s. Avg return: 995.4 (target ≥ 950).
+
+**Why Playground doesn't auto-JIT:** Brax training scripts typically `jax.lax.scan` the entire training loop — the outer JIT covers env.step. Our Python collect loop calls env.step from Python, so each call is dispatched eagerly. The wrapper doesn't add its own JIT boundary.
+
+**Lesson:** If you're calling a JAX-based env from a Python loop, **always** wrap with `jax.jit`. If GPU utilization is 0%, the computation is probably dispatching hundreds of small kernels instead of one fused one.
+
+---
+
+### 🔍 **Diagnostic Methodology: Isolate, Don't Guess**
+
+**Bad instinct:** "It's slow → must be retracing in `value_and_grad`." We created `ppo_jit.py` with JIT closures to fix "retracing." Didn't help — because the bottleneck was elsewhere.
+
+**Good method:** Created `diagnose_speed.py` that tests each operation in isolation:
+
+```
+Test 1: env.step           → 2.822s/call  ← THE BOTTLENECK
+Test 2: select_action      → 0.000s/call
+Test 3: norm_update        → 0.029s/call
+Test 4: full collect loop  → 183.23s (= 64 × 2.8s, confirms env.step)
+Test 5: _minibatch_step    → 0.001s/call
+```
+
+**Pattern:**
+1. Warmup each operation separately (JIT compile)
+2. Time N calls with `jax.block_until_ready()` (JAX is async — without this, timing is meaningless)
+3. Compare per-call cost to find the dominant term
+
+**Lesson:** When something is slow in JAX, **time each operation in isolation** before optimizing. The bottleneck is rarely where you think it is.
+
+---
+
+### 🧩 **JIT Closures in `__init__` — Still Useful**
+
+Even though env.step was the real bottleneck, JIT-compiling the PPO hot paths is correct practice:
+
+```python
+class PPO:
+    def __init__(self, config, obs_dim, action_dim):
+        actor = self.actor        # capture immutable refs
+        critic = self.critic
+        clip_eps = config.clip_eps
+
+        @jax.jit
+        def _minibatch_step(state, mb_obs, mb_actions, mb_old_log_probs, mb_returns, mb_adv):
+            def actor_loss_fn(actor_params):
+                mean, log_std = actor.apply(actor_params, mb_obs)
+                ...
+            (_, metrics), grads = jax.value_and_grad(actor_loss_fn, has_aux=True)(state.actor_params)
+            ...
+            return new_state, metrics
+
+        self._minibatch_step = _minibatch_step
+```
+
+**Why closures work:** The `@jax.jit` function captures `actor`, `critic`, `clip_eps` etc. as compile-time constants. JAX traces once, caches the compiled kernel, and reuses it. Without this, `value_and_grad` would recreate closure functions each call, forcing JAX to re-trace.
+
+**Eager dispatch vs retracing:** These are different problems.
+- **Eager dispatch** (env.step): Python dispatches many small XLA operations. Fix: `jax.jit` to fuse them.
+- **Retracing** (value_and_grad): JAX re-analyzes the function body because something changed (new closure identity, different shapes). Fix: stable closures or `@jax.jit` wrappers.
+
+---
+
+### 🔄 **`jax.lax.scan` — Eliminating Python Dispatch Overhead**
+
+**The experiment:** Three versions of the same PPO update, benchmarked head-to-head (64 envs, 64 steps, 4 epochs, 16 minibatches = 64 gradient updates per `update()` call):
+
+| Version | `update()` per call | Speedup vs eager |
+|---|---:|---:|
+| `ppo.py` — Python loops, no JIT | 2.712s | 1× |
+| `ppo_jit.py` — JIT closures, Python loops | 0.089s | 30× |
+| `ppo_scan.py` — `jax.lax.scan` (fully compiled) | 0.005s | 542× |
+
+**The surprise:** `jit → scan` gave **18×** improvement. For these tiny MLPs (64-64 hidden, 674 params), ~95% of each `_minibatch_step` call was Python↔XLA dispatch overhead, not actual gradient compute.
+
+**How scan works:**
+```python
+# Python loop: 64 round-trips Python → XLA → Python → XLA → ...
+for epoch in range(4):
+    for mb in minibatches:
+        state, metrics = _minibatch_step(state, mb)  # each call crosses boundary
+
+# Scan: 1 round-trip, XLA handles the loop internally
+@jax.jit
+def _update(state, obs, actions, ...):
+    def epoch_step(carry, _):
+        def scan_minibatch(carry, minibatch):
+            state, metrics = _minibatch_step(state, *minibatch)
+            return (state, metrics), None
+        (state, metrics), _ = jax.lax.scan(scan_minibatch, ...)
+        return (state, key, metrics), None
+    (state, _, metrics), _ = jax.lax.scan(epoch_step, ..., length=num_epochs)
+    return state, metrics
+```
+
+**Rule of thumb:** If you're calling a JIT'd function >10× in a loop, `jax.lax.scan` it. Each Python dispatch costs ~0.5-1ms — negligible once, but 64 calls = 32-64ms of pure overhead.
+
+**When it matters most:**
+- Bigger networks (more compute per step, but dispatch overhead stays fixed → smaller relative gain)
+- More epochs/minibatches (320 dispatches at 10 epochs × 32 MBs)
+- Fully-jitted training loops (scan is *required* — can't have Python loops inside JIT)
+
+---
+
+### 🎯 **GAE Truncation Handling**
+
+MuJoCo Playground signals episode timeout via `env_state.info["truncation"]`:
+
+```python
+truncation = env_state.info["truncation"]
+effective_done = env_state.done * (1.0 - truncation)
+```
+
+| Scenario | `done` | `truncation` | `effective_done` | GAE behavior |
+|----------|--------|-------------|-------------------|--------------|
+| True terminal (fell over) | 1 | 0 | 1 | Zero bootstrap — episode truly ended |
+| Timeout (hit episode_length) | 1 | 0→1 | 0 | Bootstrap through — agent was still doing fine |
+| Mid-episode | 0 | 0 | 0 | Bootstrap through — normal |
+
+**Why it matters:** Without this, GAE penalizes the agent for surviving to the timeout. The value estimate at timeout gets zeroed out, making long episodes look worse than they are.
+
+---
+
+### 📊 **`jax.block_until_ready()` — Required for Accurate Timing**
+
+JAX operations are **asynchronous** — `env.step()` returns immediately, queueing work on the GPU. Without `block_until_ready()`, you're timing the Python dispatch, not the actual computation:
+
+```python
+# ❌ Misleading
+t0 = time.time()
+result = env.step(state, action)
+print(time.time() - t0)  # ~0.001s — just dispatch time
+
+# ✅ Accurate
+t0 = time.time()
+result = env.step(state, action)
+jax.block_until_ready(result.obs)  # wait for GPU
+print(time.time() - t0)  # ~2.8s — actual compute time
+```
+
+---
+
+### 🎓 **Key Takeaways**
+
+1. **Profile before optimizing** — the bottleneck is rarely where you think
+2. **`jax.jit(env.step)` is mandatory** for MJX envs called from Python loops
+3. **GPU at 0% = eager dispatch** — hundreds of tiny kernels instead of one fused one
+4. **Separate warmup from timing** — first call includes JIT compilation
+5. **`block_until_ready()`** — without it, JAX timing is meaningless
+6. **Truncation ≠ termination** — bootstrap through timeouts, zero out true terminals
+
+---
+
 ## Future Topics to Explore
 
-- [ ] `jax.jit` — wrapping `update` for compilation speedup
-- [ ] `jax.lax.scan` vs Python loops inside jitted functions
-- [ ] Performance profiling with JAX (compilation time vs execution time)
+- [x] `jax.lax.scan` vs Python loops inside jitted functions (Session 3 — 18× on update)
 - [ ] Pytrees — how Linen params are structured, `jax.tree_util`
-- [ ] Observation normalization (running statistics)
-- [ ] Connecting to MuJoCo Playground environments
-- [ ] The collect loop: buffer filling + GAE in practice
 - [ ] Device placement (CPU vs GPU)
 - [ ] Checkpointing with Orbax
 - [ ] `flax.struct.dataclass` vs regular dataclass vs NamedTuple
+- [ ] Fully-jitted training loop (scan over collect + update)
+- [ ] Multi-environment benchmarking (Humanoid, Ant, etc.)
 
 ---
 
