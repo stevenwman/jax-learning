@@ -162,11 +162,15 @@ class NetworkConfig:
 
 @dataclass
 class PPOConfig:
-    network: NetworkConfig = field(default_factory=NetworkConfig)
-    lr: float = 3e-4
-    gamma: float = 0.99
+    encoder: EncoderConfig = field(default_factory=EncoderConfig)
+    policy_head: PolicyHeadConfig = field(default_factory=PolicyHeadConfig)
+    value_head: ValueHeadConfig = field(default_factory=ValueHeadConfig)
     clip_eps: float = 0.2
     entropy_coef: float = 0.01
+    gamma: float = 0.99
+    gae_lambda: float = 0.95
+    # Note: optimizer config (LR, schedule, grad clipping) lives outside PPO —
+    # optimizers are constructed externally and passed to PPO.__init__
 ```
 
 ### Replay Buffer
@@ -201,7 +205,7 @@ MuJoCo Warp uses NVIDIA Warp instead of pure JAX for physics, providing massive 
 - May degrade for scenes >60 DoFs (humanoids are borderline)
 
 **Alternatives considered:**
-- *mjlab*: Isaac Lab API + MJWarp, but PyTorch-native — doesn't fit our JAX stack
+- *mjlab*: Isaac Lab API + MJWarp — well-designed env orchestration (composable managers for obs, rewards, domain rand, curriculum) but PyTorch-native. Doesn't fit our JAX stack for algorithms, but excellent design reference for Phase 5 env composition.
 - *Isaac Lab*: Full-featured but heavy (Omniverse runtime), PhysX backend
 
 **Gymnasium fallback**
@@ -560,6 +564,7 @@ class JaxEnv(Protocol):
 - **done vs truncation**: Critical for correct GAE. `done=True` means the episode ended naturally (don't bootstrap). `truncation=True` means the episode hit the time limit (bootstrap the value). PPO implementations that conflate these will learn incorrect value functions.
 - **info dict**: Carries per-step metadata — reward components, contact forces, privileged observations. Needed for logging, curriculum learning, and asymmetric actor-critic.
 - **auto-reset**: MuJoCo Playground environments auto-reset when done. The adapter must handle this correctly — the "next obs" after a done is the first obs of the new episode, not a terminal observation.
+- **Decimation / action repeat**: For envs with decimation > 1 (e.g., locomotion: physics at 200Hz, policy at 50Hz), `step()` applies the same action for multiple physics substeps internally. CartpoleBalance has decimation=1 so this is transparent initially, but locomotion envs will have decimation of 2-4. The env handles this — the algorithm always sees one step per action.
 - **Action handling:** Policies output in [-1, 1] (tanh), env wrapper scales to actual bounds. This is standard practice and simplifies the policy.
 
 ### Trainer Pattern (Functional)
@@ -612,27 +617,31 @@ class Trainer:
 ## Implementation Phases
 
 ### Phase 1: Foundation
-- [ ] Config dataclasses (EncoderConfig, PPOConfig, etc.)
-- [ ] TrainingState `flax.struct.dataclass` (params + optimizer state as pytree)
-- [ ] MLP encoder (nn.Module with configurable LayerNorm + context fusion)
+- [x] Config dataclasses (EncoderConfig, PPOConfig, etc.)
+- [x] TrainingState `flax.struct.dataclass` (params + optimizer state as pytree)
+- [x] MLP encoder (nn.Module with configurable LayerNorm + context fusion)
 - [ ] Scalar Q head
-- [ ] Value head V(s)
-- [ ] Gaussian policy head
+- [x] Value head V(s)
+- [x] Gaussian policy head
 - [ ] Deterministic policy head
-- [ ] Network builder (compose encoder + head from config, init params)
-- [ ] Distribution utilities (TanhNormal, rsample)
-- [ ] Observation normalization (running mean/std, required for benchmarking against Brax)
-- [ ] Rollout buffer
+- [x] Network builder (compose encoder + head from config, init params)
+- [x] Distribution utilities (TanhNormal, rsample)
+- [x] Observation normalization (running mean/std, Welford running stats)
+- [x] Rollout buffer
 - [ ] Wandb logger
 
 ### Phase 2: First Algorithms (standard versions)
-- [ ] PPO implementation
+- [x] PPO implementation (3 variants: eager, jit, scan — scan is 542x faster than eager)
 - [ ] TD3 implementation (standard, min Q)
 - [ ] SAC implementation (standard, min Q)
-- [ ] MuJoCo Playground adapter
-- [ ] Test on dm_control (CartpoleBalance, CheetahRun)
-- [ ] Verify scores match reference (see benchmark table below)
-- [ ] Basic README + example script (ongoing, not deferred)
+- [x] MuJoCo Playground adapter
+- [x] Test on dm_control — CartpoleBalance validated (≥995), CheetahRun in progress (666 at 20M, target ≥700 at 60M)
+- [ ] Verify scores match reference (see benchmark table below) — CartpoleBalance passes, CheetahRun in progress
+- [x] Basic README + example script
+- [x] Orbax checkpointing (timestamped dirs, meta.json, metrics CSV)
+- [x] Video recording (two-phase: scan rollout on GPU, render on CPU)
+- [x] Determinism verified (bit-identical across 3 runs for env + full training)
+- [x] Optimizer decoupled from PPO (externally constructed, supports LR annealing)
 
 **PPO Implementation Details (from RSL-RL / Huang et al. 2022):**
 - Clipped surrogate loss + clipped value loss (optional)
@@ -708,6 +717,8 @@ Actor and critic can receive different observations (e.g., critic sees privilege
 - JAX2TF → TFLite for embedded
 - Unitree SDK, robot arm controllers, etc. — depends on target hardware
 
+**Design reference for Phase 5:** Study mjlab's manager-based term composition pattern (observations, rewards, events, curriculum, domain randomization as modular registered functions with lifecycle hooks: on_reset, on_step, on_interval). Their architecture is the cleanest example of composable env orchestration. We don't need their full 8-manager system, but the pattern of small self-contained terms registered with lifecycle hooks is a good model for our wrappers. See: https://mujocolab.github.io/mjlab/main/source/architecture_overview.html
+
 ### Phase 6: Goal-Conditioned & Unsupervised RL
 
 This is the primary motivation for the framework. Each algorithm has concrete milestones:
@@ -774,6 +785,7 @@ The `context` argument in Encoder already supports skill/goal conditioning — t
 - **FastTD3**: High-throughput TD3/SAC — functional JAX patterns, directly compatible
 - **RSL-RL**: Robotics-focused, PPO + distillation, observation groups
 - **MuJoCo Playground**: Env interface and training scripts (trains via Brax PPO)
+- **mjlab**: Manager-based env design + MuJoCo Warp — reference for Phase 5 env composition patterns (PyTorch-native, not for algorithms)
 - **37 PPO Details**: https://iclr-blog-track.github.io/2022/03/25/ppo-implementation-details/
 
 ### Learning Resources (JAX / Flax / RL)

@@ -3,6 +3,7 @@
 import time
 import jax
 import jax.numpy as jnp
+import optax
 
 from jax_rl.configs import PPOConfig, EncoderConfig, PolicyHeadConfig
 from jax_rl.buffers import RolloutBuffer
@@ -23,6 +24,11 @@ def make_config():
     )
 
 
+def make_optimizers():
+    opt = optax.chain(optax.clip_by_global_norm(0.5), optax.adam(3e-4))
+    return opt, optax.chain(optax.clip_by_global_norm(0.5), optax.adam(3e-4))
+
+
 def make_batch():
     buf = RolloutBuffer(num_steps, num_envs, obs_dim, action_dim)
     for s in range(num_steps):
@@ -32,12 +38,16 @@ def make_batch():
     return buf.get(jnp.zeros(num_envs), gamma=0.99, gae_lambda=0.95)
 
 
-def bench(label, ppo_cls, key, batch, obs):
+def bench(label, ppo_cls, key, batch, obs, needs_optimizers=False):
     print("=" * 60)
     print(label)
     print("=" * 60)
 
-    ppo = ppo_cls(make_config(), obs_dim, action_dim)
+    if needs_optimizers:
+        actor_opt, critic_opt = make_optimizers()
+        ppo = ppo_cls(make_config(), obs_dim, action_dim, actor_opt, critic_opt)
+    else:
+        ppo = ppo_cls(make_config(), obs_dim, action_dim)
     key, ik = jax.random.split(key)
     state = ppo.init(ik)
 
@@ -88,4 +98,4 @@ from jax_rl.algos.ppo_jit import PPO as PPO_jit
 key = bench("ppo_jit.py — JIT closures, Python loops for epochs", PPO_jit, key, batch, obs)
 
 from jax_rl.algos.ppo_scan import PPO as PPO_scan
-key = bench("ppo_scan.py — JIT closures + scan (fully compiled update)", PPO_scan, key, batch, obs)
+key = bench("ppo_scan.py — JIT closures + scan (fully compiled update)", PPO_scan, key, batch, obs, needs_optimizers=True)

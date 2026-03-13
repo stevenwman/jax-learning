@@ -208,15 +208,134 @@ from jax_rl.networks import Actor
 
 ---
 
+## Session 4: CheetahRun, Performance, & Tooling (Mar 2026)
+
+### **`jax.lax.scan` vs Python Loops — 542x Speedup**
+
+Benchmarked three PPO implementations on the same update workload:
+
+| Variant | Per-update time | Speedup |
+|---------|----------------|---------|
+| `ppo.py` (Python loops, no JIT) | 2.712s | 1x |
+| `ppo_jit.py` (JIT closures, Python epoch loops) | 0.089s | 30x |
+| `ppo_scan.py` (JIT + `jax.lax.scan` for epochs) | 0.005s | 542x |
+
+**Why scan matters:** For small MLPs (64×64), 95% of each call was Python↔XLA dispatch overhead. `jax.lax.scan` compiles the entire epoch loop into a single XLA program — no Python roundtrips. The JIT-only version still had Python loops for epochs/minibatches, causing repeated dispatch.
+
+**Lesson:** If your model is small and your loop body is fast, Python loop overhead dominates. `scan` eliminates it entirely.
+
+---
+
+### **Entropy Coefficient Tuning — When Exploration Hurts**
+
+**What happened:** CheetahRun with `entropy_coef=0.001` — entropy grew unboundedly (9→16+), returns plateaued at ~248.
+
+**Root cause:** With unconstrained `log_std` (clipped to [-5, 2]) and a positive entropy bonus, the optimizer pushes `log_std` toward the upper bound to maximize entropy. The policy becomes too noisy to learn anything useful.
+
+**The fix:** Set `entropy_coef=0.0` for CheetahRun. Returns jumped to 503 at 10M steps.
+
+**Diagnostic signals:**
+- Entropy growing monotonically = entropy bonus is dominating task reward
+- High KL + high clip fraction = policy changing too aggressively
+- PLoss near 0 at end = policy gradient exhausted (needs LR annealing)
+
+**Lesson:** Entropy bonus is environment-dependent. Simple tasks (CartpoleBalance) benefit from exploration (`entropy_coef=0.01`). Complex continuous control (CheetahRun) often needs `entropy_coef=0.0` to avoid the entropy-maximization trap.
+
+---
+
+### **LR Annealing for Continuous Control**
+
+**Problem:** With constant LR (3e-4), policy loss converges to ~0 and clip fraction stays high (0.27–0.35) late in training. The policy keeps making large updates even when it should be fine-tuning.
+
+**Fix:** Linear LR schedule annealing to 0 over total gradient steps:
+```python
+total_gradient_steps = num_iterations * num_epochs * num_minibatches
+lr_schedule = optax.linear_schedule(lr, 0.0, total_gradient_steps)
+optimizer = optax.chain(optax.clip_by_global_norm(0.5), optax.adam(lr_schedule))
+```
+
+**Lesson:** LR annealing lets the policy explore broadly early and fine-tune late. Standard practice for PPO on continuous control — Brax does this too.
+
+---
+
+### **Optimizer Decoupling — Keep Algorithms Pure**
+
+PPO shouldn't own optimizer construction. Optimizers (LR schedule, grad clipping, future exotic optimizers like Muon) are external concerns.
+
+**Before:** PPO internally created optimizers from config fields (`actor_lr`, `anneal_lr`, etc.)
+**After:** PPO takes `actor_optimizer` and `critic_optimizer` as constructor args. Train script builds them.
+
+```python
+# train.py constructs optimizers
+actor_optimizer = optax.chain(optax.clip_by_global_norm(0.5), optax.adam(lr_schedule))
+ppo = PPO(config, obs_dim, action_dim, actor_optimizer, critic_optimizer)
+```
+
+**Lesson:** Same principle as dependency injection — algorithms define *what* they optimize, not *how*. Makes swapping optimizers trivial (Muon, Shampoo, etc.) without touching algorithm code.
+
+---
+
+### **Orbax Checkpointing**
+
+- `ocp.StandardCheckpointer()` saves/restores arbitrary pytrees (works with Linen or NNX)
+- **Must call `checkpointer.wait_until_finished()`** after save — otherwise process exit kills the async write thread ("cannot schedule new futures after shutdown")
+- Save `meta.json` alongside checkpoint for config reconstruction (env name, hidden dims, obs/action dims)
+- Checkpoint + metrics CSV + meta.json in timestamped directories: `checkpoints/{timestamp}_{env}_seed{seed}/`
+
+---
+
+### **Video Recording — Two-Phase Approach**
+
+MuJoCo Playground's `env.render()` is CPU-side and can't be JIT'd. Solution:
+
+1. **Phase 1 (GPU):** `jax.lax.scan` the rollout — fast, collects all states
+2. **Phase 2 (CPU):** Render frames from saved states — slow but unavoidable
+
+```python
+# Phase 1: JIT-compiled rollout
+(_, _, _), trajectory = jax.lax.scan(rollout_step, init_carry, None, length=max_steps)
+
+# Phase 2: CPU rendering
+states = [env_state] + [jax.tree.map(lambda x: x[i], trajectory) for i in range(num_frames)]
+frames = env.render(states, camera=camera)
+```
+
+**Lesson:** Separate compute from rendering. The rollout itself is fast (~0.3s for 1000 steps including JIT). Rendering is the bottleneck (~50ms/frame).
+
+---
+
+### **Brax Wrapper Episode Tracking**
+
+**Observation:** Episode returns appear "frozen" for ~16 iterations, then jump. This is NOT a bug.
+
+**Why:** `wrap_for_brax_training` synchronizes episode resets. With 256 envs and episode_length=1000, all envs complete at the same time (every `1000 / 64 ≈ 16` iterations). Between completions, the running average doesn't update because no new episodes finish.
+
+**Lesson:** Don't confuse synchronized episode completion with training stagnation. The policy is still learning between episode boundaries — you just can't see it in the return metric until episodes complete.
+
+---
+
+### **CheetahRun Hyperparameter Journey**
+
+| Config | Return | Notes |
+|--------|--------|-------|
+| entropy_coef=0.001, 10M steps | ~248 | Entropy grew to 16+, policy too noisy |
+| entropy_coef=0.0, 10M steps | ~503 | Entropy controlled, policy learning |
+| entropy_coef=0.0, 20M steps | ~666 | More steps helped, approaching target |
+| + LR annealing, 20M steps | TBD | Running with linear anneal to 0 |
+
+Target: ≥700 at 60M steps (MuJoCo Playground paper). Current best at 20M is 666 — on track.
+
+---
+
 ## Future Topics to Explore
 
-- [ ] `jax.jit` compilation and when to use it
+- [x] `jax.jit` compilation and when to use it
+- [x] `jax.lax.scan` vs Python loops (efficiency) — 542x speedup on PPO update
+- [x] Checkpointing with Orbax
 - [ ] Performance profiling with JAX
-- [ ] `jax.lax.scan` vs Python loops (efficiency)
-- [ ] Pytrees and how NNX models work as pytrees
+- [ ] Pytrees and how Linen models work as pytrees
 - [ ] Device placement (CPU vs GPU)
-- [ ] Batch normalization in JAX/NNX
-- [ ] Checkpointing with Orbax
+- [ ] Layer normalization in JAX/Linen (needed for FastTD3)
 
 ---
 

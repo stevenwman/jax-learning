@@ -1,4 +1,4 @@
-"""PPO training on MuJoCo Playground CartpoleBalance.
+"""PPO training on MuJoCo Playground environments.
 
 Wires together: env, collect loop, GAE, PPO update, obs normalization.
 Uses wrap_for_brax_training for vectorized auto-reset + truncation tracking.
@@ -10,10 +10,16 @@ Truncation handling:
   bootstraps through timeouts instead of zeroing the value estimate.
 """
 
+import argparse
+import csv
+import os
 import time
+from datetime import datetime
 import numpy as np
 import jax
 import jax.numpy as jnp
+import optax
+import orbax.checkpoint as ocp
 
 from mujoco_playground import dm_control_suite
 from mujoco_playground._src.wrapper import wrap_for_brax_training
@@ -28,69 +34,87 @@ from jax_rl.utils.normalization import (
 )
 
 
+# Per-env defaults: (hidden_dim, total_timesteps, num_envs, num_steps, entropy_coef)
+ENV_DEFAULTS = {
+    "CartpoleBalance": ((64, 64), 1_000_000, 64, 64, 0.01),
+    "CheetahRun":      ((256, 256), 20_000_000, 256, 64, 0.0),
+}
+
+
 def train(
+    env_name: str = "CartpoleBalance",
     seed: int = 0,
-    num_envs: int = 64,
-    num_steps: int = 64,
-    total_timesteps: int = 1_000_000,
+    num_envs: int | None = None,
+    num_steps: int | None = None,
+    total_timesteps: int | None = None,
+    hidden_dim: tuple[int, ...] | None = None,
+    entropy_coef: float | None = None,
     episode_length: int = 1000,
     log_interval: int = 1,
 ):
-    """Run PPO training on CartpoleBalance.
+    # ── Resolve defaults per env ──────────────────────────────────────────
+    defaults = ENV_DEFAULTS.get(env_name, ((256, 256), 3_000_000, 128, 64, 0.001))
+    hidden_dim = hidden_dim or defaults[0]
+    total_timesteps = total_timesteps or defaults[1]
+    num_envs = num_envs or defaults[2]
+    num_steps = num_steps or defaults[3]
+    entropy_coef = entropy_coef if entropy_coef is not None else defaults[4]
 
-    Args:
-        seed: Random seed
-        num_envs: Number of parallel environments
-        num_steps: Rollout length per iteration
-        total_timesteps: Total environment steps
-        episode_length: Max steps per episode before truncation
-        log_interval: Print metrics every N iterations
-    """
     # ── Environment ──────────────────────────────────────────────────────
-    env = dm_control_suite.load("CartpoleBalance")
+    env = dm_control_suite.load(env_name)
     env = wrap_for_brax_training(env, episode_length=episode_length)
-    env_step = jax.jit(env.step)  # Fuse MJX physics into one GPU kernel
+    env_step = jax.jit(env.step)
 
     key = jax.random.PRNGKey(seed)
     key, reset_key = jax.random.split(key)
     env_state = env.reset(jax.random.split(reset_key, num_envs))
 
-    obs_dim = env_state.obs.shape[-1]  # 5 for CartpoleBalance
-    action_dim = env.action_size       # 1 for CartpoleBalance
+    obs_dim = env_state.obs.shape[-1]
+    action_dim = env.action_size
 
     samples_per_iter = num_envs * num_steps
     num_iterations = total_timesteps // samples_per_iter
 
     print("=" * 80)
-    print("PPO — CartpoleBalance (MuJoCo Playground)")
+    print(f"PPO — {env_name} (MuJoCo Playground)")
     print("=" * 80)
     print(f"  obs_dim={obs_dim}, action_dim={action_dim}")
     print(f"  num_envs={num_envs}, num_steps={num_steps}, episode_length={episode_length}")
     print(f"  samples/iter={samples_per_iter:,}, iterations={num_iterations}, total_steps={total_timesteps:,}")
 
     # ── PPO setup ────────────────────────────────────────────────────────
+    minibatch_size = min(2048, num_envs * num_steps)
+    num_minibatches = samples_per_iter // minibatch_size
+    num_epochs = 4
+    total_gradient_steps = num_iterations * num_epochs * num_minibatches
+
     config = PPOConfig(
-        encoder=EncoderConfig(obs_dim=obs_dim, hidden_dim=(64, 64)),
+        encoder=EncoderConfig(obs_dim=obs_dim, hidden_dim=hidden_dim),
         policy_head=PolicyHeadConfig(action_dim=action_dim, squash=False),
         num_envs=num_envs,
         num_steps=num_steps,
-        minibatch_size=min(256, num_envs * num_steps),
-        num_epochs=4,
-        actor_lr=3e-4,
-        critic_lr=3e-4,
-        entropy_coef=0.01,
+        minibatch_size=minibatch_size,
+        num_epochs=num_epochs,
+        entropy_coef=entropy_coef,
         gamma=0.99,
         gae_lambda=0.95,
     )
 
-    num_minibatches = samples_per_iter // config.minibatch_size
-    print(f"  minibatch_size={config.minibatch_size}, num_epochs={config.num_epochs}, "
-          f"grad_updates/iter={num_minibatches * config.num_epochs}")
-    print(f"  actor_lr={config.actor_lr}, critic_lr={config.critic_lr}, "
-          f"clip_eps={config.clip_eps}, entropy_coef={config.entropy_coef}")
+    # ── Optimizer (decoupled from PPO) ──────────────────────────────────
+    lr = 3e-4
+    lr_schedule = optax.linear_schedule(lr, 0.0, total_gradient_steps)
+    max_grad_norm = 0.5
+
+    actor_optimizer = optax.chain(optax.clip_by_global_norm(max_grad_norm), optax.adam(lr_schedule))
+    critic_optimizer = optax.chain(optax.clip_by_global_norm(max_grad_norm), optax.adam(lr_schedule))
+
+    print(f"  hidden_dim={hidden_dim}, minibatch_size={config.minibatch_size}, "
+          f"num_epochs={config.num_epochs}, grad_updates/iter={num_minibatches * config.num_epochs}")
+    print(f"  lr={lr} (linear anneal → 0 over {total_gradient_steps:,} grad steps)")
+    print(f"  clip_eps={config.clip_eps}, entropy_coef={config.entropy_coef}")
     print(f"  gamma={config.gamma}, gae_lambda={config.gae_lambda}")
 
-    ppo = PPO(config, obs_dim, action_dim)
+    ppo = PPO(config, obs_dim, action_dim, actor_optimizer, critic_optimizer)
     key, init_key = jax.random.split(key)
     training_state = ppo.init(init_key)
 
@@ -104,6 +128,7 @@ def train(
     # ── Episode return tracking ──────────────────────────────────────────
     episode_rewards = np.zeros(num_envs)
     completed_returns: list[float] = []
+    metrics_log: list[dict] = []
 
     # ── Training loop ────────────────────────────────────────────────────
     print(f"\nJIT-compiling first iteration (expect a delay)...")
@@ -204,6 +229,22 @@ def train(
             if iteration == 0:
                 print(f"  ^ first iteration includes JIT compilation time")
 
+            metrics_log.append({
+                "iteration": iteration,
+                "total_steps": total_steps,
+                "episodes": n_eps,
+                "avg_return": float(avg_ret),
+                "min_return": float(min_ret),
+                "max_return": float(max_ret),
+                "policy_loss": float(metrics["policy_loss"]),
+                "value_loss": float(metrics["value_loss"]),
+                "entropy": float(metrics["entropy"]),
+                "approx_kl": float(metrics["approx_kl"]),
+                "clip_fraction": float(metrics["clip_fraction"]),
+                "sps": sps,
+                "iter_time": iter_time,
+            })
+
     print("=" * 80)
     if completed_returns:
         final = completed_returns[-100:]
@@ -211,10 +252,59 @@ def train(
         print(f"  Total episodes: {len(completed_returns)}")
         print(f"  Final avg return (last 100 eps): {np.mean(final):.1f}")
         print(f"  Final max return (last 100 eps): {np.max(final):.1f}")
-        print(f"  Target: >= 950")
     else:
         print("Done. No episodes completed.")
 
+    # ── Save checkpoint ───────────────────────────────────────────────────
+    import json
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    env_short = env_name.lower().replace(" ", "_")
+    ckpt_dir = os.path.join("checkpoints", f"{timestamp}_{env_short}_seed{seed}")
+    os.makedirs(ckpt_dir, exist_ok=True)
+
+    ckpt = {"training_state": training_state, "norm_state": norm_state}
+    checkpointer = ocp.StandardCheckpointer()
+    checkpointer.save(os.path.abspath(ckpt_dir), ckpt, force=True)
+    checkpointer.wait_until_finished()
+
+    # Save config metadata so record_video.py can reconstruct the network
+    meta = {"env_name": env_name, "hidden_dim": list(hidden_dim),
+            "obs_dim": obs_dim, "action_dim": action_dim}
+    with open(os.path.join(ckpt_dir, "meta.json"), "w") as f:
+        json.dump(meta, f)
+
+    # Save metrics CSV
+    if metrics_log:
+        csv_path = os.path.join(ckpt_dir, "metrics.csv")
+        with open(csv_path, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=metrics_log[0].keys())
+            writer.writeheader()
+            writer.writerows(metrics_log)
+
+    print(f"  Checkpoint saved to {ckpt_dir}")
+
 
 if __name__ == "__main__":
-    train()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--env", type=str, default="CartpoleBalance")
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--num-envs", type=int, default=None)
+    parser.add_argument("--num-steps", type=int, default=None)
+    parser.add_argument("--total-timesteps", type=int, default=None)
+    parser.add_argument("--hidden-dim", type=int, nargs="+", default=None)
+    parser.add_argument("--entropy-coef", type=float, default=None)
+    parser.add_argument("--episode-length", type=int, default=1000)
+    parser.add_argument("--log-interval", type=int, default=1)
+    args = parser.parse_args()
+
+    train(
+        env_name=args.env,
+        seed=args.seed,
+        num_envs=args.num_envs,
+        num_steps=args.num_steps,
+        total_timesteps=args.total_timesteps,
+        hidden_dim=tuple(args.hidden_dim) if args.hidden_dim else None,
+        entropy_coef=args.entropy_coef,
+        episode_length=args.episode_length,
+        log_interval=args.log_interval,
+    )

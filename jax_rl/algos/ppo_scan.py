@@ -35,6 +35,8 @@ class PPO:
         config: PPOConfig,
         obs_dim: int,
         action_dim: int,
+        actor_optimizer: optax.GradientTransformation,
+        critic_optimizer: optax.GradientTransformation,
     ) -> None:
         self.config = config
 
@@ -48,14 +50,12 @@ class PPO:
 
         self.actor = Actor(encoder_config, policy_config)
         self.critic = Critic(encoder_config, config.value_head)
-        self.actor_optimizer = optax.chain(optax.clip_by_global_norm(config.max_grad_norm), optax.adam(config.actor_lr))
-        self.critic_optimizer = optax.chain(optax.clip_by_global_norm(config.max_grad_norm), optax.adam(config.critic_lr))
+        self.actor_optimizer = actor_optimizer
+        self.critic_optimizer = critic_optimizer
 
         # Capture immutable refs for closures
         actor = self.actor
         critic = self.critic
-        actor_optimizer = self.actor_optimizer
-        critic_optimizer = self.critic_optimizer
         clip_eps = config.clip_eps
         entropy_coef = config.entropy_coef
         normalize_advantage = config.normalize_advantage
