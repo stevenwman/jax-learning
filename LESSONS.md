@@ -321,9 +321,10 @@ frames = env.render(states, camera=camera)
 | entropy_coef=0.001, 10M steps | ~248 | Entropy grew to 16+, policy too noisy |
 | entropy_coef=0.0, 10M steps | ~503 | Entropy controlled, policy learning |
 | entropy_coef=0.0, 20M steps | ~666 | More steps helped, approaching target |
-| + LR annealing, 20M steps | TBD | Running with linear anneal to 0 |
+| + LR annealing, 20M steps | ~615 | Annealed too aggressively, policy froze late |
+| Preset HPs (2048 envs, lr=1e-3, 16 epochs, reward_scaling=10) | **826** | Passed target at 20M steps |
 
-Target: ≥700 at 60M steps (MuJoCo Playground paper). Current best at 20M is 666 — on track.
+Target was ≥700 at 60M steps (MuJoCo Playground paper). Hit **826 at 20M** with proper HPs. Key changes: 2048 envs, shorter rollouts (30 steps), higher LR (1e-3), more epochs (16), reward scaling (10x).
 
 ---
 

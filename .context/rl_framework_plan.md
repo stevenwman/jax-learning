@@ -635,8 +635,8 @@ class Trainer:
 - [ ] TD3 implementation (standard, min Q)
 - [ ] SAC implementation (standard, min Q)
 - [x] MuJoCo Playground adapter
-- [x] Test on dm_control — CartpoleBalance validated (≥995), CheetahRun in progress (666 at 20M, target ≥700 at 60M)
-- [ ] Verify scores match reference (see benchmark table below) — CartpoleBalance passes, CheetahRun in progress
+- [x] Test on dm_control — CartpoleBalance validated (≥995), CheetahRun validated (826 at 20M, target was ≥700 at 60M)
+- [ ] Verify scores match reference (see benchmark table below) — CartpoleBalance passes, CheetahRun passes
 - [x] Basic README + example script
 - [x] Orbax checkpointing (timestamped dirs, meta.json, metrics CSV)
 - [x] Video recording (two-phase: scan rollout on GPU, render on CPU)

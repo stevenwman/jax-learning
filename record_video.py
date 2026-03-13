@@ -71,7 +71,6 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
         encoder=EncoderConfig(obs_dim=obs_dim, hidden_dim=hidden_dim),
         policy_head=PolicyHeadConfig(action_dim=action_dim, squash=False),
         num_envs=1,
-        num_steps=64,
     )
 
     # Dummy optimizers — only needed for init shapes, not training

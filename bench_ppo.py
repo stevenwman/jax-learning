@@ -20,7 +20,7 @@ def make_config():
     return PPOConfig(
         encoder=EncoderConfig(obs_dim=obs_dim, hidden_dim=(64, 64)),
         policy_head=PolicyHeadConfig(action_dim=action_dim, squash=False),
-        num_envs=num_envs, num_steps=num_steps, minibatch_size=256,
+        num_envs=num_envs, minibatch_size=256,
     )
 
 

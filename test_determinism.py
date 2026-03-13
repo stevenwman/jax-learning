@@ -99,13 +99,12 @@ def run_full_training(seed=0, num_iters=50):
         encoder=EncoderConfig(obs_dim=obs_dim, hidden_dim=(64, 64)),
         policy_head=PolicyHeadConfig(action_dim=action_dim, squash=False),
         num_envs=num_envs,
-        num_steps=num_steps,
         minibatch_size=min(256, num_envs * num_steps),
         num_epochs=4,
         entropy_coef=0.01,
-        gamma=0.99,
-        gae_lambda=0.95,
     )
+    gamma = 0.99
+    gae_lambda = 0.95
 
     actor_opt = optax.chain(optax.clip_by_global_norm(0.5), optax.adam(3e-4))
     critic_opt = optax.chain(optax.clip_by_global_norm(0.5), optax.adam(3e-4))
@@ -159,7 +158,7 @@ def run_full_training(seed=0, num_iters=50):
             training_state, normed_next_obs, bootstrap_key, deterministic=True
         )
 
-        batch = buffer.get(next_value, gamma=config.gamma, gae_lambda=config.gae_lambda)
+        batch = buffer.get(next_value, gamma=gamma, gae_lambda=gae_lambda)
         key, update_key = jax.random.split(key)
         training_state, metrics = ppo.update(training_state, batch, update_key)
 
