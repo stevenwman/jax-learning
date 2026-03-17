@@ -43,6 +43,7 @@ class RolloutBuffer:
         self.actions = jnp.zeros((num_steps, num_envs, action_dim))
         self.rewards = jnp.zeros((num_steps, num_envs))
         self.dones = jnp.zeros((num_steps, num_envs))
+        self.truncations = jnp.zeros((num_steps, num_envs))
         self.log_probs = jnp.zeros((num_steps, num_envs))
         self.values = jnp.zeros((num_steps, num_envs))
         self.ptr = 0
@@ -53,6 +54,7 @@ class RolloutBuffer:
         action: jax.Array,
         reward: jax.Array,
         done: jax.Array,
+        truncation: jax.Array,
         log_prob: jax.Array,
         value: jax.Array,
     ) -> None:
@@ -63,6 +65,7 @@ class RolloutBuffer:
             action: Actions, shape (num_envs, action_dim)
             reward: Rewards, shape (num_envs,)
             done: Done flags, shape (num_envs,)
+            truncation: Truncation flags, shape (num_envs,)
             log_prob: Log probabilities, shape (num_envs,)
             value: State values, shape (num_envs,)
         """
@@ -70,6 +73,7 @@ class RolloutBuffer:
         self.actions = self.actions.at[self.ptr].set(action)
         self.rewards = self.rewards.at[self.ptr].set(reward)
         self.dones = self.dones.at[self.ptr].set(done)
+        self.truncations = self.truncations.at[self.ptr].set(truncation)
         self.log_probs = self.log_probs.at[self.ptr].set(log_prob)
         self.values = self.values.at[self.ptr].set(value)
         self.ptr += 1
@@ -93,6 +97,7 @@ class RolloutBuffer:
             self.rewards,
             self.values,
             self.dones,
+            self.truncations,
             next_value,
             gamma,
             gae_lambda,
@@ -114,6 +119,7 @@ def compute_gae(
     rewards: jax.Array,
     values: jax.Array,
     dones: jax.Array,
+    truncations: jax.Array,
     next_value: jax.Array,
     gamma: float,
     gae_lambda: float,
@@ -124,10 +130,17 @@ def compute_gae(
         δ_t = r_t + γ * V(s_{t+1}) * (1 - done_t) - V(s_t)
         A_t = δ_t + (γ * λ) * (1 - done_t) * A_{t+1}
 
+    Truncation handling:
+        When an episode truncates (timeout), the env auto-resets and the stored
+        next obs is the RESET obs, not the terminal obs. So values[t+1] would be
+        V(reset_obs) instead of V(truncated_obs). We approximate V(truncated_obs)
+        ≈ V(s_t) (the value before the action), matching Brax's approach.
+
     Args:
         rewards: Rewards, shape (num_steps, num_envs)
         values: State values, shape (num_steps, num_envs)
         dones: Done flags, shape (num_steps, num_envs)
+        truncations: Truncation flags, shape (num_steps, num_envs)
         next_value: Value of next state after last step, shape (num_envs,)
         gamma: Discount factor
         gae_lambda: GAE lambda parameter (bias-variance tradeoff)
@@ -138,23 +151,22 @@ def compute_gae(
             returns: TD(λ) returns, shape (num_steps, num_envs)
     """
     # Compute next values: V(s_{t+1}) for each timestep
-    # Shape: (num_steps, num_envs)
     next_values = jnp.concatenate([values[1:], next_value[None]], axis=0)
 
+    # For truncated transitions, replace V(reset_obs) with V(s_t) as bootstrap
+    # approximation. This avoids using the value of the wrong state.
+    next_values = jnp.where(truncations, values, next_values)
+
+    # Effective done for GAE: true terminals stop bootstrap, truncations don't
+    # (the bootstrap value correction above handles truncations instead)
+    effective_dones = dones * (1.0 - truncations)
+
     def scan_fn(gae: jax.Array, t: int) -> tuple[jax.Array, jax.Array]:
-        """Scan function for backward GAE computation.
+        # TD error: use effective_dones (0 for truncation → enables bootstrap)
+        delta = rewards[t] + gamma * next_values[t] * (1 - effective_dones[t]) - values[t]
 
-        Args:
-            gae: Running GAE from future timesteps, shape (num_envs,)
-            t: Current timestep index
-
-        Returns:
-            (next_gae, current_advantage) tuple
-        """
-        # TD error: δ_t = r_t + γ * V(s_{t+1}) * (1 - done_t) - V(s_t)
-        delta = rewards[t] + gamma * next_values[t] * (1 - dones[t]) - values[t]
-
-        # GAE: A_t = δ_t + (γ * λ) * (1 - done_t) * A_{t+1}
+        # GAE propagation: use actual dones (1 for truncation → stops leakage
+        # from next episode's advantages into current episode)
         gae = delta + gamma * gae_lambda * (1 - dones[t]) * gae
 
         return gae, gae
@@ -162,8 +174,8 @@ def compute_gae(
     # Run backward scan from T-1 to 0
     _, advantages = jax.lax.scan(
         scan_fn,
-        init=jnp.zeros(next_value.shape[0]),  # Initial GAE = 0
-        xs=jnp.arange(rewards.shape[0])[::-1],  # Reverse timesteps
+        init=jnp.zeros(next_value.shape[0]),
+        xs=jnp.arange(rewards.shape[0])[::-1],
     )
 
     # Reverse advantages back to forward order

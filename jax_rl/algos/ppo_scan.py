@@ -41,15 +41,17 @@ class PPO:
         self.config = config
 
         encoder_config = config.encoder
+        critic_encoder_config = config.critic_encoder or encoder_config
         policy_config = config.policy_head
         encoder_config.obs_dim = obs_dim
+        critic_encoder_config.obs_dim = obs_dim
         policy_config.action_dim = action_dim
 
         self.num_envs = config.num_envs
         self.obs_dim = obs_dim
 
         self.actor = Actor(encoder_config, policy_config)
-        self.critic = Critic(encoder_config, config.value_head)
+        self.critic = Critic(critic_encoder_config, config.value_head)
         self.actor_optimizer = actor_optimizer
         self.critic_optimizer = critic_optimizer
 
@@ -64,9 +66,6 @@ class PPO:
         minibatch_size = config.minibatch_size
 
         def _minibatch_step(state, mb_obs, mb_actions, mb_old_log_probs, mb_returns, mb_adv):
-            if normalize_advantage:
-                mb_adv = (mb_adv - mb_adv.mean()) / (mb_adv.std() + 1e-8)
-
             def value_loss_fn(critic_params):
                 values = critic.apply(critic_params, mb_obs)
                 return jnp.mean((values - mb_returns) ** 2)
@@ -87,6 +86,9 @@ class PPO:
                     "entropy": entropy,
                     "approx_kl": approx_kl,
                     "clip_fraction": clip_fraction,
+                    "log_std_mean": mb_log_std.mean(),
+                    "log_std_min": mb_log_std.min(),
+                    "log_std_max": mb_log_std.max(),
                 }
 
             (_, actor_metrics), actor_grads = jax.value_and_grad(actor_loss_fn, has_aux=True)(state.actor_params)
@@ -111,10 +113,17 @@ class PPO:
             N = obs.shape[0]
             num_minibatches = N // minibatch_size
 
+            # Normalize advantages over entire batch (not per-minibatch)
+            if normalize_advantage:
+                advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+
             def epoch_step(carry, _):
                 state, key, metrics_sum = carry
                 key, subkey = jax.random.split(key)
                 perm = jax.random.permutation(subkey, N)
+                # Truncate to exact multiple of minibatch_size
+                usable = num_minibatches * minibatch_size
+                perm = perm[:usable]
 
                 # Reshape permuted data into (num_minibatches, minibatch_size, ...)
                 mb_obs = obs[perm].reshape(num_minibatches, minibatch_size, -1)
@@ -143,6 +152,9 @@ class PPO:
                 "approx_kl": jnp.float32(0),
                 "clip_fraction": jnp.float32(0),
                 "value_loss": jnp.float32(0),
+                "log_std_mean": jnp.float32(0),
+                "log_std_min": jnp.float32(0),
+                "log_std_max": jnp.float32(0),
             }
 
             (state, _, metrics_sum), _ = jax.lax.scan(

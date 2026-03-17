@@ -41,20 +41,29 @@ ENV_DEFAULTS = {
 
 def record(env_name: str | None = None, checkpoint: str | None = None,
            out: str = "rollout.mp4", max_steps: int = 1000,
-           hidden_dim: tuple[int, ...] | None = None, camera: str | None = None):
+           camera: str | None = None):
     # Load config from checkpoint metadata if available
+    policy_hidden_dim = (32, 32, 32, 32)
+    value_hidden_dim = (256, 256, 256, 256, 256)
+    activation = "swish"
     if checkpoint is not None:
         meta_path = os.path.join(checkpoint, "meta.json")
         if os.path.exists(meta_path):
             with open(meta_path) as f:
                 meta = json.load(f)
             env_name = env_name or meta["env_name"]
-            hidden_dim = hidden_dim or tuple(meta["hidden_dim"])
-            print(f"Loaded meta: env={env_name}, hidden_dim={hidden_dim}")
+            # Support both old (hidden_dim) and new (policy/value_hidden_dim) meta formats
+            if "policy_hidden_dim" in meta:
+                policy_hidden_dim = tuple(meta["policy_hidden_dim"])
+                value_hidden_dim = tuple(meta["value_hidden_dim"])
+                activation = meta.get("activation", "swish")
+            elif "hidden_dim" in meta:
+                policy_hidden_dim = tuple(meta["hidden_dim"])
+                value_hidden_dim = tuple(meta["hidden_dim"])
+            print(f"Loaded meta: env={env_name}, policy_net={policy_hidden_dim}, value_net={value_hidden_dim}")
 
     env_name = env_name or "CartpoleBalance"
     defaults = ENV_DEFAULTS.get(env_name, ((256, 256), None))
-    hidden_dim = hidden_dim or defaults[0]
     camera = camera or defaults[1]
 
     env = dm_control_suite.load(env_name)
@@ -68,7 +77,8 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
     action_dim = env.action_size
 
     config = PPOConfig(
-        encoder=EncoderConfig(obs_dim=obs_dim, hidden_dim=hidden_dim),
+        encoder=EncoderConfig(obs_dim=obs_dim, hidden_dim=policy_hidden_dim, activation=activation),
+        critic_encoder=EncoderConfig(obs_dim=obs_dim, hidden_dim=value_hidden_dim, activation=activation),
         policy_head=PolicyHeadConfig(action_dim=action_dim, squash=False),
         num_envs=1,
     )
@@ -163,12 +173,10 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint", type=str, default=None)
     parser.add_argument("--out", type=str, default="rollout.mp4")
     parser.add_argument("--max-steps", type=int, default=1000)
-    parser.add_argument("--hidden-dim", type=int, nargs="+", default=None)
     parser.add_argument("--camera", type=str, default=None)
     args = parser.parse_args()
     record(
         env_name=args.env, checkpoint=args.checkpoint, out=args.out,
         max_steps=args.max_steps,
-        hidden_dim=tuple(args.hidden_dim) if args.hidden_dim else None,
         camera=args.camera,
     )

@@ -18,15 +18,18 @@ class TrainConfig:
 
     # Rollout
     num_envs: int = 64
-    num_steps: int = 64  # Unroll length per iteration
+    num_steps: int = 64  # Unroll length per collect→update cycle
+    num_updates_per_batch: int = 1  # Collect→update cycles per iteration (Brax uses 16)
     total_timesteps: int = 1_000_000
 
     # Network
-    hidden_dim: tuple[int, ...] = (64, 64)
+    policy_hidden_dim: tuple[int, ...] = (32, 32, 32, 32)
+    value_hidden_dim: tuple[int, ...] = (256, 256, 256, 256, 256)
+    activation: str = "swish"
 
     # Optimizer
     lr: float = 3e-4
-    max_grad_norm: float = 0.5
+    max_grad_norm: float | None = None  # None = no clipping (Brax default)
     anneal_lr: bool = True
 
     # Shared RL

@@ -74,23 +74,7 @@ b = jax.random.normal(subkey2, shape=(10,))  # Independent!
 
 ---
 
-#### **3. Vectorization with `jax.vmap`**
-**Problem:** Need to apply a function over a batch dimension without a Python loop.
-
-**Example:**
-```python
-# Sample actions for all timesteps
-batched_action_select = jax.vmap(ppo.select_action, in_axes=(0, 0, None))
-actions, log_probs, values = batched_action_select(obs, keys, False)
-#                                                    ^    ^     ^
-#                                              vmap over obs and keys, broadcast False
-```
-
-**Lesson:** `vmap` is JAX's way to vectorize. Specify which axes to map over with `in_axes`.
-
----
-
-#### **4. Array Reshaping with `-1`**
+#### **3. Array Reshaping with `-1`**
 `-1` means "infer this dimension from the rest."
 
 ```python
@@ -128,13 +112,16 @@ PPO can use either depending on the environment.
 - Easier to debug (losses don't mix)
 
 ```python
-# ✅ Our approach
-actor_optimizer = nnx.Optimizer(self.actor, actor_tx, wrt=nnx.Param)
-critic_optimizer = nnx.Optimizer(self.critic, critic_tx, wrt=nnx.Param)
+# ✅ Our approach (optax + TrainingState)
+actor_optimizer = optax.adam(lr_schedule)
+critic_optimizer = optax.adam(lr_schedule)
 
-# Update separately
-actor_optimizer.update(self.actor, actor_grads)
-critic_optimizer.update(self.critic, critic_grads)
+# PPO takes them as constructor args
+ppo = PPO(config, obs_dim, action_dim, actor_optimizer, critic_optimizer)
+
+# Internally: separate grad/update calls per network
+actor_updates, new_actor_opt = actor_optimizer.update(actor_grads, state.actor_opt_state)
+value_updates, new_value_opt = critic_optimizer.update(value_grads, state.critic_opt_state)
 ```
 
 ---
@@ -166,17 +153,6 @@ gaussian_log_prob - log_std: OK ✓
 gaussian_log_prob - action: OK ✓
 gaussian_log_prob - log_prob RESULT: NaN ❌  ← Found it!
 ```
-
-#### **2. NNX 0.11+ API Changes**
-```python
-# New API requires wrt parameter
-optimizer = nnx.Optimizer(model, tx, wrt=nnx.Param)
-
-# Update requires both model and grads
-optimizer.update(model, grads)
-```
-
----
 
 ### 📦 **Package Structure**
 
@@ -249,9 +225,9 @@ Benchmarked three PPO implementations on the same update workload:
 
 **Fix:** Linear LR schedule annealing to 0 over total gradient steps:
 ```python
-total_gradient_steps = num_iterations * num_epochs * num_minibatches
+total_gradient_steps = num_iterations * num_updates_per_batch * num_epochs * num_minibatches
 lr_schedule = optax.linear_schedule(lr, 0.0, total_gradient_steps)
-optimizer = optax.chain(optax.clip_by_global_norm(0.5), optax.adam(lr_schedule))
+optimizer = optax.adam(lr_schedule)  # optionally chain with clip_by_global_norm
 ```
 
 **Lesson:** LR annealing lets the policy explore broadly early and fine-tune late. Standard practice for PPO on continuous control — Brax does this too.
@@ -266,8 +242,11 @@ PPO shouldn't own optimizer construction. Optimizers (LR schedule, grad clipping
 **After:** PPO takes `actor_optimizer` and `critic_optimizer` as constructor args. Train script builds them.
 
 ```python
-# train.py constructs optimizers
-actor_optimizer = optax.chain(optax.clip_by_global_norm(0.5), optax.adam(lr_schedule))
+# train.py constructs optimizers — grad clipping is optional
+if max_grad_norm is not None:
+    actor_optimizer = optax.chain(optax.clip_by_global_norm(max_grad_norm), optax.adam(lr_schedule))
+else:
+    actor_optimizer = optax.adam(lr_schedule)
 ppo = PPO(config, obs_dim, action_dim, actor_optimizer, critic_optimizer)
 ```
 
@@ -304,16 +283,6 @@ frames = env.render(states, camera=camera)
 
 ---
 
-### **Brax Wrapper Episode Tracking**
-
-**Observation:** Episode returns appear "frozen" for ~16 iterations, then jump. This is NOT a bug.
-
-**Why:** `wrap_for_brax_training` synchronizes episode resets. With 256 envs and episode_length=1000, all envs complete at the same time (every `1000 / 64 ≈ 16` iterations). Between completions, the running average doesn't update because no new episodes finish.
-
-**Lesson:** Don't confuse synchronized episode completion with training stagnation. The policy is still learning between episode boundaries — you just can't see it in the return metric until episodes complete.
-
----
-
 ### **CheetahRun Hyperparameter Journey**
 
 | Config | Return | Notes |
@@ -325,6 +294,134 @@ frames = env.render(states, camera=camera)
 | Preset HPs (2048 envs, lr=1e-3, 16 epochs, reward_scaling=10) | **826** | Passed target at 20M steps |
 
 Target was ≥700 at 60M steps (MuJoCo Playground paper). Hit **826 at 20M** with proper HPs. Key changes: 2048 envs, shorter rollouts (30 steps), higher LR (1e-3), more epochs (16), reward scaling (10x).
+
+---
+
+## Session 5: HumanoidRun Debugging & Pipeline Robustness (Mar 2026)
+
+### **State-Independent vs State-Dependent log_std**
+
+**Problem:** HumanoidRun (21-dim actions) NaN'd repeatedly with state-dependent std (`nn.Dense` mapping features → log_std).
+
+**Root cause:** Dense layer produces unpredictable initial log_std values. Outlier observations spike log_std → entropy explodes → NaN. With 21 action dims, the entropy is already ~30 nats from dimensionality alone (`0.5 * 21 * (1 + log(2π)) ≈ 29.8`).
+
+**Fix:** State-independent log_std (`nn.Param`), matching Brax PPO:
+```python
+# State-independent: single learned vector, same for all observations
+log_std = self.param('log_std', nn.initializers.constant(jnp.log(init_noise_std)), (action_dim,))
+log_std = jnp.broadcast_to(log_std, mean.shape)
+
+# MUST clip in both modes — without this, entropy bonus pushes log_std → ∞
+log_std = jnp.clip(log_std, log_std_min, log_std_max)
+```
+
+**Lesson:** For PPO, state-independent std is more stable. Save state-dependent std for SAC where maximum entropy is the objective. Always clip log_std regardless of mode.
+
+---
+
+### **Minibatch Count, Not Size, Is the Right Parameterization**
+
+**Problem:** Hardcoded `minibatch_size = min(2048, samples_per_iter)`. When we increased `num_steps` from 30 to 480 (16x more data), `samples_per_iter` went from 61k to 983k. But minibatch_size stayed at 2048, so `num_minibatches` went from 30 to 480. With 16 epochs, that's 7,680 gradient steps per iteration — Brax uses 512.
+
+**The coupling:** `grad_steps = num_minibatches × num_epochs`. Fixing `minibatch_size` means `num_minibatches` scales with data volume. Fixing `num_minibatches` keeps gradient steps constant regardless of data volume.
+
+**Fix:** Parameterize by `num_minibatches` (default 32, matching Brax). Derive `minibatch_size = samples_per_iter // num_minibatches`.
+
+**Lesson:** When comparing against a reference implementation, match the *structure* (what's fixed vs derived), not just the numbers. Brax fixes `num_minibatches=32` and `batch_size=1024`; we were fixing `minibatch_size=2048` which is a completely different parameterization.
+
+---
+
+### **Batch-Level vs Per-Minibatch Advantage Normalization**
+
+Brax normalizes advantages over the entire batch (~983k samples) before splitting into minibatches. We were normalizing per-minibatch (~2k samples), giving noisy mean/std estimates.
+
+With 30k+ samples per minibatch (after the fix), the difference is small. But for smaller setups or early in training, batch-level normalization is strictly better.
+
+---
+
+### **Reshape Crash on Non-Divisible Batches**
+
+`obs[perm].reshape(num_minibatches, minibatch_size, -1)` silently assumes `N == num_minibatches * minibatch_size`. If not (e.g., 5000 samples with minibatch_size=1024 → 4 batches of 1024 = 4096 ≠ 5000), it crashes.
+
+**Fix:** Truncate the permutation: `perm = perm[:num_minibatches * minibatch_size]`.
+
+**Lesson:** Always handle the case where data doesn't divide evenly. It works by coincidence for tuned presets but breaks for arbitrary configs.
+
+---
+
+### **HumanoidRun Diagnostic Signals**
+
+Added `log_std_mean`, `log_std_min`, `log_std_max` to PPO metrics. Key observations:
+
+| Signal | Healthy | Unhealthy |
+|--------|---------|-----------|
+| Clip fraction | 0.05–0.20 | 0.50–0.80 (policy overshooting) |
+| Entropy | Slowly decreasing | Growing monotonically (entropy bonus dominating) |
+| VLoss | Stable, tracks returns | Collapsing to 0.00 (overfitting to batch) |
+| KL | < 0.1 | Spikes > 1.0 (imminent NaN) |
+| log_std | Slowly decreasing from ~0 | Growing or stuck at clip bounds |
+
+---
+
+### **Interleaved Collect→Update (num_updates_per_batch)**
+
+**Problem:** With one long rollout (480 steps) followed by 4 epochs of updates, the policy used for collection diverges significantly from the policy being optimized. With short rollouts (20 steps) + 4 epochs, we massively overtrain on tiny batches — policy collapsed (entropy 25 → -1.25, clip fraction → 0.000).
+
+**Brax's approach:** Instead of `collect(long) → update(many epochs)`, Brax does:
+```
+for _ in range(num_updates_per_batch):  # 16 cycles
+    data = collect(20 steps)             # fresh data each time
+    sgd_update(data, num_epochs=1)       # just 1 epoch
+```
+
+**Why it matters:**
+- Policy stays close to the data-collecting policy (lower staleness)
+- Episode resets naturally stagger across cycles (fixes VLoss oscillation from synchronized resets)
+- Same total gradient steps (16 × 1 × 32 = 512) but each uses on-policy data
+- `num_updates_per_batch=1, num_epochs=4` recovers our old behavior
+
+**Key numbers (HumanoidRun):**
+
+| Config | Grad steps/iter | Data freshness | Result |
+|--------|----------------|----------------|--------|
+| num_steps=480, epochs=4, updates=1 | 128 | 480 steps stale | Returns 7.6 (slow) |
+| num_steps=20, epochs=4, updates=1 | 128 | Fresh but overtrained | Collapsed (entropy → -1.25) |
+| num_steps=20, epochs=1, updates=16 | 512 | Fresh each cycle | Brax reference config |
+
+**Lesson:** The right granularity is many short collect→update cycles, not fewer long ones. `num_updates_per_batch` generalizes our pipeline — setting it to 1 recovers the old behavior.
+
+---
+
+### **VLoss Oscillation from Synchronized Episode Resets**
+
+**Problem:** VLoss alternated between ~0.35 and ~61.5 every other iteration. Even iterations (episode boundaries) had huge VLoss; odd iterations had near-zero VLoss.
+
+**Root cause:** `wrap_for_brax_training` resets all envs at the same timestep (episode_length=1000). With 4096 envs all resetting simultaneously, the value function sees completely different return distributions on boundary iterations vs mid-episode iterations. It overfits to mid-episode predictions, then gets blindsided at boundaries.
+
+**How Brax avoids this:** With `num_updates_per_batch=16` and `num_steps=20`, updates happen every 20 steps. After the first episode completes, the 16 sequential collection phases within an iteration mean envs are at different points in their episodes across update cycles.
+
+**Lesson:** Synchronized resets + long rollouts = VLoss instability. Interleaved short rollouts naturally desynchronize episode phases.
+
+---
+
+### **Truncation Bootstrap Bug in Auto-Reset Environments**
+
+**Problem:** HumanoidRun returns stuck at ~7.6 at 60M steps (reference: 50-200). Multiple HP tuning attempts couldn't close the gap. Turns out it was a correctness bug, not a hyperparameter issue.
+
+**Root cause:** `wrap_for_brax_training` auto-resets envs on episode timeout. After reset, `env_state.obs` is the **reset observation** (humanoid standing still), not the terminal observation (humanoid running). Our GAE used `values[t+1] = V(reset_obs)` as the bootstrap for truncated transitions. Since V(reset) << V(running), this created a systematic negative bias — good trajectories were undervalued at every episode boundary.
+
+**Wrong fix (reward adjustment):** Adding `gamma * V(s_t) * truncation` to the reward creates massive synchronized reward spikes (all envs truncate at once) → NaN at iter 9.
+
+**Correct fix (GAE-level):**
+```python
+# In compute_gae: replace V(reset_obs) with V(s_t) at truncation steps
+next_values = jnp.where(truncations, values, next_values)
+effective_dones = dones * (1.0 - truncations)  # bootstrap through truncations
+```
+
+No reward modification. The truncation flag flows through the buffer into GAE, where the bootstrap value is corrected without creating spikes.
+
+**Lesson:** Auto-reset environments silently corrupt value estimates at episode boundaries. Always check what observation the value function sees after a reset — if it's the wrong state, the entire value function learns wrong targets. Fix in GAE (where the bootstrap happens), not in the reward signal.
 
 ---
 
