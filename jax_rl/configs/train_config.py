@@ -26,11 +26,19 @@ class TrainConfig:
     policy_hidden_dim: tuple[int, ...] = (32, 32, 32, 32)
     value_hidden_dim: tuple[int, ...] = (256, 256, 256, 256, 256)
     activation: str = "swish"
+    squash: bool = True  # Tanh-squash actions to [-1, 1] (Brax default)
+    state_dependent_std: bool = False  # Network-predicted std (Brax tanh_normal default)
 
     # Optimizer
     lr: float = 3e-4
     max_grad_norm: float | None = None  # None = no clipping (Brax default)
     anneal_lr: bool = True
+
+    # Environment behavior
+    # True for auto-reset envs (MuJoCo Playground, Brax, IsaacGym) where next_obs after
+    # timeout is the reset observation, not the true terminal obs. False for raw Gymnasium,
+    # raw dm_control, or real robots where next_obs is trustworthy.
+    handle_truncation: bool = True
 
     # Shared RL
     gamma: float = 0.99

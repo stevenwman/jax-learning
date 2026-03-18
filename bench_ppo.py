@@ -97,5 +97,5 @@ key = bench("ppo.py — Python loops, no JIT on update/select", PPO_eager, key, 
 from jax_rl.algos.ppo_jit import PPO as PPO_jit
 key = bench("ppo_jit.py — JIT closures, Python loops for epochs", PPO_jit, key, batch, obs)
 
-from jax_rl.algos.ppo_scan import PPO as PPO_scan
-key = bench("ppo_scan.py — JIT closures + scan (fully compiled update)", PPO_scan, key, batch, obs, needs_optimizers=True)
+from jax_rl.algos.ppo import PPO as PPO_scan
+key = bench("ppo.py — JIT closures + scan (fully compiled update)", PPO_scan, key, batch, obs, needs_optimizers=True)

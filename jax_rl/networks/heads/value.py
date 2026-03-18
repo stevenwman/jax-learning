@@ -12,4 +12,4 @@ class ValueHead(nn.Module):
 
     @nn.compact
     def __call__(self, features: jax.Array) -> jax.Array:
-        return jnp.squeeze(nn.Dense(1)(features), axis=-1)
+        return jnp.squeeze(nn.Dense(1, kernel_init=nn.initializers.lecun_uniform())(features), axis=-1)

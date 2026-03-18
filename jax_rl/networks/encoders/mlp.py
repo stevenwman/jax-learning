@@ -23,7 +23,7 @@ class MlpEncoder(nn.Module):
         if context is not None:
             obs = jnp.concatenate([obs, context], axis=-1)
         for d_out in self.config.hidden_dim:
-            obs = nn.Dense(d_out)(obs)
+            obs = nn.Dense(d_out, kernel_init=nn.initializers.lecun_uniform())(obs)
             if self.config.norm is not None:
                 obs = nn.LayerNorm()(obs)
             obs = ACTIVATIONS[self.config.activation](obs)

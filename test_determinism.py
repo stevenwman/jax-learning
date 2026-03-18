@@ -12,7 +12,7 @@ import optax
 from mujoco_playground import dm_control_suite
 from mujoco_playground._src.wrapper import wrap_for_brax_training
 
-from jax_rl.algos.ppo_scan import PPO
+from jax_rl.algos.ppo import PPO
 from jax_rl.buffers import RolloutBuffer
 from jax_rl.configs import PPOConfig, EncoderConfig, PolicyHeadConfig
 from jax_rl.utils.normalization import (

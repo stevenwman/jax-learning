@@ -24,6 +24,7 @@ class PPOConfig:
     # Runtime fields (populated by train.py — do not set manually)
     minibatch_size: int = 0
     num_envs: int = 0
+    gamma: float = 0.99  # Populated from TrainConfig.gamma at runtime
 
     # Network configs (populated at runtime by train.py once env dims are known)
     encoder: EncoderConfig | None = None

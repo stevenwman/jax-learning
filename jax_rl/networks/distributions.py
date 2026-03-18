@@ -85,18 +85,35 @@ def gaussian_log_prob(
     return log_prob
 
 
-def entropy_gaussian(log_std: jax.Array) -> jax.Array:
-    """Compute entropy of Gaussian distribution (before tanh squashing).
+def entropy_gaussian(log_std: jax.Array, mean: jax.Array | None = None,
+                     key: jax.Array | None = None, squash: bool = False) -> jax.Array:
+    """Compute entropy of Gaussian distribution.
+
+    When squash=False, uses the closed-form Gaussian entropy.
+    When squash=True, estimates entropy of the tanh-squashed distribution
+    via single-sample estimate: -E[log p(tanh(x))], matching Brax.
 
     Args:
         log_std: Log std of Gaussian, shape (batch, action_dim) or (action_dim,)
+        mean: Mean of Gaussian (required when squash=True)
+        key: PRNGKey for sampling (required when squash=True)
+        squash: If True, compute tanh-corrected entropy
 
     Returns:
         Entropy, shape (batch,) or scalar (summed over action dims)
     """
-    # Entropy of Gaussian: 0.5 * log(2 * pi * e * std^2)
-    #                    = 0.5 * (log(2*pi) + 1 + 2*log_std)
-    entropy = 0.5 * (jnp.log(2 * jnp.pi) + 1 + 2 * log_std)
-
-    # Sum over action dimensions
-    return entropy.sum(axis=-1)
+    if squash:
+        # Single-sample entropy estimate of tanh-normal (matches Brax)
+        std = jnp.exp(log_std)
+        dist = distrax.Normal(loc=mean, scale=std)
+        raw_actions = dist.sample(seed=key)
+        # Base Gaussian log_prob
+        log_prob = dist.log_prob(raw_actions)
+        # Tanh Jacobian correction: log |d tanh / dx| = log(1 - tanh(x)^2)
+        log_prob -= jnp.log(1 - jnp.tanh(raw_actions) ** 2 + 1e-6)
+        # Entropy = -E[log p(x)], summed over action dims
+        return -log_prob.sum(axis=-1)
+    else:
+        # Closed-form Gaussian entropy: 0.5 * log(2 * pi * e * std^2)
+        entropy = 0.5 * (jnp.log(2 * jnp.pi) + 1 + 2 * log_std)
+        return entropy.sum(axis=-1)

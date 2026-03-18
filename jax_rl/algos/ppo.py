@@ -17,6 +17,7 @@ import optax
 from jax_rl.configs import PPOConfig
 from jax_rl.networks.builders import Actor, Critic
 from jax_rl.buffers import RolloutBatch
+from jax_rl.buffers.rollout import compute_gae
 from jax_rl.networks.distributions import entropy_gaussian, gaussian_log_prob, sample_gaussian
 
 
@@ -64,8 +65,14 @@ class PPO:
         squash = config.policy_head.squash
         num_epochs = config.num_epochs
         minibatch_size = config.minibatch_size
+        gamma = config.gamma
+        gae_lambda = config.gae_lambda
 
-        def _minibatch_step(state, mb_obs, mb_actions, mb_old_log_probs, mb_returns, mb_adv):
+        def _minibatch_step(state, mb_obs, mb_actions, mb_old_log_probs, mb_returns, mb_adv, key):
+            # Per-minibatch advantage normalization (matches Brax)
+            if normalize_advantage:
+                mb_adv = (mb_adv - mb_adv.mean()) / (mb_adv.std() + 1e-8)
+
             def value_loss_fn(critic_params):
                 values = critic.apply(critic_params, mb_obs)
                 return jnp.mean((values - mb_returns) ** 2)
@@ -77,7 +84,7 @@ class PPO:
                 surr1 = ratio * mb_adv
                 surr2 = jnp.clip(ratio, 1 - clip_eps, 1 + clip_eps) * mb_adv
                 policy_loss = -jnp.mean(jnp.minimum(surr1, surr2))
-                entropy = entropy_gaussian(mb_log_std).mean()
+                entropy = entropy_gaussian(mb_log_std, mean=mb_mean, key=key, squash=squash).mean()
                 policy_loss += -entropy_coef * entropy
                 clip_fraction = (jnp.abs(ratio - 1) > clip_eps).astype(jnp.float32).mean()
                 approx_kl = ((ratio - 1) - jnp.log(ratio)).mean()
@@ -109,40 +116,65 @@ class PPO:
             return new_state, metrics
 
         @jax.jit
-        def _update(state, obs, actions, old_log_probs, returns, advantages, key):
-            N = obs.shape[0]
-            num_minibatches = N // minibatch_size
+        def _update(state, obs_t, actions_t, old_log_probs_t,
+                    rewards_t, dones_t, truncations_t, next_obs, key):
+            """PPO update with per-epoch GAE recomputation.
 
-            # Normalize advantages over entire batch (not per-minibatch)
-            if normalize_advantage:
-                advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+            Args have temporal shape: (T, E, ...) where T=num_steps, E=num_envs.
+            Each epoch recomputes V(s) from current critic and re-runs GAE.
+            """
+            T, E = rewards_t.shape
+            N = T * E
+            num_minibatches = N // minibatch_size
+            obs_dim = obs_t.shape[-1]
+            action_dim = actions_t.shape[-1]
+
+            # Flatten actions and old_log_probs (these don't change across epochs)
+            actions_flat = actions_t.reshape(N, action_dim)
+            old_lp_flat = old_log_probs_t.reshape(N)
 
             def epoch_step(carry, _):
                 state, key, metrics_sum = carry
+
+                # Recompute values from current critic (per-epoch, matches Brax)
+                obs_flat = obs_t.reshape(N, obs_dim)
+                values_flat = critic.apply(state.critic_params, obs_flat)
+                values = values_flat.reshape(T, E)
+                next_value = critic.apply(state.critic_params, next_obs)
+
+                # Recompute GAE with fresh values
+                advantages, returns = compute_gae(
+                    rewards_t, values, dones_t, truncations_t,
+                    next_value, gamma, gae_lambda,
+                )
+                adv_flat = advantages.reshape(N)
+                ret_flat = returns.reshape(N)
+
                 key, subkey = jax.random.split(key)
                 perm = jax.random.permutation(subkey, N)
-                # Truncate to exact multiple of minibatch_size
                 usable = num_minibatches * minibatch_size
                 perm = perm[:usable]
 
-                # Reshape permuted data into (num_minibatches, minibatch_size, ...)
-                mb_obs = obs[perm].reshape(num_minibatches, minibatch_size, -1)
-                mb_actions = actions[perm].reshape(num_minibatches, minibatch_size, -1)
-                mb_old_lp = old_log_probs[perm].reshape(num_minibatches, minibatch_size)
-                mb_returns = returns[perm].reshape(num_minibatches, minibatch_size)
-                mb_adv = advantages[perm].reshape(num_minibatches, minibatch_size)
+                mb_obs = obs_flat[perm].reshape(num_minibatches, minibatch_size, obs_dim)
+                mb_actions = actions_flat[perm].reshape(num_minibatches, minibatch_size, action_dim)
+                mb_old_lp = old_lp_flat[perm].reshape(num_minibatches, minibatch_size)
+                mb_returns = ret_flat[perm].reshape(num_minibatches, minibatch_size)
+                mb_adv = adv_flat[perm].reshape(num_minibatches, minibatch_size)
+
+                key, entropy_key = jax.random.split(key)
+                mb_keys = jax.random.split(entropy_key, num_minibatches)
 
                 def scan_minibatch(carry, minibatch):
                     state, metrics_sum = carry
-                    o, a, olp, r, adv = minibatch
-                    state, metrics = _minibatch_step(state, o, a, olp, r, adv)
+                    o, a, olp, r, adv, mb_key = minibatch
+                    state, metrics = _minibatch_step(state, o, a, olp, r, adv, mb_key)
                     metrics_sum = jax.tree.map(jnp.add, metrics_sum, metrics)
                     return (state, metrics_sum), None
 
                 (state, metrics_sum), _ = jax.lax.scan(
                     scan_minibatch,
                     (state, metrics_sum),
-                    (mb_obs, mb_actions, mb_old_lp, mb_returns, mb_adv),
+                    (mb_obs, mb_actions, mb_old_lp, mb_returns, mb_adv, mb_keys),
                 )
                 return (state, key, metrics_sum), None
 
@@ -201,14 +233,12 @@ class PPO:
             critic_opt_state=self.critic_optimizer.init(critic_params),
         )
 
-    def update(self, state: TrainingState, batch: RolloutBatch, key: jax.Array) -> tuple[TrainingState, dict]:
-        obs = batch.obs.reshape(-1, batch.obs.shape[-1])
-        actions = batch.actions.reshape(-1, batch.actions.shape[-1])
-        old_log_probs = batch.log_probs.reshape(-1)
-        advantages = batch.advantages.reshape(-1)
-        returns = batch.returns.reshape(-1)
-
-        return self._update(state, obs, actions, old_log_probs, returns, advantages, key)
+    def update(self, state: TrainingState, batch: RolloutBatch, key: jax.Array,
+               next_obs: jax.Array = None) -> tuple[TrainingState, dict]:
+        return self._update(
+            state, batch.obs, batch.actions, batch.log_probs,
+            batch.rewards, batch.dones, batch.truncations, next_obs, key,
+        )
 
     def select_action(
         self,

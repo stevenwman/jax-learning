@@ -1,0 +1,30 @@
+"""SAC algorithm configuration."""
+
+from dataclasses import dataclass
+
+
+@dataclass
+class SACConfig:
+    """Configuration for SAC algorithm.
+
+    Optimizer config (LR, grad clipping) is in TrainConfig.
+    Replay buffer sizing is here since it's SAC-specific.
+    """
+
+    # Core SAC
+    tau: float = 0.005                  # Polyak soft update coefficient
+    target_entropy_scale: float = 0.5   # target_entropy = -scale * action_dim
+                                        # 0.5 = Brax default (softer/more exploitation)
+                                        # 1.0 = common textbook (more exploration)
+    alpha_lr: float = 1e-3              # Temperature optimizer LR (separate from policy/Q)
+
+    # Replay buffer
+    buffer_size: int = 4_194_304        # 4M — Playground default
+    min_buffer_size: int = 8_192        # Steps before first gradient update
+    batch_size: int = 512
+    grad_updates_per_step: int = 8      # Gradient steps per env step
+
+    # Network
+    hidden_dim: tuple[int, ...] = (256, 256)
+    activation: str = "relu"            # SAC uses ReLU (not swish like PPO)
+    q_layer_norm: bool = True           # Layer norm in Q-network (Playground default)

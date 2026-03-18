@@ -11,20 +11,21 @@ class GaussianHead(nn.Module):
 
     @nn.compact
     def __call__(self, features: jax.Array) -> tuple[jax.Array, jax.Array]:
-        mean = nn.Dense(self.config.action_dim)(features)
+        mean = nn.Dense(self.config.action_dim, kernel_init=nn.initializers.lecun_uniform())(features)
 
         if self.config.state_dependent_std:
-            # State-dependent: Dense layer maps features → log_std (SAC)
-            log_std = nn.Dense(self.config.action_dim)(features)
+            # State-dependent: Dense → softplus + min_std (matches Brax tanh_normal)
+            raw_scale = nn.Dense(self.config.action_dim, kernel_init=nn.initializers.lecun_uniform())(features)
+            std = jax.nn.softplus(raw_scale) + self.config.min_std
+            log_std = jnp.log(std)
         else:
-            # State-independent: single learned vector, same for all obs (PPO)
-            # Initialized to log(init_noise_std) so std starts at init_noise_std
+            # State-independent: single learned vector, same for all obs
             log_std = self.param(
                 'log_std',
                 nn.initializers.constant(jnp.log(self.config.init_noise_std)),
                 (self.config.action_dim,),
             )
             log_std = jnp.broadcast_to(log_std, mean.shape)
+            log_std = jnp.clip(log_std, self.config.log_std_min, self.config.log_std_max)
 
-        log_std = jnp.clip(log_std, self.config.log_std_min, self.config.log_std_max)
         return mean, log_std

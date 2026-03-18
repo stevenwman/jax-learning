@@ -32,6 +32,7 @@ class PolicyHeadConfig:
     # State-dependent std: Dense layer from features (SAC needs this)
     state_dependent_std: bool = False
     init_noise_std: float = 1.0  # Initial std for state-independent mode
+    min_std: float = 0.001  # Minimum std for state-dependent mode (softplus floor)
     # For squashing (tanh transform)
     squash: bool = True  # Output in [-1, 1] for bounded action spaces
 

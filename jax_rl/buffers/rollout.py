@@ -12,6 +12,7 @@ class RolloutBatch(NamedTuple):
     actions: jax.Array  # (num_steps, num_envs, action_dim)
     rewards: jax.Array  # (num_steps, num_envs)
     dones: jax.Array  # (num_steps, num_envs)
+    truncations: jax.Array  # (num_steps, num_envs)
     log_probs: jax.Array  # (num_steps, num_envs)
     values: jax.Array  # (num_steps, num_envs)
     advantages: jax.Array | None = None  # (num_steps, num_envs) - computed after collection
@@ -108,6 +109,7 @@ class RolloutBuffer:
             actions=self.actions,
             rewards=self.rewards,
             dones=self.dones,
+            truncations=self.truncations,
             log_probs=self.log_probs,
             values=self.values,
             advantages=advantages,
@@ -124,17 +126,16 @@ def compute_gae(
     gamma: float,
     gae_lambda: float,
 ) -> tuple[jax.Array, jax.Array]:
-    """Compute Generalized Advantage Estimation (GAE).
+    """Compute Generalized Advantage Estimation (GAE), matching Brax's approach.
 
-    Uses backward scan for efficient computation:
-        δ_t = r_t + γ * V(s_{t+1}) * (1 - done_t) - V(s_t)
-        A_t = δ_t + (γ * λ) * (1 - done_t) * A_{t+1}
-
-    Truncation handling:
-        When an episode truncates (timeout), the env auto-resets and the stored
-        next obs is the RESET obs, not the terminal obs. So values[t+1] would be
-        V(reset_obs) instead of V(truncated_obs). We approximate V(truncated_obs)
-        ≈ V(s_t) (the value before the action), matching Brax's approach.
+    Truncation handling (matches brax.training.agents.ppo.losses.compute_gae):
+        At truncation steps (episode timeout), the env auto-resets and the next
+        obs is from the RESET state. Rather than trying to correct the bootstrap
+        value (which is approximate and grows biased with V), we zero out the
+        entire delta at truncation steps. This means:
+          - Advantage at truncation = 0 (no gradient for policy)
+          - Value target at truncation = V(s_t) (no gradient for critic)
+          - Propagation stops at truncation (next episode doesn't leak in)
 
     Args:
         rewards: Rewards, shape (num_steps, num_envs)
@@ -150,25 +151,19 @@ def compute_gae(
             advantages: GAE advantages, shape (num_steps, num_envs)
             returns: TD(λ) returns, shape (num_steps, num_envs)
     """
+    truncation_mask = 1.0 - truncations  # 0 at truncation, 1 otherwise
+    termination = dones * (1.0 - truncations)  # 1 only at true terminals
+
     # Compute next values: V(s_{t+1}) for each timestep
     next_values = jnp.concatenate([values[1:], next_value[None]], axis=0)
 
-    # For truncated transitions, replace V(reset_obs) with V(s_t) as bootstrap
-    # approximation. This avoids using the value of the wrong state.
-    next_values = jnp.where(truncations, values, next_values)
-
-    # Effective done for GAE: true terminals stop bootstrap, truncations don't
-    # (the bootstrap value correction above handles truncations instead)
-    effective_dones = dones * (1.0 - truncations)
+    # TD errors: zero out at truncation steps (matching Brax)
+    deltas = rewards + gamma * (1 - termination) * next_values - values
+    deltas = deltas * truncation_mask
 
     def scan_fn(gae: jax.Array, t: int) -> tuple[jax.Array, jax.Array]:
-        # TD error: use effective_dones (0 for truncation → enables bootstrap)
-        delta = rewards[t] + gamma * next_values[t] * (1 - effective_dones[t]) - values[t]
-
-        # GAE propagation: use actual dones (1 for truncation → stops leakage
-        # from next episode's advantages into current episode)
-        gae = delta + gamma * gae_lambda * (1 - dones[t]) * gae
-
+        # Stop propagation at both truncation and true terminal
+        gae = deltas[t] + gamma * gae_lambda * (1 - termination[t]) * truncation_mask[t] * gae
         return gae, gae
 
     # Run backward scan from T-1 to 0

@@ -7,8 +7,9 @@ from jax_rl.configs.networks_config import (
     QHeadConfig,
 )
 from jax_rl.configs.ppo_config import PPOConfig
+from jax_rl.configs.sac_config import SACConfig
 from jax_rl.configs.train_config import TrainConfig
-from jax_rl.configs.env_presets import get_preset
+from jax_rl.configs.env_presets import get_preset, get_sac_preset
 
 __all__ = [
     "EncoderConfig",
@@ -16,6 +17,8 @@ __all__ = [
     "ValueHeadConfig",
     "QHeadConfig",
     "PPOConfig",
+    "SACConfig",
     "TrainConfig",
     "get_preset",
+    "get_sac_preset",
 ]

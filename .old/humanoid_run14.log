@@ -1,0 +1,28 @@
+================================================================================
+PPO — HumanoidRun (MuJoCo Playground)
+================================================================================
+  obs_dim=67, action_dim=21
+  num_envs=2048, num_steps=480, num_updates_per_batch=1, episode_length=1000
+  samples/update=983,040, samples/iter=983,040, iterations=61, total_steps=60,000,000
+  policy_net=(128, 128, 128, 128), value_net=(256, 256, 256, 256, 256), activation=swish, minibatch_size=30720, num_epochs=16, updates_per_batch=1, grad_updates/iter=512
+  lr=0.001, max_grad_norm=None
+  clip_eps=0.3, entropy_coef=0.01, reward_scaling=10.0
+  gamma=0.995, gae_lambda=0.95
+  actor_params=60,970, critic_params=280,833
+
+JIT-compiling first iteration (expect a delay)...
+--------------------------------------------------------------------------------
+Iter    0/61 | Steps   983,040 | Eps     0 | Return     nan [ nan, nan] | PLoss -0.2866 | VLoss    16.60 | Ent 33.122 | KL 296888.2812 | Clip 0.691 | logσ 0.16 [0.15,0.16] | 12,164 sps | 80.8s
+  ^ first iteration includes JIT compilation time
+Iter    1/61 | Steps 1,966,080 | Eps     0 | Return     nan [ nan, nan] | PLoss -0.3612 | VLoss     0.00 | Ent 43.129 | KL 38.0663 | Clip 0.962 | logσ 0.63 [0.59,0.68] | 56,655 sps | 17.4s
+Iter    2/61 | Steps 2,949,120 | Eps  2048 | Return     1.9 [   2,   4] | PLoss -0.4184 | VLoss     0.20 | Ent 51.653 | KL 183.7101 | Clip 0.936 | logσ 1.04 [0.95,1.15] | 68,863 sps | 14.3s
+Iter    3/61 | Steps 3,932,160 | Eps  2048 | Return     1.9 [   2,   4] | PLoss -0.3704 | VLoss     0.00 | Ent 62.674 | KL 244.4532 | Clip 1.000 | logσ 1.57 [1.44,1.72] | 68,445 sps | 14.4s
+Iter    4/61 | Steps 4,915,200 | Eps  4096 | Return     1.9 [   1,   4] | PLoss -0.6438 | VLoss     0.36 | Ent 71.200 | KL 286.3034 | Clip 1.000 | logσ 1.97 [1.93,2.00] | 68,450 sps | 14.4s
+  Checkpoint saved to checkpoints/20260316_224535_humanoidrun_seed0
+Iter    5/61 | Steps 5,898,240 | Eps  4096 | Return     1.9 [   1,   4] | PLoss -0.4923 | VLoss     0.00 | Ent 71.797 | KL 326.4465 | Clip 1.000 | logσ 2.00 [2.00,2.00] | 68,723 sps | 14.3s
+Iter    6/61 | Steps 6,881,280 | Eps  6144 | Return     2.1 [   1,   4] | PLoss -0.6480 | VLoss     0.25 | Ent 71.797 | KL 319.7892 | Clip 1.000 | logσ 2.00 [2.00,2.00] | 68,579 sps | 14.3s
+Iter    7/61 | Steps 7,864,320 | Eps  6144 | Return     2.1 [   1,   4] | PLoss -0.4754 | VLoss     0.00 | Ent 71.797 | KL 328.9588 | Clip 1.000 | logσ 2.00 [2.00,2.00] | 68,252 sps | 14.4s
+Iter    8/61 | Steps 8,847,360 | Eps  8192 | Return     1.9 [   1,   4] | PLoss -0.6673 | VLoss     0.29 | Ent 71.797 | KL 319.3721 | Clip 1.000 | logσ 2.00 [2.00,2.00] | 68,799 sps | 14.3s
+Iter    9/61 | Steps 9,830,400 | Eps  8192 | Return     1.9 [   1,   4] | PLoss -0.4705 | VLoss     0.00 | Ent 71.797 | KL 320.2593 | Clip 1.000 | logσ 2.00 [2.00,2.00] | 68,553 sps | 14.3s
+  Checkpoint saved to checkpoints/20260316_224535_humanoidrun_seed0
+Iter   10/61 | Steps 10,813,440 | Eps 10240 | Return     2.1 [   1,   5] | PLoss -0.6674 | VLoss     0.32 | Ent 71.797 | KL 315.5119 | Clip 1.000 | logσ 2.00 [2.00,2.00] | 68,524 sps | 14.3s

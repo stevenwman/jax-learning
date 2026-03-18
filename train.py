@@ -3,14 +3,13 @@
 Wires together: env, collect loop, GAE, PPO update, obs normalization.
 Uses wrap_for_brax_training for vectorized auto-reset + truncation tracking.
 
-Truncation handling:
-  Playground envs signal timeout via info['truncation']. For GAE we need to
-  distinguish true terminals (done=1, trunc=0) from timeouts (done=1, trunc=1).
-  Both done and truncation flags are passed to the buffer. In GAE:
-    - Bootstrap (delta): uses effective_done=0 for truncations, so V(s_t) is
-      used as bootstrap instead of V(reset_obs).
-    - Propagation (gae): uses actual done=1 for truncations, so advantages
-      from the next episode don't leak into the current one.
+Truncation handling (matches Brax):
+  Playground envs signal timeout via info['truncation']. The env auto-resets,
+  so obs after truncation is the RESET state, not the terminal state.
+  In GAE, we zero out the entire TD error at truncation steps:
+    - Advantage at truncation = 0 (no gradient for policy)
+    - Value target = V(s_t) (no gradient for critic)
+    - Propagation stops (next episode doesn't leak in)
 """
 
 import argparse
@@ -29,7 +28,7 @@ import orbax.checkpoint as ocp
 from mujoco_playground import dm_control_suite
 from mujoco_playground._src.wrapper import wrap_for_brax_training
 
-from jax_rl.algos.ppo_scan import PPO
+from jax_rl.algos.ppo import PPO
 from jax_rl.buffers import RolloutBuffer
 from jax_rl.configs import EncoderConfig, PolicyHeadConfig, TrainConfig, get_preset
 from jax_rl.utils.normalization import (
@@ -44,18 +43,14 @@ def _save_checkpoint(ckpt_dir, training_state, norm_state, cfg, obs_dim, action_
     """Save checkpoint, meta, and metrics CSV to ckpt_dir."""
     os.makedirs(ckpt_dir, exist_ok=True)
 
-    ckpt = {"training_state": training_state, "norm_state": norm_state}
-    checkpointer = ocp.StandardCheckpointer()
-    checkpointer.save(os.path.abspath(ckpt_dir), ckpt, force=True)
-    checkpointer.wait_until_finished()
-
-    meta = {"env_name": cfg.env_name,
-            "policy_hidden_dim": list(cfg.policy_hidden_dim),
-            "value_hidden_dim": list(cfg.value_hidden_dim),
-            "activation": cfg.activation,
-            "obs_dim": obs_dim, "action_dim": action_dim}
+    # Write meta and metrics first (fast, survives interrupted orbax saves)
+    meta = {
+        "obs_dim": obs_dim,
+        "action_dim": action_dim,
+        "train_config": dataclasses.asdict(cfg),
+    }
     with open(os.path.join(ckpt_dir, "meta.json"), "w") as f:
-        json.dump(meta, f)
+        json.dump(meta, f, indent=2)
 
     if metrics_log:
         csv_path = os.path.join(ckpt_dir, "metrics.csv")
@@ -71,6 +66,22 @@ def _save_checkpoint(ckpt_dir, training_state, norm_state, cfg, obs_dim, action_
             for row in prior_rows:
                 writer.writerow(row)
             writer.writerows(metrics_log)
+
+    # Save inference-only params (actor_params + norm_state) as numpy — no orbax needed for rollout/video
+    np.save(os.path.join(ckpt_dir, "actor_params.npy"),
+            {"actor_params": jax.device_get(training_state.actor_params),
+             "norm_mean": jax.device_get(norm_state.mean),
+             "norm_mean_of_squares": jax.device_get(norm_state.mean_of_squares),
+             "norm_count": jax.device_get(norm_state.count)},
+            allow_pickle=True)
+
+    # Orbax save last (slow, async — if killed mid-save, we still have meta+CSV+actor_params)
+    # Saved to orbax/ subdir so the run folder stays clean alongside meta.json/metrics.csv
+    orbax_dir = os.path.join(ckpt_dir, "orbax")
+    ckpt = {"training_state": training_state, "norm_state": norm_state}
+    checkpointer = ocp.StandardCheckpointer()
+    checkpointer.save(os.path.abspath(orbax_dir), ckpt, force=True)
+    checkpointer.wait_until_finished()
 
 
 def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
@@ -115,9 +126,11 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
         ppo_cfg,
         encoder=EncoderConfig(obs_dim=obs_dim, hidden_dim=cfg.policy_hidden_dim, activation=cfg.activation),
         critic_encoder=EncoderConfig(obs_dim=obs_dim, hidden_dim=cfg.value_hidden_dim, activation=cfg.activation),
-        policy_head=PolicyHeadConfig(action_dim=action_dim, squash=False),
+        policy_head=PolicyHeadConfig(action_dim=action_dim, squash=cfg.squash,
+                                     state_dependent_std=cfg.state_dependent_std),
         num_envs=cfg.num_envs,
         minibatch_size=minibatch_size,
+        gamma=cfg.gamma,
     )
 
     # ── Optimizer (decoupled from PPO) ──────────────────────────────────
@@ -158,7 +171,8 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
     if resume is not None:
         print(f"\n  Resuming from {resume}")
         target = {"training_state": training_state, "norm_state": norm_state}
-        ckpt = ocp.StandardCheckpointer().restore(os.path.abspath(resume), target=target)
+        orbax_dir = os.path.join(resume, "orbax")
+        ckpt = ocp.StandardCheckpointer().restore(os.path.abspath(orbax_dir), target=target)
         training_state = ckpt["training_state"]
         norm_state = ckpt["norm_state"]
 
@@ -217,7 +231,8 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
                 # Step environment
                 env_state = env_step(env_state, clipped_action)
 
-                truncation = env_state.info["truncation"]
+                truncation = (env_state.info["truncation"] if cfg.handle_truncation
+                              else jnp.zeros_like(env_state.done))
 
                 # Store transition (unclipped action matches log_prob)
                 buffer.add(
@@ -251,7 +266,8 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
 
             # ── PPO update ───────────────────────────────────────────────
             key, update_key = jax.random.split(key)
-            training_state, metrics = ppo.update(training_state, batch, update_key)
+            training_state, metrics = ppo.update(training_state, batch, update_key,
+                                                  next_obs=normed_next_obs)
 
         # ── Logging ──────────────────────────────────────────────────────
         iter_time = time.time() - t0
