@@ -119,7 +119,10 @@ _TD3_BASE_CFG = TrainConfig(
     ppo=None,
 )
 
-_TD3_BASE_ALGO = TD3Config()
+_TD3_BASE_ALGO = TD3Config(
+    grad_updates_per_step=4,  # 128 envs need higher replay ratio than vanilla TD3's 1:1
+    batch_size=256,
+)
 
 TD3_PRESETS: dict[str, tuple[TrainConfig, TD3Config]] = {
     "CheetahRun": (
@@ -132,7 +135,7 @@ TD3_PRESETS: dict[str, tuple[TrainConfig, TD3Config]] = {
     ),
     "HumanoidRun": (
         dataclasses.replace(_TD3_BASE_CFG, env_name="HumanoidRun"),
-        _TD3_BASE_ALGO,
+        dataclasses.replace(_TD3_BASE_ALGO, q_layer_norm=True),  # stability for high-dim
     ),
 }
 

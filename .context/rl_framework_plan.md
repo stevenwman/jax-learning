@@ -620,10 +620,10 @@ class Trainer:
 - [x] Config dataclasses (EncoderConfig, PPOConfig, etc.)
 - [x] TrainingState `flax.struct.dataclass` (params + optimizer state as pytree)
 - [x] MLP encoder (nn.Module with configurable LayerNorm + context fusion)
-- [ ] Scalar Q head
+- [x] Scalar Q head — `QHead` (obs+action → scalar, with optional LayerNorm)
 - [x] Value head V(s)
 - [x] Gaussian policy head
-- [ ] Deterministic policy head
+- [x] Deterministic policy head — `DeterministicHead` (features → tanh)
 - [x] Network builder (compose encoder + head from config, init params)
 - [x] Distribution utilities (TanhNormal, rsample)
 - [x] Observation normalization (running mean/std, Welford running stats)
@@ -631,17 +631,20 @@ class Trainer:
 - [ ] Wandb logger
 
 ### Phase 2: First Algorithms (standard versions)
-- [x] PPO implementation (3 variants: eager, jit, scan — scan is 542x faster than eager)
-- [ ] TD3 implementation (standard, min Q)
-- [ ] SAC implementation (standard, min Q)
+- [x] PPO implementation (scan variant, 542x faster than eager)
+- [x] TD3 implementation (twin Q, delayed policy, target smoothing)
+- [x] SAC implementation (auto-tuned alpha, twin Q, Polyak targets)
 - [x] MuJoCo Playground adapter
-- [x] Test on dm_control — CartpoleBalance validated (≥995), CheetahRun validated (826 at 20M, target was ≥700 at 60M)
-- [ ] Verify scores match reference (see benchmark table below) — CartpoleBalance passes, CheetahRun passes
+- [x] Test on dm_control — CartpoleBalance (≥995), CheetahRun (826@20M PPO, 749@5M TD3), WalkerWalk (975@5M SAC, 955@5M TD3), HumanoidRun (207@5M SAC)
+- [x] Verify scores match reference — all benchmarks pass (see journal 2026-03-18)
 - [x] Basic README + example script
 - [x] Orbax checkpointing (timestamped dirs, meta.json, metrics CSV)
 - [x] Video recording (two-phase: scan rollout on GPU, render on CPU)
 - [x] Determinism verified (bit-identical across 3 runs for env + full training)
 - [x] Optimizer decoupled from PPO (externally constructed, supports LR annealing)
+- [x] Deterministic eval protocol (shared eval utility, episode-count triggered, 10 eval episodes)
+- [x] Replay buffer (numpy circular FIFO — not JAX-native, intentional for Gymnasium/real robot compat)
+- [x] Off-policy training scripts (train_sac.py, train_td3.py) with checkpointing + eval
 
 **PPO Implementation Details (from RSL-RL / Huang et al. 2022):**
 - Clipped surrogate loss + clipped value loss (optional)

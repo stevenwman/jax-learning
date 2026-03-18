@@ -1,403 +1,7 @@
 # Lessons Learned - JAX RL Framework
 
-A running log of debugging victories, JAX gotchas, and hard-won insights from building this RL framework.
-
----
-
-## Session 1: Foundation & Debugging (Feb 2026)
-
-### Bug #1: The atanh(±1) Singularity
-
-**What happened:**
-- PPO update was returning NaN for policy loss and entropy
-- Actions sampled from the policy worked fine, but recomputing log_prob gave NaN
-
-**Root cause:**
-- When using `squash=True` (tanh transform), actions are bounded to [-1, 1]
-- Computing log_prob requires inverse tanh: `atanh(x) = 0.5 * log((1+x)/(1-x))`
-- At x = ±1: `atanh(±1) = ±∞` → NaN propagation
-
-**The fix:**
-```python
-# In distributions.py
-ATANH_EPSILON = 1e-6
-
-if squash:
-    # Clip actions away from ±1 to avoid atanh singularities
-    action = jnp.clip(action, -1.0 + ATANH_EPSILON, 1.0 - ATANH_EPSILON)
-    dist = distrax.Transformed(base_dist, distrax.Tanh())
-```
-
-**Lesson:** Numerical singularities are common in RL. Always check boundary conditions!
-
----
-
-### JAX Fundamentals
-
-#### 1. Tracer Errors
-**Problem:** Can't use regular Python `print()` inside functions passed to `jax.grad()` or `jax.jit()`.
-
-**Why:** JAX traces functions to build computation graphs. During tracing, values are abstract "tracers", not concrete numbers.
-
-**Solution:**
-```python
-# Wrong
-print(f"value: {x:.2f}")  # TypeError: unsupported format string passed to Tracer
-
-# Correct
-jax.debug.print("value: {}", x)  # Works with tracers
-```
-
-**Lesson:** Separate **trace time** (Python code analysis) from **execution time** (JAX computation).
-
----
-
-#### 2. PRNG Key Management
-**Problem:** Using the same key for multiple random operations gives correlated samples.
-
-**Wrong:**
-```python
-key = jax.random.PRNGKey(0)
-a = jax.random.normal(key, shape=(10,))
-b = jax.random.normal(key, shape=(10,))  # Same as a!
-```
-
-**Right:**
-```python
-key = jax.random.PRNGKey(0)
-key, subkey1, subkey2 = jax.random.split(key, 3)
-a = jax.random.normal(subkey1, shape=(10,))
-b = jax.random.normal(subkey2, shape=(10,))  # Independent!
-```
-
-**Lesson:** JAX RNG is **pure functional** - always split keys for independent randomness.
-
----
-
-#### 3. Array Reshaping with `-1`
-`-1` means "infer this dimension from the rest."
-
-```python
-x.reshape(-1)                    # Flatten everything to 1D: (32, 4) → (128,)
-x.reshape(-1, x.shape[-1])      # Flatten all dims except last: (32, 4, 17) → (128, 17)
-```
-
-**Common pattern in PPO:** Flatten (num_steps, num_envs, ...) → (num_steps * num_envs, ...) before SGD updates. PPO doesn't care about temporal order during updates — all transitions are independent samples.
-
-```python
-obs = batch.obs.reshape(-1, batch.obs.shape[-1])   # (32, 4, 17) → (128, 17)
-advantages = batch.advantages.reshape(-1)            # (32, 4) → (128,)
-```
-
----
-
-### Architecture Insights
-
-#### 1. When to Use Squashing
-**Common misconception:** Squashing is for off-policy algorithms (SAC), not on-policy (PPO).
-
-**Truth:** Squashing is about **action space bounds**, not on/off-policy!
-- Bounded actions (robot joints: [-1, 1]) → Use squashing OR bounded distribution (Beta)
-- Unbounded actions → Unbounded Gaussian is fine
-
-PPO can use either depending on the environment.
-
----
-
-#### 2. Separate Actor/Critic Optimizers
-**Why separate?**
-- No need for `value_coef` hyperparameter
-- Cleaner gradient flow
-- Independent learning rates
-- Easier to debug (losses don't mix)
-
-```python
-# Our approach (optax + TrainingState)
-actor_optimizer = optax.adam(lr_schedule)
-critic_optimizer = optax.adam(lr_schedule)
-
-# PPO takes them as constructor args
-ppo = PPO(config, obs_dim, action_dim, actor_optimizer, critic_optimizer)
-
-# Internally: separate grad/update calls per network
-actor_updates, new_actor_opt = actor_optimizer.update(actor_grads, state.actor_opt_state)
-value_updates, new_value_opt = critic_optimizer.update(value_grads, state.critic_opt_state)
-```
-
----
-
-#### 3. Jit-Friendly vs Not — Know the Difference
-**Not everything needs to be jitted.** Two collection strategies:
-
-- **Jittable env** (MJX/Brax): `jax.lax.scan` for collection → fully on GPU
-- **Non-jittable env** (Gymnasium, real robot): Python loop + mutable buffer → fine!
-
-Both produce the same `RolloutBatch` → same `ppo.update(batch)` call.
-
-**Rule:** Profile first, optimize second. Buffer writes are not the bottleneck — gradient computation and env stepping are.
-
----
-
-### Debugging Techniques
-
-#### 1. Systematic NaN Hunting
-1. **Reproduce** - Isolate the minimal case that triggers NaN
-2. **Instrument** - Add `jax.debug.print()` at intermediate steps
-3. **Trace backwards** - Find where NaN first appears
-4. **Fix root cause** - Don't mask with try/except!
-
-**Example from this session:**
-```
-gaussian_log_prob - mean: OK
-gaussian_log_prob - log_std: OK
-gaussian_log_prob - action: OK
-gaussian_log_prob - log_prob RESULT: NaN  ← Found it!
-```
-
-### Package Structure
-
-**Lesson:** Use `__init__.py` files to create clean public APIs.
-
-**Without:**
-```python
-from jax_rl.configs.ppo_config import PPOConfig
-from jax_rl.networks.builders import Actor
-```
-
-**With:**
-```python
-from jax_rl.configs import PPOConfig
-from jax_rl.networks import Actor
-```
-
-**Tip:** Export high-level components, keep implementation details internal.
-
----
-
-### Key Takeaways
-
-1. **JAX is functional** - No hidden state, explicit randomness, pure functions
-2. **Numerical stability matters** - Always check boundaries and edge cases
-3. **Debug systematically** - Instrument, trace, fix root cause
-4. **Design for modularity** - Protocols, builders, separation of concerns
-5. **Test incrementally** - Verify each component before building on it
-
----
-
-## Session 2: NNX → Linen Conversion (Mar 2026)
-
-### Why We Switched from NNX to Linen
-
-NNX is the newer, more Pythonic Flax API. But for high-throughput RL with small MLPs, Linen is better:
-
-1. **Performance**: `nnx.jit` traverses the Python object graph on every call — ~3x overhead on small MLPs. Linen's params are plain pytrees with zero overhead inside jit.
-2. **Ecosystem**: Brax, FastTD3, MuJoCo Playground all use Linen / functional params. We can lift patterns directly.
-3. **Immutability = safety**: Impossible to accidentally mutate shared state across parallel envs or between actor/critic.
-4. **Learning**: Forces you to understand pytrees, pure functions, and JIT boundaries — NNX hides this behind sugar.
-
----
-
-### The Core Mental Model: Blueprint vs State
-
-**NNX (old):** Module owns its parameters. It's an object.
-```python
-# NNX: module IS the model — params live inside
-layer = nnx.Linear(3, 4, rngs=rngs)
-y = layer(x)                          # uses internal params
-```
-
-**Linen (new):** Module is a blueprint. Parameters live separately.
-```python
-# Linen: module DESCRIBES the model — params live outside
-model = nn.Dense(4)                                        # just a template, no params
-params = model.init(key, jnp.zeros(3))                     # params created here
-y = model.apply(params, x)                                 # params passed in explicitly
-```
-
-**Why this matters for RL:** In a training loop, `update()` takes params in and returns new params out. No mutation, fully jittable, easy to checkpoint.
-
----
-
-### @nn.compact — Layers Without __init__
-
-In NNX, you build layers in `__init__` and use them in `__call__`. In Linen with `@nn.compact`, you do both in `__call__`:
-
-```python
-# Linen
-class MLP(nn.Module):
-    @nn.compact
-    def __call__(self, x):
-        x = nn.Dense(256)(x)    # created + registered on first call (init)
-        x = jax.nn.relu(x)      # reused on every subsequent call (apply)
-        return nn.Dense(4)(x)
-```
-
-Linen tracks submodules by order of creation. First `model.init()` creates them; every `model.apply()` reuses them.
-
-**Key difference:** `nn.Dense(256)` only specifies output features. Input features are inferred from the data during `model.init(key, dummy_input)`. That's why init needs a dummy input.
-
----
-
-### TrainingState: The Functional State Container
-
-All mutable state lives in one pytree:
-```python
-@flax.struct.dataclass
-class TrainingState:
-    actor_params: Params
-    critic_params: Params
-    actor_opt_state: optax.OptState
-    critic_opt_state: optax.OptState
-```
-
-The algorithm class only holds blueprints (modules) and config — things that never change. **State flows through functions, not objects:**
-```python
-state = ppo.init(key)                      # creates initial TrainingState
-state, metrics = ppo.update(state, batch, key)  # state in → new state out
-```
-
----
-
-### jax.value_and_grad with Closures
-
-In Linen, you differentiate with respect to params. The loss function closes over the data:
-```python
-def actor_loss_fn(actor_params):
-    # actor_params is what we differentiate w.r.t.
-    # mb_obs, mb_actions, etc. are captured from the enclosing scope
-    mean, log_std = self.actor.apply(actor_params, mb_obs)
-    log_probs = gaussian_log_prob(mean, log_std, mb_actions)
-    ...
-    return loss, metrics
-
-(loss, metrics), grads = jax.value_and_grad(actor_loss_fn, has_aux=True)(state.actor_params)
-```
-
-**`has_aux=True`:** Tells JAX the function returns `(loss, extra_stuff)`. It differentiates only the first element and passes the second through untouched.
-
----
-
-### Optax: The Explicit Optimizer Pattern
-
-With Linen, you use optax directly — three separate steps:
-```python
-# Define (in __init__)
-optimizer = optax.chain(optax.clip_by_global_norm(0.5), optax.adam(3e-4))
-
-# Initialize (in init)
-opt_state = optimizer.init(params)
-
-# Update (in update) — nothing is mutated
-updates, new_opt_state = optimizer.update(grads, opt_state)
-new_params = optax.apply_updates(params, updates)
-```
-
-More verbose but fully explicit. You always know what state is changing and when.
-
----
-
-### Key Takeaways
-
-1. **Linen modules are blueprints** — they describe computation, they don't hold state
-2. **Params are just pytrees** — dicts of arrays, nothing magic
-3. **TrainingState is the single source of truth** — all mutable state in one place
-4. **Functions > methods** — if it doesn't need the module's structure, make it a function
-5. **Closures are the standard pattern** — loss functions close over data, take params as the only argument
-6. **The math doesn't change** — PPO loss, GAE, distributions are identical; only the plumbing changed
-
----
-
-## Session 3: JIT Performance & First Training Curve (Mar 2026)
-
-### The 600x Speedup: `jax.jit(env.step)`
-
-**What happened:**
-- PPO training on CartpoleBalance took ~184s per iteration (64 envs x 64 steps)
-- GPU usage was 0%. Suspected JIT retracing in PPO update.
-
-**Root cause:**
-- MuJoCo Playground's `env.step` dispatches ~200 MJX physics primitives **eagerly** when called from a Python loop
-- Each `env.step` call took **2.8s** for 64 envs — the physics kernel wasn't fused
-- 64 steps x 2.8s = ~180s per iteration. The PPO update was fine (~0.05s). **99% of time was in env.step.**
-
-**The fix — one line:**
-```python
-env_step = jax.jit(env.step)  # Fuse ~200 MJX primitives into one GPU kernel
-# Then use env_step(env_state, action) instead of env.step(env_state, action)
-```
-
-**Result:** 184s/iter → 0.3s/iter. Training completed 1M steps in ~85s. Avg return: 995.4 (target >= 950).
-
-**Why Playground doesn't auto-JIT:** Brax training scripts typically `jax.lax.scan` the entire training loop — the outer JIT covers env.step. Our Python collect loop calls env.step from Python, so each call is dispatched eagerly. The wrapper doesn't add its own JIT boundary.
-
-**Lesson:** If you're calling a JAX-based env from a Python loop, **always** wrap with `jax.jit`. If GPU utilization is 0%, the computation is probably dispatching hundreds of tiny kernels instead of one fused one.
-
----
-
-### Diagnostic Methodology: Isolate, Don't Guess
-
-**Bad instinct:** "It's slow → must be retracing in `value_and_grad`." We created `ppo_jit.py` with JIT closures to fix "retracing." Didn't help — because the bottleneck was elsewhere.
-
-**Good method:** Created `diagnose_speed.py` that tests each operation in isolation:
-
-```
-Test 1: env.step           → 2.822s/call  ← THE BOTTLENECK
-Test 2: select_action      → 0.000s/call
-Test 3: norm_update        → 0.029s/call
-Test 4: full collect loop  → 183.23s (= 64 x 2.8s, confirms env.step)
-Test 5: _minibatch_step    → 0.001s/call
-```
-
-**Lesson:** When something is slow in JAX, **time each operation in isolation** before optimizing. The bottleneck is rarely where you think it is.
-
----
-
-### jax.lax.scan — Eliminating Python Dispatch Overhead
-
-Three versions of the same PPO update, benchmarked head-to-head:
-
-| Version | `update()` per call | Speedup vs eager |
-|---|---:|---:|
-| `ppo.py` — Python loops, no JIT | 2.712s | 1x |
-| `ppo_jit.py` — JIT closures, Python loops | 0.089s | 30x |
-| `ppo_scan.py` — `jax.lax.scan` (fully compiled) | 0.005s | 542x |
-
-**Why scan matters:** For small MLPs (64x64 hidden), ~95% of each call was Python-XLA dispatch overhead. `jax.lax.scan` compiles the entire epoch loop into a single XLA program — no Python roundtrips.
-
-**Rule of thumb:** If you're calling a JIT'd function >10x in a loop, `jax.lax.scan` it.
-
----
-
-### GAE Truncation Handling
-
-MuJoCo Playground signals episode timeout via `env_state.info["truncation"]`. At truncation, the env auto-resets, so the next obs is the RESET state — V(reset_obs) is wrong for bootstrapping.
-
-**Our approach (matching Brax):** Zero out the entire TD error at truncation steps. This means:
-
-| Scenario | `done` | `truncation` | Delta | Propagation |
-|----------|--------|-------------|-------|-------------|
-| True terminal (fell over) | 1 | 0 | r - V(s) | Stop |
-| Timeout (hit episode_length) | 1 | 1 | **0** (zeroed) | Stop |
-| Mid-episode | 0 | 0 | r + γV(s') - V(s) | Continue |
-
-Loses one transition of signal per episode (~0.1%), but avoids biased bootstrap values. See Session 5 for the full debugging journey.
-
----
-
-### `jax.block_until_ready()` — Required for Accurate Timing
-
-JAX operations are **asynchronous** — `env.step()` returns immediately, queueing work on the GPU. Without `block_until_ready()`, you're timing the Python dispatch, not the actual computation.
-
----
-
-### Key Takeaways
-
-1. **Profile before optimizing** — the bottleneck is rarely where you think
-2. **`jax.jit(env.step)` is mandatory** for MJX envs called from Python loops
-3. **GPU at 0% = eager dispatch** — hundreds of tiny kernels instead of one fused one
-4. **Separate warmup from timing** — first call includes JIT compilation
-5. **`block_until_ready()`** — without it, JAX timing is meaningless
-6. **Truncation != termination** — bootstrap through timeouts, zero out true terminals
+Active project lessons — debugging victories, algorithm pitfalls, and design decisions.
+JAX/Flax fundamentals moved to LEARNER_LESSONS.md. Superseded content in outdated_lessons.md.
 
 ---
 
@@ -847,6 +451,45 @@ SAC matches the MuJoCo Playground paper's Figure 7 trajectory. WalkerWalk conver
 
 ---
 
+### TD3 NaN on HumanoidRun — Gradient Clipping Is Not Optional
+
+**Problem:** TD3 on HumanoidRun NaN'd at ~700k steps. Q1 spiked from 1.17 → 9.54 → NaN in a single log interval. Episode count jumped from 641 to 10,497 (humanoid falling instantly from NaN actions).
+
+**Root cause:** No gradient clipping. HumanoidRun has 67-dim obs and 21-dim actions — large enough that Q-network gradients can occasionally spike. Without clipping, a single large gradient step destabilizes the network, NaN propagates through the actor, and every env immediately terminates.
+
+**Why SAC was immune:** SAC's entropy regularization acts as implicit gradient control — the `alpha * log_prob` term keeps the actor's output distribution smooth, preventing the sharp policy changes that trigger Q-value spikes. TD3 has no such mechanism.
+
+**Fix:** Added `optax.chain(optax.clip_by_global_norm(1.0), optax.adam(lr))` for both actor and critic optimizers, plus Q LayerNorm for the HumanoidRun preset. Second run was completely stable through 5M steps.
+
+**Lesson:** Gradient clipping is essential for TD3 on high-dimensional tasks. SAC's entropy regularization provides implicit stability that TD3 lacks. When porting between algorithms, don't assume stability properties transfer — each algorithm has its own failure modes.
+
+---
+
+### Replay Ratio Must Scale with num_envs
+
+**Problem:** TD3 with `grad_updates_per_step=1` (vanilla) and 128 parallel envs showed Q values stuck near 0 and returns barely above random after 600k steps.
+
+**Root cause:** Collecting 128 samples per step but only training on 256 (one batch). The model can't learn fast enough to keep up with data collection. Vanilla TD3's 1:1 ratio assumes single-env training.
+
+**Fix:** Bumped `grad_updates_per_step` from 1 to 4 in the 128-env preset. Returns immediately started climbing.
+
+**Lesson:** The replay ratio (gradient steps per env step) must scale with `num_envs`. A 1:1 ratio for 1 env = 1 gradient step per sample. For 128 envs, 1:1 means 1 gradient step per 128 samples — the model sees each sample roughly once before it's pushed out of the buffer. Use 4-8 gradient steps per env step for 128+ parallel envs.
+
+---
+
+### TD3's Exploration Limits on High-Dimensional Tasks
+
+**Observation:** TD3 reached 749 on CheetahRun (6-dim action) and 955 on WalkerWalk (6-dim action), competitive with SAC. But on HumanoidRun (21-dim action), TD3 scored 4.3 vs SAC's 207.
+
+**Why:** TD3 explores via additive Gaussian noise (`action + N(0, 0.1)`). In 21 dimensions, random perturbations almost never produce coordinated movements. SAC's entropy maximization actively searches for diverse high-reward behaviors — it's structured exploration, not random noise.
+
+**When to use which:**
+- **TD3**: Simpler tasks (≤10 action dims), faster wall-clock due to no entropy overhead. Good default for manipulation, simple locomotion.
+- **SAC**: High-dimensional tasks (>10 action dims), tasks requiring coordinated multi-joint movement. Worth the extra complexity for humanoid-class problems.
+- **FastTD3** (future): Uses distributional critic + large batches to compensate for TD3's exploration weakness. Achieves SOTA on humanoid tasks despite being deterministic.
+
+---
+
 ### Python `if` vs `jax.lax.cond` Inside Traced Functions
 
 **Problem:** `sac.select_action` used `if deterministic:` to branch between `tanh(mean)` and sampling. Worked fine during training (called from Python loop), crashed inside `jax.lax.scan` for video recording:
@@ -875,16 +518,26 @@ return jax.lax.cond(deterministic, lambda: jnp.tanh(mean), lambda: action)
 
 ---
 
+### Integer Division Truncation in Training Loop Bounds
+
+**Problem:** Final eval+checkpoint never fired. `total_env_steps=200000`, `num_envs=128`. Loop range: `range(0, 200000 // 128)` = `range(0, 1562)`. Last iteration: `total_steps = 1562 * 128 = 199936 < 200000`. The condition `total_steps >= total_env_steps` was never true.
+
+**Fix:** Moved final eval outside the training loop. The in-loop eval triggers on episode count; the post-loop eval always runs.
+
+**Lesson:** `total_steps // num_envs * num_envs != total_steps` when they don't divide evenly. Never rely on hitting an exact step count in a loop — use a post-loop finalizer instead.
+
+---
+
 ## Future Topics to Explore
 
 - [x] `jax.jit` compilation and when to use it
 - [x] `jax.lax.scan` vs Python loops (efficiency) — 542x speedup on PPO update
 - [x] Checkpointing with Orbax
+- [x] Layer normalization in JAX/Linen — used in QHead for SAC/TD3
+- [x] Deterministic eval rollouts (separate from training returns)
 - [ ] Performance profiling with JAX
 - [ ] Pytrees and how Linen models work as pytrees
 - [ ] Device placement (CPU vs GPU)
-- [ ] Layer normalization in JAX/Linen (needed for FastTD3)
-- [ ] Deterministic eval rollouts (separate from training returns)
 
 ---
 

@@ -31,10 +31,12 @@ from mujoco_playground._src.wrapper import wrap_for_brax_training
 from jax_rl.algos.ppo import PPO
 from jax_rl.buffers import RolloutBuffer
 from jax_rl.configs import EncoderConfig, PolicyHeadConfig, TrainConfig, get_preset
+from jax_rl.utils.eval import evaluate
 from jax_rl.utils.normalization import (
     init as norm_init,
     update as norm_update,
     normalize as norm_normalize,
+    NormalizationState,
 )
 
 
@@ -194,11 +196,15 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
     completed_returns: list[float] = []
     metrics_log: list[dict] = []
 
+    # ── Eval env (separate instance) ────────────────────────────────────
+    eval_env = dm_control_suite.load(cfg.env_name)
+    eval_env = wrap_for_brax_training(eval_env, episode_length=cfg.episode_length)
+
     # ── Checkpoint dir (created once, reused for periodic saves) ─────────
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     env_short = cfg.env_name.lower().replace(" ", "_")
     ckpt_dir = os.path.join("checkpoints", f"{timestamp}_{env_short}_seed{seed}")
-    checkpoint_interval = 5
+    last_eval_eps = 0
 
     # ── Training loop ────────────────────────────────────────────────────
     print(f"\nJIT-compiling first iteration (expect a delay)...")
@@ -321,22 +327,59 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
                 "iter_time": iter_time,
             })
 
-        # ── Periodic checkpoint ─────────────────────────────────────────
-        if (iteration + 1) % checkpoint_interval == 0 or iteration == num_iterations - 1:
+        # ── Eval + checkpoint (triggered by episode count) ─────────────
+        n_eps_total = len(completed_returns)
+        if n_eps_total >= last_eval_eps + cfg.eval_every_n_episodes:
+            # PPO wrapper: normalize obs, then call select_action with full state
+            frozen_norm = norm_state
+            frozen_state = training_state
+            def _ppo_eval_action(actor_params, obs, key, deterministic=True):
+                normed = norm_normalize(frozen_norm, obs)
+                action, _, _ = ppo.select_action(frozen_state, normed, key, deterministic=True)
+                return jnp.clip(action, -1.0, 1.0)
+
+            key, eval_key = jax.random.split(key)
+            eval_metrics = evaluate(
+                _ppo_eval_action, training_state.actor_params,
+                eval_env, num_episodes=cfg.num_eval_episodes,
+                episode_length=cfg.episode_length, key=eval_key,
+            )
+            print(
+                f"  EVAL @ {n_eps_total} eps ({total_steps:,} steps) | "
+                f"Return {eval_metrics['eval_mean']:.1f} ± {eval_metrics['eval_std']:.1f} "
+                f"[{eval_metrics['eval_min']:.0f}, {eval_metrics['eval_max']:.0f}]"
+            )
+            if metrics_log:
+                metrics_log[-1].update(eval_metrics)
             _save_checkpoint(ckpt_dir, training_state, norm_state, cfg,
                              obs_dim, action_dim, metrics_log, resume)
             print(f"  Checkpoint saved to {ckpt_dir}")
+            last_eval_eps = n_eps_total
 
+    # ── Final eval + checkpoint ───────────────────────────────────────────
+    frozen_norm = norm_state
+    frozen_state = training_state
+    def _ppo_eval_action(actor_params, obs, key, deterministic=True):
+        normed = norm_normalize(frozen_norm, obs)
+        action, _, _ = ppo.select_action(frozen_state, normed, key, deterministic=True)
+        return jnp.clip(action, -1.0, 1.0)
+
+    key, eval_key = jax.random.split(key)
+    eval_metrics = evaluate(
+        _ppo_eval_action, training_state.actor_params,
+        eval_env, num_episodes=cfg.num_eval_episodes,
+        episode_length=cfg.episode_length, key=eval_key,
+    )
+    _save_checkpoint(ckpt_dir, training_state, norm_state, cfg,
+                     obs_dim, action_dim, metrics_log, resume)
     print("=" * 80)
+    print(f"Training complete.")
     if completed_returns:
         final = completed_returns[-100:]
-        print(f"Training complete.")
         print(f"  Total episodes: {len(completed_returns)}")
-        print(f"  Final avg return (last 100 eps): {np.mean(final):.1f}")
-        print(f"  Final max return (last 100 eps): {np.max(final):.1f}")
-    else:
-        print("Done. No episodes completed.")
-
+        print(f"  Online avg return (last 100 eps): {np.mean(final):.1f}")
+    print(f"  Eval return: {eval_metrics['eval_mean']:.1f} ± {eval_metrics['eval_std']:.1f} "
+          f"[{eval_metrics['eval_min']:.0f}, {eval_metrics['eval_max']:.0f}]")
     print(f"  Final checkpoint: {ckpt_dir}")
 
 

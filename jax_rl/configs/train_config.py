@@ -49,5 +49,9 @@ class TrainConfig:
     # Logging
     log_interval: int = 1
 
+    # Evaluation + checkpointing (triggered together)
+    eval_every_n_episodes: int = 500  # run deterministic eval + save checkpoint
+    num_eval_episodes: int = 10       # episodes per eval
+
     # Algorithm-specific (set one)
     ppo: PPOConfig | None = field(default_factory=PPOConfig)

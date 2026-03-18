@@ -31,6 +31,7 @@ from jax_rl.buffers.replay_buffer import ReplayBuffer
 from jax_rl.configs.sac_config import SACConfig
 from jax_rl.configs.train_config import TrainConfig
 from jax_rl.configs.env_presets import get_sac_preset
+from jax_rl.utils.eval import evaluate
 from jax_rl.utils.normalization import NormalizationState
 
 
@@ -169,11 +170,14 @@ def train(cfg: TrainConfig, sac_cfg: SACConfig, seed: int = 0, resume: str | Non
     completed_returns: list[float] = []
     metrics_log: list[dict] = []
 
+    # ── Eval env (separate instance, not disturbing training) ──────────────
+    eval_env = dm_control_suite.load(cfg.env_name)
+    eval_env = wrap_for_brax_training(eval_env, episode_length=cfg.episode_length)
+
     # ── Checkpoint dir ────────────────────────────────────────────────────
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     env_short = cfg.env_name.lower().replace(" ", "_")
     ckpt_dir = os.path.join("checkpoints", f"{timestamp}_sac_{env_short}_seed{seed}")
-    checkpoint_interval = 50_000  # save every 50k env steps
 
     # ── Training loop ────────────────────────────────────────────────────
     print(f"\nCollecting {sac_cfg.min_buffer_size:,} samples before first gradient update...")
@@ -182,7 +186,7 @@ def train(cfg: TrainConfig, sac_cfg: SACConfig, seed: int = 0, resume: str | Non
     t0 = time.time()
     log_every = max(1, 10_000 // cfg.num_envs)  # log roughly every 10k env steps
     last_log_step = start_step
-    last_ckpt_step = start_step
+    last_eval_eps = 0
     last_metrics: dict = {}
     total_gradient_steps = 0
 
@@ -292,21 +296,45 @@ def train(cfg: TrainConfig, sac_cfg: SACConfig, seed: int = 0, resume: str | Non
                 })
             last_log_step = total_steps
 
-        # ── Periodic checkpoint ───────────────────────────────────────────
-        if total_steps - last_ckpt_step >= checkpoint_interval or total_steps >= total_env_steps:
+        # ── Eval + checkpoint (triggered by episode count) ─────────────────
+        n_eps = len(completed_returns)
+        if n_eps >= last_eval_eps + cfg.eval_every_n_episodes:
+            key, eval_key = jax.random.split(key)
+            eval_metrics = evaluate(
+                sac.select_action, training_state.actor_params,
+                eval_env, num_episodes=cfg.num_eval_episodes,
+                episode_length=cfg.episode_length, key=eval_key,
+            )
+            print(
+                f"  EVAL @ {n_eps} eps ({total_steps:,} steps) | "
+                f"Return {eval_metrics['eval_mean']:.1f} ± {eval_metrics['eval_std']:.1f} "
+                f"[{eval_metrics['eval_min']:.0f}, {eval_metrics['eval_max']:.0f}]"
+            )
+            if metrics_log:
+                metrics_log[-1].update(eval_metrics)
             _save_checkpoint(ckpt_dir, training_state, norm_state, cfg, sac_cfg,
                              obs_dim, action_dim, metrics_log, resume)
-            print(f"  Checkpoint saved to {ckpt_dir} ({total_steps:,} steps)")
-            last_ckpt_step = total_steps
+            print(f"  Checkpoint saved to {ckpt_dir}")
+            last_eval_eps = n_eps
 
+    # ── Final eval + checkpoint ───────────────────────────────────────────
+    key, eval_key = jax.random.split(key)
+    eval_metrics = evaluate(
+        sac.select_action, training_state.actor_params,
+        eval_env, num_episodes=cfg.num_eval_episodes,
+        episode_length=cfg.episode_length, key=eval_key,
+    )
+    _save_checkpoint(ckpt_dir, training_state, norm_state, cfg, sac_cfg,
+                     obs_dim, action_dim, metrics_log, resume)
     print("=" * 80)
+    print(f"Training complete.")
     if completed_returns:
         final = completed_returns[-100:]
-        print(f"Training complete.")
         print(f"  Total episodes: {len(completed_returns)}")
-        print(f"  Final avg return (last 100 eps): {np.mean(final):.1f}")
-        print(f"  Final max return (last 100 eps): {np.max(final):.1f}")
-        print(f"  Total gradient steps: {total_gradient_steps:,}")
+        print(f"  Online avg return (last 100 eps): {np.mean(final):.1f}")
+    print(f"  Eval return: {eval_metrics['eval_mean']:.1f} ± {eval_metrics['eval_std']:.1f} "
+          f"[{eval_metrics['eval_min']:.0f}, {eval_metrics['eval_max']:.0f}]")
+    print(f"  Total gradient steps: {total_gradient_steps:,}")
     print(f"  Final checkpoint: {ckpt_dir}")
 
 

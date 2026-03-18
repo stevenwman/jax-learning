@@ -32,6 +32,7 @@ from jax_rl.buffers.replay_buffer import ReplayBuffer
 from jax_rl.configs.td3_config import TD3Config
 from jax_rl.configs.train_config import TrainConfig
 from jax_rl.configs.env_presets import get_td3_preset
+from jax_rl.utils.eval import evaluate
 from jax_rl.utils.normalization import NormalizationState
 
 
@@ -112,8 +113,9 @@ def train(cfg: TrainConfig, td3_cfg: TD3Config, seed: int = 0, resume: str | Non
     print(f"  handle_truncation={cfg.handle_truncation}, reward_scaling={cfg.reward_scaling}")
 
     # ── TD3 setup ─────────────────────────────────────────────────────────
-    actor_optimizer = optax.adam(cfg.lr)
-    critic_optimizer = optax.adam(cfg.lr)
+    # Gradient clipping prevents Q-value explosion on high-dim tasks (HumanoidRun)
+    actor_optimizer = optax.chain(optax.clip_by_global_norm(1.0), optax.adam(cfg.lr))
+    critic_optimizer = optax.chain(optax.clip_by_global_norm(1.0), optax.adam(cfg.lr))
 
     td3 = TD3(
         config=td3_cfg,
@@ -162,10 +164,13 @@ def train(cfg: TrainConfig, td3_cfg: TD3Config, seed: int = 0, resume: str | Non
     completed_returns: list[float] = []
     metrics_log: list[dict] = []
 
+    # Eval env (separate instance)
+    eval_env = dm_control_suite.load(cfg.env_name)
+    eval_env = wrap_for_brax_training(eval_env, episode_length=cfg.episode_length)
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     env_short = cfg.env_name.lower().replace(" ", "_")
     ckpt_dir = os.path.join("checkpoints", f"{timestamp}_td3_{env_short}_seed{seed}")
-    checkpoint_interval = 50_000
 
     print(f"\nCollecting {td3_cfg.min_buffer_size:,} samples before first gradient update...")
     print("-" * 80)
@@ -173,7 +178,7 @@ def train(cfg: TrainConfig, td3_cfg: TD3Config, seed: int = 0, resume: str | Non
     t0 = time.time()
     log_every = max(1, 10_000 // cfg.num_envs)
     last_log_step = start_step
-    last_ckpt_step = start_step
+    last_eval_eps = 0
     last_metrics: dict = {}
     total_gradient_steps = 0
 
@@ -225,8 +230,13 @@ def train(cfg: TrainConfig, td3_cfg: TD3Config, seed: int = 0, resume: str | Non
             for _ in range(td3_cfg.grad_updates_per_step):
                 batch = buffer.sample(td3_cfg.batch_size)
                 jax_batch = {k: jnp.array(v) for k, v in batch.items()}
-                training_state, last_metrics = td3.update(training_state, jax_batch)
+                training_state, step_metrics = td3.update(training_state, jax_batch)
                 total_gradient_steps += 1
+                # Keep last real actor loss (non-zero = actor actually updated)
+                if float(step_metrics.get("actor_loss", 0.0)) != 0.0:
+                    last_metrics = step_metrics
+                else:
+                    last_metrics = {**step_metrics, "actor_loss": last_metrics.get("actor_loss", 0.0)}
 
         # ── Logging ──────────────────────────────────────────────────────
         if outer_step % log_every == 0 or total_steps >= total_env_steps:
@@ -276,20 +286,45 @@ def train(cfg: TrainConfig, td3_cfg: TD3Config, seed: int = 0, resume: str | Non
                 })
             last_log_step = total_steps
 
-        if total_steps - last_ckpt_step >= checkpoint_interval or total_steps >= total_env_steps:
+        # ── Eval + checkpoint (triggered by episode count) ─────────────────
+        n_eps_total = len(completed_returns)
+        if n_eps_total >= last_eval_eps + cfg.eval_every_n_episodes:
+            key, eval_key = jax.random.split(key)
+            eval_metrics = evaluate(
+                td3.select_action, training_state.actor_params,
+                eval_env, num_episodes=cfg.num_eval_episodes,
+                episode_length=cfg.episode_length, key=eval_key,
+            )
+            print(
+                f"  EVAL @ {n_eps_total} eps ({total_steps:,} steps) | "
+                f"Return {eval_metrics['eval_mean']:.1f} ± {eval_metrics['eval_std']:.1f} "
+                f"[{eval_metrics['eval_min']:.0f}, {eval_metrics['eval_max']:.0f}]"
+            )
+            if metrics_log:
+                metrics_log[-1].update(eval_metrics)
             _save_checkpoint(ckpt_dir, training_state, norm_state, cfg, td3_cfg,
                              obs_dim, action_dim, metrics_log, resume)
-            print(f"  Checkpoint saved to {ckpt_dir} ({total_steps:,} steps)")
-            last_ckpt_step = total_steps
+            print(f"  Checkpoint saved to {ckpt_dir}")
+            last_eval_eps = n_eps_total
 
+    # ── Final eval + checkpoint ───────────────────────────────────────────
+    key, eval_key = jax.random.split(key)
+    eval_metrics = evaluate(
+        td3.select_action, training_state.actor_params,
+        eval_env, num_episodes=cfg.num_eval_episodes,
+        episode_length=cfg.episode_length, key=eval_key,
+    )
+    _save_checkpoint(ckpt_dir, training_state, norm_state, cfg, td3_cfg,
+                     obs_dim, action_dim, metrics_log, resume)
     print("=" * 80)
+    print(f"Training complete.")
     if completed_returns:
         final = completed_returns[-100:]
-        print(f"Training complete.")
         print(f"  Total episodes: {len(completed_returns)}")
-        print(f"  Final avg return (last 100 eps): {np.mean(final):.1f}")
-        print(f"  Final max return (last 100 eps): {np.max(final):.1f}")
-        print(f"  Total gradient steps: {total_gradient_steps:,}")
+        print(f"  Online avg return (last 100 eps): {np.mean(final):.1f}")
+    print(f"  Eval return: {eval_metrics['eval_mean']:.1f} ± {eval_metrics['eval_std']:.1f} "
+          f"[{eval_metrics['eval_min']:.0f}, {eval_metrics['eval_max']:.0f}]")
+    print(f"  Total gradient steps: {total_gradient_steps:,}")
     print(f"  Final checkpoint: {ckpt_dir}")
 
 

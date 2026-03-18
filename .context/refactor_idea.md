@@ -33,5 +33,15 @@ Trainer (generic infrastructure)
 - Networks, buffers, normalization — untouched
 - PPOConfig / TrainConfig — already refactored
 
-## When to do this
-After CheetahRun hits ≥700. Before starting SAC. That's the natural breakpoint.
+## Status (updated 2026-03-18)
+
+**We didn't do this.** Instead built SAC and TD3 with separate train scripts (`train.py`, `train_sac.py`, `train_td3.py`). Three scripts with ~70% shared code (env setup, episode tracking, logging, checkpointing, eval).
+
+**Current pain:** Adding deterministic eval required identical changes to all three scripts. Same for any future logging/checkpoint changes.
+
+**When to actually do this:**
+- When adding FastTD3/FastSAC (5 train scripts = too much duplication)
+- When adding Gymnasium adapter (collection loop diverges per env type)
+- When adding Wandb (touching 3+ logging blocks)
+
+Until then, the duplication is manageable and each script is self-contained and readable.
