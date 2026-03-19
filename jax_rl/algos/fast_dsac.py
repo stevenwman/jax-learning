@@ -274,17 +274,38 @@ class FastDSAC:
             key: jax.Array,
             deterministic: bool = False,
         ) -> jax.Array:
+            """Eval/recording action — no population diversity beta."""
             enc_params, head_params = actor_params
             features = actor_enc.apply(enc_params, obs)
             mean, log_std, dem_logits = actor_head.apply(head_params, features)
-            # DEM weights (no beta for inference — use uniform beta=1)
             dem_weights = _compute_dem_weights(dem_logits)
             modulated_log_std = jnp.log(dem_weights) + log_std
             action, _ = sample_gaussian(mean, modulated_log_std, key, squash=True)
             return jax.lax.cond(deterministic, lambda: jnp.tanh(mean), lambda: action)
 
+        @jax.jit
+        def collect_action(
+            actor_params: Any,
+            obs: jax.Array,
+            key: jax.Array,
+            beta: jax.Array,
+        ) -> jax.Array:
+            """Training collection — with per-env population diversity beta.
+
+            Args:
+                beta: [num_envs, 1] per-env scaling factors for DEM exploration.
+            """
+            enc_params, head_params = actor_params
+            features = actor_enc.apply(enc_params, obs)
+            mean, log_std, dem_logits = actor_head.apply(head_params, features)
+            dem_weights = _compute_dem_weights(dem_logits, beta)
+            modulated_log_std = jnp.log(dem_weights) + log_std
+            action, _ = sample_gaussian(mean, modulated_log_std, key, squash=True)
+            return action
+
         self.update = update
         self.select_action = select_action
+        self.collect_action = collect_action
         self._actor_forward = _actor_forward
 
     def init(self, key: jax.Array) -> TrainingState:

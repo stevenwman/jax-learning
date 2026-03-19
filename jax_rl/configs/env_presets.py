@@ -263,7 +263,7 @@ _FAST_DSAC_BASE_ALGO = FastDSACConfig()
 FAST_DSAC_PRESETS: dict[str, tuple[TrainConfig, FastDSACConfig]] = {
     "CheetahRun": (
         dataclasses.replace(_FAST_DSAC_BASE_CFG, env_name="CheetahRun"),
-        _FAST_DSAC_BASE_ALGO,
+        _FAST_DSAC_BASE_ALGO,  # target_entropy=0.0 — negative values cause alpha collapse
     ),
     "WalkerWalk": (
         dataclasses.replace(_FAST_DSAC_BASE_CFG, env_name="WalkerWalk"),
@@ -271,7 +271,8 @@ FAST_DSAC_PRESETS: dict[str, tuple[TrainConfig, FastDSACConfig]] = {
     ),
     "HumanoidRun": (
         dataclasses.replace(_FAST_DSAC_BASE_CFG, env_name="HumanoidRun"),
-        dataclasses.replace(_FAST_DSAC_BASE_ALGO, q_layer_norm=True),
+        dataclasses.replace(_FAST_DSAC_BASE_ALGO, target_entropy=0.0,  # paper default for high-dim
+                            q_layer_norm=True),
     ),
 }
 

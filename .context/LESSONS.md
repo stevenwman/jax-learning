@@ -628,6 +628,29 @@ return jax.lax.cond(deterministic, lambda: jnp.tanh(mean), lambda: action)
 
 ---
 
+### Target Entropy = 0 Is Not Optional for SAC at Scale
+
+**Problem:** FastDSAC with target_entropy=-3.0 on CheetahRun (6-dim actions): alpha collapsed to 0.012, eval peaked at 401. Same run with target_entropy=0.0: alpha stayed at 0.65, eval peaked at 509.
+
+**Root cause:** Target entropy controls what alpha converges to. With target_entropy=-3 and 6-dim actions, the policy easily achieves entropy of -3 (just be moderately deterministic). Once achieved, alpha decays toward zero since there's no pressure to maintain exploration. The policy loses its stochastic advantage and stagnates.
+
+With target_entropy=0, entropy can never reach 0 (that would require a perfectly deterministic policy), so alpha stays positive and exploration pressure is maintained indefinitely.
+
+**The intuition:** Negative target entropy means "be this deterministic." Zero means "stay as random as you naturally want to be." For exploration-driven algorithms like SAC, you want the latter.
+
+**When to use negative target entropy:**
+- Standard SAC at small scale (128 envs, 5M steps) — the classic `-dim(A)` heuristic works because training is short enough that alpha doesn't fully collapse
+- Tasks where you want convergence to a near-deterministic policy
+
+**When to use target_entropy=0:**
+- Large-scale training (1024 envs, 100M+ steps) where alpha has time to collapse
+- High-dim action spaces where entropy collapse is catastrophic
+- Any SAC variant with DEM (DEM handles exploration allocation, alpha should just stay alive)
+
+**Lesson:** The standard SAC target entropy heuristic (`-dim(A)`) was designed for small-scale single-env training. At scale with parallel envs, it causes alpha collapse. Use 0 as the default for large-scale SAC variants.
+
+---
+
 ### AdamW Requires `params` in optimizer.update() — Adam Does Not
 
 **Problem:** FastDSAC crashed on first gradient step: `ValueError: You are using a transformation that requires the current value of parameters, but you are not passing params when calling update`.

@@ -138,6 +138,13 @@ def train(cfg: TrainConfig, dsac_cfg: FastDSACConfig, seed: int = 0,
     key, init_key = jax.random.split(key)
     training_state = dsac.init(init_key)
 
+    # Population diversity: fixed per-env beta for DEM exploration heterogeneity
+    key, beta_key = jax.random.split(key)
+    beta_per_env = jax.random.uniform(
+        beta_key, (cfg.num_envs, 1),
+        minval=dsac_cfg.beta_min, maxval=dsac_cfg.beta_max,
+    )
+
     actor_param_count = sum(x.size for x in jax.tree.leaves(training_state.actor_params))
     q_param_count = sum(x.size for x in jax.tree.leaves(training_state.q1_params))
     print(f"  actor_params={actor_param_count:,}, Q_params (each)={q_param_count:,}")
@@ -205,7 +212,7 @@ def train(cfg: TrainConfig, dsac_cfg: FastDSACConfig, seed: int = 0,
             action = jax.random.uniform(ak, (cfg.num_envs, action_dim), minval=-1.0, maxval=1.0)
         else:
             key, ak = jax.random.split(key)
-            action = dsac.select_action(training_state.actor_params, obs, ak)
+            action = dsac.collect_action(training_state.actor_params, obs, ak, beta_per_env)
 
         env_state = env_step(env_state, action)
 
