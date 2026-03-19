@@ -1,12 +1,7 @@
-"""SAC training on MuJoCo Playground environments.
+"""FastSAC — SAC with C51 distributional critic.
 
-Training loop: single Python env step → replay buffer → multiple gradient updates.
-Reference config: MuJoCo Playground dm_control_suite_params.brax_sac_config()
-  - 128 envs, lr=1e-3, batch_size=512, grad_updates_per_step=8
-  - 4M replay buffer, min_buffer=8192, tau=0.005, q_layer_norm=True
-
-Truncation handling: same as PPO. Auto-reset envs (Playground) corrupt next_obs at
-episode boundaries, so we zero Q-error at truncation steps via handle_truncation flag.
+SAC + distributional critic + Q averaging + LR cosine decay.
+Entropy regularization + auto-tuned alpha are unchanged from vanilla SAC.
 """
 
 import argparse
@@ -26,7 +21,7 @@ import orbax.checkpoint as ocp
 from mujoco_playground import dm_control_suite
 from mujoco_playground._src.wrapper import wrap_for_brax_training
 
-from jax_rl.algos.sac import SAC
+from jax_rl.algos.fast_sac import FastSAC
 from jax_rl.buffers.replay_buffer import ReplayBuffer
 from jax_rl.buffers.jax_replay_buffer import JaxReplayBuffer
 from jax_rl.configs.sac_config import SACConfig
@@ -45,7 +40,7 @@ def _save_checkpoint(ckpt_dir, training_state, norm_state, cfg, sac_cfg,
         "action_dim": action_dim,
         "train_config": dataclasses.asdict(cfg),
         "sac_config": dataclasses.asdict(sac_cfg),
-        "algo": "sac",
+        "algo": "fast_sac",
     }
     with open(os.path.join(ckpt_dir, "meta.json"), "w") as f:
         json.dump(meta, f, indent=2)
@@ -87,8 +82,9 @@ def _save_checkpoint(ckpt_dir, training_state, norm_state, cfg, sac_cfg,
 
 
 def train(cfg: TrainConfig, sac_cfg: SACConfig, seed: int = 0, resume: str | None = None,
-          jax_buffer: bool = False):
-    # ── Environment ──────────────────────────────────────────────────────
+          num_atoms: int = 51, v_min: float = -10.0, v_max: float = 150.0,
+          q_aggregation: str = "avg", lr_end: float = 3e-5,
+          jax_buffer: bool = True):
     env = dm_control_suite.load(cfg.env_name)
     env = wrap_for_brax_training(env, episode_length=cfg.episode_length)
     env_step = jax.jit(env.step)
@@ -99,31 +95,33 @@ def train(cfg: TrainConfig, sac_cfg: SACConfig, seed: int = 0, resume: str | Non
 
     obs_dim = env_state.obs.shape[-1]
     action_dim = env.action_size
-
     total_env_steps = cfg.total_timesteps
-    # Steps per "iteration" = num_envs (we log every log_interval env steps from all envs)
-    steps_per_iter = cfg.num_envs  # one step per env per outer loop iteration
+
+    # LR schedule
+    warmup_steps = sac_cfg.min_buffer_size // cfg.num_envs
+    train_iters = (total_env_steps // cfg.num_envs) - warmup_steps
+    total_grad_steps_est = train_iters * sac_cfg.grad_updates_per_step
 
     print("=" * 80)
-    print(f"SAC — {cfg.env_name} (MuJoCo Playground)")
+    print(f"FastSAC — {cfg.env_name} (MuJoCo Playground)")
     print("=" * 80)
     print(f"  obs_dim={obs_dim}, action_dim={action_dim}")
     print(f"  num_envs={cfg.num_envs}, episode_length={cfg.episode_length}")
     print(f"  total_timesteps={total_env_steps:,}")
     print(f"  buffer_size={sac_cfg.buffer_size:,}, min_buffer={sac_cfg.min_buffer_size:,}")
     print(f"  batch_size={sac_cfg.batch_size}, grad_updates_per_step={sac_cfg.grad_updates_per_step}")
-    print(f"  target_entropy={-sac_cfg.target_entropy_scale * action_dim:.2f} "
-          f"(scale={sac_cfg.target_entropy_scale})")
+    print(f"  C51: atoms={num_atoms}, v=[{v_min},{v_max}], q_agg={q_aggregation}")
+    print(f"  target_entropy={-sac_cfg.target_entropy_scale * action_dim:.2f}")
     print(f"  tau={sac_cfg.tau}, q_layer_norm={sac_cfg.q_layer_norm}, "
-          f"hidden={sac_cfg.hidden_dim}, activation={sac_cfg.activation}")
-    print(f"  lr={cfg.lr}, alpha_lr={sac_cfg.alpha_lr}, gamma={cfg.gamma}")
-    print(f"  handle_truncation={cfg.handle_truncation}, reward_scaling={cfg.reward_scaling}")
+          f"hidden={sac_cfg.hidden_dim}")
+    print(f"  lr={cfg.lr} → {lr_end} (cosine), alpha_lr={sac_cfg.alpha_lr}, gamma={cfg.gamma}")
 
-    # ── SAC setup ────────────────────────────────────────────────────────
-    optimizer = optax.adam(cfg.lr)
+    # ── FastSAC setup ─────────────────────────────────────────────────────
+    lr_schedule = optax.cosine_decay_schedule(cfg.lr, total_grad_steps_est, alpha=lr_end / cfg.lr)
+    optimizer = optax.chain(optax.clip_by_global_norm(1.0), optax.adam(lr_schedule))
     alpha_optimizer = optax.adam(sac_cfg.alpha_lr)
 
-    sac = SAC(
+    sac = FastSAC(
         config=sac_cfg,
         obs_dim=obs_dim,
         action_dim=action_dim,
@@ -131,6 +129,10 @@ def train(cfg: TrainConfig, sac_cfg: SACConfig, seed: int = 0, resume: str | Non
         alpha_optimizer=alpha_optimizer,
         gamma=cfg.gamma,
         handle_truncation=cfg.handle_truncation,
+        num_atoms=num_atoms,
+        v_min=v_min,
+        v_max=v_max,
+        q_aggregation=q_aggregation,
     )
 
     key, init_key = jax.random.split(key)
@@ -140,18 +142,14 @@ def train(cfg: TrainConfig, sac_cfg: SACConfig, seed: int = 0, resume: str | Non
     q_param_count = sum(x.size for x in jax.tree.leaves(training_state.q1_params))
     print(f"  actor_params={actor_param_count:,}, Q_params (each)={q_param_count:,}")
 
-    # ── Obs normalization (identity — SAC skips normalization; Q LayerNorm suffices)
-    # Kept as identity for checkpoint/inference compatibility
     norm_state = NormalizationState(
         mean=jnp.zeros(obs_dim),
-        mean_of_squares=jnp.ones(obs_dim),  # variance=1 → normalize is identity
+        mean_of_squares=jnp.ones(obs_dim),
         count=1,
     )
 
-    # ── Replay buffer ────────────────────────────────────────────────────
     BufferCls = JaxReplayBuffer if jax_buffer else ReplayBuffer
     buffer = BufferCls(obs_dim, action_dim, max_size=sac_cfg.buffer_size)
-
 
     # ── Resume ────────────────────────────────────────────────────────────
     start_step = 0
@@ -182,7 +180,7 @@ def train(cfg: TrainConfig, sac_cfg: SACConfig, seed: int = 0, resume: str | Non
     # ── Checkpoint dir ────────────────────────────────────────────────────
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     env_short = cfg.env_name.lower().replace(" ", "_")
-    ckpt_dir = os.path.join("checkpoints", f"{timestamp}_sac_{env_short}_seed{seed}")
+    ckpt_dir = os.path.join("checkpoints", f"{timestamp}_fast_sac_{env_short}_seed{seed}")
 
     # ── Training loop ────────────────────────────────────────────────────
     print(f"\nCollecting {sac_cfg.min_buffer_size:,} samples before first gradient update...")
@@ -220,14 +218,17 @@ def train(cfg: TrainConfig, sac_cfg: SACConfig, seed: int = 0, resume: str | Non
         )
 
         # Store raw obs (no normalization for off-policy)
-        buffer.add_batch(
-            obs=np.asarray(obs),
-            action=np.asarray(action),
-            reward=np.asarray(env_state.reward * cfg.reward_scaling),
-            next_obs=np.asarray(env_state.obs),
-            done=np.asarray(env_state.done),
-            truncation=np.asarray(truncation),
-        )
+        if jax_buffer:
+            buffer.add_batch(obs=obs, action=action,
+                             reward=env_state.reward * cfg.reward_scaling,
+                             next_obs=env_state.obs, done=env_state.done,
+                             truncation=truncation)
+        else:
+            buffer.add_batch(obs=np.asarray(obs), action=np.asarray(action),
+                             reward=np.asarray(env_state.reward * cfg.reward_scaling),
+                             next_obs=np.asarray(env_state.obs),
+                             done=np.asarray(env_state.done),
+                             truncation=np.asarray(truncation))
 
         # Episode return tracking
         step_rewards = np.asarray(env_state.reward)
@@ -361,7 +362,8 @@ if __name__ == "__main__":
     parser.add_argument("--reward-scaling", type=float, default=None)
     parser.add_argument("--episode-length", type=int, default=None)
     parser.add_argument("--log-interval", type=int, default=None)
-    parser.add_argument("--jax-buffer", action="store_true", help="Use GPU-resident JAX replay buffer")
+    parser.add_argument("--jax-buffer", action=argparse.BooleanOptionalAction, default=True,
+                        help="Use GPU-resident JAX replay buffer (default: True)")
     args = parser.parse_args()
 
     cfg, sac_cfg = get_sac_preset(args.env)

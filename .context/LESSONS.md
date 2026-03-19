@@ -518,6 +518,92 @@ return jax.lax.cond(deterministic, lambda: jnp.tanh(mean), lambda: action)
 
 ---
 
+### FastTD3: Scale Matters — Don't Bring a Race Car to a Parking Lot
+
+**Problem:** FastTD3 (C51 distributional critic + Q averaging) underperformed vanilla TD3 at 128 envs / 5M steps: 285 eval vs vanilla TD3's 749.
+
+**Root cause:** FastTD3 is designed for massive scale. The paper runs 1024 envs for ~750M total steps (~9M gradient steps). Our 5M-step runs had only 155K gradient steps — 57x fewer. The distributional critic adds computational overhead per gradient step without enough total steps to recoup the investment.
+
+**The math:**
+- Paper: 1024 envs × 12 updates/iter × ~750M steps → ~9M gradient steps × 32K batch = 300B total samples processed
+- Our run: 128 envs × 4 updates/iter × 5M steps → 155K gradient steps × 512 batch = 80M total samples processed
+- That's 3750x less total training compute
+
+**V_min/V_max must cover actual Q range:** Paper uses [-10, 10] for their reward scale. CheetahRun with reward ~0.8/step has Q ≈ 80, so [-10, 150] needed. Q capped at V_max=10 → return capped at ~150 (the distributional equivalent of gradient clipping on the value function).
+
+**Lesson:** "Fast" algorithms are fast at scale, not at small scale. Running FastTD3 at 128 envs / 5M steps tests nothing — it's like benchmarking a multi-GPU distributed training framework on a single batch. Match the paper's intended operating regime (1024+ envs, 50M+ steps) or use the simpler algorithm.
+
+---
+
+### C51 Support Range (V_min/V_max) Is a Critical Hyperparameter
+
+**Problem:** FastTD3 with default V_min=-10, V_max=10 on CheetahRun: Q values capped at ~9 (near V_max), returns capped at 154.
+
+**Root cause:** C51 represents Q-values as a categorical distribution over fixed atoms in [V_min, V_max]. If the true Q exceeds V_max, all probability mass piles up at the boundary atom — the critic can't distinguish Q=10 from Q=100.
+
+**Fix:** Set V_min/V_max to cover the actual Q-value range per environment:
+- Q ≈ avg_reward_per_step / (1 - gamma)
+- CheetahRun: reward ~0.8, gamma=0.99 → Q ≈ 80 → V_max=150
+- HumanoidRun: reward ~0.2, gamma=0.99 → Q ≈ 20 → V_max=50
+
+**Lesson:** Unlike scalar Q which is unbounded, distributional Q is hard-bounded by [V_min, V_max]. This is essentially a prior on the return range. Get it wrong and the critic is blind beyond the boundary.
+
+---
+
+### JIT the Hot Path — Non-JIT'd JAX Can Be Slower Than Numpy
+
+**Problem:** Initial JAX replay buffer benchmark showed it was **5x slower** than numpy (1.85ms vs 0.34ms per sample at batch=512).
+
+**Root cause:** `jax_array[random_indices]` without JIT dispatches a Python-level gather op every call. Numpy's C-compiled indexing + tiny CPU→GPU memcpy was faster than JAX's Python dispatch overhead.
+
+**Fix:** Cache a JIT'd sample function per batch_size. After JIT warmup, sampling is constant ~0.13ms regardless of batch size (compiled GPU gather).
+
+**Result:**
+| Batch | Numpy | JAX (no JIT) | JAX (JIT'd) |
+|-------|-------|-------------|-------------|
+| 512 | 0.33ms | 1.85ms (5x slower!) | 0.12ms (2.7x faster) |
+| 32,768 | 1.74ms | — | 0.13ms (13.3x faster) |
+
+**Lesson:** JAX without JIT is slower than numpy for small ops due to Python dispatch overhead. Always JIT the hot path. "Put it in a jax.Array" is not enough — you need to JIT the operations on it too.
+
+---
+
+### jax.lax.scan Carry Cost — Large Buffer Arrays Kill Throughput
+
+**Problem:** Scanning the inner gradient loop (sample + update × 8) with buffer arrays in the carry was 30% slower than a Python loop (6k vs 8.7k sps for SAC WalkerWalk).
+
+**Root cause:** The scan carry included 6 buffer arrays (obs, next_obs, actions, rewards, dones, truncations) of shape (4M, dim). Even though they're not modified, JAX threads them through every scan iteration. At 4M entries, the carry overhead dominates the dispatch savings.
+
+**Microbenchmark vs real training:**
+- 100K buffer: scan was 1.17x faster (carry is cheap)
+- 4M buffer: scan was 0.70x slower (carry overhead dominates)
+
+**When scan helps:** Small carry state (just TrainingState, ~few MB). When scan hurts: large immutable data threaded through carry (buffer arrays, ~1GB).
+
+**The right pattern:** Don't put the buffer in carry. Either:
+1. Use `jax.make_jaxpr` tricks to avoid carry overhead (advanced)
+2. Accept Python loop when carry would be large
+3. Wait for JAX improvements to carry handling
+
+**Lesson:** `jax.lax.scan` isn't free — carry size matters. Profile the full pipeline, not just the loop body.
+
+---
+
+### A Faster Component Doesn't Mean Faster Training
+
+**Problem:** JAX buffer showed 4.8x faster sampling at batch=8192, but FastTD3 end-to-end throughput only improved ~1.5% (11.7k → 11.9k sps).
+
+**Root cause:** Gradient steps (~6ms × 12 per env step) dominate wall-clock. Buffer sampling (0.72ms → 0.15ms × 12 = 6.8ms saved) is <10% of total step time. The 4.8x microbenchmark speedup translates to <2% end-to-end.
+
+**When JAX buffer actually matters:**
+- Scanning the inner gradient loop (eliminates Python dispatch between gradient steps)
+- Very large batch sizes (32K+) where numpy transfer becomes significant
+- Very high replay ratios (many samples per env step)
+
+**Lesson:** Profile the full pipeline before optimizing a component. A 10x speedup on 5% of runtime = 0.5% end-to-end. The bottleneck here is Python dispatch between gradient steps, not buffer speed.
+
+---
+
 ### Integer Division Truncation in Training Loop Bounds
 
 **Problem:** Final eval+checkpoint never fired. `total_env_steps=200000`, `num_envs=128`. Loop range: `range(0, 200000 // 128)` = `range(0, 1562)`. Last iteration: `total_steps = 1562 * 128 = 199936 < 200000`. The condition `total_steps >= total_env_steps` was never true.

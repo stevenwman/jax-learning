@@ -5,6 +5,7 @@ import dataclasses
 from jax_rl.configs.ppo_config import PPOConfig
 from jax_rl.configs.sac_config import SACConfig
 from jax_rl.configs.td3_config import TD3Config
+from jax_rl.configs.fast_td3_config import FastTD3Config
 from jax_rl.configs.train_config import TrainConfig
 
 PRESETS: dict[str, TrainConfig] = {
@@ -145,6 +146,49 @@ def get_td3_preset(env_name: str) -> tuple[TrainConfig, TD3Config]:
     if env_name in TD3_PRESETS:
         return TD3_PRESETS[env_name]
     return dataclasses.replace(_TD3_BASE_CFG, env_name=env_name), _TD3_BASE_ALGO
+
+
+# FastTD3 presets — C51 distributional + large batch + LR decay
+_FAST_TD3_BASE_CFG = TrainConfig(
+    total_timesteps=100_000_000,
+    num_envs=1024,
+    episode_length=1000,
+    lr=3e-4,
+    anneal_lr=False,
+    reward_scaling=1.0,
+    gamma=0.99,
+    handle_truncation=True,
+    ppo=None,
+)
+
+_FAST_TD3_BASE_ALGO = FastTD3Config()
+
+# v_min/v_max must cover the actual Q-value range for each env.
+# Q ≈ avg_reward_per_step / (1 - gamma). With gamma=0.99:
+#   CheetahRun: reward ~0.8 → Q ~80. WalkerWalk: reward ~0.97 → Q ~97.
+#   HumanoidRun: reward ~0.2 → Q ~20.
+FAST_TD3_PRESETS: dict[str, tuple[TrainConfig, FastTD3Config]] = {
+    "CheetahRun": (
+        dataclasses.replace(_FAST_TD3_BASE_CFG, env_name="CheetahRun"),
+        dataclasses.replace(_FAST_TD3_BASE_ALGO, v_min=-10.0, v_max=150.0),
+    ),
+    "WalkerWalk": (
+        dataclasses.replace(_FAST_TD3_BASE_CFG, env_name="WalkerWalk"),
+        dataclasses.replace(_FAST_TD3_BASE_ALGO, v_min=-10.0, v_max=150.0),
+    ),
+    "HumanoidRun": (
+        dataclasses.replace(_FAST_TD3_BASE_CFG, env_name="HumanoidRun"),
+        dataclasses.replace(_FAST_TD3_BASE_ALGO, v_min=-10.0, v_max=50.0,
+                            exploration_noise_std=0.3),
+    ),
+}
+
+
+def get_fast_td3_preset(env_name: str) -> tuple[TrainConfig, FastTD3Config]:
+    """Return FastTD3 preset (TrainConfig, FastTD3Config) for env, or a default."""
+    if env_name in FAST_TD3_PRESETS:
+        return FAST_TD3_PRESETS[env_name]
+    return dataclasses.replace(_FAST_TD3_BASE_CFG, env_name=env_name), _FAST_TD3_BASE_ALGO
 
 
 def get_preset(env_name: str) -> TrainConfig:

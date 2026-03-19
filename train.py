@@ -62,8 +62,9 @@ def _save_checkpoint(ckpt_dir, training_state, norm_state, cfg, obs_dim, action_
             if os.path.exists(prev_csv):
                 with open(prev_csv) as f:
                     prior_rows = list(csv.DictReader(f))
+        all_keys = dict.fromkeys(k for row in metrics_log for k in row)
         with open(csv_path, "w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=metrics_log[0].keys())
+            writer = csv.DictWriter(f, fieldnames=all_keys, extrasaction="ignore")
             writer.writeheader()
             for row in prior_rows:
                 writer.writerow(row)

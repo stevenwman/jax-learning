@@ -29,6 +29,7 @@ from mujoco_playground._src.wrapper import wrap_for_brax_training
 
 from jax_rl.algos.td3 import TD3
 from jax_rl.buffers.replay_buffer import ReplayBuffer
+from jax_rl.buffers.jax_replay_buffer import JaxReplayBuffer
 from jax_rl.configs.td3_config import TD3Config
 from jax_rl.configs.train_config import TrainConfig
 from jax_rl.configs.env_presets import get_td3_preset
@@ -58,8 +59,9 @@ def _save_checkpoint(ckpt_dir, training_state, norm_state, cfg, td3_cfg,
             if os.path.exists(prev_csv):
                 with open(prev_csv) as f:
                     prior_rows = list(csv.DictReader(f))
+        all_keys = dict.fromkeys(k for row in metrics_log for k in row)
         with open(csv_path, "w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=metrics_log[0].keys())
+            writer = csv.DictWriter(f, fieldnames=all_keys, extrasaction="ignore")
             writer.writeheader()
             for row in prior_rows:
                 writer.writerow(row)
@@ -83,7 +85,8 @@ def _save_checkpoint(ckpt_dir, training_state, norm_state, cfg, td3_cfg,
     checkpointer.wait_until_finished()
 
 
-def train(cfg: TrainConfig, td3_cfg: TD3Config, seed: int = 0, resume: str | None = None):
+def train(cfg: TrainConfig, td3_cfg: TD3Config, seed: int = 0, resume: str | None = None,
+          jax_buffer: bool = False):
     env = dm_control_suite.load(cfg.env_name)
     env = wrap_for_brax_training(env, episode_length=cfg.episode_length)
     env_step = jax.jit(env.step)
@@ -141,7 +144,8 @@ def train(cfg: TrainConfig, td3_cfg: TD3Config, seed: int = 0, resume: str | Non
         count=1,
     )
 
-    buffer = ReplayBuffer(obs_dim, action_dim, max_size=td3_cfg.buffer_size)
+    BufferCls = JaxReplayBuffer if jax_buffer else ReplayBuffer
+    buffer = BufferCls(obs_dim, action_dim, max_size=td3_cfg.buffer_size)
 
     # ── Resume ────────────────────────────────────────────────────────────
     start_step = 0
@@ -228,8 +232,12 @@ def train(cfg: TrainConfig, td3_cfg: TD3Config, seed: int = 0, resume: str | Non
         if len(buffer) >= td3_cfg.min_buffer_size:
             last_metrics = {}
             for _ in range(td3_cfg.grad_updates_per_step):
-                batch = buffer.sample(td3_cfg.batch_size)
-                jax_batch = {k: jnp.array(v) for k, v in batch.items()}
+                if jax_buffer:
+                    key, sample_key = jax.random.split(key)
+                    jax_batch = buffer.sample(td3_cfg.batch_size, key=sample_key)
+                else:
+                    batch = buffer.sample(td3_cfg.batch_size)
+                    jax_batch = {k: jnp.array(v) for k, v in batch.items()}
                 training_state, step_metrics = td3.update(training_state, jax_batch)
                 total_gradient_steps += 1
                 # Keep last real actor loss (non-zero = actor actually updated)
@@ -342,6 +350,7 @@ if __name__ == "__main__":
     parser.add_argument("--reward-scaling", type=float, default=None)
     parser.add_argument("--episode-length", type=int, default=None)
     parser.add_argument("--exploration-noise", type=float, default=None)
+    parser.add_argument("--jax-buffer", action="store_true", help="Use GPU-resident JAX replay buffer")
     args = parser.parse_args()
 
     cfg, td3_cfg = get_td3_preset(args.env)
@@ -372,4 +381,4 @@ if __name__ == "__main__":
     if td3_overrides:
         td3_cfg = dataclasses.replace(td3_cfg, **td3_overrides)
 
-    train(cfg, td3_cfg, seed=args.seed, resume=args.resume)
+    train(cfg, td3_cfg, seed=args.seed, resume=args.resume, jax_buffer=args.jax_buffer)
