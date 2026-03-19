@@ -624,7 +624,7 @@ class Trainer:
 - [x] Value head V(s)
 - [x] Gaussian policy head
 - [x] Deterministic policy head — `DeterministicHead` (features → tanh)
-- [x] Network builder (compose encoder + head from config, init params)
+- [x] Network builder (compose encoder + head from config, init params) — currently only PPO uses builders.py; SAC/TD3/FastTD3/FastSAC build inline. Unify before adding second encoder (see `.context/builders_unification_plan.md`)
 - [x] Distribution utilities (TanhNormal, rsample)
 - [x] Observation normalization (running mean/std, Welford running stats)
 - [x] Rollout buffer
@@ -688,11 +688,12 @@ DM Control rewards are normalized 0–1000. These targets are approximate — wi
 | FastSAC vs SAC | CheetahRun | Speedup | ≥3x wall-clock | Internal ablation |
 
 ### Phase 3: Fast Variants
+- [ ] Unify builders.py across all algos (prerequisite for new encoders — see `.context/builders_unification_plan.md`)
 - [ ] SimbaV2 encoder (hyperspherical normalization — recommended for FastTD3)
-- [ ] Distributional Q head (C51)
-- [ ] FastTD3 (C51 + avg Q + large batch + LayerNorm + optional SimbaV2)
-- [ ] FastSAC (same recipe)
-- [ ] JAX-native replay buffer (for high throughput)
+- [x] Distributional Q head (C51) — `DistributionalQHead`
+- [x] FastTD3 (C51 + avg Q + large batch + LayerNorm + optional SimbaV2)
+- [x] FastSAC (same recipe)
+- [x] JAX-native replay buffer (for high throughput) — `jax_replay_buffer.py`
 - [ ] Benchmark: compare wall-clock time vs standard (see table above)
 
 ### Phase 4: Behavioral Cloning

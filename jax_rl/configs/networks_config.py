@@ -35,6 +35,8 @@ class PolicyHeadConfig:
     min_std: float = 0.001  # Minimum std for state-dependent mode (softplus floor)
     # For squashing (tanh transform)
     squash: bool = True  # Output in [-1, 1] for bounded action spaces
+    # DEM (dimension-wise entropy modulation) for FastDSAC
+    dem: bool = False  # When True, output includes dem_logits
 
 
 @dataclass

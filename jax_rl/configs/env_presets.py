@@ -6,6 +6,7 @@ from jax_rl.configs.ppo_config import PPOConfig
 from jax_rl.configs.sac_config import SACConfig
 from jax_rl.configs.td3_config import TD3Config
 from jax_rl.configs.fast_td3_config import FastTD3Config
+from jax_rl.configs.fast_dsac_config import FastDSACConfig
 from jax_rl.configs.train_config import TrainConfig
 
 PRESETS: dict[str, TrainConfig] = {
@@ -157,6 +158,7 @@ _FAST_TD3_BASE_CFG = TrainConfig(
     anneal_lr=False,
     reward_scaling=1.0,
     gamma=0.99,
+    num_eval_episodes=5,  # fewer eval envs to avoid OOM with 1024 training envs
     handle_truncation=True,
     ppo=None,
 )
@@ -189,6 +191,96 @@ def get_fast_td3_preset(env_name: str) -> tuple[TrainConfig, FastTD3Config]:
     if env_name in FAST_TD3_PRESETS:
         return FAST_TD3_PRESETS[env_name]
     return dataclasses.replace(_FAST_TD3_BASE_CFG, env_name=env_name), _FAST_TD3_BASE_ALGO
+
+
+# FastSAC presets — SAC + C51 distributional critic at FastTD3 scale
+# Matches FastTD3 network/training scale: (512, 512), batch=8192, 12 grad updates, 1024 envs
+_FAST_SAC_BASE_CFG = TrainConfig(
+    total_timesteps=100_000_000,
+    num_envs=1024,
+    episode_length=1000,
+    lr=1e-3,
+    anneal_lr=False,
+    reward_scaling=1.0,
+    gamma=0.99,
+    num_eval_episodes=5,
+    handle_truncation=True,
+    ppo=None,
+)
+
+_FAST_SAC_BASE_ALGO = SACConfig(
+    tau=0.005,
+    target_entropy_scale=0.5,
+    alpha_lr=1e-3,
+    buffer_size=4_194_304,
+    min_buffer_size=8_192,
+    batch_size=8_192,
+    grad_updates_per_step=12,
+    hidden_dim=(512, 512),
+    activation="relu",
+    q_layer_norm=True,
+)
+
+FAST_SAC_PRESETS: dict[str, tuple[TrainConfig, SACConfig]] = {
+    "CheetahRun": (
+        dataclasses.replace(_FAST_SAC_BASE_CFG, env_name="CheetahRun"),
+        _FAST_SAC_BASE_ALGO,
+    ),
+    "WalkerWalk": (
+        dataclasses.replace(_FAST_SAC_BASE_CFG, env_name="WalkerWalk"),
+        _FAST_SAC_BASE_ALGO,
+    ),
+    "HumanoidRun": (
+        dataclasses.replace(_FAST_SAC_BASE_CFG, env_name="HumanoidRun"),
+        _FAST_SAC_BASE_ALGO,
+    ),
+}
+
+
+def get_fast_sac_preset(env_name: str) -> tuple[TrainConfig, SACConfig]:
+    """Return FastSAC preset (TrainConfig, SACConfig) for env, or a default."""
+    if env_name in FAST_SAC_PRESETS:
+        return FAST_SAC_PRESETS[env_name]
+    return dataclasses.replace(_FAST_SAC_BASE_CFG, env_name=env_name), _FAST_SAC_BASE_ALGO
+
+
+# FastDSAC presets — Gaussian distributional critic + DEM
+_FAST_DSAC_BASE_CFG = TrainConfig(
+    total_timesteps=100_000_000,
+    num_envs=1024,
+    episode_length=1000,
+    lr=3e-4,
+    anneal_lr=False,
+    reward_scaling=1.0,
+    gamma=0.99,
+    num_eval_episodes=5,
+    handle_truncation=True,
+    ppo=None,
+)
+
+_FAST_DSAC_BASE_ALGO = FastDSACConfig()
+
+FAST_DSAC_PRESETS: dict[str, tuple[TrainConfig, FastDSACConfig]] = {
+    "CheetahRun": (
+        dataclasses.replace(_FAST_DSAC_BASE_CFG, env_name="CheetahRun"),
+        _FAST_DSAC_BASE_ALGO,
+    ),
+    "WalkerWalk": (
+        dataclasses.replace(_FAST_DSAC_BASE_CFG, env_name="WalkerWalk"),
+        _FAST_DSAC_BASE_ALGO,
+    ),
+    "HumanoidRun": (
+        dataclasses.replace(_FAST_DSAC_BASE_CFG, env_name="HumanoidRun"),
+        dataclasses.replace(_FAST_DSAC_BASE_ALGO, q_layer_norm=True),
+    ),
+}
+
+
+def get_fast_dsac_preset(env_name: str) -> tuple[TrainConfig, FastDSACConfig]:
+    """Return FastDSAC preset (TrainConfig, FastDSACConfig) for env, or a default."""
+    if env_name in FAST_DSAC_PRESETS:
+        return FAST_DSAC_PRESETS[env_name]
+    return dataclasses.replace(_FAST_DSAC_BASE_CFG, env_name=env_name), _FAST_DSAC_BASE_ALGO
 
 
 def get_preset(env_name: str) -> TrainConfig:

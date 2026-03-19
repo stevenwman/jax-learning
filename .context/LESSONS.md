@@ -531,6 +531,8 @@ return jax.lax.cond(deterministic, lambda: jnp.tanh(mean), lambda: action)
 
 **V_min/V_max must cover actual Q range:** Paper uses [-10, 10] for their reward scale. CheetahRun with reward ~0.8/step has Q ≈ 80, so [-10, 150] needed. Q capped at V_max=10 → return capped at ~150 (the distributional equivalent of gradient clipping on the value function).
 
+**Update — paper-scale run confirmed this:** 1024 envs, batch=8192, 12 grad updates/iter, 86M steps → **880 eval** (vs vanilla TD3's 749 at 5M). FastTD3 wins on final score and wall-clock (78 min for 86M steps at 18k sps), but vanilla TD3 is more sample-efficient (749 at 5M steps). Use FastTD3 when you have GPU compute to burn and want the best final score; use vanilla TD3 when samples are expensive.
+
 **Lesson:** "Fast" algorithms are fast at scale, not at small scale. Running FastTD3 at 128 envs / 5M steps tests nothing — it's like benchmarking a multi-GPU distributed training framework on a single batch. Match the paper's intended operating regime (1024+ envs, 50M+ steps) or use the simpler algorithm.
 
 ---
@@ -601,6 +603,38 @@ return jax.lax.cond(deterministic, lambda: jnp.tanh(mean), lambda: action)
 - Very high replay ratios (many samples per env step)
 
 **Lesson:** Profile the full pipeline before optimizing a component. A 10x speedup on 5% of runtime = 0.5% end-to-end. The bottleneck here is Python dispatch between gradient steps, not buffer speed.
+
+---
+
+### FastSAC (C51 + SAC) Is a Known Dead End — Use FastDSAC Instead
+
+**Problem:** FastSAC (SAC + FastTD3's C51 recipe) plateaued at **375** on CheetahRun while FastTD3 reached **880** with identical training scale (1024 envs, batch=8192, 12 grad updates, (512,512) networks).
+
+**Root cause (confirmed by FastDSAC paper, arXiv:2603.12612):**
+1. **Alpha/entropy collapse** — target entropy heuristic (`-dim(A)`) is too aggressive at scale. Alpha drops to near-zero, SAC degenerates into a bad deterministic policy without TD3's stability mechanisms (policy delay, target smoothing noise).
+2. **C51 quantization + entropy interaction** — SAC's entropy bonus shifts the effective reward distribution. C51's fixed atoms can't track the shifted distribution, amplifying quantization artifacts.
+3. **Uniform entropy waste** — diagonal Gaussian spreads exploration uniformly across all action dims. In high-dim spaces, this wastes the exploration budget on irrelevant dims.
+
+**The naming matters:**
+- **FastSAC** = SAC + FastTD3 recipe (C51, large batch). Documented as a **baseline/negative result** in the FastDSAC paper.
+- **FastDSAC** = FastSAC + continuous Gaussian distributional critic + dimension-wise entropy modulation. The actual competitive algorithm.
+
+**Our results:**
+- FastSAC (256,256): 335 eval — wrong network size (SAC preset)
+- FastSAC (512,512): 375 eval — correct size, still plateaus
+- FastTD3 (512,512): 880 eval — deterministic policy wins at scale
+
+**Lesson:** Check if someone has already documented your failure mode before debugging. The FastDSAC paper exists specifically because FastSAC doesn't work. C51's discrete atoms are fundamentally incompatible with SAC's entropy-augmented rewards. Need continuous distributional critic + per-dimension entropy control.
+
+---
+
+### AdamW Requires `params` in optimizer.update() — Adam Does Not
+
+**Problem:** FastDSAC crashed on first gradient step: `ValueError: You are using a transformation that requires the current value of parameters, but you are not passing params when calling update`.
+
+**Root cause:** `optax.adamw` needs the current parameters to compute weight decay (`params * weight_decay`). `optax.adam` doesn't. All our previous algos used Adam, so `optimizer.update(grads, opt_state)` worked. AdamW needs `optimizer.update(grads, opt_state, params=params)`.
+
+**Lesson:** When switching optimizers, check if the new one requires additional arguments. AdamW is the common case — weight decay is applied to the params themselves, not just the gradients.
 
 ---
 

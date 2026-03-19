@@ -26,8 +26,8 @@ from jax_rl.buffers.replay_buffer import ReplayBuffer
 from jax_rl.buffers.jax_replay_buffer import JaxReplayBuffer
 from jax_rl.configs.sac_config import SACConfig
 from jax_rl.configs.train_config import TrainConfig
-from jax_rl.configs.env_presets import get_sac_preset
-from jax_rl.utils.eval import evaluate
+from jax_rl.configs.env_presets import get_fast_sac_preset
+from jax_rl.utils.eval import evaluate, warmup_eval
 from jax_rl.utils.normalization import NormalizationState
 
 
@@ -176,6 +176,7 @@ def train(cfg: TrainConfig, sac_cfg: SACConfig, seed: int = 0, resume: str | Non
     # ── Eval env (separate instance, not disturbing training) ──────────────
     eval_env = dm_control_suite.load(cfg.env_name)
     eval_env = wrap_for_brax_training(eval_env, episode_length=cfg.episode_length)
+    warmup_eval(eval_env, num_episodes=cfg.num_eval_episodes)
 
     # ── Checkpoint dir ────────────────────────────────────────────────────
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -366,7 +367,7 @@ if __name__ == "__main__":
                         help="Use GPU-resident JAX replay buffer (default: True)")
     args = parser.parse_args()
 
-    cfg, sac_cfg = get_sac_preset(args.env)
+    cfg, sac_cfg = get_fast_sac_preset(args.env)
 
     cfg_overrides = {}
     sac_overrides = {}

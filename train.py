@@ -31,7 +31,7 @@ from mujoco_playground._src.wrapper import wrap_for_brax_training
 from jax_rl.algos.ppo import PPO
 from jax_rl.buffers import RolloutBuffer
 from jax_rl.configs import EncoderConfig, PolicyHeadConfig, TrainConfig, get_preset
-from jax_rl.utils.eval import evaluate
+from jax_rl.utils.eval import evaluate, warmup_eval
 from jax_rl.utils.normalization import (
     init as norm_init,
     update as norm_update,
@@ -200,6 +200,7 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
     # ── Eval env (separate instance) ────────────────────────────────────
     eval_env = dm_control_suite.load(cfg.env_name)
     eval_env = wrap_for_brax_training(eval_env, episode_length=cfg.episode_length)
+    warmup_eval(eval_env, num_episodes=cfg.num_eval_episodes)
 
     # ── Checkpoint dir (created once, reused for periodic saves) ─────────
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

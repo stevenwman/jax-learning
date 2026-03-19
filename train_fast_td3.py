@@ -26,7 +26,7 @@ from jax_rl.buffers.jax_replay_buffer import JaxReplayBuffer
 from jax_rl.configs.fast_td3_config import FastTD3Config
 from jax_rl.configs.train_config import TrainConfig
 from jax_rl.configs.env_presets import get_fast_td3_preset
-from jax_rl.utils.eval import evaluate
+from jax_rl.utils.eval import evaluate, warmup_eval
 from jax_rl.utils.normalization import NormalizationState
 
 
@@ -173,6 +173,7 @@ def train(cfg: TrainConfig, td3_cfg: FastTD3Config, seed: int = 0, resume: str |
     # Eval env (separate instance)
     eval_env = dm_control_suite.load(cfg.env_name)
     eval_env = wrap_for_brax_training(eval_env, episode_length=cfg.episode_length)
+    warmup_eval(eval_env, num_episodes=cfg.num_eval_episodes)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     env_short = cfg.env_name.lower().replace(" ", "_")

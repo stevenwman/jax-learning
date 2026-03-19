@@ -10,6 +10,25 @@ import numpy as np
 from typing import Callable
 
 
+def warmup_eval(env, num_episodes: int = 5):
+    """Pre-compile eval env.step JIT before training fills GPU memory.
+
+    Call this right after creating the eval env, before training starts.
+    """
+    if not hasattr(evaluate, '_env_step_cache'):
+        evaluate._env_step_cache = {}
+    cache_key = id(env)
+    if cache_key not in evaluate._env_step_cache:
+        evaluate._env_step_cache[cache_key] = jax.jit(env.step)
+    env_step = evaluate._env_step_cache[cache_key]
+
+    # Trigger JIT compilation with a dummy step
+    key = jax.random.PRNGKey(9999)
+    env_state = env.reset(jax.random.split(key, num_episodes))
+    dummy_action = jnp.zeros((num_episodes, env.action_size))
+    _ = env_step(env_state, dummy_action)
+
+
 def evaluate(
     select_action_fn: Callable,
     actor_params,
@@ -34,7 +53,14 @@ def evaluate(
     if key is None:
         key = jax.random.PRNGKey(999)
 
-    env_step = jax.jit(env.step)
+    # Cache the JIT'd env.step — avoid recompilation on every eval call.
+    # Use env object as cache key via a module-level dict.
+    if not hasattr(evaluate, '_env_step_cache'):
+        evaluate._env_step_cache = {}
+    cache_key = id(env)
+    if cache_key not in evaluate._env_step_cache:
+        evaluate._env_step_cache[cache_key] = jax.jit(env.step)
+    env_step = evaluate._env_step_cache[cache_key]
 
     # Reset num_episodes envs
     key, reset_key = jax.random.split(key)

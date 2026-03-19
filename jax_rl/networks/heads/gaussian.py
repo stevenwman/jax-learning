@@ -10,7 +10,7 @@ class GaussianHead(nn.Module):
     config: PolicyHeadConfig
 
     @nn.compact
-    def __call__(self, features: jax.Array) -> tuple[jax.Array, jax.Array]:
+    def __call__(self, features: jax.Array) -> tuple[jax.Array, ...]:
         mean = nn.Dense(self.config.action_dim, kernel_init=nn.initializers.lecun_uniform())(features)
 
         if self.config.state_dependent_std:
@@ -27,5 +27,12 @@ class GaussianHead(nn.Module):
             )
             log_std = jnp.broadcast_to(log_std, mean.shape)
             log_std = jnp.clip(log_std, self.config.log_std_min, self.config.log_std_max)
+
+        if self.config.dem:
+            # DEM logits — separate head for dimension-wise entropy modulation
+            dem_logits = nn.Dense(
+                self.config.action_dim, kernel_init=nn.initializers.zeros,
+            )(features)
+            return mean, log_std, dem_logits
 
         return mean, log_std
