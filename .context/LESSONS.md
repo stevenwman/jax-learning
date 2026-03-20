@@ -644,6 +644,25 @@ Both papers benchmark on **high-dimensional tasks** (21+ action dims). Neither c
 
 ---
 
+### Verify Configs Against Source Code, Not Paper Text
+
+**Problem:** Implemented FastTD3/FastSAC from the paper text. Results were poor (FastTD3 NaN'd at 31M on HumanoidRun, FastSAC plateaued at 582 on CheetahRun). Dispatched audit agents to compare against the paper's actual source code (holosoma repo).
+
+**Found 7+ critical mismatches** the paper text doesn't mention:
+- tau=0.125 (paper text just says "soft update") — 25x different from standard 0.005
+- Tapered 3-layer networks (512→256→128 actor, 768→384→192 critic) — paper just says "MLP"
+- SiLU activation — paper doesn't mention activation function
+- 101 C51 atoms — paper text says "C51" without specifying atom count
+- Policy delay=4 for FastSAC — not mentioned in paper, only in source code
+- No gradient clipping — paper code sets max_grad_norm=0, we assumed 1.0
+- No LR schedule — paper uses constant LR, we added cosine decay
+
+**The tau=0.125 NaN proves configs matter:** FastTD3 HumanoidRun hit 395 eval then NaN'd at 31M steps with tau=0.005. Q went from 12.34 → NaN in one step. With 8 gradient steps per env step, the online network changes so fast that tau=0.005 can't track it — the target becomes stale, Q bootstraps diverge, NaN propagates. tau=0.125 updates the target 25x faster, preventing this.
+
+**Lesson:** Papers omit implementation details that are critical for reproduction. Always check the source code repo. The `FastSACConfig` dataclass in holosoma had every parameter we were missing — it took 5 minutes to read vs days of debugging wrong configs.
+
+---
+
 ### Read the Whole Recipe, Not Just the Key Ingredients
 
 **Problem:** Implemented "FastSAC from the original paper" with α_init=0.001 and max_σ=1.0. Result: peaked at 447, degraded to 375. Worse than our FastDSAC attempts.

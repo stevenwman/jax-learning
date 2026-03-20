@@ -85,25 +85,39 @@ These are high-performance variants of TD3/SAC optimized for massively parallel 
 | **High replay ratio** | More gradient steps per simulation step, off-policy data reuse |
 | **Observation normalization** | Running mean/std normalization |
 
-### FastSAC-specific notes
-- Same recipe as FastTD3 but with entropy regularization
-- Can be unstable due to entropy maximization in high-dim action spaces
-- Restrict stochasticity (smaller std bounds) helps stability
-- Generally slower than FastTD3 but still much faster than vanilla SAC
+### FastSAC/FastTD3 — Seo et al. 2025 (arXiv:2512.01996)
 
-### Network architecture (from paper)
+**Critical hyperparameters (from paper, easy to miss):**
+- gamma=0.97 for locomotion (NOT 0.99)
+- AdamW with β2=0.95, weight_decay=0.001 (NOT plain Adam)
+- Mixed noise schedule: σ ~ U[0.01, 0.05] per step (NOT fixed 0.1-0.2)
+- FastSAC: α_init=0.001, max_std=1.0, target_entropy=0
+
+### FastDSAC — arXiv:2603.12612 (different research group)
+- Gaussian distributional critic (replaces C51 — no quantization artifacts)
+- Dimension-wise Entropy Modulation (DEM) — per-dim exploration weights
+- Population diversity — per-env β scaling for exploration heterogeneity
+- Target entropy = 0
+
+### Network architecture
 ```
-Actor:  MLP with LayerNorm, hidden_dim=256-512, 1-2 blocks
-Critic: MLP with LayerNorm, hidden_dim=512, 2 blocks, C51 distributional output
+Actor:  MLP (512, 512), ReLU, LayerNorm
+        + optional DEM logits head (FastDSAC)
+Critic: MLP (512, 512), ReLU, LayerNorm
+        Output: C51 logits (FastTD3/FastSAC) or (mean, variance) (FastDSAC)
 ```
 
-### Hyperparameters (typical)
+Network dims are per-algo config (SACConfig.hidden_dim, TD3Config.hidden_dim, etc.), NOT in TrainConfig. PPO is the exception — its network dims are in TrainConfig (policy_hidden_dim, value_hidden_dim) for historical reasons.
+
+### Hyperparameters (paper recipe — Seo et al. 2025)
 ```python
 batch_size: 8192
 learning_rate: 3e-4 (with cosine decay to 3e-5)
-gamma: 0.99 (0.95 for simple tasks)
+gamma: 0.97 (locomotion) / 0.99 (whole-body tracking)
 tau: 0.005
 policy_delay: 2 (TD3)
+noise: U[0.01, 0.05] (mixed per step)
+optimizer: AdamW(β2=0.95, weight_decay=0.001)
 noise_std: 0.1-0.2
 num_envs: 4096-16384
 ```
@@ -635,7 +649,7 @@ class Trainer:
 - [x] TD3 implementation (twin Q, delayed policy, target smoothing)
 - [x] SAC implementation (auto-tuned alpha, twin Q, Polyak targets)
 - [x] MuJoCo Playground adapter
-- [x] Test on dm_control — CartpoleBalance (≥995), CheetahRun (826@20M PPO, 749@5M TD3), WalkerWalk (975@5M SAC, 955@5M TD3), HumanoidRun (207@5M SAC)
+- [x] Test on dm_control — CartpoleBalance (≥995), CheetahRun (826@20M PPO, 771@5M SAC, 749@5M TD3), WalkerWalk (975@5M SAC, 955@5M TD3), HumanoidRun (253@5M SAC)
 - [x] Verify scores match reference — all benchmarks pass (see journal 2026-03-18)
 - [x] Basic README + example script
 - [x] Orbax checkpointing (timestamped dirs, meta.json, metrics CSV)
@@ -691,10 +705,27 @@ DM Control rewards are normalized 0–1000. These targets are approximate — wi
 - [ ] Unify builders.py across all algos (prerequisite for new encoders — see `.context/builders_unification_plan.md`)
 - [ ] SimbaV2 encoder (hyperspherical normalization — recommended for FastTD3)
 - [x] Distributional Q head (C51) — `DistributionalQHead`
+- [x] Gaussian distributional Q head — `GaussianQHead` (for FastDSAC)
 - [x] FastTD3 (C51 + avg Q + large batch + LayerNorm + optional SimbaV2)
-- [x] FastSAC (same recipe)
-- [x] JAX-native replay buffer (for high throughput) — `jax_replay_buffer.py`
+- [x] FastSAC (SAC + C51 + paper recipe: γ=0.97, AdamW, α=0.001, max_σ=1.0)
+- [x] FastDSAC (Gaussian distributional critic + DEM — arXiv:2603.12612)
+- [x] JAX-native replay buffer (for high throughput) — `jax_replay_buffer.py`, JIT'd add_batch
+- [x] Shared training utilities — `jax_rl/training/` (checkpointing, episode tracker, env setup, metrics logger, eval runner)
+- [x] Algo-agnostic `record_video.py` — works with all 6 algos via `load_actor_for_inference()`
+- [x] OOM fix — `XLA_CLIENT_MEM_FRACTION=0.7` for 1024-env training on 16GB GPUs
 - [ ] Benchmark: compare wall-clock time vs standard (see table above)
+
+**Phase 3 benchmark results (CheetahRun):**
+
+| Algo | Eval | Steps | Envs | Wall-clock | Notes |
+|------|------|-------|------|-----------|-------|
+| FastTD3 | 880 | 86M | 1024 | ~78 min | γ=0.99 (pre-fix, should rerun with γ=0.97) |
+| FastSAC (paper recipe) | 582 | 100M | 1024 | ~108 min | γ=0.97, AdamW |
+| FastDSAC (best) | 567 | 30M | 1024 | — | Gaussian critic + DEM |
+| Vanilla SAC | 771 | 5M | 128 | ~8 min | Beats all Fast variants on this task |
+| Vanilla TD3 | 749 | 5M | 128 | ~7 min | |
+
+Key lesson: "Fast" variants are designed for massive-scale humanoid tasks, not 6-dim locomotion. HumanoidRun comparison in progress.
 
 ### Phase 4: Behavioral Cloning
 - [ ] Gymnasium adapter (Python-loop fallback for CPU envs like Robomimic)
@@ -790,6 +821,52 @@ The `context` argument in Encoder already supports skill/goal conditioning — t
 - **RSL-RL**: Robotics-focused, PPO + distillation, observation groups
 - **MuJoCo Playground**: Env interface and training scripts (trains via Brax PPO)
 - **mjlab**: Manager-based env design + MuJoCo Warp — reference for Phase 5 env composition patterns (PyTorch-native, not for algorithms)
+
+---
+
+## Documented Deviations from Plan (updated 2026-03-20)
+
+The architecture section above was written at Phase 1 as a north star. Several design decisions were made during implementation that intentionally diverge. Journals document the reasoning; this section summarizes.
+
+### 1. No Trainer class — shared utilities instead
+**Plan says:** `training/trainer.py` orchestrates train loop, eval, logging.
+**Reality:** Each algo has its own `train_*.py` script. Shared infra lives in `jax_rl/training/` as stateless functions (checkpointing, episode_tracker, env_setup, metrics_logger, eval_runner).
+**Why:** Researched Brax/SB3/Tianshou/CleanRL architectures (journal 03-19). Trainer classes force on-policy and off-policy into one shape. Shared utilities give the same deduplication without constraining the training loop. See `.context/refactor_idea.md`.
+
+### 2. No BaseAlgorithm ABC
+**Plan says:** `algos/base.py` with `BaseAlgorithm` → `OnlineAlgorithm`/`OfflineAlgorithm`.
+**Reality:** Each algo is a standalone class. Interface is informal: `init()`, `update()`, `select_action()`.
+**Why:** Premature abstraction. The 6 algos have different enough signatures (PPO select_action takes full state, TD3 takes exploration_noise param) that forcing them into one ABC would require awkward workarounds. Protocol-based interface planned for the refactor but not yet implemented.
+
+### 3. QHead is monolithic, not encoder + head
+**Plan says:** Q-networks compose `MLPEncoder(obs, action)` → `ScalarQHead(features)`.
+**Reality:** `QHead` is a standalone MLP: `concat(obs, action) → hidden layers → scalar`. Same for `DistributionalQHead` and `GaussianQHead`.
+**Why:** Q-networks need `concat(obs, action)` before the first layer, not after the encoder. The encoder's `context_fusion` mechanism doesn't cleanly handle this. Monolithic Q heads are simpler and match Brax's pattern.
+
+### 4. Obs normalization is PPO-only
+**Plan says:** Observation normalization is a Phase 1 foundation for all algos.
+**Reality:** Only PPO uses running obs normalization. Off-policy algos (SAC/TD3/Fast variants) use `make_identity_norm_state()` — no normalization. Q-network LayerNorm handles input scaling instead.
+**Why:** Online obs normalization is incompatible with off-policy replay (journal 03-18). Stored normalized obs become stale as running stats evolve. See LESSONS.md "Online Obs Normalization Is Incompatible with Off-Policy Replay."
+
+### 5. builders.py only covers PPO
+**Plan says:** Network builder composes encoder + head from config for all algos (marked done in Phase 1).
+**Reality:** Only PPO uses `builders.py` (Actor, Critic modules). Off-policy algos build networks inline.
+**Why:** Q heads need `concat(obs, action)` (see #3), and each algo has different head types. Unification planned via `.context/builders_unification_plan.md` but deferred until we add a second encoder type (CNN/Transformer).
+
+### 6. Directory tree is stale
+**Plan shows:** `configs/base.py`, `networks/types.py`, `algos/base.py`, `envs/`, `utils/rng.py`, etc.
+**Reality:** Many files have different names or don't exist. Phase 3 added files not in the tree (fast_td3, fast_sac, fast_dsac, q_gaussian, jax_replay_buffer, distributional.py).
+**Why:** The tree was written before any code existed. Updating it every time we add a file is not practical — the checklist items are the source of truth.
+
+### 7. TrainingState is per-algo, not unified
+**Plan says:** Shared `TrainingState` flax.struct.dataclass with normalizer_state and env_steps.
+**Reality:** Each algo defines its own TrainingState. PPO has 4 fields, SAC has 10, TD3 has 10, FastDSAC has 10.
+**Why:** SAC needs log_alpha + alpha_opt_state, TD3 needs update_count for policy delay, PPO doesn't need Q params. A unified state would be a superset with many unused fields. Per-algo states are explicit about what each algo tracks.
+
+### 8. No README
+**Plan marks as done:** "Basic README + example script."
+**Reality:** No README.md exists at repo root.
+**Why:** Oversight. Should be created.
 - **37 PPO Details**: https://iclr-blog-track.github.io/2022/03/25/ppo-implementation-details/
 
 ### Learning Resources (JAX / Flax / RL)

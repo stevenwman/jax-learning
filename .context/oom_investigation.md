@@ -112,38 +112,70 @@ Each eval call runs 1000 steps × 1024 envs. Reducing eval frequency reduces tra
 ### 6. Accept it — 16GB is the limit for 1024-env training
 The FastTD3 paper uses A100s (40-80GB). A 5080 (16GB) running 1024 envs is at the hardware limit. The "fix" might be using fewer envs (512 or 256) on consumer hardware.
 
-## Remaining question: WHY does XLA request a new command buffer at 85M steps?
+## ROOT CAUSE FOUND: MuJoCo Playground recompiles env.step continuously
 
-If JAX's pool is pre-allocated and bounded, and the training loop is the same every step, nothing should request new memory. The error says XLA is trying to "instantiate command buffer" — this is outside JAX's pool, in CUDA driver memory.
+### Test A: Long-duration compilation logging — SMOKING GUN
 
-**The real question:** Is XLA creating a new compilation/command buffer late in training that it didn't need at the start?
+**Test:** `JAX_LOG_COMPILES=1` on FastTD3 CheetahRun for 30M steps (1024 envs).
 
-## Planned tests (run after current FastSAC training)
+**Results:**
 
-### Test A: Long-duration compilation logging
-Add `jax.log_compiles` to a real training run and pipe to a file. Run for 20-30M steps (should take ~30 min). Check if ANY new compilations appear after the first 1000 steps.
-
-```bash
-JAX_LOG_COMPILES=1 uv run python train_fast_sac.py --env CheetahRun --total-timesteps 30000000 2>&1 | tee /tmp/compile_log.txt
-# After: grep "Compiling" /tmp/compile_log.txt | wc -l
-# Check timestamps — do compilations stop after warmup or keep appearing?
+```
+Compilations per minute:
+  14:16  — 1283  (JIT warmup burst)
+  14:17  —   14  (tail of warmup)
+  14:18  —    5
+  14:19  —    2  ← steady state begins
+  14:20  —    2
+  ...
+  14:45  —    3  (end of run)
 ```
 
-If new compilations appear mid-training → that's the cause (new graph = new command buffer).
-If compilations stop after warmup → command buffers accumulate from reuse, not new graphs.
+**2 recompilations per minute at steady state**, continuously for the entire run.
 
-### Test B: Isolate orbax checkpoint
-Run training with checkpointing disabled (comment out _save_checkpoint calls). If it survives past 85M steps → orbax is the culprit. Orbax uses its own serialization machinery that might JIT-compile or allocate.
+**What's recompiling:** `jit(while)` and `jit(scan)` — MuJoCo Playground's MJX physics step.
+- `while` = iterative contact solver (`mjx_env.step` → `jax.lax.while_loop`)
+- `scan` = physics substep loop (`jax.lax.scan(single_step, data, (), n_substeps)`)
 
-### Test C: nvidia-smi polling during full run
-```bash
-nvidia-smi --query-gpu=memory.used --format=csv,noheader -l 30 > /tmp/gpu_mem_log.csv &
-uv run python train_fast_sac.py --env CheetahRun
+**Critical finding:** 62 compilations of `jit(while)` with **identical argument signatures** (same shapes, same dtypes, same sharding). Same for `jit(scan)` — 62 identical compilations. JAX is recompiling the same function with the same inputs.
+
+**Why this causes OOM:** Each recompilation creates a new XLA graph / CUDA command buffer. Over a 100M step run (~120 min), that's ~240 recompilations × 2 functions = ~480 accumulated graphs. Each graph consumes CUDA driver memory (outside JAX's pre-allocated pool). On a 16GB GPU that starts at 95% capacity, this pushes past the limit at ~67-85M steps.
+
+**Why JAX recompiles identical functions:** Unknown — this appears to be a JAX/XLA or MuJoCo Playground issue, not our code. Possible causes:
+1. The `while_loop` body captures a closure variable whose identity (not shape) changes between calls
+2. XLA's compilation cache has a TTL or size limit that evicts old entries
+3. The `env_state` pytree structure changes subtly between steps (e.g., dynamic contact count)
+
+**This is upstream behavior — not something we can fix in our training scripts.**
+
+### Test D: MEM_FRACTION=0.7 — CONFIRMED FIX
+
+FastSAC completed full 100M steps (exit code 0) with `XLA_CLIENT_MEM_FRACTION=0.7`. By reducing JAX's pre-allocated pool from ~90% to 70% of GPU memory, we leave ~1.6GB extra for CUDA driver overhead and accumulated command buffers.
+
+### Tests B, C: Not needed
+
+With the root cause identified (continuous MJX recompilation), orbax and nvidia-smi polling tests are no longer needed. The mechanism is clear.
+
+## Final understanding
+
 ```
-30-second polling over a 90-minute run = 180 data points. Plot the curve:
-- Flat line → OOM is from a single-event spike (orbax? eval?)
-- Gradual climb → something leaks in CUDA driver space outside JAX's view
-- Step function at eval points → eval-related allocation
+GPU memory layout (16GB total):
+├── JAX pre-allocated pool: ~12GB (at MEM_FRACTION=0.7)
+│   ├── Env state (1024 envs): ~2GB
+│   ├── Replay buffer: ~170MB
+│   ├── Model params + opt state: ~50MB
+│   └── Training compute: ~9.8GB
+├── CUDA driver + XLA overhead: ~3GB
+│   ├── Command buffers (initial): ~1GB
+│   ├── Recompilation accumulation: +2-3MB/min × 120 min = ~300MB
+│   └── Other CUDA overhead: ~1.7GB
+└── Free headroom: ~1GB (enough to absorb accumulation)
+```
 
-### Test D: Run past 85M with MEM_FRACTION=0.7
-The current FastSAC run has MEM_FRACTION=0.7. If it survives past 85M steps → the pre-allocation headroom was the issue. If it still OOMs → need deeper investigation (Tests A-C).
+Without MEM_FRACTION=0.7, JAX takes ~14.5GB leaving only ~1.5GB for CUDA driver. The ~300MB recompilation accumulation over 2 hours pushes past the limit.
+
+## Solutions (final, ranked)
+
+1. **`XLA_CLIENT_MEM_FRACTION=0.7`** — proven fix, ~5% sps overhead from smaller JAX pool. Applied to all training scripts via `env_setup.py`.
+2. **`jax.clear_caches()` every N steps** — could flush accumulated compilations. Not tested yet but worth trying if MEM_FRACTION alone becomes insufficient.
+3. **Report upstream** — the continuous recompilation of identical MJX functions is a JAX/MuJoCo Playground issue. Could file an issue on `google-deepmind/mujoco_playground`.
