@@ -24,7 +24,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from train import _save_checkpoint
+from jax_rl.training.checkpointing import save_checkpoint
 from jax_rl.algos.ppo import PPO
 from jax_rl.configs import PPOConfig, EncoderConfig, PolicyHeadConfig
 from jax_rl.configs.train_config import TrainConfig
@@ -90,7 +90,7 @@ def checkpoint(tmp_path):
     metrics_log = make_metrics_log(n=3)
 
     ckpt_dir = str(tmp_path / "test_run")
-    _save_checkpoint(ckpt_dir, training_state, norm_state, cfg, OBS_DIM, ACTION_DIM, metrics_log, resume=None)
+    save_checkpoint(ckpt_dir, training_state, norm_state, cfg, cfg.ppo, "ppo", OBS_DIM, ACTION_DIM, metrics_log, resume=None)
     return ckpt_dir, training_state, norm_state, cfg, metrics_log
 
 
@@ -110,11 +110,12 @@ def test_meta_json(checkpoint):
     assert meta["obs_dim"] == OBS_DIM
     assert meta["action_dim"] == ACTION_DIM
     assert "train_config" in meta, "train_config missing from meta.json"
+    assert meta["algo"] == "ppo", "algo field should be 'ppo'"
+    assert "ppo_config" in meta, "ppo_config missing from meta.json"
 
     tc = meta["train_config"]
     assert tc["env_name"] == cfg.env_name
     assert tc["total_timesteps"] == cfg.total_timesteps
-    assert "ppo" in tc, "nested PPOConfig missing from train_config"
 
 
 def test_metrics_csv(checkpoint):
@@ -190,10 +191,10 @@ def test_metrics_csv_resume_appends(tmp_path):
     ckpt_dir = str(tmp_path / "run")
 
     first_log = make_metrics_log(n=3)
-    _save_checkpoint(ckpt_dir, training_state, norm_state, cfg, OBS_DIM, ACTION_DIM, first_log, resume=None)
+    save_checkpoint(ckpt_dir, training_state, norm_state, cfg, cfg.ppo, "ppo", OBS_DIM, ACTION_DIM, first_log, resume=None)
 
     second_log = make_metrics_log(n=2)
-    _save_checkpoint(ckpt_dir, training_state, norm_state, cfg, OBS_DIM, ACTION_DIM, second_log, resume=ckpt_dir)
+    save_checkpoint(ckpt_dir, training_state, norm_state, cfg, cfg.ppo, "ppo", OBS_DIM, ACTION_DIM, second_log, resume=ckpt_dir)
 
     with open(os.path.join(ckpt_dir, "metrics.csv")) as f:
         rows = list(csv.DictReader(f))

@@ -1,8 +1,11 @@
-"""Record a video of PPO policy on CartpoleBalance.
+"""Record a video of any trained policy.
 
 Usage:
   MUJOCO_GL=egl uv run python record_video.py                    # random policy
   MUJOCO_GL=egl uv run python record_video.py --checkpoint ckpt  # trained policy
+
+Works with ALL algos (PPO, SAC, TD3, FastTD3, FastSAC, FastDSAC) — reads meta.json
+to determine algo type and reconstruct the actor network automatically.
 
 Two-phase approach:
   1. JIT-scan the rollout on GPU (fast — collects all states)
@@ -15,7 +18,6 @@ import os
 import time
 
 import imageio
-import json
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -23,16 +25,8 @@ import optax
 
 from mujoco_playground import dm_control_suite
 
-from jax_rl.algos.ppo import PPO
-from jax_rl.algos.sac import SAC
-from jax_rl.configs import PPOConfig, EncoderConfig, PolicyHeadConfig
-from jax_rl.configs.sac_config import SACConfig
-from jax_rl.utils.normalization import (
-    NormalizationState,
-    init as norm_init,
-    update as norm_update,
-    normalize as norm_normalize,
-)
+from jax_rl.training.checkpointing import load_actor_for_inference
+from jax_rl.utils.normalization import normalize as norm_normalize
 
 
 ENV_DEFAULTS = {
@@ -46,58 +40,115 @@ ENV_DEFAULTS = {
 }
 
 
+def _build_select_action(meta, obs_dim, action_dim):
+    """Build a select_action function from checkpoint metadata. Algo-agnostic.
+
+    Returns:
+        select_action_fn(actor_params, obs, key, deterministic) -> action
+    """
+    algo = meta.get("algo", "ppo")
+    tc = meta.get("train_config", {})
+    dummy_opt = optax.adam(1e-3)
+
+    if algo == "ppo":
+        from jax_rl.algos.ppo import PPO
+        from jax_rl.configs import PPOConfig, EncoderConfig, PolicyHeadConfig
+        config = PPOConfig(
+            encoder=EncoderConfig(obs_dim=obs_dim,
+                                  hidden_dim=tuple(tc.get("policy_hidden_dim", (32, 32, 32, 32))),
+                                  activation=tc.get("activation", "swish")),
+            critic_encoder=EncoderConfig(obs_dim=obs_dim,
+                                         hidden_dim=tuple(tc.get("value_hidden_dim", (256, 256, 256, 256, 256))),
+                                         activation=tc.get("activation", "swish")),
+            policy_head=PolicyHeadConfig(action_dim=action_dim,
+                                         squash=tc.get("squash", True),
+                                         state_dependent_std=tc.get("state_dependent_std", False)),
+            num_envs=1,
+        )
+        ppo = PPO(config, obs_dim, action_dim, dummy_opt, dummy_opt)
+        return ppo, "ppo"
+
+    elif algo in ("sac", "fast_sac"):
+        from jax_rl.algos.sac import SAC
+        from jax_rl.configs.sac_config import SACConfig
+        algo_cfg_key = "sac_config" if "sac_config" in meta else "fast_sac_config"
+        sc = meta.get(algo_cfg_key, {})
+        sac_cfg = SACConfig(
+            hidden_dim=tuple(sc.get("hidden_dim", (256, 256))),
+            activation=sc.get("activation", "relu"),
+            q_layer_norm=sc.get("q_layer_norm", True),
+            target_entropy_scale=sc.get("target_entropy_scale", 0.5),
+        )
+        if algo == "fast_sac":
+            from jax_rl.algos.fast_sac import FastSAC
+            sac = FastSAC(sac_cfg, obs_dim, action_dim, dummy_opt, dummy_opt, gamma=0.99)
+        else:
+            sac = SAC(sac_cfg, obs_dim, action_dim, dummy_opt, dummy_opt, gamma=0.99)
+        return sac, "offpolicy"
+
+    elif algo in ("td3", "fast_td3"):
+        from jax_rl.configs.td3_config import TD3Config
+        algo_cfg_key = "td3_config" if "td3_config" in meta else "fast_td3_config"
+        tc_algo = meta.get(algo_cfg_key, {})
+        if algo == "fast_td3":
+            from jax_rl.algos.fast_td3 import FastTD3
+            from jax_rl.configs.fast_td3_config import FastTD3Config
+            td3_cfg = FastTD3Config(
+                hidden_dim=tuple(tc_algo.get("hidden_dim", (512, 512))),
+                activation=tc_algo.get("activation", "relu"),
+                q_layer_norm=tc_algo.get("q_layer_norm", True),
+            )
+            td3 = FastTD3(td3_cfg, obs_dim, action_dim, dummy_opt, dummy_opt, gamma=0.99)
+        else:
+            td3_cfg = TD3Config(
+                hidden_dim=tuple(tc_algo.get("hidden_dim", (256, 256))),
+                activation=tc_algo.get("activation", "relu"),
+                q_layer_norm=tc_algo.get("q_layer_norm", False),
+            )
+            from jax_rl.algos.td3 import TD3
+            td3 = TD3(td3_cfg, obs_dim, action_dim, dummy_opt, dummy_opt, gamma=0.99)
+        return td3, "offpolicy"
+
+    elif algo == "fast_dsac":
+        from jax_rl.algos.fast_dsac import FastDSAC
+        from jax_rl.configs.fast_dsac_config import FastDSACConfig
+        dc = meta.get("fast_dsac_config", {})
+        dsac_cfg = FastDSACConfig(
+            hidden_dim=tuple(dc.get("hidden_dim", (512, 512))),
+            activation=dc.get("activation", "relu"),
+            q_layer_norm=dc.get("q_layer_norm", True),
+        )
+        dsac = FastDSAC(dsac_cfg, obs_dim, action_dim, dummy_opt, dummy_opt, gamma=0.99)
+        return dsac, "offpolicy"
+
+    else:
+        raise ValueError(f"Unknown algo: {algo}")
+
+
 def record(env_name: str | None = None, checkpoint: str | None = None,
            out: str = "rollout.mp4", max_steps: int = 1000,
            camera: str | None = None):
-    # Load config from checkpoint metadata if available
-    algo = "ppo"  # default
-    policy_hidden_dim = (32, 32, 32, 32)
-    value_hidden_dim = (256, 256, 256, 256, 256)
-    activation = "swish"
-    squash = True
-    state_dependent_std = False
-    max_grad_norm = None
-    sac_cfg = None
+
+    # ── Load checkpoint ───────────────────────────────────────────────────
+    algo_type = "ppo"  # default
+    norm_state = None
+    actor_params = None
+
     if checkpoint is not None:
-        meta_path = os.path.join(checkpoint, "meta.json")
-        if os.path.exists(meta_path):
-            with open(meta_path) as f:
-                meta = json.load(f)
-            algo = meta.get("algo", "ppo")
-            if "train_config" in meta:
-                tc = meta["train_config"]
-                env_name = env_name or tc["env_name"]
-                if algo == "ppo":
-                    policy_hidden_dim = tuple(tc["policy_hidden_dim"])
-                    value_hidden_dim = tuple(tc["value_hidden_dim"])
-                    activation = tc.get("activation", "swish")
-                    squash = tc.get("squash", True)
-                    state_dependent_std = tc.get("state_dependent_std", False)
-                    max_grad_norm = tc.get("max_grad_norm", None)
-            elif algo == "ppo":
-                # Legacy format
-                env_name = env_name or meta["env_name"]
-                if "policy_hidden_dim" in meta:
-                    policy_hidden_dim = tuple(meta["policy_hidden_dim"])
-                    value_hidden_dim = tuple(meta["value_hidden_dim"])
-                    activation = meta.get("activation", "swish")
-                squash = meta.get("squash", True)
-                state_dependent_std = meta.get("state_dependent_std", False)
-                max_grad_norm = meta.get("max_grad_norm", None)
-            if algo == "sac" and "sac_config" in meta:
-                sc = meta["sac_config"]
-                sac_cfg = SACConfig(
-                    hidden_dim=tuple(sc["hidden_dim"]),
-                    activation=sc.get("activation", "relu"),
-                    q_layer_norm=sc.get("q_layer_norm", True),
-                    target_entropy_scale=sc.get("target_entropy_scale", 0.5),
-                )
-            print(f"Loaded meta: algo={algo}, env={env_name}")
+        meta, actor_params, norm_state = load_actor_for_inference(checkpoint)
+        algo_name = meta.get("algo", "ppo")
+        env_name = env_name or meta.get("train_config", {}).get("env_name")
+        print(f"Loaded checkpoint: algo={algo_name}, env={env_name}")
+    else:
+        meta = {}
+        algo_name = "ppo"
+        print("Using random (untrained) policy")
 
     env_name = env_name or "CartpoleBalance"
     defaults = ENV_DEFAULTS.get(env_name, ((256, 256), None))
     camera = camera or defaults[1]
 
+    # ── Create env (unwrapped — single env, no auto-reset) ────────────────
     env = dm_control_suite.load(env_name)
     env_step = jax.jit(env.step)
 
@@ -108,76 +159,50 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
     obs_dim = env_state.obs.shape[-1]
     action_dim = env.action_size
 
-    # ── Build algo (PPO or SAC) ───────────────────────────────────────────
-    if algo == "sac":
-        sac_cfg = sac_cfg or SACConfig()
-        dummy_opt = optax.adam(1e-3)
-        sac = SAC(sac_cfg, obs_dim, action_dim, dummy_opt, dummy_opt, gamma=0.99)
-        key, init_key = jax.random.split(key)
-        training_state = sac.init(init_key)
-    else:
-        config = PPOConfig(
-            encoder=EncoderConfig(obs_dim=obs_dim, hidden_dim=policy_hidden_dim, activation=activation),
-            critic_encoder=EncoderConfig(obs_dim=obs_dim, hidden_dim=value_hidden_dim, activation=activation),
-            policy_head=PolicyHeadConfig(action_dim=action_dim, squash=squash,
-                                         state_dependent_std=state_dependent_std),
-            num_envs=1,
-        )
-        dummy_opt = optax.adam(1e-3)
-        ppo = PPO(config, obs_dim, action_dim, dummy_opt, dummy_opt)
-        key, init_key = jax.random.split(key)
-        training_state = ppo.init(init_key)
+    # ── Build algo for select_action ──────────────────────────────────────
+    algo, algo_type = _build_select_action(meta, obs_dim, action_dim)
 
-    if checkpoint is not None:
-        print(f"Loading checkpoint: {checkpoint}")
-        params_path = os.path.join(checkpoint, "actor_params.npy")
-        saved = np.load(params_path, allow_pickle=True).item()
-        training_state = training_state.replace(actor_params=saved["actor_params"])
-        norm_state = NormalizationState(
-            mean=jnp.array(saved["norm_mean"]),
-            mean_of_squares=jnp.array(saved["norm_mean_of_squares"]),
-            count=int(saved["norm_count"]),
-        )
-        print("Loaded trained params + normalization stats")
-    else:
+    # Init dummy state to get correct param structure, then replace with loaded params
+    key, init_key = jax.random.split(key)
+    training_state = algo.init(init_key)
+
+    if actor_params is not None:
+        training_state = training_state.replace(actor_params=actor_params)
+    if norm_state is None:
+        from jax_rl.utils.normalization import init as norm_init
         norm_state = norm_init(obs_dim)
-        print("Using random (untrained) policy")
 
-    # ── Phase 1: JIT-scan rollout on GPU ──────────────────────────────────
-    if algo == "sac":
-        # SAC: no obs normalization (norm_state is identity)
+    # ── Build rollout step function ───────────────────────────────────────
+    if algo_type == "ppo":
+        frozen_norm = norm_state
+        frozen_state = training_state
+        from jax_rl.utils.normalization import update as norm_update
+        def rollout_step(carry, _):
+            env_state, ns, key = carry
+            obs = env_state.obs[None]
+            ns = norm_update(ns, obs)
+            normed_obs = norm_normalize(ns, obs)
+            key, action_key = jax.random.split(key)
+            action, _, _ = algo.select_action(frozen_state, normed_obs, action_key, deterministic=True)
+            clipped_action = jnp.clip(action, -1.0, 1.0).squeeze(0)
+            env_state = env_step(env_state, clipped_action)
+            return (env_state, ns, key), env_state
+        init_carry = (env_state, norm_state, key)
+    else:
+        frozen_params = training_state.actor_params
         def rollout_step(carry, _):
             env_state, key = carry
             obs = env_state.obs[None]
             key, action_key = jax.random.split(key)
-            action = sac.select_action(
-                training_state.actor_params, obs, action_key, deterministic=True
-            )
+            action = algo.select_action(frozen_params, obs, action_key, deterministic=True)
             env_state = env_step(env_state, action.squeeze(0))
             return (env_state, key), env_state
-    else:
-        def rollout_step(carry, _):
-            env_state, norm_state, key = carry
-            obs = env_state.obs[None]
-            norm_state = norm_update(norm_state, obs)
-            normed_obs = norm_normalize(norm_state, obs)
-            key, action_key = jax.random.split(key)
-            action, _, _ = ppo.select_action(
-                training_state, normed_obs, action_key, deterministic=True
-            )
-            clipped_action = jnp.clip(action, -1.0, 1.0).squeeze(0)
-            env_state = env_step(env_state, clipped_action)
-            return (env_state, norm_state, key), env_state
+        init_carry = (env_state, key)
 
+    # ── Phase 1: JIT-scan rollout on GPU ──────────────────────────────────
     print("JIT-compiling rollout scan...")
     t0 = time.time()
-    if algo == "sac":
-        init_carry = (env_state, key)
-    else:
-        init_carry = (env_state, norm_state, key)
-    _, trajectory = jax.lax.scan(
-        rollout_step, init_carry, None, length=max_steps
-    )
+    _, trajectory = jax.lax.scan(rollout_step, init_carry, None, length=max_steps)
     jax.block_until_ready(trajectory.obs)
     t_rollout = time.time() - t0
     print(f"Rollout done: {max_steps} steps in {t_rollout:.2f}s (includes JIT compilation)")
@@ -185,7 +210,7 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
     total_reward = float(trajectory.reward.sum())
     print(f"Total reward: {total_reward:.1f}")
 
-    # Find first done step (unwrapped env doesn't auto-reset)
+    # Find first done step
     dones = np.asarray(trajectory.done)
     done_indices = np.where(dones > 0.5)[0]
     if len(done_indices) > 0:
@@ -196,12 +221,9 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
         print(f"Episode ran full {max_steps} steps (no termination)")
 
     # ── Phase 2: Render frames on CPU ─────────────────────────────────────
-    # Unstack trajectory into list of individual states for rendering
-    # Include initial state + trajectory states up to done
     print(f"Rendering {num_frames + 1} frames (CPU)...")
     t0 = time.time()
 
-    # Render initial state
     states = [env_state]
     for i in range(num_frames):
         state_i = jax.tree.map(lambda x: x[i], trajectory)
