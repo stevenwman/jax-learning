@@ -41,6 +41,7 @@ class TrainingState:
     log_alpha: jnp.ndarray
     alpha_opt_state: optax.OptState
     key: jax.Array
+    update_count: jnp.ndarray  # for policy delay
 
 
 class FastSAC:
@@ -85,11 +86,12 @@ class FastSAC:
         )
         self.actor_enc = MlpEncoder(enc_cfg)
         self.actor_head = GaussianHead(pol_cfg)
+        critic_dim = config.critic_hidden_dim or config.hidden_dim
         self.q1 = DistributionalQHead(
-            config.hidden_dim, num_atoms, config.activation, config.q_layer_norm,
+            critic_dim, num_atoms, config.activation, config.q_layer_norm,
         )
         self.q2 = DistributionalQHead(
-            config.hidden_dim, num_atoms, config.activation, config.q_layer_norm,
+            critic_dim, num_atoms, config.activation, config.q_layer_norm,
         )
 
         self.optimizer = optimizer
@@ -215,11 +217,14 @@ class FastSAC:
             return jax.tree.map(lambda o, t: tau * o + (1.0 - tau) * t, online, target)
 
         # ── Full update step ─────────────────────────────────────────────
+        policy_delay = config.policy_delay
+
         @jax.jit
         def update(state: TrainingState, batch: dict) -> tuple[TrainingState, dict]:
             key, k1, k2, k3 = jax.random.split(state.key, 4)
+            new_count = state.update_count + 1
 
-            # Critic
+            # Critic (every step)
             q_params = (state.q1_params, state.q2_params)
             (_, critic_metrics), q_grads = jax.value_and_grad(
                 _critic_loss, argnums=0, has_aux=True
@@ -229,28 +234,42 @@ class FastSAC:
                 q_grads, state.q_opt_state, params=q_params)
             new_q1_params, new_q2_params = optax.apply_updates(q_params, q_updates)
 
-            # Actor
-            (_, actor_metrics), actor_grads = jax.value_and_grad(
-                _actor_loss, argnums=0, has_aux=True
-            )(state.actor_params, state.q1_params, state.q2_params,
-              state.log_alpha, batch, k2)
-            actor_updates, new_actor_opt_state = optimizer.update(
-                actor_grads, state.actor_opt_state, params=state.actor_params
-            )
-            new_actor_params = optax.apply_updates(state.actor_params, actor_updates)
+            # Actor + Alpha (delayed by policy_delay)
+            def _do_actor_alpha_update(args):
+                ap, ao, la, aao, nq1, nq2, tq1, tq2 = args
+                # Actor
+                (_, am), ag = jax.value_and_grad(
+                    _actor_loss, argnums=0, has_aux=True
+                )(ap, nq1, nq2, la, batch, k2)
+                au, nao = optimizer.update(ag, ao, params=ap)
+                nap = optax.apply_updates(ap, au)
+                # Alpha
+                (_, alm), alg = jax.value_and_grad(
+                    _alpha_loss, argnums=0, has_aux=True
+                )(la, ap, batch, k3)
+                alu, naao = alpha_optimizer.update(alg, aao, params=la)
+                nla = optax.apply_updates(la, alu)
+                # Polyak
+                ntq1 = _soft_update(nq1, tq1)
+                ntq2 = _soft_update(nq2, tq2)
+                return nap, nao, nla, naao, ntq1, ntq2, {**am, **alm}
 
-            # Alpha
-            (_, alpha_metrics), alpha_grads = jax.value_and_grad(
-                _alpha_loss, argnums=0, has_aux=True
-            )(state.log_alpha, state.actor_params, batch, k3)
-            alpha_updates, new_alpha_opt_state = alpha_optimizer.update(
-                alpha_grads, state.alpha_opt_state
-            )
-            new_log_alpha = optax.apply_updates(state.log_alpha, alpha_updates)
+            def _skip_actor_alpha_update(args):
+                ap, ao, la, aao, nq1, nq2, tq1, tq2 = args
+                dummy = {"actor_loss": jnp.float32(0.0), "entropy": jnp.float32(0.0),
+                         "alpha_loss": jnp.float32(0.0), "alpha": jnp.exp(la)}
+                return ap, ao, la, aao, tq1, tq2, dummy
 
-            # Polyak
-            new_tq1 = _soft_update(new_q1_params, state.target_q1_params)
-            new_tq2 = _soft_update(new_q2_params, state.target_q2_params)
+            do_update = (new_count % policy_delay) == 0
+            (new_actor_params, new_actor_opt_state, new_log_alpha,
+             new_alpha_opt_state, new_tq1, new_tq2,
+             actor_alpha_metrics) = jax.lax.cond(
+                do_update, _do_actor_alpha_update, _skip_actor_alpha_update,
+                (state.actor_params, state.actor_opt_state,
+                 state.log_alpha, state.alpha_opt_state,
+                 new_q1_params, new_q2_params,
+                 state.target_q1_params, state.target_q2_params),
+            )
 
             new_state = state.replace(
                 actor_params=new_actor_params,
@@ -263,8 +282,9 @@ class FastSAC:
                 log_alpha=new_log_alpha,
                 alpha_opt_state=new_alpha_opt_state,
                 key=key,
+                update_count=new_count,
             )
-            metrics = {**critic_metrics, **actor_metrics, **alpha_metrics}
+            metrics = {**critic_metrics, **actor_alpha_metrics}
             return new_state, metrics
 
         @jax.jit
@@ -315,4 +335,5 @@ class FastSAC:
             log_alpha=log_alpha,
             alpha_opt_state=alpha_opt_state,
             key=key,
+            update_count=jnp.zeros((), dtype=jnp.int32),
         )

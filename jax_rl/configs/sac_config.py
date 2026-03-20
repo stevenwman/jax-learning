@@ -20,6 +20,8 @@ class SACConfig:
     alpha_lr: float = 1e-3              # Temperature optimizer LR (separate from policy/Q)
     alpha_init: float = 1.0             # Initial alpha. Vanilla SAC: 1.0, FastSAC paper: 0.001
     max_std: float | None = None        # Cap on pre-tanh std. None=no cap, FastSAC paper: 1.0
+    policy_delay: int = 1              # Actor update frequency. 1=every step (vanilla SAC), 4=FastSAC paper
+    grad_clip_norm: float | None = None # Max grad norm. None=no clipping. Paper: disabled (0.0)
 
     # Replay buffer
     buffer_size: int = 4_194_304        # 4M — Playground default
@@ -28,6 +30,8 @@ class SACConfig:
     grad_updates_per_step: int = 8      # Gradient steps per env step
 
     # Network
-    hidden_dim: tuple[int, ...] = (256, 256)
+    hidden_dim: tuple[int, ...] = (256, 256)       # Actor network dims
+    critic_hidden_dim: tuple[int, ...] | None = None  # Critic dims. None = same as hidden_dim.
+                                                       # FastSAC paper: (768, 384, 192) for critic
     activation: str = "relu"            # SAC uses ReLU (not swish like PPO)
     q_layer_norm: bool = True           # Layer norm in Q-network (Playground default)

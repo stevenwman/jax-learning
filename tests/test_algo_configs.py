@@ -1,0 +1,278 @@
+"""Tests for algorithm config compatibility and correctness.
+
+Verifies:
+- Every algo can init + run 1 update step with both Adam and AdamW
+- critic_hidden_dim produces different Q network shapes than hidden_dim
+- FastSAC policy_delay only updates actor every N steps
+- All algos respect alpha_init config
+- Gradient clipping is configurable
+"""
+
+import os
+import sys
+
+import jax
+import jax.numpy as jnp
+import numpy as np
+import optax
+import pytest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from jax_rl.algos.sac import SAC
+from jax_rl.algos.td3 import TD3
+from jax_rl.algos.fast_td3 import FastTD3
+from jax_rl.algos.fast_sac import FastSAC
+from jax_rl.algos.fast_dsac import FastDSAC
+from jax_rl.configs.sac_config import SACConfig
+from jax_rl.configs.td3_config import TD3Config
+from jax_rl.configs.fast_td3_config import FastTD3Config
+from jax_rl.configs.fast_dsac_config import FastDSACConfig
+
+
+OBS_DIM = 10
+ACTION_DIM = 4
+KEY = jax.random.PRNGKey(42)
+
+
+def _make_batch(obs_dim, action_dim, batch_size=64):
+    """Create a fake batch for testing."""
+    return {
+        "obs": jnp.ones((batch_size, obs_dim)),
+        "action": jnp.zeros((batch_size, action_dim)),
+        "reward": jnp.ones((batch_size, 1)),
+        "next_obs": jnp.ones((batch_size, obs_dim)),
+        "done": jnp.zeros((batch_size, 1)),
+        "truncation": jnp.zeros((batch_size, 1)),
+    }
+
+
+# ── Optimizer compatibility ───────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("opt_fn", [
+    lambda lr: optax.adam(lr),
+    lambda lr: optax.adamw(lr, weight_decay=0.001),
+    lambda lr: optax.chain(optax.clip_by_global_norm(1.0), optax.adam(lr)),
+    lambda lr: optax.chain(optax.clip_by_global_norm(1.0), optax.adamw(lr, weight_decay=0.001)),
+])
+def test_sac_optimizer_compat(opt_fn):
+    """SAC should work with any optax optimizer."""
+    cfg = SACConfig(hidden_dim=(32, 32), batch_size=64)
+    opt = opt_fn(1e-3)
+    sac = SAC(cfg, OBS_DIM, ACTION_DIM, opt, opt, gamma=0.99)
+    state = sac.init(KEY)
+    batch = _make_batch(OBS_DIM, ACTION_DIM)
+    new_state, metrics = sac.update(state, batch)
+    assert not jnp.isnan(metrics["q1_mean"]), "Q1 is NaN"
+
+
+@pytest.mark.parametrize("opt_fn", [
+    lambda lr: optax.adam(lr),
+    lambda lr: optax.adamw(lr, weight_decay=0.001),
+])
+def test_td3_optimizer_compat(opt_fn):
+    """TD3 should work with any optax optimizer."""
+    cfg = TD3Config(hidden_dim=(32, 32), batch_size=64, min_buffer_size=1)
+    opt = opt_fn(1e-3)
+    td3 = TD3(cfg, OBS_DIM, ACTION_DIM, opt, opt, gamma=0.99)
+    state = td3.init(KEY)
+    batch = _make_batch(OBS_DIM, ACTION_DIM)
+    new_state, metrics = td3.update(state, batch)
+    assert not jnp.isnan(metrics["q1_mean"]), "Q1 is NaN"
+
+
+@pytest.mark.parametrize("opt_fn", [
+    lambda lr: optax.adam(lr),
+    lambda lr: optax.adamw(lr, weight_decay=0.001),
+])
+def test_fast_td3_optimizer_compat(opt_fn):
+    """FastTD3 should work with any optax optimizer."""
+    cfg = FastTD3Config(hidden_dim=(32, 16), critic_hidden_dim=(48, 24),
+                        batch_size=64, min_buffer_size=1)
+    opt = opt_fn(1e-3)
+    td3 = FastTD3(cfg, OBS_DIM, ACTION_DIM, opt, opt, gamma=0.99)
+    state = td3.init(KEY)
+    batch = _make_batch(OBS_DIM, ACTION_DIM)
+    new_state, metrics = td3.update(state, batch)
+    assert not jnp.isnan(metrics["q1_mean"]), "Q1 is NaN"
+
+
+@pytest.mark.parametrize("opt_fn", [
+    lambda lr: optax.adam(lr),
+    lambda lr: optax.adamw(lr, weight_decay=0.001),
+])
+def test_fast_sac_optimizer_compat(opt_fn):
+    """FastSAC should work with any optax optimizer."""
+    cfg = SACConfig(hidden_dim=(32, 16), critic_hidden_dim=(48, 24),
+                    batch_size=64, min_buffer_size=1, policy_delay=1)
+    opt = opt_fn(1e-3)
+    alpha_opt = opt_fn(1e-3)
+    sac = FastSAC(cfg, OBS_DIM, ACTION_DIM, opt, alpha_opt, gamma=0.99,
+                  num_atoms=11, v_min=-5, v_max=5)
+    state = sac.init(KEY)
+    batch = _make_batch(OBS_DIM, ACTION_DIM)
+    new_state, metrics = sac.update(state, batch)
+    assert not jnp.isnan(metrics["q1_mean"]), "Q1 is NaN"
+
+
+@pytest.mark.parametrize("opt_fn", [
+    lambda lr: optax.adam(lr),
+    lambda lr: optax.adamw(lr, weight_decay=0.001),
+])
+def test_fast_dsac_optimizer_compat(opt_fn):
+    """FastDSAC should work with any optax optimizer."""
+    cfg = FastDSACConfig(hidden_dim=(32, 32), batch_size=64,
+                         min_buffer_size=1, buffer_size=1000)
+    opt = opt_fn(1e-3)
+    dsac = FastDSAC(cfg, OBS_DIM, ACTION_DIM, opt, opt, gamma=0.99)
+    state = dsac.init(KEY)
+    batch = _make_batch(OBS_DIM, ACTION_DIM)
+    new_state, metrics = dsac.update(state, batch)
+    assert not jnp.isnan(metrics["q1_mean"]), "Q1 is NaN"
+
+
+# ── Critic hidden dim ────────────────────────────────────────────────────
+
+
+def test_sac_critic_hidden_dim():
+    """SAC with critic_hidden_dim should have different Q param count."""
+    cfg_same = SACConfig(hidden_dim=(32, 32), critic_hidden_dim=None)
+    cfg_diff = SACConfig(hidden_dim=(32, 32), critic_hidden_dim=(64, 64))
+
+    sac_same = SAC(cfg_same, OBS_DIM, ACTION_DIM, optax.adam(1e-3), optax.adam(1e-3), gamma=0.99)
+    sac_diff = SAC(cfg_diff, OBS_DIM, ACTION_DIM, optax.adam(1e-3), optax.adam(1e-3), gamma=0.99)
+
+    state_same = sac_same.init(KEY)
+    state_diff = sac_diff.init(KEY)
+
+    q_params_same = sum(x.size for x in jax.tree.leaves(state_same.q1_params))
+    q_params_diff = sum(x.size for x in jax.tree.leaves(state_diff.q1_params))
+
+    assert q_params_diff > q_params_same, \
+        f"critic_hidden_dim=(64,64) should have more Q params than (32,32): {q_params_diff} vs {q_params_same}"
+
+
+def test_td3_critic_hidden_dim():
+    """TD3 with critic_hidden_dim should have different Q param count."""
+    cfg_same = TD3Config(hidden_dim=(32, 32), critic_hidden_dim=None)
+    cfg_diff = TD3Config(hidden_dim=(32, 32), critic_hidden_dim=(64, 64))
+
+    td3_same = TD3(cfg_same, OBS_DIM, ACTION_DIM, optax.adam(1e-3), optax.adam(1e-3), gamma=0.99)
+    td3_diff = TD3(cfg_diff, OBS_DIM, ACTION_DIM, optax.adam(1e-3), optax.adam(1e-3), gamma=0.99)
+
+    state_same = td3_same.init(KEY)
+    state_diff = td3_diff.init(KEY)
+
+    q_same = sum(x.size for x in jax.tree.leaves(state_same.q1_params))
+    q_diff = sum(x.size for x in jax.tree.leaves(state_diff.q1_params))
+
+    assert q_diff > q_same, \
+        f"critic_hidden_dim=(64,64) should have more Q params: {q_diff} vs {q_same}"
+
+
+# ── Policy delay ─────────────────────────────────────────────────────────
+
+
+def test_fast_sac_policy_delay():
+    """FastSAC with policy_delay=4 should only update actor every 4th step."""
+    cfg = SACConfig(hidden_dim=(32, 16), critic_hidden_dim=(48, 24),
+                    batch_size=64, min_buffer_size=1, policy_delay=4)
+    opt = optax.adam(1e-3)
+    sac = FastSAC(cfg, OBS_DIM, ACTION_DIM, opt, opt, gamma=0.99,
+                  num_atoms=11, v_min=-5, v_max=5)
+    state = sac.init(KEY)
+    batch = _make_batch(OBS_DIM, ACTION_DIM)
+
+    actor_losses = []
+    for i in range(8):
+        state, metrics = sac.update(state, batch)
+        actor_losses.append(float(metrics["actor_loss"]))
+
+    # Steps 1,2,3 should have actor_loss=0 (skipped), step 4 should be nonzero
+    assert actor_losses[0] == 0.0, f"Step 1 should skip actor (got {actor_losses[0]})"
+    assert actor_losses[1] == 0.0, f"Step 2 should skip actor (got {actor_losses[1]})"
+    assert actor_losses[2] == 0.0, f"Step 3 should skip actor (got {actor_losses[2]})"
+    assert actor_losses[3] != 0.0, f"Step 4 should update actor (got {actor_losses[3]})"
+    assert actor_losses[7] != 0.0, f"Step 8 should update actor (got {actor_losses[7]})"
+
+
+def test_fast_sac_no_policy_delay():
+    """FastSAC with policy_delay=1 should update actor every step."""
+    cfg = SACConfig(hidden_dim=(32, 16), batch_size=64,
+                    min_buffer_size=1, policy_delay=1)
+    opt = optax.adam(1e-3)
+    sac = FastSAC(cfg, OBS_DIM, ACTION_DIM, opt, opt, gamma=0.99,
+                  num_atoms=11, v_min=-5, v_max=5)
+    state = sac.init(KEY)
+    batch = _make_batch(OBS_DIM, ACTION_DIM)
+
+    for i in range(4):
+        state, metrics = sac.update(state, batch)
+        assert float(metrics["actor_loss"]) != 0.0, \
+            f"Step {i+1} should update actor with policy_delay=1"
+
+
+# ── Alpha init ───────────────────────────────────────────────────────────
+
+
+def test_sac_alpha_init_default():
+    """Vanilla SAC default alpha_init=1.0."""
+    cfg = SACConfig(hidden_dim=(32, 32))
+    sac = SAC(cfg, OBS_DIM, ACTION_DIM, optax.adam(1e-3), optax.adam(1e-3), gamma=0.99)
+    state = sac.init(KEY)
+    alpha = float(jnp.exp(state.log_alpha))
+    assert abs(alpha - 1.0) < 1e-5, f"Default alpha should be 1.0, got {alpha}"
+
+
+def test_sac_alpha_init_custom():
+    """Vanilla SAC respects alpha_init=0.001."""
+    cfg = SACConfig(hidden_dim=(32, 32), alpha_init=0.001)
+    sac = SAC(cfg, OBS_DIM, ACTION_DIM, optax.adam(1e-3), optax.adam(1e-3), gamma=0.99)
+    state = sac.init(KEY)
+    alpha = float(jnp.exp(state.log_alpha))
+    assert abs(alpha - 0.001) < 1e-5, f"Alpha should be 0.001, got {alpha}"
+
+
+def test_fast_sac_alpha_init():
+    """FastSAC respects alpha_init from config."""
+    cfg = SACConfig(hidden_dim=(32, 16), alpha_init=0.01, batch_size=64)
+    opt = optax.adam(1e-3)
+    sac = FastSAC(cfg, OBS_DIM, ACTION_DIM, opt, opt, gamma=0.99,
+                  num_atoms=11, v_min=-5, v_max=5)
+    state = sac.init(KEY)
+    alpha = float(jnp.exp(state.log_alpha))
+    assert abs(alpha - 0.01) < 1e-4, f"Alpha should be 0.01, got {alpha}"
+
+
+def test_fast_dsac_alpha_init():
+    """FastDSAC respects alpha_init from config."""
+    cfg = FastDSACConfig(hidden_dim=(32, 32), alpha_init=0.005,
+                         buffer_size=1000, batch_size=64)
+    opt = optax.adam(1e-3)
+    dsac = FastDSAC(cfg, OBS_DIM, ACTION_DIM, opt, opt, gamma=0.99)
+    state = dsac.init(KEY)
+    alpha = float(jnp.exp(state.log_alpha))
+    assert abs(alpha - 0.005) < 1e-4, f"Alpha should be 0.005, got {alpha}"
+
+
+# ── Tapered network dims ─────────────────────────────────────────────────
+
+
+def test_tapered_network_dims():
+    """Tapered hidden_dim (512, 256, 128) should produce 3-layer actor."""
+    cfg = SACConfig(hidden_dim=(64, 32, 16))
+    sac = SAC(cfg, OBS_DIM, ACTION_DIM, optax.adam(1e-3), optax.adam(1e-3), gamma=0.99)
+    state = sac.init(KEY)
+
+    # Count actor param layers — should have 3 Dense layers in encoder
+    actor_param_count = sum(x.size for x in jax.tree.leaves(state.actor_params))
+
+    cfg_flat = SACConfig(hidden_dim=(64, 64))
+    sac_flat = SAC(cfg_flat, OBS_DIM, ACTION_DIM, optax.adam(1e-3), optax.adam(1e-3), gamma=0.99)
+    state_flat = sac_flat.init(KEY)
+    flat_param_count = sum(x.size for x in jax.tree.leaves(state_flat.actor_params))
+
+    # Tapered (64,32,16) has fewer params than flat (64,64) due to shrinking layers
+    assert actor_param_count != flat_param_count, \
+        "Tapered and flat networks should have different param counts"

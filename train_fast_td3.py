@@ -54,15 +54,22 @@ def train(cfg: TrainConfig, td3_cfg: FastTD3Config, seed: int = 0, resume: str |
     print(f"  C51: atoms={td3_cfg.num_atoms}, v=[{td3_cfg.v_min},{td3_cfg.v_max}], "
           f"q_agg={td3_cfg.q_aggregation}")
     print(f"  policy_delay={td3_cfg.policy_delay}, target_noise={td3_cfg.target_noise_std}")
-    print(f"  exploration_noise={td3_cfg.exploration_noise_std}")
+    if td3_cfg.noise_min is not None:
+        print(f"  exploration_noise=U[{td3_cfg.noise_min},{td3_cfg.noise_max}] (mixed)")
+    else:
+        print(f"  exploration_noise={td3_cfg.exploration_noise_std}")
     print(f"  tau={td3_cfg.tau}, q_layer_norm={td3_cfg.q_layer_norm}, "
           f"hidden={td3_cfg.hidden_dim}")
-    print(f"  lr={cfg.lr} → {td3_cfg.lr_end} (cosine), gamma={cfg.gamma}")
+    print(f"  lr={cfg.lr}, AdamW β2=0.95 wd=0.001, gamma={cfg.gamma}")
 
     # ── FastTD3 setup ────────────────────────────────────────────────────
-    lr_schedule = optax.cosine_decay_schedule(cfg.lr, total_grad_steps_est, alpha=td3_cfg.lr_end / cfg.lr)
-    actor_optimizer = optax.chain(optax.clip_by_global_norm(1.0), optax.adam(lr_schedule))
-    critic_optimizer = optax.chain(optax.clip_by_global_norm(1.0), optax.adam(lr_schedule))
+    # Paper uses constant LR + no grad clipping. We keep cosine decay as an option
+    # via lr_end (set lr_end=lr for constant). No grad clipping per paper.
+    lr_schedule = optax.cosine_decay_schedule(
+        cfg.lr, total_grad_steps_est, alpha=td3_cfg.lr_end / cfg.lr
+    ) if td3_cfg.lr_end < cfg.lr else cfg.lr
+    actor_optimizer = optax.adamw(lr_schedule, b2=0.95, weight_decay=0.001)
+    critic_optimizer = optax.adamw(lr_schedule, b2=0.95, weight_decay=0.001)
 
     td3 = FastTD3(
         config=td3_cfg, obs_dim=obs_dim, action_dim=action_dim,
@@ -114,11 +121,17 @@ def train(cfg: TrainConfig, td3_cfg: FastTD3Config, seed: int = 0, resume: str |
             key, ak = jax.random.split(key)
             action = jax.random.uniform(ak, (cfg.num_envs, action_dim), minval=-1.0, maxval=1.0)
         else:
-            key, ak = jax.random.split(key)
+            key, ak, noise_key = jax.random.split(key, 3)
+            # Mixed noise schedule: sample σ ~ U[noise_min, noise_max] each step
+            if td3_cfg.noise_min is not None:
+                noise_std = jax.random.uniform(
+                    noise_key, (), minval=td3_cfg.noise_min, maxval=td3_cfg.noise_max)
+            else:
+                noise_std = td3_cfg.exploration_noise_std
             action = td3.select_action(
                 training_state.actor_params, obs, ak,
                 deterministic=False,
-                exploration_noise=td3_cfg.exploration_noise_std,
+                exploration_noise=noise_std,
             )
 
         # ── Env step ──────────────────────────────────────────────────────

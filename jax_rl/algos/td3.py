@@ -67,8 +67,9 @@ class TD3:
         )
         self.actor_enc = MlpEncoder(enc_cfg)
         self.actor_head = DeterministicHead(action_dim=action_dim)
-        self.q1 = QHead(config.hidden_dim, config.activation, config.q_layer_norm)
-        self.q2 = QHead(config.hidden_dim, config.activation, config.q_layer_norm)
+        critic_dim = config.critic_hidden_dim or config.hidden_dim
+        self.q1 = QHead(critic_dim, config.activation, config.q_layer_norm)
+        self.q2 = QHead(critic_dim, config.activation, config.q_layer_norm)
 
         self.actor_optimizer = actor_optimizer
         self.critic_optimizer = critic_optimizer
@@ -168,7 +169,7 @@ class TD3:
             )(q_params, state.target_actor_params, state.target_q1_params,
               state.target_q2_params, batch, k1)
             q_updates, new_q_opt_state = critic_optimizer.update(
-                q_grads, state.q_opt_state
+                q_grads, state.q_opt_state, params=q_params
             )
             new_q1_params, new_q2_params = optax.apply_updates(q_params, q_updates)
 
@@ -180,7 +181,7 @@ class TD3:
                     _actor_loss_fn, argnums=0, has_aux=True
                 )(actor_params, q1_p, obs)
                 actor_updates, new_actor_opt_state = actor_optimizer.update(
-                    actor_grads, actor_opt_state
+                    actor_grads, actor_opt_state, params=actor_params
                 )
                 new_actor_params = optax.apply_updates(actor_params, actor_updates)
                 # Polyak update targets (only when actor updates)

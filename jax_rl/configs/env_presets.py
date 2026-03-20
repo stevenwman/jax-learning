@@ -149,7 +149,8 @@ def get_td3_preset(env_name: str) -> tuple[TrainConfig, TD3Config]:
     return dataclasses.replace(_TD3_BASE_CFG, env_name=env_name), _TD3_BASE_ALGO
 
 
-# FastTD3 presets — C51 distributional + large batch + LR decay
+# FastTD3 presets — Seo et al. 2025 (arXiv:2512.01996)
+# Paper recipe: gamma=0.97, mixed noise U[0.01, 0.05], AdamW β2=0.95, wd=0.001
 _FAST_TD3_BASE_CFG = TrainConfig(
     total_timesteps=100_000_000,
     num_envs=1024,
@@ -157,31 +158,30 @@ _FAST_TD3_BASE_CFG = TrainConfig(
     lr=3e-4,
     anneal_lr=False,
     reward_scaling=1.0,
-    gamma=0.99,
-    num_eval_episodes=5,  # fewer eval envs to avoid OOM with 1024 training envs
+    gamma=0.97,             # paper: 0.97 for locomotion
+    num_eval_episodes=5,
     handle_truncation=True,
     ppo=None,
 )
 
-_FAST_TD3_BASE_ALGO = FastTD3Config()
+_FAST_TD3_BASE_ALGO = FastTD3Config(
+    noise_min=0.01,         # paper: mixed noise σ ~ U[0.01, 0.05]
+    noise_max=0.05,
+)
 
-# v_min/v_max must cover the actual Q-value range for each env.
-# Q ≈ avg_reward_per_step / (1 - gamma). With gamma=0.99:
-#   CheetahRun: reward ~0.8 → Q ~80. WalkerWalk: reward ~0.97 → Q ~97.
-#   HumanoidRun: reward ~0.2 → Q ~20.
+# Paper uses v_min/v_max = [-20, 20] universally (now the default in FastTD3Config)
 FAST_TD3_PRESETS: dict[str, tuple[TrainConfig, FastTD3Config]] = {
     "CheetahRun": (
         dataclasses.replace(_FAST_TD3_BASE_CFG, env_name="CheetahRun"),
-        dataclasses.replace(_FAST_TD3_BASE_ALGO, v_min=-10.0, v_max=150.0),
+        _FAST_TD3_BASE_ALGO,
     ),
     "WalkerWalk": (
         dataclasses.replace(_FAST_TD3_BASE_CFG, env_name="WalkerWalk"),
-        dataclasses.replace(_FAST_TD3_BASE_ALGO, v_min=-10.0, v_max=150.0),
+        _FAST_TD3_BASE_ALGO,
     ),
     "HumanoidRun": (
         dataclasses.replace(_FAST_TD3_BASE_CFG, env_name="HumanoidRun"),
-        dataclasses.replace(_FAST_TD3_BASE_ALGO, v_min=-10.0, v_max=50.0,
-                            exploration_noise_std=0.3),
+        _FAST_TD3_BASE_ALGO,
     ),
 }
 
@@ -210,18 +210,20 @@ _FAST_SAC_BASE_CFG = TrainConfig(
 )
 
 _FAST_SAC_BASE_ALGO = SACConfig(
-    tau=0.005,
-    target_entropy_scale=0.0,  # target_entropy=0 (prevents alpha collapse at scale)
+    tau=0.125,                     # paper: 0.125 (fast target update for high UTD ratio)
+    target_entropy_scale=0.0,      # target_entropy=0 (prevents alpha collapse at scale)
     alpha_lr=3e-4,
-    alpha_init=0.001,          # start near-zero, not 1.0
-    max_std=1.0,               # cap pre-tanh std to prevent excessive exploration
+    alpha_init=0.001,              # start near-zero, not 1.0
+    max_std=1.0,                   # cap pre-tanh std (log_std_max=0.0 → std=1.0)
     buffer_size=4_194_304,
     min_buffer_size=8_192,
     batch_size=8_192,
-    grad_updates_per_step=12,
-    hidden_dim=(512, 512),
-    activation="relu",
+    grad_updates_per_step=8,           # paper: 8 (not 12)
+    hidden_dim=(512, 256, 128),        # paper: tapered actor (actor_hidden_dim=512 → 512/256/128)
+    critic_hidden_dim=(768, 384, 192), # paper: wider tapered critic (critic_hidden_dim=768)
+    activation="swish",                # paper: SiLU (= swish)
     q_layer_norm=True,
+    policy_delay=4,                    # paper: actor updates every 4th critic update
 )
 
 FAST_SAC_PRESETS: dict[str, tuple[TrainConfig, SACConfig]] = {

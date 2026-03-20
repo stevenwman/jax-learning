@@ -61,12 +61,13 @@ def train(cfg: TrainConfig, sac_cfg: SACConfig, seed: int = 0, resume: str | Non
     print(f"  alpha_lr={sac_cfg.alpha_lr}, alpha_init={sac_cfg.alpha_init}, gamma={cfg.gamma}")
 
     # ── FastSAC setup ────────────────────────────────────────────────────
-    lr_schedule = optax.cosine_decay_schedule(cfg.lr, total_grad_steps_est, alpha=lr_end / cfg.lr)
-    optimizer = optax.chain(
-        optax.clip_by_global_norm(1.0),
-        optax.adamw(lr_schedule, b2=0.95, weight_decay=0.001),
-    )
-    alpha_optimizer = optax.adam(sac_cfg.alpha_lr)
+    # Paper: constant LR, no grad clipping, AdamW β2=0.95 wd=0.001 for all
+    if lr_end < cfg.lr:
+        lr_schedule = optax.cosine_decay_schedule(cfg.lr, total_grad_steps_est, alpha=lr_end / cfg.lr)
+    else:
+        lr_schedule = cfg.lr
+    optimizer = optax.adamw(lr_schedule, b2=0.95, weight_decay=0.001)
+    alpha_optimizer = optax.adamw(sac_cfg.alpha_lr, b2=0.95, weight_decay=0.001)
 
     sac = FastSAC(
         config=sac_cfg, obs_dim=obs_dim, action_dim=action_dim,

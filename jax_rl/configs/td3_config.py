@@ -14,6 +14,8 @@ class TD3Config:
     min_buffer_size: int = 10_000
     batch_size: int = 256
     grad_updates_per_step: int = 1
-    hidden_dim: tuple[int, ...] = (256, 256)
+    hidden_dim: tuple[int, ...] = (256, 256)       # Actor network dims
+    critic_hidden_dim: tuple[int, ...] | None = None  # Critic dims. None = same as hidden_dim.
     activation: str = "relu"
     q_layer_norm: bool = False
+    grad_clip_norm: float | None = 1.0  # Max grad norm. None=no clipping.

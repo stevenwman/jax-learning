@@ -59,7 +59,10 @@ def train(cfg: TrainConfig, sac_cfg: SACConfig, seed: int = 0, resume: str | Non
     print(f"  handle_truncation={cfg.handle_truncation}, reward_scaling={cfg.reward_scaling}")
 
     # ── SAC setup ────────────────────────────────────────────────────────
-    optimizer = optax.adam(cfg.lr)
+    if sac_cfg.grad_clip_norm is not None:
+        optimizer = optax.chain(optax.clip_by_global_norm(sac_cfg.grad_clip_norm), optax.adam(cfg.lr))
+    else:
+        optimizer = optax.adam(cfg.lr)
     alpha_optimizer = optax.adam(sac_cfg.alpha_lr)
 
     sac = SAC(

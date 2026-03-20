@@ -61,8 +61,12 @@ def train(cfg: TrainConfig, td3_cfg: TD3Config, seed: int = 0, resume: str | Non
     print(f"  handle_truncation={cfg.handle_truncation}, reward_scaling={cfg.reward_scaling}")
 
     # ── TD3 setup ────────────────────────────────────────────────────────
-    actor_optimizer = optax.chain(optax.clip_by_global_norm(1.0), optax.adam(cfg.lr))
-    critic_optimizer = optax.chain(optax.clip_by_global_norm(1.0), optax.adam(cfg.lr))
+    if td3_cfg.grad_clip_norm is not None:
+        actor_optimizer = optax.chain(optax.clip_by_global_norm(td3_cfg.grad_clip_norm), optax.adam(cfg.lr))
+        critic_optimizer = optax.chain(optax.clip_by_global_norm(td3_cfg.grad_clip_norm), optax.adam(cfg.lr))
+    else:
+        actor_optimizer = optax.adam(cfg.lr)
+        critic_optimizer = optax.adam(cfg.lr)
 
     td3 = TD3(
         config=td3_cfg, obs_dim=obs_dim, action_dim=action_dim,
