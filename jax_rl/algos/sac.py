@@ -73,8 +73,9 @@ class SAC:
         )
         self.actor_enc = MlpEncoder(enc_cfg)
         self.actor_head = GaussianHead(pol_cfg)
-        self.q1 = QHead(config.hidden_dim, config.activation, config.q_layer_norm)
-        self.q2 = QHead(config.hidden_dim, config.activation, config.q_layer_norm)
+        critic_dim = config.critic_hidden_dim or config.hidden_dim
+        self.q1 = QHead(critic_dim, config.activation, config.q_layer_norm)
+        self.q2 = QHead(critic_dim, config.activation, config.q_layer_norm)
 
         self.optimizer = optimizer
         self.alpha_optimizer = alpha_optimizer
@@ -192,7 +193,8 @@ class SAC:
                 _critic_loss, argnums=0, has_aux=True
             )(q_params, state.actor_params, state.target_q1_params,
               state.target_q2_params, state.log_alpha, batch, k1)
-            q_updates, new_q_opt_state = optimizer.update(q_grads, state.q_opt_state)
+            q_updates, new_q_opt_state = optimizer.update(
+                q_grads, state.q_opt_state, params=q_params)
             new_q1_params, new_q2_params = optax.apply_updates(q_params, q_updates)
 
             # Actor update
@@ -201,7 +203,7 @@ class SAC:
             )(state.actor_params, state.q1_params, state.q2_params,
               state.log_alpha, batch, k2)
             actor_updates, new_actor_opt_state = optimizer.update(
-                actor_grads, state.actor_opt_state
+                actor_grads, state.actor_opt_state, params=state.actor_params
             )
             new_actor_params = optax.apply_updates(state.actor_params, actor_updates)
 
@@ -210,7 +212,7 @@ class SAC:
                 _alpha_loss, argnums=0, has_aux=True
             )(state.log_alpha, state.actor_params, batch, k3)
             alpha_updates, new_alpha_opt_state = alpha_optimizer.update(
-                alpha_grads, state.alpha_opt_state
+                alpha_grads, state.alpha_opt_state, params=state.log_alpha
             )
             new_log_alpha = optax.apply_updates(state.log_alpha, alpha_updates)
 
@@ -272,7 +274,7 @@ class SAC:
         actor_opt_state = self.optimizer.init(actor_params)
         q_params = (q1_params, q2_params)
         q_opt_state = self.optimizer.init(q_params)
-        log_alpha = jnp.zeros(())
+        log_alpha = jnp.array(jnp.log(self.config.alpha_init))
         alpha_opt_state = self.alpha_optimizer.init(log_alpha)
 
         return TrainingState(

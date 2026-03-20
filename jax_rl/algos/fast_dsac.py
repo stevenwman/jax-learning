@@ -74,11 +74,12 @@ class FastDSAC:
         )
         self.actor_enc = MlpEncoder(enc_cfg)
         self.actor_head = GaussianHead(pol_cfg)
+        critic_dim = getattr(config, 'critic_hidden_dim', None) or config.hidden_dim
         self.q1 = GaussianQHead(
-            config.hidden_dim, config.activation, config.q_layer_norm,
+            critic_dim, config.activation, config.q_layer_norm,
         )
         self.q2 = GaussianQHead(
-            config.hidden_dim, config.activation, config.q_layer_norm,
+            critic_dim, config.activation, config.q_layer_norm,
         )
 
         self.optimizer = optimizer
@@ -244,7 +245,7 @@ class FastDSAC:
                 _alpha_loss, argnums=0, has_aux=True
             )(state.log_alpha, state.actor_params, batch, k3)
             alpha_updates, new_alpha_opt_state = alpha_optimizer.update(
-                alpha_grads, state.alpha_opt_state
+                alpha_grads, state.alpha_opt_state, params=state.log_alpha
             )
             new_log_alpha = optax.apply_updates(state.log_alpha, alpha_updates)
 
@@ -325,7 +326,7 @@ class FastDSAC:
         actor_opt_state = self.optimizer.init(actor_params)
         q_params = (q1_params, q2_params)
         q_opt_state = self.optimizer.init(q_params)
-        log_alpha = jnp.zeros(())
+        log_alpha = jnp.array(jnp.log(self.config.alpha_init))
         alpha_opt_state = self.alpha_optimizer.init(log_alpha)
 
         return TrainingState(

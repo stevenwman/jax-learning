@@ -63,11 +63,12 @@ def train(cfg: TrainConfig, dsac_cfg: FastDSACConfig, seed: int = 0,
     lr_schedule = optax.cosine_decay_schedule(
         cfg.lr, total_grad_steps_est, alpha=dsac_cfg.lr_end / cfg.lr
     )
-    optimizer = optax.chain(
-        optax.clip_by_global_norm(1.0),
-        optax.adamw(lr_schedule, b1=dsac_cfg.adam_b1, b2=dsac_cfg.adam_b2,
-                     weight_decay=dsac_cfg.weight_decay),
-    )
+    base_opt = optax.adamw(lr_schedule, b1=dsac_cfg.adam_b1, b2=dsac_cfg.adam_b2,
+                           weight_decay=dsac_cfg.weight_decay)
+    if dsac_cfg.grad_clip_norm is not None:
+        optimizer = optax.chain(optax.clip_by_global_norm(dsac_cfg.grad_clip_norm), base_opt)
+    else:
+        optimizer = base_opt
     alpha_optimizer = optax.adam(dsac_cfg.alpha_lr)
 
     dsac = FastDSAC(
