@@ -19,3 +19,5 @@ class TD3Config:
     activation: str = "relu"
     q_layer_norm: bool = False
     grad_clip_norm: float | None = 1.0  # Max grad norm. None=no clipping.
+    obs_normalization: bool = False     # Normalize obs at sample time (not pre-storage)
+    obs_norm_eps: float = 1e-2

@@ -42,3 +42,7 @@ class FastDSACConfig:
 
     # LR decay (cosine)
     lr_end: float = 3e-5
+
+    # Observation normalization
+    obs_normalization: bool = False
+    obs_norm_eps: float = 1e-2

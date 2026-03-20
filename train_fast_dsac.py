@@ -29,6 +29,9 @@ from jax_rl.training import (
     log_training_step, make_metrics_row,
     maybe_eval_and_checkpoint, final_eval_and_checkpoint,
 )
+from jax_rl.utils.normalization import (
+    init as norm_init, update as norm_update, normalize as norm_normalize,
+)
 
 
 def train(cfg: TrainConfig, dsac_cfg: FastDSACConfig, seed: int = 0,
@@ -91,7 +94,8 @@ def train(cfg: TrainConfig, dsac_cfg: FastDSACConfig, seed: int = 0,
     q_param_count = sum(x.size for x in jax.tree.leaves(training_state.q1_params))
     print(f"  actor_params={actor_param_count:,}, Q_params (each)={q_param_count:,}")
 
-    norm_state = make_identity_norm_state(obs_dim)
+    use_obs_norm = dsac_cfg.obs_normalization
+    norm_state = norm_init(obs_dim) if use_obs_norm else make_identity_norm_state(obs_dim)
     BufferCls = JaxReplayBuffer if jax_buffer else ReplayBuffer
     buffer = BufferCls(obs_dim, action_dim, max_size=dsac_cfg.buffer_size)
 
@@ -123,13 +127,18 @@ def train(cfg: TrainConfig, dsac_cfg: FastDSACConfig, seed: int = 0,
         total_steps = (outer_step + 1) * cfg.num_envs
         obs = env_state.obs
 
+        # ── Obs normalization (update stats) ─────────────────────────────
+        if use_obs_norm:
+            norm_state = norm_update(norm_state, obs)
+
         # ── Action selection (with population diversity β) ────────────────
+        obs_for_action = norm_normalize(norm_state, obs, eps=dsac_cfg.obs_norm_eps) if use_obs_norm else obs
         if len(buffer) < dsac_cfg.min_buffer_size:
             key, ak = jax.random.split(key)
             action = jax.random.uniform(ak, (cfg.num_envs, action_dim), minval=-1.0, maxval=1.0)
         else:
             key, ak = jax.random.split(key)
-            action = dsac.collect_action(training_state.actor_params, obs, ak, beta_per_env)
+            action = dsac.collect_action(training_state.actor_params, obs_for_action, ak, beta_per_env)
 
         # ── Env step ──────────────────────────────────────────────────────
         env_state = env_step(env_state, action)
@@ -160,6 +169,9 @@ def train(cfg: TrainConfig, dsac_cfg: FastDSACConfig, seed: int = 0,
                 else:
                     batch = buffer.sample(dsac_cfg.batch_size)
                     jax_batch = {k: jnp.array(v) for k, v in batch.items()}
+                if use_obs_norm:
+                    jax_batch["obs"] = norm_normalize(norm_state, jax_batch["obs"], eps=dsac_cfg.obs_norm_eps)
+                    jax_batch["next_obs"] = norm_normalize(norm_state, jax_batch["next_obs"], eps=dsac_cfg.obs_norm_eps)
                 training_state, last_metrics = dsac.update(training_state, jax_batch)
                 total_gradient_steps += 1
 
@@ -187,17 +199,21 @@ def train(cfg: TrainConfig, dsac_cfg: FastDSACConfig, seed: int = 0,
                 ))
 
         # ── Eval + checkpoint ─────────────────────────────────────────────
+        obs_norm_fn = (lambda o: norm_normalize(norm_state, o, eps=dsac_cfg.obs_norm_eps)) if use_obs_norm else None
         last_eval_eps, key = maybe_eval_and_checkpoint(
             dsac.select_action, training_state.actor_params, eval_env, tracker,
             cfg, dsac_cfg, "fast_dsac", ckpt_dir, training_state, norm_state,
             obs_dim, action_dim, metrics_log, last_eval_eps, key, resume,
+            obs_normalize_fn=obs_norm_fn,
         )
 
     # ── Final eval ────────────────────────────────────────────────────────
+    obs_norm_fn = (lambda o: norm_normalize(norm_state, o, eps=dsac_cfg.obs_norm_eps)) if use_obs_norm else None
     final_eval_and_checkpoint(
         dsac.select_action, training_state.actor_params, eval_env, tracker,
         cfg, dsac_cfg, "fast_dsac", ckpt_dir, training_state, norm_state,
         obs_dim, action_dim, metrics_log, key, resume, total_gradient_steps,
+        obs_normalize_fn=obs_norm_fn,
     )
 
 
@@ -216,6 +232,7 @@ if __name__ == "__main__":
     parser.add_argument("--episode-length", type=int, default=None)
     parser.add_argument("--jax-buffer", action=argparse.BooleanOptionalAction, default=True,
                         help="Use GPU-resident JAX replay buffer (default: True)")
+    parser.add_argument("--obs-norm", action="store_true", help="Enable sample-time obs normalization")
     args = parser.parse_args()
 
     cfg, dsac_cfg = get_fast_dsac_preset(args.env)
@@ -238,6 +255,8 @@ if __name__ == "__main__":
         dsac_overrides["grad_updates_per_step"] = args.grad_updates_per_step
     if args.buffer_size is not None:
         dsac_overrides["buffer_size"] = args.buffer_size
+    if args.obs_norm:
+        dsac_overrides["obs_normalization"] = True
 
     if cfg_overrides:
         cfg = dataclasses.replace(cfg, **cfg_overrides)

@@ -35,3 +35,9 @@ class SACConfig:
                                                        # FastSAC paper: (768, 384, 192) for critic
     activation: str = "relu"            # SAC uses ReLU (not swish like PPO)
     q_layer_norm: bool = True           # Layer norm in Q-network (Playground default)
+
+    # Observation normalization
+    obs_normalization: bool = False     # Normalize obs at sample time (not pre-storage).
+                                        # Paper (holosoma) uses True with EmpiricalNormalization.
+                                        # When True: raw obs in buffer, normalize after sampling with eps=1e-2.
+    obs_norm_eps: float = 1e-2          # Epsilon for obs normalization (paper: 1e-2, prevents near-zero var blowup)

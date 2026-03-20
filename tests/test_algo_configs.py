@@ -276,3 +276,70 @@ def test_tapered_network_dims():
     # Tapered (64,32,16) has fewer params than flat (64,64) due to shrinking layers
     assert actor_param_count != flat_param_count, \
         "Tapered and flat networks should have different param counts"
+
+
+# ── Observation normalization tests ──────────────────────────────────────
+
+
+from jax_rl.utils.normalization import (
+    NormalizationState, init as norm_init, update as norm_update, normalize as norm_normalize,
+)
+from jax_rl.training.env_setup import make_identity_norm_state
+
+
+def test_obs_normalization_config_exists():
+    """All off-policy configs have obs_normalization field, default False."""
+    for cfg_cls in [SACConfig, TD3Config, FastTD3Config, FastDSACConfig]:
+        cfg = cfg_cls()
+        assert hasattr(cfg, "obs_normalization"), f"{cfg_cls.__name__} missing obs_normalization"
+        assert cfg.obs_normalization is False, f"{cfg_cls.__name__} should default to False"
+        assert hasattr(cfg, "obs_norm_eps"), f"{cfg_cls.__name__} missing obs_norm_eps"
+        assert cfg.obs_norm_eps == 1e-2, f"{cfg_cls.__name__} obs_norm_eps should be 1e-2"
+
+
+def test_normalize_with_large_eps():
+    """Sample-time normalization with eps=1e-2 stays bounded even with near-zero variance."""
+    state = NormalizationState(
+        mean=jnp.zeros(4),
+        mean_of_squares=jnp.full(4, 1e-16),  # var ≈ 0
+        count=100,
+    )
+    obs = jnp.ones((32, 4))
+    result = norm_normalize(state, obs, eps=1e-2)
+    # With eps=1e-2: result ≈ 1.0 / 0.01 = 100 (bounded)
+    # With eps=1e-8: result ≈ 1.0 / 1e-8 = 1e8 (explosion!)
+    assert jnp.all(jnp.abs(result) < 200), f"Normalized values too large: {result.max()}"
+
+
+def test_normalize_with_small_eps_explodes():
+    """Verify that small eps causes explosion (the bug we're preventing)."""
+    state = NormalizationState(
+        mean=jnp.zeros(4),
+        mean_of_squares=jnp.full(4, 1e-16),  # var ≈ 0
+        count=100,
+    )
+    obs = jnp.ones((32, 4))
+    result = norm_normalize(state, obs, eps=1e-8)
+    # With eps=1e-8, values should be huge
+    assert jnp.any(jnp.abs(result) > 1e6), "Small eps should produce large values"
+
+
+def test_identity_norm_is_passthrough():
+    """Identity norm state leaves obs unchanged."""
+    state = make_identity_norm_state(4)
+    obs = jnp.array([[1.0, 2.0, 3.0, 4.0]])
+    result = norm_normalize(state, obs)
+    assert jnp.allclose(result, obs, atol=1e-6), f"Expected {obs}, got {result}"
+
+
+def test_normalize_eps_parameter():
+    """The eps parameter actually changes the result."""
+    state = norm_init(4)
+    state = norm_update(state, jnp.ones((100, 4)))  # constant obs → var=0
+    obs = jnp.ones((1, 4)) * 2.0
+
+    result_large_eps = norm_normalize(state, obs, eps=1e-2)
+    result_small_eps = norm_normalize(state, obs, eps=1e-8)
+    # Different eps should give different results when var≈0
+    assert not jnp.allclose(result_large_eps, result_small_eps), \
+        "eps parameter should affect normalization when variance is near-zero"

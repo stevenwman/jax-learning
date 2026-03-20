@@ -19,13 +19,13 @@ def update(state: NormalizationState, x: jnp.ndarray) -> NormalizationState:
     count = state.count + batch_count
     return state.replace(mean=mean, mean_of_squares=mean_of_squares, count=count)
 
-def normalize(state: NormalizationState, x: jnp.ndarray) -> jnp.ndarray:
+def normalize(state: NormalizationState, x: jnp.ndarray, eps: float = 1e-8) -> jnp.ndarray:
     """Normalize the input using the normalization state."""
-    return (x - state.mean) / (jnp.sqrt(jnp.maximum(state.mean_of_squares - state.mean**2, 0.0)) + 1e-8)
+    return (x - state.mean) / (jnp.sqrt(jnp.maximum(state.mean_of_squares - state.mean**2, 0.0)) + eps)
 
-def unnormalize(state: NormalizationState, x: jnp.ndarray) -> jnp.ndarray:
+def unnormalize(state: NormalizationState, x: jnp.ndarray, eps: float = 1e-8) -> jnp.ndarray:
     """Unnormalize the input using the normalization state."""
-    return x * (jnp.sqrt(jnp.maximum(state.mean_of_squares - state.mean**2, 0.0)) + 1e-8) + state.mean
+    return x * (jnp.sqrt(jnp.maximum(state.mean_of_squares - state.mean**2, 0.0)) + eps) + state.mean
 
 def init(obs_dim: int) -> NormalizationState:
     """Initialize the normalization state."""

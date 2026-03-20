@@ -24,6 +24,7 @@ def maybe_eval_and_checkpoint(
     last_eval_eps: int,
     key: jax.Array,
     resume: str | None,
+    obs_normalize_fn=None,
 ) -> tuple[int, jax.Array]:
     """Run eval + save checkpoint if enough episodes completed since last eval.
 
@@ -40,6 +41,7 @@ def maybe_eval_and_checkpoint(
         eval_env, num_episodes=cfg.num_eval_episodes,
         episode_length=cfg.episode_length, key=eval_key,
         num_envs=cfg.num_envs,
+        obs_normalize_fn=obs_normalize_fn,
     )
 
     total_steps = tracker.n_episodes * cfg.episode_length  # approximate
@@ -76,6 +78,7 @@ def final_eval_and_checkpoint(
     key: jax.Array,
     resume: str | None,
     total_gradient_steps: int,
+    obs_normalize_fn=None,
 ) -> dict:
     """Run final eval + save checkpoint after training completes. Returns eval_metrics."""
     key, eval_key = jax.random.split(key)
@@ -84,6 +87,7 @@ def final_eval_and_checkpoint(
         eval_env, num_episodes=cfg.num_eval_episodes,
         episode_length=cfg.episode_length, key=eval_key,
         num_envs=cfg.num_envs,
+        obs_normalize_fn=obs_normalize_fn,
     )
 
     save_checkpoint(ckpt_dir, training_state, norm_state, cfg, algo_cfg,

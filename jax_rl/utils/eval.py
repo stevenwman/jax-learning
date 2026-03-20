@@ -18,6 +18,7 @@ def evaluate(
     episode_length: int = 1000,
     key: jax.Array | None = None,
     num_envs: int | None = None,
+    obs_normalize_fn: Callable | None = None,
 ) -> dict:
     """Run deterministic evaluation episodes.
 
@@ -62,7 +63,10 @@ def evaluate(
             break
 
         key, ak = jax.random.split(key)
-        action = select_action_fn(actor_params, env_state.obs, ak, deterministic=True)
+        obs = env_state.obs
+        if obs_normalize_fn is not None:
+            obs = obs_normalize_fn(obs)
+        action = select_action_fn(actor_params, obs, ak, deterministic=True)
         env_state = env_step(env_state, action)
 
         rewards = np.asarray(env_state.reward)
