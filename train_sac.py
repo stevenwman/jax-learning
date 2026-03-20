@@ -9,6 +9,10 @@ Truncation handling: same as PPO. Auto-reset envs (Playground) corrupt next_obs 
 episode boundaries, so we zero Q-error at truncation steps via handle_truncation flag.
 """
 
+import os
+os.environ.setdefault("XLA_FLAGS", "--xla_gpu_enable_command_buffer=")
+os.environ.setdefault("XLA_CLIENT_MEM_FRACTION", "0.7")
+
 import argparse
 import csv
 import dataclasses
@@ -32,7 +36,7 @@ from jax_rl.buffers.jax_replay_buffer import JaxReplayBuffer
 from jax_rl.configs.sac_config import SACConfig
 from jax_rl.configs.train_config import TrainConfig
 from jax_rl.configs.env_presets import get_sac_preset
-from jax_rl.utils.eval import evaluate, warmup_eval
+from jax_rl.utils.eval import evaluate
 from jax_rl.utils.normalization import NormalizationState
 
 
@@ -178,7 +182,7 @@ def train(cfg: TrainConfig, sac_cfg: SACConfig, seed: int = 0, resume: str | Non
     # ── Eval env (separate instance, not disturbing training) ──────────────
     eval_env = dm_control_suite.load(cfg.env_name)
     eval_env = wrap_for_brax_training(eval_env, episode_length=cfg.episode_length)
-    warmup_eval(eval_env, num_episodes=cfg.num_eval_episodes)
+
 
     # ── Checkpoint dir ────────────────────────────────────────────────────
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -313,6 +317,7 @@ def train(cfg: TrainConfig, sac_cfg: SACConfig, seed: int = 0, resume: str | Non
                 sac.select_action, training_state.actor_params,
                 eval_env, num_episodes=cfg.num_eval_episodes,
                 episode_length=cfg.episode_length, key=eval_key,
+                num_envs=cfg.num_envs,
             )
             print(
                 f"  EVAL @ {n_eps} eps ({total_steps:,} steps) | "
@@ -332,6 +337,7 @@ def train(cfg: TrainConfig, sac_cfg: SACConfig, seed: int = 0, resume: str | Non
         sac.select_action, training_state.actor_params,
         eval_env, num_episodes=cfg.num_eval_episodes,
         episode_length=cfg.episode_length, key=eval_key,
+        num_envs=cfg.num_envs,
     )
     _save_checkpoint(ckpt_dir, training_state, norm_state, cfg, sac_cfg,
                      obs_dim, action_dim, metrics_log, resume)

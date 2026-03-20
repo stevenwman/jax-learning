@@ -10,6 +10,10 @@ Key differences from SAC:
   - No entropy / alpha — simpler loss landscape
 """
 
+import os
+os.environ.setdefault("XLA_FLAGS", "--xla_gpu_enable_command_buffer=")
+os.environ.setdefault("XLA_CLIENT_MEM_FRACTION", "0.7")
+
 import argparse
 import csv
 import dataclasses
@@ -33,7 +37,7 @@ from jax_rl.buffers.jax_replay_buffer import JaxReplayBuffer
 from jax_rl.configs.td3_config import TD3Config
 from jax_rl.configs.train_config import TrainConfig
 from jax_rl.configs.env_presets import get_td3_preset
-from jax_rl.utils.eval import evaluate, warmup_eval
+from jax_rl.utils.eval import evaluate
 from jax_rl.utils.normalization import NormalizationState
 
 
@@ -171,7 +175,7 @@ def train(cfg: TrainConfig, td3_cfg: TD3Config, seed: int = 0, resume: str | Non
     # Eval env (separate instance)
     eval_env = dm_control_suite.load(cfg.env_name)
     eval_env = wrap_for_brax_training(eval_env, episode_length=cfg.episode_length)
-    warmup_eval(eval_env, num_episodes=cfg.num_eval_episodes)
+
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     env_short = cfg.env_name.lower().replace(" ", "_")
@@ -303,6 +307,7 @@ def train(cfg: TrainConfig, td3_cfg: TD3Config, seed: int = 0, resume: str | Non
                 td3.select_action, training_state.actor_params,
                 eval_env, num_episodes=cfg.num_eval_episodes,
                 episode_length=cfg.episode_length, key=eval_key,
+                num_envs=cfg.num_envs,
             )
             print(
                 f"  EVAL @ {n_eps_total} eps ({total_steps:,} steps) | "
@@ -322,6 +327,7 @@ def train(cfg: TrainConfig, td3_cfg: TD3Config, seed: int = 0, resume: str | Non
         td3.select_action, training_state.actor_params,
         eval_env, num_episodes=cfg.num_eval_episodes,
         episode_length=cfg.episode_length, key=eval_key,
+        num_envs=cfg.num_envs,
     )
     _save_checkpoint(ckpt_dir, training_state, norm_state, cfg, td3_cfg,
                      obs_dim, action_dim, metrics_log, resume)

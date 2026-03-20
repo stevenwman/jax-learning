@@ -4,6 +4,10 @@ SAC + distributional critic + Q averaging + LR cosine decay.
 Entropy regularization + auto-tuned alpha are unchanged from vanilla SAC.
 """
 
+import os
+os.environ.setdefault("XLA_FLAGS", "--xla_gpu_enable_command_buffer=")
+os.environ.setdefault("XLA_CLIENT_MEM_FRACTION", "0.7")
+
 import argparse
 import csv
 import dataclasses
@@ -27,7 +31,7 @@ from jax_rl.buffers.jax_replay_buffer import JaxReplayBuffer
 from jax_rl.configs.sac_config import SACConfig
 from jax_rl.configs.train_config import TrainConfig
 from jax_rl.configs.env_presets import get_fast_sac_preset
-from jax_rl.utils.eval import evaluate, warmup_eval
+from jax_rl.utils.eval import evaluate
 from jax_rl.utils.normalization import NormalizationState
 
 
@@ -114,11 +118,15 @@ def train(cfg: TrainConfig, sac_cfg: SACConfig, seed: int = 0, resume: str | Non
     print(f"  target_entropy={-sac_cfg.target_entropy_scale * action_dim:.2f}")
     print(f"  tau={sac_cfg.tau}, q_layer_norm={sac_cfg.q_layer_norm}, "
           f"hidden={sac_cfg.hidden_dim}")
-    print(f"  lr={cfg.lr} → {lr_end} (cosine), alpha_lr={sac_cfg.alpha_lr}, gamma={cfg.gamma}")
+    print(f"  lr={cfg.lr} → {lr_end} (cosine), AdamW β2=0.95, wd=0.001")
+    print(f"  alpha_lr={sac_cfg.alpha_lr}, alpha_init={sac_cfg.alpha_init}, gamma={cfg.gamma}")
 
     # ── FastSAC setup ─────────────────────────────────────────────────────
     lr_schedule = optax.cosine_decay_schedule(cfg.lr, total_grad_steps_est, alpha=lr_end / cfg.lr)
-    optimizer = optax.chain(optax.clip_by_global_norm(1.0), optax.adam(lr_schedule))
+    optimizer = optax.chain(
+        optax.clip_by_global_norm(1.0),
+        optax.adamw(lr_schedule, b2=0.95, weight_decay=0.001),
+    )
     alpha_optimizer = optax.adam(sac_cfg.alpha_lr)
 
     sac = FastSAC(
@@ -176,7 +184,7 @@ def train(cfg: TrainConfig, sac_cfg: SACConfig, seed: int = 0, resume: str | Non
     # ── Eval env (separate instance, not disturbing training) ──────────────
     eval_env = dm_control_suite.load(cfg.env_name)
     eval_env = wrap_for_brax_training(eval_env, episode_length=cfg.episode_length)
-    warmup_eval(eval_env, num_episodes=cfg.num_eval_episodes)
+
 
     # ── Checkpoint dir ────────────────────────────────────────────────────
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -314,6 +322,7 @@ def train(cfg: TrainConfig, sac_cfg: SACConfig, seed: int = 0, resume: str | Non
                 sac.select_action, training_state.actor_params,
                 eval_env, num_episodes=cfg.num_eval_episodes,
                 episode_length=cfg.episode_length, key=eval_key,
+                num_envs=cfg.num_envs,
             )
             print(
                 f"  EVAL @ {n_eps} eps ({total_steps:,} steps) | "
@@ -333,6 +342,7 @@ def train(cfg: TrainConfig, sac_cfg: SACConfig, seed: int = 0, resume: str | Non
         sac.select_action, training_state.actor_params,
         eval_env, num_episodes=cfg.num_eval_episodes,
         episode_length=cfg.episode_length, key=eval_key,
+        num_envs=cfg.num_envs,
     )
     _save_checkpoint(ckpt_dir, training_state, norm_state, cfg, sac_cfg,
                      obs_dim, action_dim, metrics_log, resume)

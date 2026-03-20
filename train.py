@@ -1,3 +1,7 @@
+import os
+os.environ.setdefault("XLA_FLAGS", "--xla_gpu_enable_command_buffer=")
+os.environ.setdefault("XLA_CLIENT_MEM_FRACTION", "0.7")
+
 """PPO training on MuJoCo Playground environments.
 
 Wires together: env, collect loop, GAE, PPO update, obs normalization.
@@ -31,7 +35,7 @@ from mujoco_playground._src.wrapper import wrap_for_brax_training
 from jax_rl.algos.ppo import PPO
 from jax_rl.buffers import RolloutBuffer
 from jax_rl.configs import EncoderConfig, PolicyHeadConfig, TrainConfig, get_preset
-from jax_rl.utils.eval import evaluate, warmup_eval
+from jax_rl.utils.eval import evaluate
 from jax_rl.utils.normalization import (
     init as norm_init,
     update as norm_update,
@@ -200,7 +204,7 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
     # ── Eval env (separate instance) ────────────────────────────────────
     eval_env = dm_control_suite.load(cfg.env_name)
     eval_env = wrap_for_brax_training(eval_env, episode_length=cfg.episode_length)
-    warmup_eval(eval_env, num_episodes=cfg.num_eval_episodes)
+
 
     # ── Checkpoint dir (created once, reused for periodic saves) ─────────
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -345,6 +349,7 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
                 _ppo_eval_action, training_state.actor_params,
                 eval_env, num_episodes=cfg.num_eval_episodes,
                 episode_length=cfg.episode_length, key=eval_key,
+                num_envs=cfg.num_envs,
             )
             print(
                 f"  EVAL @ {n_eps_total} eps ({total_steps:,} steps) | "
@@ -371,6 +376,7 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
         _ppo_eval_action, training_state.actor_params,
         eval_env, num_episodes=cfg.num_eval_episodes,
         episode_length=cfg.episode_length, key=eval_key,
+        num_envs=cfg.num_envs,
     )
     _save_checkpoint(ckpt_dir, training_state, norm_state, cfg,
                      obs_dim, action_dim, metrics_log, resume)

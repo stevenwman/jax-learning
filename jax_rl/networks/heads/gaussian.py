@@ -17,6 +17,9 @@ class GaussianHead(nn.Module):
             # State-dependent: Dense → softplus + min_std (matches Brax tanh_normal)
             raw_scale = nn.Dense(self.config.action_dim, kernel_init=nn.initializers.lecun_uniform())(features)
             std = jax.nn.softplus(raw_scale) + self.config.min_std
+            # Optional max_std cap (FastSAC paper uses 1.0 to prevent excessive exploration)
+            max_std = jnp.exp(self.config.log_std_max)
+            std = jnp.minimum(std, max_std)
             log_std = jnp.log(std)
         else:
             # State-independent: single learned vector, same for all obs

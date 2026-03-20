@@ -193,16 +193,17 @@ def get_fast_td3_preset(env_name: str) -> tuple[TrainConfig, FastTD3Config]:
     return dataclasses.replace(_FAST_TD3_BASE_CFG, env_name=env_name), _FAST_TD3_BASE_ALGO
 
 
-# FastSAC presets — SAC + C51 distributional critic at FastTD3 scale
-# Matches FastTD3 network/training scale: (512, 512), batch=8192, 12 grad updates, 1024 envs
+# FastSAC presets — Seo et al. 2025 (arXiv:2512.01996)
+# Key differences from vanilla SAC: alpha_init=0.001, max_std=1.0, target_entropy=0,
+# gamma=0.97 (locomotion), adam β2=0.95, weight_decay=0.001, Q averaging, C51 critic
 _FAST_SAC_BASE_CFG = TrainConfig(
     total_timesteps=100_000_000,
     num_envs=1024,
     episode_length=1000,
-    lr=1e-3,
+    lr=3e-4,               # paper: 0.0003
     anneal_lr=False,
     reward_scaling=1.0,
-    gamma=0.99,
+    gamma=0.97,             # paper: 0.97 for locomotion (NOT 0.99)
     num_eval_episodes=5,
     handle_truncation=True,
     ppo=None,
@@ -210,8 +211,10 @@ _FAST_SAC_BASE_CFG = TrainConfig(
 
 _FAST_SAC_BASE_ALGO = SACConfig(
     tau=0.005,
-    target_entropy_scale=0.5,
-    alpha_lr=1e-3,
+    target_entropy_scale=0.0,  # target_entropy=0 (prevents alpha collapse at scale)
+    alpha_lr=3e-4,
+    alpha_init=0.001,          # start near-zero, not 1.0
+    max_std=1.0,               # cap pre-tanh std to prevent excessive exploration
     buffer_size=4_194_304,
     min_buffer_size=8_192,
     batch_size=8_192,

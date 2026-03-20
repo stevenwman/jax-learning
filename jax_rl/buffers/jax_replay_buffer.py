@@ -1,11 +1,13 @@
 """JAX-native circular replay buffer for off-policy RL.
 
 All data lives as jax.Array on GPU. Eliminates CPU↔GPU transfer at sample time.
-add_batch accepts both jax.Array (zero copy from MJX) and numpy (auto-converts once).
-sample is fully jittable — random indexing + gather on GPU.
+add_batch accepts both jax.Array or numpy (auto-converts once).
+Both add_batch and sample are JIT'd — all GPU ops compile into single XLA graphs.
 
 Same interface as the numpy ReplayBuffer for drop-in replacement.
 """
+
+import functools
 
 import jax
 import jax.numpy as jnp
@@ -56,7 +58,6 @@ class JaxReplayBuffer:
             done: (batch,) or (batch, 1)
             truncation: (batch,) or (batch, 1), optional
         """
-        # Convert to jax if needed (no-op if already jax.Array)
         obs = jnp.asarray(obs)
         action = jnp.asarray(action)
         reward = jnp.asarray(reward).reshape(-1, 1)
@@ -68,17 +69,40 @@ class JaxReplayBuffer:
             truncation = jnp.asarray(truncation).reshape(-1, 1)
 
         n = obs.shape[0]
-        indices = jnp.arange(self.ptr, self.ptr + n) % self.max_size
+        ptr = jnp.array(self.ptr)
 
-        self.obs         = self.obs.at[indices].set(obs)
-        self.next_obs    = self.next_obs.at[indices].set(next_obs)
-        self.actions     = self.actions.at[indices].set(action)
-        self.rewards     = self.rewards.at[indices].set(reward)
-        self.dones       = self.dones.at[indices].set(done)
-        self.truncations = self.truncations.at[indices].set(truncation)
+        # Single JIT'd scatter for all 6 arrays — compiles once, reuses every step.
+        # Without JIT, each .at[].set() is a separate XLA dispatch that accumulates
+        # command buffers and eventually OOMs on long runs.
+        (self.obs, self.next_obs, self.actions,
+         self.rewards, self.dones, self.truncations) = self._jit_add(
+            self.obs, self.next_obs, self.actions,
+            self.rewards, self.dones, self.truncations,
+            obs, next_obs, action, reward, done, truncation, ptr,
+        )
 
         self.ptr  = (self.ptr + n) % self.max_size
         self.size = min(self.size + n, self.max_size)
+
+    @functools.cached_property
+    def _jit_add(self):
+        """JIT'd scatter — compiled once on first call, cached permanently."""
+        max_size = self.max_size
+
+        @jax.jit
+        def _add(buf_obs, buf_next, buf_act, buf_rew, buf_done, buf_trunc,
+                 new_obs, new_next, new_act, new_rew, new_done, new_trunc, ptr):
+            n = new_obs.shape[0]
+            indices = (jnp.arange(n) + ptr) % max_size
+            return (
+                buf_obs.at[indices].set(new_obs),
+                buf_next.at[indices].set(new_next),
+                buf_act.at[indices].set(new_act),
+                buf_rew.at[indices].set(new_rew),
+                buf_done.at[indices].set(new_done),
+                buf_trunc.at[indices].set(new_trunc),
+            )
+        return _add
 
     def sample(self, batch_size: int, key: jax.Array | None = None) -> dict[str, jax.Array]:
         """Sample a random minibatch. Returns dict of jax.Array (already on GPU).

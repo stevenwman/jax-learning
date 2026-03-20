@@ -74,10 +74,13 @@ class FastSAC:
             hidden_dim=config.hidden_dim,
             activation=config.activation,
         )
+        import math
+        log_std_max = math.log(config.max_std) if config.max_std is not None else 2.0
         pol_cfg = PolicyHeadConfig(
             action_dim=action_dim,
             state_dependent_std=True,
             min_std=0.001,
+            log_std_max=log_std_max,
             squash=True,
         )
         self.actor_enc = MlpEncoder(enc_cfg)
@@ -222,7 +225,8 @@ class FastSAC:
                 _critic_loss, argnums=0, has_aux=True
             )(q_params, state.actor_params, state.target_q1_params,
               state.target_q2_params, state.log_alpha, batch, k1)
-            q_updates, new_q_opt_state = optimizer.update(q_grads, state.q_opt_state)
+            q_updates, new_q_opt_state = optimizer.update(
+                q_grads, state.q_opt_state, params=q_params)
             new_q1_params, new_q2_params = optax.apply_updates(q_params, q_updates)
 
             # Actor
@@ -231,7 +235,7 @@ class FastSAC:
             )(state.actor_params, state.q1_params, state.q2_params,
               state.log_alpha, batch, k2)
             actor_updates, new_actor_opt_state = optimizer.update(
-                actor_grads, state.actor_opt_state
+                actor_grads, state.actor_opt_state, params=state.actor_params
             )
             new_actor_params = optax.apply_updates(state.actor_params, actor_updates)
 
@@ -297,7 +301,7 @@ class FastSAC:
         actor_opt_state = self.optimizer.init(actor_params)
         q_params = (q1_params, q2_params)
         q_opt_state = self.optimizer.init(q_params)
-        log_alpha = jnp.zeros(())
+        log_alpha = jnp.array(jnp.log(self.config.alpha_init))
         alpha_opt_state = self.alpha_optimizer.init(log_alpha)
 
         return TrainingState(

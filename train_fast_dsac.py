@@ -3,6 +3,10 @@
 Paper: FastDSAC (arXiv:2603.12612)
 """
 
+import os
+os.environ.setdefault("XLA_FLAGS", "--xla_gpu_enable_command_buffer=")
+os.environ.setdefault("XLA_CLIENT_MEM_FRACTION", "0.7")
+
 import argparse
 import csv
 import dataclasses
@@ -26,7 +30,7 @@ from jax_rl.buffers.jax_replay_buffer import JaxReplayBuffer
 from jax_rl.configs.fast_dsac_config import FastDSACConfig
 from jax_rl.configs.train_config import TrainConfig
 from jax_rl.configs.env_presets import get_fast_dsac_preset
-from jax_rl.utils.eval import evaluate, warmup_eval
+from jax_rl.utils.eval import evaluate
 from jax_rl.utils.normalization import NormalizationState
 
 
@@ -183,7 +187,7 @@ def train(cfg: TrainConfig, dsac_cfg: FastDSACConfig, seed: int = 0,
     # ── Eval env ──────────────────────────────────────────────────────────
     eval_env = dm_control_suite.load(cfg.env_name)
     eval_env = wrap_for_brax_training(eval_env, episode_length=cfg.episode_length)
-    warmup_eval(eval_env, num_episodes=cfg.num_eval_episodes)
+
 
     # ── Checkpoint dir ────────────────────────────────────────────────────
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -319,6 +323,7 @@ def train(cfg: TrainConfig, dsac_cfg: FastDSACConfig, seed: int = 0,
                 dsac.select_action, training_state.actor_params,
                 eval_env, num_episodes=cfg.num_eval_episodes,
                 episode_length=cfg.episode_length, key=eval_key,
+                num_envs=cfg.num_envs,
             )
             print(
                 f"  EVAL @ {n_eps} eps ({total_steps:,} steps) | "
@@ -338,6 +343,7 @@ def train(cfg: TrainConfig, dsac_cfg: FastDSACConfig, seed: int = 0,
         dsac.select_action, training_state.actor_params,
         eval_env, num_episodes=cfg.num_eval_episodes,
         episode_length=cfg.episode_length, key=eval_key,
+        num_envs=cfg.num_envs,
     )
     _save_checkpoint(ckpt_dir, training_state, norm_state, cfg, dsac_cfg,
                      obs_dim, action_dim, metrics_log, resume)

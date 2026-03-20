@@ -227,6 +227,197 @@ The refactor should make the codebase easier to onboard on, not just less duplic
 5. Fix `record_video.py` to be algo-agnostic via Protocol
 6. Clean up `TrainConfig` (move PPO-specific fields)
 
+## Detailed execution spec — line-by-line mapping from train_sac.py
+
+Using `train_sac.py` (400 lines) as the reference. Each block maps to a utility or stays.
+
+### Block 1: Env vars (lines 12-14) → stays in each script
+```python
+os.environ.setdefault("XLA_FLAGS", "--xla_gpu_enable_command_buffer=")
+os.environ.setdefault("XLA_CLIENT_MEM_FRACTION", "0.7")
+```
+Must run before JAX import. Can't move to a utility without import-order issues. Keep in each script (2 lines).
+
+### Block 2: _save_checkpoint (lines 43-90) → `jax_rl/training/checkpointing.py`
+```python
+def save_checkpoint(
+    ckpt_dir: str,
+    training_state,
+    norm_state: NormalizationState,
+    cfg: TrainConfig,
+    algo_cfg,              # SACConfig, TD3Config, etc. — any dataclass
+    algo_name: str,        # "sac", "td3", "fast_td3", etc.
+    obs_dim: int,
+    action_dim: int,
+    metrics_log: list[dict],
+    resume: str | None,
+) -> None:
+    """Save meta.json + metrics.csv + actor_params.npy + orbax checkpoint."""
+
+def load_checkpoint(
+    ckpt_dir: str,
+    training_state,
+    norm_state: NormalizationState,
+) -> tuple[Any, NormalizationState, int]:
+    """Load orbax checkpoint. Returns (training_state, norm_state, start_step)."""
+
+def load_actor_for_inference(ckpt_dir: str) -> tuple[dict, dict, NormalizationState]:
+    """Load meta.json + actor_params.npy for recording/eval. Returns (meta, actor_params, norm_state)."""
+```
+
+The only diff across scripts is `algo_name` and `algo_cfg` type — solved by passing both as args. The `algo_cfg_key` in meta.json derives from `algo_name` (e.g., "sac" → "sac_config").
+
+### Block 3: env setup (lines 96-105) → `jax_rl/training/env_setup.py`
+```python
+def make_envs(
+    cfg: TrainConfig,
+    seed: int,
+) -> tuple[Any, Callable, Any, Any, int, int]:
+    """Create training env + eval env, JIT env.step, reset training env.
+
+    Returns: (env, env_step, env_state, eval_env, obs_dim, action_dim)
+    """
+```
+
+### Block 4: Print header (lines 111-124) → stays (algo-specific)
+Each algo prints different params. Keep in script. ~15 lines.
+
+### Block 5: Algo init (lines 127-145) → stays (algo-specific)
+Optimizer construction, algo class instantiation, param counting. ~20 lines. This is the core algo-specific setup.
+
+### Block 6: Norm state (lines 149-153) → `jax_rl/training/env_setup.py`
+```python
+def make_identity_norm_state(obs_dim: int) -> NormalizationState:
+    """Identity norm state for off-policy algos (no obs normalization)."""
+```
+3 lines → 1-line call. Trivial but removes import of NormalizationState from train scripts.
+
+### Block 7: Buffer init (lines 156-157) → stays (1 line, algo chooses buffer type)
+
+### Block 8: Resume (lines 160-175) → `jax_rl/training/checkpointing.py::load_checkpoint()`
+16 lines → 1-line call.
+
+### Block 9: Episode tracking init (lines 178-180) → `jax_rl/training/episode_tracker.py`
+```python
+class EpisodeTracker:
+    def __init__(self, num_envs: int):
+        self.episode_rewards = np.zeros(num_envs)
+        self.completed_returns: list[float] = []
+
+    def step(self, rewards: np.ndarray, dones: np.ndarray) -> None:
+        """Update episode rewards and track completed episodes."""
+        self.episode_rewards += rewards
+        done_mask = dones.astype(bool)
+        if done_mask.any():
+            self.completed_returns.extend(self.episode_rewards[done_mask].tolist())
+            self.episode_rewards[done_mask] = 0.0
+
+    def recent_stats(self, n: int = 100) -> dict:
+        """Compute avg/min/max return over last n completed episodes."""
+        if not self.completed_returns:
+            return {"avg": float("nan"), "min": float("nan"), "max": float("nan"), "n_eps": 0}
+        recent = self.completed_returns[-n:]
+        return {
+            "avg": float(np.mean(recent)),
+            "min": float(np.min(recent)),
+            "max": float(np.max(recent)),
+            "n_eps": len(self.completed_returns),
+        }
+```
+Replaces lines 178-180 (init) + 237-244 (step) + 264-272 (stats). Total: ~20 lines across script → 1 init + 1 step call + 1 stats call.
+
+### Block 10: Eval env + ckpt dir (lines 183-190) → partially in env_setup, dir stays
+Eval env creation moves to `make_envs()`. Ckpt dir pattern stays (3 lines, algo name differs).
+
+### Block 11: Training loop variables (lines 196-201) → stays (5 lines)
+
+### Block 12: The training loop body (lines 203-310)
+
+**Lines 207-217 — action selection:** STAYS (algo-specific: random warmup vs policy)
+**Lines 220-225 — env step + truncation:** STAYS (2 lines, same everywhere but could extract)
+**Lines 228-235 — buffer add:** STAYS (differs: np.asarray for numpy buffer, direct for JAX buffer)
+**Lines 237-244 — episode tracking:** → `tracker.step(rewards, dones)` (1 line)
+**Lines 246-257 — gradient updates:** STAYS (algo-specific: batch_size, grad_updates_per_step)
+**Lines 259-310 — logging + eval + checkpoint:** → shared utilities
+
+### Block 13: Logging (lines 259-310) → `jax_rl/training/metrics_logger.py`
+```python
+def log_training_step(
+    total_steps: int,
+    tracker: EpisodeTracker,
+    last_metrics: dict,
+    sps: int,
+    buffer_size: int | None = None,
+    min_buffer: int | None = None,
+    extra_metrics: list[tuple[str, str]] | None = None,
+) -> None:
+    """Print training step. extra_metrics = [(label, key), ...] for algo-specific fields."""
+
+def make_metrics_row(
+    total_steps: int,
+    tracker: EpisodeTracker,
+    last_metrics: dict,
+    grad_steps: int,
+    sps: int,
+    elapsed: float,
+    extra_keys: list[str] | None = None,
+) -> dict:
+    """Build dict for CSV logging. extra_keys = algo-specific metric keys to include."""
+```
+
+The tricky part: each algo logs different metrics (SAC: entropy/alpha, TD3: no entropy, FastDSAC: q_var). Solved via `extra_metrics` param — the script passes which fields to print/log.
+
+### Block 14: Eval + checkpoint trigger (lines 312-332) → `jax_rl/training/eval_runner.py`
+```python
+def maybe_eval_and_checkpoint(
+    select_action_fn: Callable,
+    actor_params,
+    eval_env,
+    tracker: EpisodeTracker,
+    cfg: TrainConfig,
+    ckpt_dir: str,
+    training_state,
+    norm_state,
+    algo_cfg,
+    algo_name: str,
+    obs_dim: int,
+    action_dim: int,
+    metrics_log: list[dict],
+    last_eval_eps: int,
+    key: jax.Array,
+    resume: str | None,
+) -> tuple[int, jax.Array]:
+    """Run eval + save checkpoint if enough episodes completed.
+    Returns updated (last_eval_eps, key)."""
+```
+
+### Block 15: Final eval (lines 334-353) → same function, called unconditionally after loop
+
+### Block 16: argparse (lines 356-399) → stays (algo-specific flags)
+Could extract common args into a helper but not worth it until the refactor proves itself.
+
+## What train_sac.py looks like after (estimated ~120 lines)
+
+```
+[2]  env vars
+[5]  imports
+[20] algo-specific setup (optimizer, SAC init, print header)
+[3]  buffer init
+[3]  ckpt dir
+[5]  loop variables
+[~80] training loop:
+     [5]  action selection (algo-specific)
+     [2]  env step
+     [3]  buffer add
+     [1]  tracker.step()
+     [5]  gradient updates (algo-specific)
+     [1]  log_training_step()
+     [1]  maybe_eval_and_checkpoint()
+[2]  final eval
+[40] argparse
+```
+~120 lines vs current 400. The 280 lines that move are: _save_checkpoint (48), episode tracking (20), logging (50), eval trigger (20), env setup (10), resume (16) = ~164 lines of logic + their associated imports/variables.
+
 ## What NOT to do
 
 - No Trainer base class — shared functions, not shared control flow

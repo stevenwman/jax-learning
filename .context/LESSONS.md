@@ -606,25 +606,56 @@ return jax.lax.cond(deterministic, lambda: jnp.tanh(mean), lambda: action)
 
 ---
 
-### FastSAC (C51 + SAC) Is a Known Dead End — Use FastDSAC Instead
+### SAC Variants Can't Match FastTD3 on Low-Dim Tasks — But That's OK
 
-**Problem:** FastSAC (SAC + FastTD3's C51 recipe) plateaued at **375** on CheetahRun while FastTD3 reached **880** with identical training scale (1024 envs, batch=8192, 12 grad updates, (512,512) networks).
+**Problem:** Exhaustive testing of SAC variants on CheetahRun (6-dim actions). None came close to FastTD3's 880.
 
-**Root cause (confirmed by FastDSAC paper, arXiv:2603.12612):**
-1. **Alpha/entropy collapse** — target entropy heuristic (`-dim(A)`) is too aggressive at scale. Alpha drops to near-zero, SAC degenerates into a bad deterministic policy without TD3's stability mechanisms (policy delay, target smoothing noise).
-2. **C51 quantization + entropy interaction** — SAC's entropy bonus shifts the effective reward distribution. C51's fixed atoms can't track the shifted distribution, amplifying quantization artifacts.
-3. **Uniform entropy waste** — diagonal Gaussian spreads exploration uniformly across all action dims. In high-dim spaces, this wastes the exploration budget on irrelevant dims.
+**What we tried:**
+- FastSAC (C51, α=1.0): 375 — alpha collapsed
+- FastSAC OG recipe (C51, α=0.001, max_σ=1.0): 447 peak, degraded to 375 — too deterministic
+- FastDSAC (Gaussian critic + DEM, no β): 509 — best without β
+- FastDSAC + β (population diversity): **567** — best overall SAC variant
+- FastTD3 (deterministic): **880** — untouchable on this task
 
-**The naming matters:**
-- **FastSAC** = SAC + FastTD3 recipe (C51, large batch). Documented as a **baseline/negative result** in the FastDSAC paper.
-- **FastDSAC** = FastSAC + continuous Gaussian distributional critic + dimension-wise entropy modulation. The actual competitive algorithm.
+**Why SAC can't win here:** CheetahRun has 6 action dims. Deterministic TD3 with simple Gaussian noise explores this space efficiently. SAC's entropy machinery (alpha tuning, stochastic sampling, log-prob computation) is overhead that doesn't buy anything in 6 dims. The exploration benefit of entropy maximization only matters when random perturbations can't cover the action space — i.e., high-dimensional tasks.
 
-**Our results:**
-- FastSAC (256,256): 335 eval — wrong network size (SAC preset)
-- FastSAC (512,512): 375 eval — correct size, still plateaus
-- FastTD3 (512,512): 880 eval — deterministic policy wins at scale
+**Two different "FastSAC" papers exist:**
+- **Seo et al. 2025** (arXiv:2512.01996) — the original, from Berkeley. Uses C51, α_init=0.001, max_σ=1.0. Reports results on **real robots**, not dm_control. Claims FastSAC works for whole-body tracking.
+- **FastDSAC 2026** (arXiv:2603.12612) — different group, builds on Seo et al. Claims FastSAC is unstable, proposes Gaussian critic + DEM. Reports results on **HumanoidBench**.
 
-**Lesson:** Check if someone has already documented your failure mode before debugging. The FastDSAC paper exists specifically because FastSAC doesn't work. C51's discrete atoms are fundamentally incompatible with SAC's entropy-augmented rewards. Need continuous distributional critic + per-dimension entropy control.
+Both papers benchmark on **high-dimensional tasks** (21+ action dims). Neither claims FastSAC beats FastTD3 on low-dim tasks like CheetahRun. Our result is consistent with the literature — the comparison that matters is HumanoidRun.
+
+**Lesson:** Match the benchmark to the algorithm's intended regime. Testing SAC variants on CheetahRun is like testing 4WD on a flat highway — it works, but it's not where the advantage shows. Test on HumanoidRun (21 dims) where structured exploration matters.
+
+---
+
+### Always Run the Simple Baseline Before the Fancy Version
+
+**Problem:** Spent a full day implementing and tuning FastSAC (C51 distributional) and FastDSAC (Gaussian distributional + DEM). Best result: 582 on CheetahRun after 100M steps and ~108 minutes. Then ran vanilla SAC as a baseline: **771 in 5M steps and 8 minutes.**
+
+**The numbers:**
+- Vanilla SAC (scalar Q, 128 envs, 5M steps): **771** in 8 min
+- Best FastSAC (C51, 1024 envs, 100M steps): 582 in 108 min
+- Best FastDSAC (Gaussian + DEM, 1024 envs, 30M steps): 567
+
+**Why "Fast" was slower:** The FastSAC/FastTD3 recipe (C51, large batch, 1024 envs) is designed for massive-scale humanoid tasks where wall-clock speed matters more than sample efficiency. On CheetahRun (6 dims), vanilla SAC's scalar Q critic learns faster with less compute because: (1) no C51 quantization overhead, (2) gamma=0.99 gives a longer effective horizon than FastSAC's 0.97, (3) 128 envs with 8 gradient updates/step is a better compute ratio than 1024 envs with 12 updates.
+
+**Lesson:** Run the simple baseline first. If vanilla SAC takes 8 minutes, run it before spending a day on distributional variants. A baseline that takes minutes can save hours of wasted tuning on a fancier algorithm that may not even be appropriate for the task.
+
+---
+
+### Read the Whole Recipe, Not Just the Key Ingredients
+
+**Problem:** Implemented "FastSAC from the original paper" with α_init=0.001 and max_σ=1.0. Result: peaked at 447, degraded to 375. Worse than our FastDSAC attempts.
+
+**Root cause:** We only copied two hyperparameters from the paper. Missed three others that matter just as much:
+- **gamma=0.97** (we used 0.99) — shorter horizon makes the critic's job easier at scale
+- **AdamW with β2=0.95** (we used Adam with β2=0.999) — better for large batch training
+- **weight_decay=0.001** (we had none) — regularization for stability
+
+**Also missed:** The paper is from a **different research group** (Berkeley/Amazon) than the FastDSAC paper (different group). They benchmark on **real robots**, not dm_control. Their claim that FastSAC works is for humanoid locomotion tasks, not necessarily CheetahRun.
+
+**Lesson:** When reproducing a paper, extract ALL hyperparameters into a table before implementing. Missing "minor" params like gamma and optimizer settings can completely change behavior. A paper saying "we use Adam with lr=3e-4" might also mean β2=0.95 and weight_decay=0.001 — check the appendix/code.
 
 ---
 
@@ -648,6 +679,26 @@ With target_entropy=0, entropy can never reach 0 (that would require a perfectly
 - Any SAC variant with DEM (DEM handles exploration allocation, alpha should just stay alive)
 
 **Lesson:** The standard SAC target entropy heuristic (`-dim(A)`) was designed for small-scale single-env training. At scale with parallel envs, it causes alpha collapse. Use 0 as the default for large-scale SAC variants.
+
+---
+
+### GPU OOM at Scale Is Usually Not a Leak — Profile Before Assuming
+
+**Problem:** Training OOM'd at 67-85M steps. Assumed memory leak, spent hours testing hypotheses (un-JIT'd buffer ops, eval recompilation, PRNG key accumulation). All disproved.
+
+**Root cause:** No leak. The RTX 5080 (16GB) starts at **95% capacity** with 1024 envs. JAX pre-allocates ~75% of VRAM at startup. MuJoCo env state + 1M replay buffer + model + optimizer = 15.4GB used before training begins. Only ~900MB headroom. XLA command buffers (outside JAX's pool) slowly accumulate over 60+ minutes and push past the physical limit.
+
+**How we found it:** Added both `jax.devices()[0].memory_stats()` (JAX-managed allocations) AND `nvidia-smi` (total CUDA usage) to the training loop. JAX memory was flat and bounded. CUDA memory was 15.4GB from startup — no growth. The "leak" was just the GPU being full from the start.
+
+**Key insight:** `jax.devices()[0].memory_stats()` only reports JAX-managed memory. XLA compiled graphs, command buffers, and CUDA driver overhead live outside this pool. `nvidia-smi` shows the real total. Always check both.
+
+**Fixes:**
+- `XLA_CLIENT_MEM_FRACTION=0.7` — reduce JAX pre-allocation, leave more room for XLA/driver overhead
+- `XLA_FLAGS=--xla_gpu_enable_command_buffer=` — disable CUDA graph caching to prevent command buffer accumulation
+- Eval batch dim matching — eliminate unnecessary separate compilations
+- JIT'd buffer add_batch — fewer XLA dispatches (good practice, not the cause)
+
+**Lesson:** When debugging GPU OOM, start with `nvidia-smi` monitoring, not code review. If CUDA memory is flat, there's no leak — the GPU is just too small. The FastTD3 paper ran on A100s (40-80GB) for a reason.
 
 ---
 

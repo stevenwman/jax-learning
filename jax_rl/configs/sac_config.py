@@ -16,7 +16,10 @@ class SACConfig:
     target_entropy_scale: float = 0.5   # target_entropy = -scale * action_dim
                                         # 0.5 = Brax default (softer/more exploitation)
                                         # 1.0 = common textbook (more exploration)
+                                        # 0.0 = FastSAC paper (target_entropy=0, prevents alpha collapse at scale)
     alpha_lr: float = 1e-3              # Temperature optimizer LR (separate from policy/Q)
+    alpha_init: float = 1.0             # Initial alpha. Vanilla SAC: 1.0, FastSAC paper: 0.001
+    max_std: float | None = None        # Cap on pre-tanh std. None=no cap, FastSAC paper: 1.0
 
     # Replay buffer
     buffer_size: int = 4_194_304        # 4M — Playground default
