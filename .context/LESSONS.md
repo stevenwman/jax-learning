@@ -436,7 +436,13 @@ meta = {
 
 **Brax reference confirms:** Brax SAC does not normalize observations.
 
-**Lesson:** On-policy normalization (update stats → normalize → use immediately) is safe. Off-policy normalization (update stats → normalize → store → sample much later) is fundamentally broken because the stored normalized values become stale as statistics drift. For off-policy methods: either normalize at sample time with current stats (complex), or skip normalization and let LayerNorm handle it (simple, recommended).
+**Lesson:** On-policy normalization (update stats → normalize → use immediately) is safe. Off-policy normalization (update stats → normalize → store → sample much later) is fundamentally broken because the stored normalized values become stale as statistics drift.
+
+**Update (2026-03-20):** The FastTD3 paper (holosoma source) actually uses obs normalization for off-policy — but they store **raw** obs in the buffer and normalize **at sample time** with current running statistics (`EmpiricalNormalization` with eps=1e-2). This is safe because buffer entries never go stale. They also use separate normalizers for actor and critic obs, and stop updating stats after a threshold. Our explosion happened because we normalized *before* storing — the exact antipattern they avoid.
+
+Two valid approaches for off-policy:
+1. No normalization + Q LayerNorm (our current approach, simpler)
+2. Raw obs in buffer + normalize at sample time with large eps (paper's approach, may improve tasks with large obs scale differences)
 
 ---
 

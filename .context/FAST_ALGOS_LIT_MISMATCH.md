@@ -23,7 +23,7 @@ Two papers, two sets of mismatches. Sources verified against actual source code 
 | **C51 atoms** | `101` | `51` | `fast_td3_config.py:16` | **HIGH** — half the distributional resolution |
 | **v_min/v_max** | `[-20.0, 20.0]` | varies per env ([-10, 50] to [-10, 150]) | `env_presets.py` | **HIGH** — different support range |
 | **Policy delay (FastSAC)** | `policy_frequency=4` | 1 (no delay) | `fast_sac.py` (algo) | **HIGH** — paper delays actor updates to every 4th critic update, like TD3 |
-| **Obs normalization** | `obs_normalization=True` with `EmpiricalNormalization` | Disabled (`make_identity_norm_state`) | `train_fast_sac.py`, `train_fast_td3.py` | **HIGH** — paper normalizes obs, we don't |
+| **Obs normalization** | `obs_normalization=True` with `EmpiricalNormalization` (normalize at **sample time**, raw obs in buffer, eps=1e-2) | Disabled (`make_identity_norm_state`) | `train_fast_sac.py`, `train_fast_td3.py` | **HIGH** — paper normalizes obs at sample time; we skip entirely. Note: we tried normalizing pre-storage and it exploded (see LESSONS.md). Paper's approach stores raw obs, normalizes after sampling — safe but not yet implemented. |
 
 ### Moderate Mismatches
 
