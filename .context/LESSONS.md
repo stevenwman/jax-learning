@@ -798,7 +798,13 @@ With target_entropy=0, entropy can never reach 0 (that would require a perfectly
 
 **Comparison:** FastSAC (C51 critic) scored 892 on the same task. The C51 categorical approach is more numerically stable than Gaussian parameterization for distributional RL at this scale.
 
-**Lesson:** Gaussian distributional critics need aggressive variance flooring for high-dim tasks. The softplus + small eps isn't enough — consider `jnp.maximum(variance, min_variance)` with `min_variance` as a tunable hyperparameter, or switch to log-variance parameterization with clamping (like the actor's log_std).
+**Fix applied:** Switched from softplus to log-variance parameterization with clamping:
+- `log_var = clip(Dense(x), -10, 2)` → `variance = exp(log_var)` → range [4.5e-5, 7.4]
+- Zero-initialized (`log_var=0` → `var=1.0` at start)
+- NLL loss also clamps: `q_var_safe = max(q_var, 1e-4)`
+- CheetahRun smoke test: 266 eval @ 500k steps, no NaN. HumanoidRun rerunning.
+
+**Lesson:** For Gaussian distributional critics, use log-variance with clamping, not softplus. Softplus has no upper bound and approaches zero for large negative inputs. Log-variance with `clip(-10, 2)` gives bounded, well-behaved gradients. Same pattern as actor log_std — if it works for the policy, use it for the critic too.
 
 ---
 
