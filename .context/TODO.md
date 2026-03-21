@@ -8,8 +8,9 @@
 - [x] FastDSAC HumanoidRun — **NaN'd @ 6M** (Gaussian critic diverged, needs variance floor fix)
 
 ### Active
-- [ ] Fix and verify moved test files (test_ppo_setup, test_determinism, test_normalization) — waiting for GPU
-- [ ] Commit cleanup changes (__init__ exports, test consolidation) — pending test verification
+- [x] Fix and verify moved test files — 48 tests passing
+- [x] Commit cleanup changes (__init__ exports, test consolidation)
+- [x] FastDSAC variance fix (log-variance + NLL clamp) — smoke test passed, HumanoidRun running
 
 ### Short-term
 - [ ] MJX recompilation investigation — why does `jit(while)`/`jit(scan)` recompile with identical signatures ~2x/min? Is it MJX, Playground, or JAX?
