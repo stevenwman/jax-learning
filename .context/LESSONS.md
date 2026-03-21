@@ -788,6 +788,18 @@ With target_entropy=0, entropy can never reach 0 (that would require a perfectly
 
 **Lesson:** Any cross-entropy loss using `log_softmax` needs a floor clamp. The `-inf * 0 = NaN` trap is silent — `log_softmax` looks correct, `projected` looks correct, but the product is NaN.
 
+### FastDSAC Gaussian Critic Diverges on HumanoidRun
+
+**Problem:** FastDSAC NaN'd at 6M steps on HumanoidRun. Q1, alpha, entropy — all NaN. Eval stuck at 4.6 (never learned).
+
+**Root cause (hypothesis):** The Gaussian distributional critic outputs (mean, variance) via softplus. Near-zero variance → large `1/variance` in the NLL loss → gradient explosion. Unlike C51 (which has the log_softmax clamp fix), the Gaussian NLL has no floor on the variance denominator.
+
+**Context:** FastDSAC worked on CheetahRun (567 eval) but failed on HumanoidRun (21-dim actions, 67-dim obs). The higher dimensionality likely pushes more variance estimates toward zero, especially early in training when the critic hasn't learned yet.
+
+**Comparison:** FastSAC (C51 critic) scored 892 on the same task. The C51 categorical approach is more numerically stable than Gaussian parameterization for distributional RL at this scale.
+
+**Lesson:** Gaussian distributional critics need aggressive variance flooring for high-dim tasks. The softplus + small eps isn't enough — consider `jnp.maximum(variance, min_variance)` with `min_variance` as a tunable hyperparameter, or switch to log-variance parameterization with clamping (like the actor's log_std).
+
 ---
 
 *"The best way to learn is to break things, then fix them systematically."*

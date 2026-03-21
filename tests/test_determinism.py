@@ -97,6 +97,7 @@ def run_full_training(seed=0, num_iters=50):
 
     config = PPOConfig(
         encoder=EncoderConfig(obs_dim=obs_dim, hidden_dim=(64, 64)),
+        critic_encoder=EncoderConfig(obs_dim=obs_dim, hidden_dim=(64, 64)),
         policy_head=PolicyHeadConfig(action_dim=action_dim, squash=False),
         num_envs=num_envs,
         minibatch_size=min(256, num_envs * num_steps),
@@ -141,7 +142,8 @@ def run_full_training(seed=0, num_iters=50):
 
             buffer.add(
                 obs=normed_obs, action=action, reward=env_state.reward,
-                done=effective_done, log_prob=log_prob, value=value,
+                done=effective_done, truncation=truncation,
+                log_prob=log_prob, value=value,
             )
 
             step_rewards = np.asarray(env_state.reward)
@@ -160,7 +162,7 @@ def run_full_training(seed=0, num_iters=50):
 
         batch = buffer.get(next_value, gamma=gamma, gae_lambda=gae_lambda)
         key, update_key = jax.random.split(key)
-        training_state, metrics = ppo.update(training_state, batch, update_key)
+        training_state, metrics = ppo.update(training_state, batch, update_key, next_obs=normed_next_obs)
 
         pl = float(jax.device_get(metrics["policy_loss"]))
         vl = float(jax.device_get(metrics["value_loss"]))

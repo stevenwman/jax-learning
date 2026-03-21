@@ -343,3 +343,82 @@ def test_normalize_eps_parameter():
     # Different eps should give different results when var≈0
     assert not jnp.allclose(result_large_eps, result_small_eps), \
         "eps parameter should affect normalization when variance is near-zero"
+
+
+# ── NaN-safe env step tests ──────────────────────────────────────────────
+
+
+from jax_rl.training.env_setup import _make_nan_safe_step
+
+
+def test_nan_guard_catches_nan_obs():
+    """NaN obs → zeroed obs, zeroed reward, done=True."""
+    # Fake env state with a replace() method (like Brax State)
+    import flax
+
+    @flax.struct.dataclass
+    class FakeState:
+        obs: jnp.ndarray
+        reward: jnp.ndarray
+        done: jnp.ndarray
+
+    def fake_step(state, action):
+        # Simulate MJX producing NaN in some envs
+        nan_obs = state.obs.at[1].set(jnp.nan)  # env 1 gets NaN
+        nan_reward = state.reward.at[1].set(jnp.nan)
+        return state.replace(obs=nan_obs, reward=nan_reward)
+
+    safe_step = _make_nan_safe_step(fake_step)
+
+    state = FakeState(
+        obs=jnp.ones((4, 10)),
+        reward=jnp.ones(4),
+        done=jnp.zeros(4),
+    )
+    action = jnp.zeros((4, 3))
+
+    result = safe_step(state, action)
+
+    # Env 1 should be guarded
+    assert not jnp.any(jnp.isnan(result.obs)), "NaN obs should be zeroed"
+    assert jnp.allclose(result.obs[1], 0.0), "NaN env obs should be zeros"
+    assert result.reward[1] == 0.0, "NaN env reward should be zero"
+    assert result.done[1] == 1.0, "NaN env should be marked done"
+
+    # Other envs should be unaffected
+    assert jnp.allclose(result.obs[0], 1.0), "Clean env obs should be unchanged"
+    assert result.reward[0] == 1.0, "Clean env reward should be unchanged"
+    assert result.done[0] == 0.0, "Clean env done should be unchanged"
+
+
+def test_nan_guard_catches_nan_action():
+    """NaN actions get zeroed before env.step (verified via obs echo)."""
+    import flax
+
+    @flax.struct.dataclass
+    class FakeState:
+        obs: jnp.ndarray
+        reward: jnp.ndarray
+        done: jnp.ndarray
+
+    def fake_step(state, action):
+        # Echo the received action back as obs so we can inspect it
+        padded = jnp.zeros_like(state.obs)
+        padded = padded.at[:, :action.shape[-1]].set(action)
+        return state.replace(obs=padded)
+
+    safe_step = _make_nan_safe_step(fake_step)
+
+    state = FakeState(
+        obs=jnp.ones((4, 10)),
+        reward=jnp.ones(4),
+        done=jnp.zeros(4),
+    )
+    nan_action = jnp.ones((4, 3)).at[2].set(jnp.nan)
+
+    result = safe_step(state, nan_action)
+
+    # Env 2's action was NaN → should have been zeroed before env.step
+    # The echo puts the action into obs[:, :3], so check those columns
+    assert jnp.allclose(result.obs[0, :3], 1.0), "Clean action should pass through"
+    assert jnp.allclose(result.obs[2, :3], 0.0), "NaN action should be zeroed"
