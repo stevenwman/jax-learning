@@ -42,12 +42,14 @@ def evaluate(
     # otherwise fall back to num_episodes (creates separate compilation).
     batch_dim = num_envs if num_envs is not None else num_episodes
 
-    # Cache the JIT'd env.step — avoid recompilation on every eval call.
+    # Cache the NaN-safe JIT'd env.step — avoid recompilation on every eval call.
+    # Uses same NaN guard as training to handle MJX physics failures.
     if not hasattr(evaluate, '_env_step_cache'):
         evaluate._env_step_cache = {}
     cache_key = id(env)
     if cache_key not in evaluate._env_step_cache:
-        evaluate._env_step_cache[cache_key] = jax.jit(env.step)
+        from jax_rl.training.env_setup import _make_nan_safe_step
+        evaluate._env_step_cache[cache_key] = _make_nan_safe_step(env.step)
     env_step = evaluate._env_step_cache[cache_key]
 
     # Reset batch_dim envs (may be larger than num_episodes to match training shape)
