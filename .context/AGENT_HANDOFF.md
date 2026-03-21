@@ -70,6 +70,33 @@ When implementing from a paper:
 
 We learned this the hard way — our FastTD3/FastSAC had 11+ critical config mismatches vs the paper's holosoma source code. tau was 25x wrong, network architecture was completely different, activation function was wrong. Always check the source.
 
+### The "paper says X but code does Y" lesson (FastDSAC saga)
+The most expensive debugging lesson from this project: FastDSAC's paper describes a "Gaussian distributional critic" with "Gaussian NLL loss." We implemented exactly that. It NaN'd. We spent two days trying variance clamping, log-variance parameterization, batch size reduction — all treating symptoms. Then we downloaded the paper's source code and discovered **the actual loss is Huber-based, not Gaussian NLL.** No `1/variance` anywhere in the real code. The name "Gaussian distributional" describes the output parameterization (mean, std), not the loss function.
+
+**Rule:** When implementing from a paper, ALWAYS get the source code before writing the loss function. The paper text is insufficient. If source code is behind a paywall or anonymous link:
+1. Try `uv run gdown --folder <google_drive_url>` for Google Drive links
+2. Try `git clone` for anonymous review repos (4open.science, openreview)
+3. Ask the user to download and place it locally — you can read local files
+4. WebFetch often gets blocked by Cloudflare on anonymous review sites
+
+### Accessing external resources
+WebFetch gets blocked by many sites (Cloudflare challenges, bot detection, auth-required pages). When you hit a block:
+1. **Google Drive:** `uv add gdown --dev && uv run gdown --folder <url> -O /tmp/output`
+2. **GitHub private repos:** Ask user to clone locally
+3. **Anonymous review sites (4open.science, openreview):** Usually blocked. Ask user to download ZIP and place in `/tmp/`
+4. **ArXiv HTML:** Usually works with WebFetch
+5. **PyPI packages:** Check if already installed (`uv run python -c "import X"`) before adding
+6. **Local files are always readable** — if user can download it anywhere on the filesystem, you can read it
+
+### Algorithm implementation tips
+- **Q head outputs (mean, std) via softplus** — NOT (mean, variance). The loss formulation depends on this distinction.
+- **Huber loss > MSE for distributional RL** — Huber caps large TD errors at linear growth, MSE lets them explode quadratically.
+- **Per-sample gradient weighting with clamped ratios** — `clamp(weight, 0.1, 10)` prevents any single sample from dominating the batch gradient.
+- **`z.clamp(-3, 3)` on target sampling** — prevents extreme tail samples from the target distribution.
+- **EMA of batch std (`mean_std`)** — used for ratio computation, updated with tau_b=0.005 (much slower than Polyak tau).
+- **`num_updates=2` for distributional critics** — more updates per step amplifies any instability. The paper uses 2, not 8.
+- **`reward_scale=0.2`** — smaller rewards → smaller TD errors → more stable variance learning.
+
 ### The training run pattern
 1. **Smoke test first** — 200k-500k steps to verify no crashes
 2. **Launch full run in background** — `run_in_background=true`

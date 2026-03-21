@@ -788,23 +788,41 @@ With target_entropy=0, entropy can never reach 0 (that would require a perfectly
 
 **Lesson:** Any cross-entropy loss using `log_softmax` needs a floor clamp. The `-inf * 0 = NaN` trap is silent — `log_softmax` looks correct, `projected` looks correct, but the product is NaN.
 
-### FastDSAC Gaussian Critic Diverges on HumanoidRun
+### FastDSAC: Paper Says "Gaussian NLL" but Code Uses Huber Loss
 
-**Problem:** FastDSAC NaN'd at 6M steps on HumanoidRun. Q1, alpha, entropy — all NaN. Eval stuck at 4.6 (never learned).
+**Problem:** FastDSAC NaN'd on HumanoidRun — first with Gaussian NLL (NaN at step 1024), then with log-variance clamping (still NaN), then with smaller batch (worked but not matching paper). Every fix was treating symptoms.
 
-**Root cause (hypothesis):** The Gaussian distributional critic outputs (mean, variance) via softplus. Near-zero variance → large `1/variance` in the NLL loss → gradient explosion. Unlike C51 (which has the log_softmax clamp fix), the Gaussian NLL has no floor on the variance denominator.
+**Root cause:** We implemented Gaussian NLL (`(y-mean)²/var + log(var)`) because the paper describes a "Gaussian distributional critic." But the paper's **actual source code** uses **Huber loss** (delta=50) with bounded per-sample ratio weighting. No `1/variance` anywhere.
 
-**Context:** FastDSAC worked on CheetahRun (567 eval) but failed on HumanoidRun (21-dim actions, 67-dim obs). The higher dimensionality likely pushes more variance estimates toward zero, especially early in training when the critic hasn't learned yet.
+**The paper's actual loss (from source code):**
+```
+ratio = clamp(mean_std² / (q_std_detach² + bias), 0.1, 10)
+loss = mean(ratio * (
+    huber(q_mean, target_q, delta=50)
+    + q_std * (q_std_detach² - huber(q_mean_detach, target_q_sample)) / (q_std_detach + bias)
+))
+```
 
-**Comparison:** FastSAC (C51 critic) scored 892 on the same task. The C51 categorical approach is more numerically stable than Gaussian parameterization for distributional RL at this scale.
+Why this is stable:
+- **Huber loss** caps error at linear growth for |error| > delta (no quadratic explosion)
+- **ratio** is clamped [0.1, 10] — per-sample gradient contribution is bounded
+- **No 1/variance** — division is by `(q_std_detach + bias)`, not `q_std²`
+- **target Q samples** use `z.clamp(-3, 3)` — no extreme tail samples
 
-**Fix applied:** Switched from softplus to log-variance parameterization with clamping:
-- `log_var = clip(Dense(x), -10, 2)` → `variance = exp(log_var)` → range [4.5e-5, 7.4]
-- Zero-initialized (`log_var=0` → `var=1.0` at start)
-- NLL loss also clamps: `q_var_safe = max(q_var, 1e-4)`
-- CheetahRun smoke test: 266 eval @ 500k steps, no NaN. HumanoidRun rerunning.
+**Other config mismatches found from source code:**
+- `tau=0.1` (we had 0.005), `num_updates=2` (we had 8), `weight_decay=0.1` (we had 1e-4)
+- `reward_scale=0.2`, `activation=gelu`, `critic_hidden_dim=1024`
+- `policy_delay=2` (actor updates every other critic update)
 
-**Lesson:** For Gaussian distributional critics, use log-variance with clamping, not softplus. Softplus has no upper bound and approaches zero for large negative inputs. Log-variance with `clip(-10, 2)` gives bounded, well-behaved gradients. Same pattern as actor log_std — if it works for the policy, use it for the critic too.
+**Diagnostic trail:**
+1. Gaussian NLL → NaN at step 1024 (1/var explosion) ✗
+2. Log-variance clamping → still NaN (the loss was fundamentally wrong) ✗
+3. Smaller batch (8K vs 32K) → worked but not matching paper ✗
+4. Downloaded paper source code → discovered Huber loss ✓
+5. Isolated the NaN to oversampling (32K batch from 1K buffer = 32x repetition) ✓
+6. Huber loss + paper config → stable at 32K batch ✓
+
+**Lesson:** Always read the source code, not just the paper. "Gaussian distributional critic" does NOT mean Gaussian NLL loss. The name describes the output parameterization (mean, std), not the loss function. This cost us two days of debugging the wrong loss.
 
 ---
 
