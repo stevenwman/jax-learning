@@ -249,14 +249,14 @@ def get_fast_sac_preset(env_name: str) -> tuple[TrainConfig, SACConfig]:
     return dataclasses.replace(_FAST_SAC_BASE_CFG, env_name=env_name), _FAST_SAC_BASE_ALGO
 
 
-# FastDSAC presets — Gaussian distributional critic + DEM
+# FastDSAC presets — Huber-based distributional critic + DEM
 _FAST_DSAC_BASE_CFG = TrainConfig(
     total_timesteps=100_000_000,
     num_envs=1024,
     episode_length=1000,
     lr=3e-4,
     anneal_lr=False,
-    reward_scaling=1.0,
+    reward_scaling=0.2,  # paper: reward_scale=0.2
     gamma=0.99,
     num_eval_episodes=5,
     handle_truncation=True,

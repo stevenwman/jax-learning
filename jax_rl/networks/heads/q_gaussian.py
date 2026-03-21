@@ -43,13 +43,11 @@ class GaussianQHead(nn.Module):
             nn.Dense(1, kernel_init=nn.initializers.lecun_uniform())(x),
             axis=-1,
         )
-        # Variance head: log-variance with clamping for numerical stability.
-        # Softplus + tiny eps was causing NaN on HumanoidRun (variance → 0 → 1/var explosion).
-        # Log-variance clamped to [-10, 2] gives variance in [4.5e-5, 7.4].
-        log_var = jnp.squeeze(
-            nn.Dense(1, kernel_init=nn.initializers.zeros_init())(x),  # init at 0 → var=1
+        # Std head: softplus for positivity (paper uses std, not variance).
+        # The paper's Huber-based loss doesn't have 1/var, so softplus is safe here.
+        std = jnp.squeeze(
+            nn.Dense(1, kernel_init=nn.initializers.lecun_uniform())(x),
             axis=-1,
         )
-        log_var = jnp.clip(log_var, -10.0, 2.0)
-        variance = jnp.exp(log_var)
-        return mean, variance
+        std = jax.nn.softplus(std)
+        return mean, std

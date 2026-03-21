@@ -36,6 +36,8 @@ class TrainingState:
     log_alpha: jnp.ndarray
     alpha_opt_state: optax.OptState
     key: jax.Array
+    mean_std1: jnp.ndarray  # EMA of batch mean of Q1 std (for ratio weighting)
+    mean_std2: jnp.ndarray  # EMA of batch mean of Q2 std
 
 
 class FastDSAC:
@@ -91,9 +93,11 @@ class FastDSAC:
         q1 = self.q1
         q2 = self.q2
         tau = config.tau
+        tau_b = 0.005  # EMA rate for running mean_std (paper default)
         target_entropy = self.target_entropy
         dem_temp = config.dem_temperature
-        var_eps = config.variance_eps
+        bias = 1e-6  # small constant for division safety (paper: 0.000001)
+        huber_delta = 50.0  # paper uses delta=50 for Huber loss
 
         # ── DEM weight computation ────────────────────────────────────────
         def _compute_dem_weights(dem_logits, beta=None):
@@ -125,9 +129,15 @@ class FastDSAC:
             action, log_prob = sample_gaussian(mean, modulated_log_std, key, squash=True)
             return action, log_prob
 
-        # ── Gaussian critic loss ──────────────────────────────────────────
+        # ── Huber-based distributional critic loss (paper's actual formula) ──
+        # NOTE: Despite being called "Gaussian distributional", the paper uses
+        # Huber loss, NOT Gaussian NLL. The key insight from reading their source:
+        # - No 1/variance anywhere (avoids the explosion that killed our NLL)
+        # - Per-sample ratio weighting clamped [0.1, 10] (bounded gradients)
+        # - Huber loss with delta=50 (bounded error for large TD differences)
+        # - z.clamp(-3, 3) for target Q sampling (prevents extreme samples)
         def _critic_loss(q_params, actor_params, target_q1_params, target_q2_params,
-                         log_alpha, batch, key):
+                         log_alpha, batch, key, mean_std1, mean_std2):
             q1_params_, q2_params_ = q_params
             obs = batch["obs"]
             action = batch["action"]
@@ -138,52 +148,78 @@ class FastDSAC:
 
             alpha = jnp.exp(log_alpha)
 
-            # Next action from current policy (no beta needed for target)
+            # Next action from current policy
             next_action, next_log_prob = _actor_forward(actor_params, next_obs, key)
 
-            # Target Q (use min for conservative estimate)
-            tq1_mean, tq1_var = q1.apply(target_q1_params, next_obs, next_action)
-            tq2_mean, tq2_var = q2.apply(target_q2_params, next_obs, next_action)
-            target_q_mean = jnp.minimum(tq1_mean, tq2_mean)
+            # Target Q: mean and std from target networks
+            tq1_mean, tq1_std = q1.apply(target_q1_params, next_obs, next_action)
+            tq2_mean, tq2_std = q2.apply(target_q2_params, next_obs, next_action)
 
-            # SAC entropy-adjusted target
+            # Sample from target distribution with clamped noise (paper: z.clamp(-3, 3))
+            key, z1_key, z2_key = jax.random.split(key, 3)
+            z1 = jnp.clip(jax.random.normal(z1_key, tq1_mean.shape), -3.0, 3.0)
+            z2 = jnp.clip(jax.random.normal(z2_key, tq2_mean.shape), -3.0, 3.0)
+            next_q1_sample = tq1_mean + z1 * tq1_std
+            next_q2_sample = tq2_mean + z2 * tq2_std
+
+            # Min Q for target (paper: use_cdq=True)
+            q_next = jnp.minimum(tq1_mean, tq2_mean)
+            q_next_sample = jnp.where(tq1_mean < tq2_mean, next_q1_sample, next_q2_sample)
+
+            # SAC entropy-adjusted targets
             effective_done = jnp.maximum(done, truncation)
-            y_q = reward + gamma * (1.0 - effective_done) * (target_q_mean - alpha * next_log_prob)
-            y_q = jax.lax.stop_gradient(y_q)
+            bootstrap = 1.0 - effective_done
 
-            # Target variance for variance gradient (sample from target distribution)
-            target_q_var = jnp.where(tq1_mean < tq2_mean, tq1_var, tq2_var)
-            key, sample_key = jax.random.split(key)
-            y_z = y_q + jax.random.normal(sample_key, y_q.shape) * jnp.sqrt(
-                jax.lax.stop_gradient(target_q_var) + var_eps
+            # target_q: for mean regression (uses expected Q)
+            target_q = reward + bootstrap * gamma * (q_next - alpha * next_log_prob)
+            # target_q_sample: for variance regression (uses sampled Q)
+            target_q_sample = reward + bootstrap * gamma * (q_next_sample - alpha * next_log_prob)
+            target_q = jax.lax.stop_gradient(target_q)
+            target_q_sample = jax.lax.stop_gradient(target_q_sample)
+
+            # Online Q predictions (mean and std)
+            q1_mean, q1_std = q1.apply(q1_params_, obs, action)
+            q2_mean, q2_std = q2.apply(q2_params_, obs, action)
+
+            # Detached std for ratio computation (no gradient through denominator)
+            q1_std_det = jax.lax.stop_gradient(jnp.maximum(q1_std, 0.0))
+            q2_std_det = jax.lax.stop_gradient(jnp.maximum(q2_std, 0.0))
+
+            # Per-sample ratio: mean_std² / (q_std² + bias), clamped [0.1, 10]
+            # This bounds the per-sample gradient contribution
+            ratio1 = jnp.clip(mean_std1 ** 2 / (q1_std_det ** 2 + bias), 0.1, 10.0)
+            ratio2 = jnp.clip(mean_std2 ** 2 / (q2_std_det ** 2 + bias), 0.1, 10.0)
+
+            # Huber loss for mean regression
+            def _huber(pred, target):
+                return optax.huber_loss(pred, target, delta=huber_delta)
+
+            # Paper's loss: ratio * (huber_mean + std * (std_det² - huber_var) / (std_det + bias))
+            def _critic_term(q_mean, q_std, q_std_det, ratio, target_q_, target_q_sample_):
+                mean_term = _huber(q_mean, target_q_)
+                var_term = q_std * (q_std_det ** 2 - _huber(jax.lax.stop_gradient(q_mean), target_q_sample_)) / (q_std_det + bias)
+                return jnp.mean(ratio * (mean_term + var_term))
+
+            q1_loss = _critic_term(q1_mean, q1_std, q1_std_det, ratio1, target_q, target_q_sample)
+            q2_loss = _critic_term(q2_mean, q2_std, q2_std_det, ratio2, target_q, target_q_sample)
+
+            # Update running mean_std (EMA)
+            new_mean_std1 = jax.lax.stop_gradient(
+                (1 - tau_b) * mean_std1 + tau_b * q1_std.mean()
             )
-            y_z = jax.lax.stop_gradient(y_z)
-
-            # Online Q predictions
-            q1_mean, q1_var = q1.apply(q1_params_, obs, action)
-            q2_mean, q2_var = q2.apply(q2_params_, obs, action)
-
-            # Gradient scaling factor: running mean of variance
-            omega = jax.lax.stop_gradient(0.5 * (q1_var.mean() + q2_var.mean()))
-
-            # Gaussian NLL loss (decomposed: mean + variance terms)
-            # Clamp variance to prevent 1/var explosion and log(var) underflow
-            def _gaussian_nll(q_mean, q_var):
-                q_var_safe = jnp.maximum(q_var, 1e-4)  # floor at 1e-4
-                mean_loss = (y_q - q_mean) ** 2 / (q_var_safe + var_eps)
-                var_loss = jnp.log(q_var_safe + var_eps)
-                return omega * jnp.mean(mean_loss + var_loss)
-
-            q1_loss = _gaussian_nll(q1_mean, q1_var)
-            q2_loss = _gaussian_nll(q2_mean, q2_var)
+            new_mean_std2 = jax.lax.stop_gradient(
+                (1 - tau_b) * mean_std2 + tau_b * q2_std.mean()
+            )
 
             metrics = {
                 "q1_mean": q1_mean.mean(),
                 "q2_mean": q2_mean.mean(),
-                "q1_var": q1_var.mean(),
-                "q2_var": q2_var.mean(),
+                "q1_std": q1_std.mean(),
+                "q2_std": q2_std.mean(),
                 "q1_loss": q1_loss,
                 "q2_loss": q2_loss,
+                "mean_std1": new_mean_std1,
+                "mean_std2": new_mean_std2,
             }
             return q1_loss + q2_loss, metrics
 
@@ -222,12 +258,13 @@ class FastDSAC:
         def update(state: TrainingState, batch: dict) -> tuple[TrainingState, dict]:
             key, k1, k2, k3 = jax.random.split(state.key, 4)
 
-            # Critic
+            # Critic (pass mean_std for ratio weighting)
             q_params = (state.q1_params, state.q2_params)
             (_, critic_metrics), q_grads = jax.value_and_grad(
                 _critic_loss, argnums=0, has_aux=True
             )(q_params, state.actor_params, state.target_q1_params,
-              state.target_q2_params, state.log_alpha, batch, k1)
+              state.target_q2_params, state.log_alpha, batch, k1,
+              state.mean_std1, state.mean_std2)
             q_updates, new_q_opt_state = optimizer.update(
                 q_grads, state.q_opt_state, params=q_params)
             new_q1_params, new_q2_params = optax.apply_updates(q_params, q_updates)
@@ -266,6 +303,8 @@ class FastDSAC:
                 log_alpha=new_log_alpha,
                 alpha_opt_state=new_alpha_opt_state,
                 key=key,
+                mean_std1=critic_metrics["mean_std1"],
+                mean_std2=critic_metrics["mean_std2"],
             )
             metrics = {**critic_metrics, **actor_metrics, **alpha_metrics}
             return new_state, metrics
@@ -342,4 +381,6 @@ class FastDSAC:
             log_alpha=log_alpha,
             alpha_opt_state=alpha_opt_state,
             key=key,
+            mean_std1=jnp.array(1.0),  # initialize to 1.0, will be updated via EMA
+            mean_std2=jnp.array(1.0),
         )

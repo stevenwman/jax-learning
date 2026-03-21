@@ -186,7 +186,7 @@ def train(cfg: TrainConfig, dsac_cfg: FastDSACConfig, seed: int = 0,
                 is_training=is_training,
                 buffer_size=len(buffer), min_buffer=dsac_cfg.min_buffer_size,
                 extra_fields=[
-                    ("Q1σ²", "q1_var", ".2f"),
+                    ("Q1σ", "q1_std", ".3f"),
                     ("Ent", "entropy", ".3f"),
                     ("Alpha", "alpha", ".4f"),
                 ],
@@ -195,7 +195,7 @@ def train(cfg: TrainConfig, dsac_cfg: FastDSACConfig, seed: int = 0,
             if is_training:
                 metrics_log.append(make_metrics_row(
                     total_steps, tracker, last_metrics, total_gradient_steps, sps, elapsed,
-                    extra_keys=["q1_var", "q2_var", "entropy", "alpha", "alpha_loss"],
+                    extra_keys=["q1_std", "q2_std", "entropy", "alpha", "alpha_loss"],
                 ))
 
         # ── Eval + checkpoint ─────────────────────────────────────────────
