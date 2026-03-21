@@ -43,10 +43,13 @@ class GaussianQHead(nn.Module):
             nn.Dense(1, kernel_init=nn.initializers.lecun_uniform())(x),
             axis=-1,
         )
-        # Variance head (softplus for positivity, +1e-6 floor)
-        variance = jnp.squeeze(
-            nn.Dense(1, kernel_init=nn.initializers.lecun_uniform())(x),
+        # Variance head: log-variance with clamping for numerical stability.
+        # Softplus + tiny eps was causing NaN on HumanoidRun (variance → 0 → 1/var explosion).
+        # Log-variance clamped to [-10, 2] gives variance in [4.5e-5, 7.4].
+        log_var = jnp.squeeze(
+            nn.Dense(1, kernel_init=nn.initializers.zeros_init())(x),  # init at 0 → var=1
             axis=-1,
         )
-        variance = jax.nn.softplus(variance) + 1e-6
+        log_var = jnp.clip(log_var, -10.0, 2.0)
+        variance = jnp.exp(log_var)
         return mean, variance

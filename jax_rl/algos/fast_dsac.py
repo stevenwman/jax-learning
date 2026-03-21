@@ -167,9 +167,11 @@ class FastDSAC:
             omega = jax.lax.stop_gradient(0.5 * (q1_var.mean() + q2_var.mean()))
 
             # Gaussian NLL loss (decomposed: mean + variance terms)
+            # Clamp variance to prevent 1/var explosion and log(var) underflow
             def _gaussian_nll(q_mean, q_var):
-                mean_loss = (y_q - q_mean) ** 2 / (q_var + var_eps)
-                var_loss = jnp.log(q_var + var_eps)
+                q_var_safe = jnp.maximum(q_var, 1e-4)  # floor at 1e-4
+                mean_loss = (y_q - q_mean) ** 2 / (q_var_safe + var_eps)
+                var_loss = jnp.log(q_var_safe + var_eps)
                 return omega * jnp.mean(mean_loss + var_loss)
 
             q1_loss = _gaussian_nll(q1_mean, q1_var)
