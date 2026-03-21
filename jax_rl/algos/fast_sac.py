@@ -163,8 +163,9 @@ class FastSAC:
             q2_logits = q2.apply(q2_params_, obs, action)
 
             # Cross-entropy loss
-            q1_log_probs = jax.nn.log_softmax(q1_logits, axis=-1)
-            q2_log_probs = jax.nn.log_softmax(q2_logits, axis=-1)
+            # Clamp log_probs to prevent -inf * 0 = NaN in cross-entropy
+            q1_log_probs = jnp.maximum(jax.nn.log_softmax(q1_logits, axis=-1), -30.0)
+            q2_log_probs = jnp.maximum(jax.nn.log_softmax(q2_logits, axis=-1), -30.0)
             q1_loss = -jnp.mean(jnp.sum(projected * q1_log_probs, axis=-1))
             q2_loss = -jnp.mean(jnp.sum(projected * q2_log_probs, axis=-1))
 

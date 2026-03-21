@@ -24,8 +24,12 @@ def _make_nan_safe_step(raw_step):
     """
     @jax.jit
     def safe_step(state, action):
+        # Guard NaN actions (from NaN obs → actor forward → NaN action)
+        action = jnp.where(jnp.isnan(action), 0.0, action)
         state = raw_step(state, action)
+        # Guard NaN obs/rewards from MJX physics failures
         has_nan = jnp.any(jnp.isnan(state.obs), axis=-1)  # (num_envs,)
+        has_nan = has_nan | jnp.isnan(state.reward)  # also check reward
         safe_obs = jnp.where(has_nan[:, None], 0.0, state.obs)
         safe_reward = jnp.where(has_nan, 0.0, state.reward)
         safe_done = jnp.where(has_nan, 1.0, state.done)
