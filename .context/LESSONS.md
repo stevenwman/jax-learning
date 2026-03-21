@@ -771,9 +771,22 @@ With target_entropy=0, entropy can never reach 0 (that would require a perfectly
 2. Real training without sync → NaN at 1.2M
 3. Different step counts each run = stochastic input-side failure, not systematic algo divergence
 
-**Fix:** NaN-safe env step wrapper: `if NaN in obs → zero obs, zero reward, done=True`. Auto-resets crashed envs. 4 lines in `env_setup.py`, applies to all algos.
+**Fix (three layers):**
+1. NaN-safe env step: `if NaN in obs → zero obs, zero reward, done=True`. Auto-resets crashed envs.
+2. Action NaN guard: `if NaN in action → zero action` before env.step. Prevents NaN obs → actor → NaN action → MJX crash chain.
+3. C51 log_prob clamp: `jnp.maximum(log_softmax(...), -30.0)` in cross-entropy loss. Prevents `-inf * 0 = NaN` when projected probability is 0 at an atom where log_softmax is -inf.
 
 **Lesson:** When NaN happens at random step counts with identical configs, check inputs (env output) before gradients. Debug sync points masking the bug = timing/async issue. Physics engines crash at scale — guard the boundary.
+
+### C51 Cross-Entropy NaN — `-inf * 0 = NaN`
+
+**Problem:** Even with env NaN guards, FastTD3 still NaN'd at 1.97M steps. The env guard caught NaN obs, but NaN propagated through the C51 loss.
+
+**Root cause:** `jax.nn.log_softmax` returns `-inf` for atoms with near-zero probability. The C51 cross-entropy loss computes `projected * log_probs`. When `projected[i] = 0.0` and `log_probs[i] = -inf`, IEEE 754 gives `0 * -inf = NaN`. This NaN propagates through the mean into the gradient → params → everything.
+
+**Fix:** `jnp.maximum(log_softmax(...), -30.0)` — clamp log probabilities to -30 (effectively zero probability, `exp(-30) ≈ 1e-13`). This is standard in categorical RL implementations but easy to miss.
+
+**Lesson:** Any cross-entropy loss using `log_softmax` needs a floor clamp. The `-inf * 0 = NaN` trap is silent — `log_softmax` looks correct, `projected` looks correct, but the product is NaN.
 
 ---
 
