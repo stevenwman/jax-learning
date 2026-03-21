@@ -760,4 +760,21 @@ With target_entropy=0, entropy can never reach 0 (that would require a perfectly
 
 ---
 
+### MJX Physics NaN at Scale — Not an Algo Bug
+
+**Problem:** FastTD3 on HumanoidRun NaN'd at random step counts (315k, 600k, 1.2M) with identical configs. Looked like algo instability — tau too high, obs norm issues, C51 mismatch.
+
+**Root cause:** MuJoCo's MJX physics solver produces NaN obs when the humanoid enters extreme states (contact solver failure, singular mass matrix). With 1024 parallel envs, at least one env crashes stochastically. NaN obs enter the replay buffer → Q network trains on NaN → cascade.
+
+**How we found it:**
+1. Debug script with `jnp.isnan()` checks at every step → survived 2M steps (sync points changed timing)
+2. Real training without sync → NaN at 1.2M
+3. Different step counts each run = stochastic input-side failure, not systematic algo divergence
+
+**Fix:** NaN-safe env step wrapper: `if NaN in obs → zero obs, zero reward, done=True`. Auto-resets crashed envs. 4 lines in `env_setup.py`, applies to all algos.
+
+**Lesson:** When NaN happens at random step counts with identical configs, check inputs (env output) before gradients. Debug sync points masking the bug = timing/async issue. Physics engines crash at scale — guard the boundary.
+
+---
+
 *"The best way to learn is to break things, then fix them systematically."*

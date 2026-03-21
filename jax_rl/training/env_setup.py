@@ -10,12 +10,36 @@ from jax_rl.configs.train_config import TrainConfig
 from jax_rl.utils.normalization import NormalizationState
 
 
+def _make_nan_safe_step(raw_step):
+    """Wrap env.step to guard against MJX physics NaN.
+
+    MuJoCo's MJX backend can produce NaN obs/rewards when the simulation
+    encounters extreme states (contact solver failure, singular mass matrix).
+    This happens stochastically with humanoid envs at 1024 parallel worlds.
+
+    When NaN is detected:
+    - obs replaced with zeros (safe for network forward pass)
+    - reward set to 0
+    - done set to 1 (triggers auto-reset on next step)
+    """
+    @jax.jit
+    def safe_step(state, action):
+        state = raw_step(state, action)
+        has_nan = jnp.any(jnp.isnan(state.obs), axis=-1)  # (num_envs,)
+        safe_obs = jnp.where(has_nan[:, None], 0.0, state.obs)
+        safe_reward = jnp.where(has_nan, 0.0, state.reward)
+        safe_done = jnp.where(has_nan, 1.0, state.done)
+        state = state.replace(obs=safe_obs, reward=safe_reward, done=safe_done)
+        return state
+    return safe_step
+
+
 def make_envs(cfg: TrainConfig, seed: int):
     """Create training env + eval env, JIT env.step, reset training env.
 
     Returns:
         env: wrapped training environment
-        env_step: JIT'd env.step function
+        env_step: JIT'd, NaN-safe env.step function
         env_state: initial env state (reset with num_envs)
         eval_env: separate wrapped env for evaluation
         obs_dim: observation dimensionality
@@ -23,7 +47,7 @@ def make_envs(cfg: TrainConfig, seed: int):
     """
     env = dm_control_suite.load(cfg.env_name)
     env = wrap_for_brax_training(env, episode_length=cfg.episode_length)
-    env_step = jax.jit(env.step)
+    env_step = _make_nan_safe_step(env.step)
 
     key = jax.random.PRNGKey(seed)
     key, reset_key = jax.random.split(key)
