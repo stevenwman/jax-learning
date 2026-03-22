@@ -819,10 +819,22 @@ Why this is stable:
 2. Log-variance clamping → still NaN (the loss was fundamentally wrong) ✗
 3. Smaller batch (8K vs 32K) → worked but not matching paper ✗
 4. Downloaded paper source code → discovered Huber loss ✓
-5. Isolated the NaN to oversampling (32K batch from 1K buffer = 32x repetition) ✓
-6. Huber loss + paper config → stable at 32K batch ✓
+5. Huber loss + paper config at 1024 envs → still NaN (alpha collapse → log(0)) ✗
+6. reward_scale=0.2 → 1.0 at 1024 envs → still NaN ✗
+7. Corrected UTD (16 grad updates for 1024 envs) at 1024 envs → still NaN ✗
+8. **128 envs (match paper exactly) → 490 eval, no NaN** ✓
 
-**Lesson:** Always read the source code, not just the paper. "Gaussian distributional critic" does NOT mean Gaussian NLL loss. The name describes the output parameterization (mean, std), not the loss function. This cost us two days of debugging the wrong loss.
+**Root cause of 1024-env failure:** FastDSAC was designed for 128 parallel envs. At 1024 envs with UTD matching (16 updates/step), alpha still collapses to zero and Q1σ→0. The exact mechanism is not fully isolated but likely involves:
+- Buffer dynamics: 51K buffer at 1024 envs turns over 20x faster than at 128 envs — data freshness changes
+- Batch composition: 32K batch from 51K buffer at 1024 envs is almost entirely from the last ~2 env steps, extreme correlation
+- The Huber loss delta=50 may not scale correctly when reward/Q magnitudes change with env count
+
+**Key result:** FastDSAC at 128 envs hit **490 peak eval on HumanoidRun in 5M steps** — competitive with vanilla SAC's 426 at 20M steps. The algorithm works; it just doesn't scale to 1024 envs without further tuning.
+
+**Lessons:**
+1. Always read the source code, not just the paper. "Gaussian distributional critic" does NOT mean Gaussian NLL loss.
+2. Scaling from 128 to 1024 envs is not just a UTD ratio change — buffer dynamics, batch correlation, and loss hyperparameters all interact.
+3. When debugging, match the paper's setup EXACTLY first (128 envs), then scale one variable at a time.
 
 ---
 

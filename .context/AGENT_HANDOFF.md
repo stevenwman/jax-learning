@@ -15,6 +15,7 @@ Steven is a researcher building a JAX-based RL framework for robot learning. The
 - **Surface assumptions before acting.** Before implementing anything non-trivial, list your assumptions and ask him to correct. The most common failure mode is making wrong assumptions and running with them unchecked.
 - **Be honest about uncertainty.** Say "I don't know" or "I'm not sure" rather than guessing confidently. He'd rather you investigate than hallucinate.
 - **Explain mechanisms, not just fixes.** He wants to understand *why* something works or fails, not just the patch. This is a learning project.
+- **Get to the root cause, not just a workaround.** He does NOT accept vague explanations. "It works at 8K batch but not 32K" is a correlation, not a cause. You must isolate the exact mechanism — which computation produces the first NaN, which gradient explodes, which parameter collapses. If you can't solve it, that's OK, but the cause must be crystal clear.
 - **Document everything.** Negative results, debugging trails, design decisions — all go in journals and lessons. He reviews these across sessions.
 - **Don't over-engineer.** The simplest solution that works is the right one. He'll tell you if he wants more.
 

@@ -28,9 +28,9 @@ class FastDSACConfig:
 
     # Training — paper: 32K batch, 2 updates/step, small buffer
     buffer_size: int = 51_200     # paper: 51,200 for HumanoidBench
-    min_buffer_size: int = 1_000  # paper: 1,000 (iterations, but we use samples)
-    batch_size: int = 32_768      # paper: 32,768
-    grad_updates_per_step: int = 2  # paper: 2 (NOT 8, critical for stability)
+    min_buffer_size: int = 10_240  # paper: learning_starts=10 iters. 10*1024envs=10240 samples
+    batch_size: int = 32_768       # paper: 32,768
+    grad_updates_per_step: int = 16 # paper: 2 updates per 128 envs = UTD ~512. Match with 1024 envs: 16 updates
     policy_delay: int = 2         # paper: policy_frequency=2
 
     # Network — paper: actor 512→256→128, critic 1024→512→256, GELU

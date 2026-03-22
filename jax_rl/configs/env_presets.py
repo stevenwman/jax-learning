@@ -256,7 +256,7 @@ _FAST_DSAC_BASE_CFG = TrainConfig(
     episode_length=1000,
     lr=3e-4,
     anneal_lr=False,
-    reward_scaling=0.2,  # paper: reward_scale=0.2
+    reward_scaling=1.0,  # paper uses 0.2 for HumanoidBench (large rewards), 1.0 for dm_control (tiny rewards)
     gamma=0.99,
     num_eval_episodes=5,
     handle_truncation=True,
