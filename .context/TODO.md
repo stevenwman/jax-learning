@@ -1,38 +1,44 @@
 # TODO
 
-## 2026-03-20
-
-### Completed (2026-03-21)
-- [x] FastTD3 HumanoidRun — **665 eval** @ 100M steps (tau=0.125, tapered nets, NaN guards)
-- [x] FastSAC HumanoidRun — **892 eval** @ 100M steps (C51, obs-norm, paper recipe)
-- [x] FastDSAC HumanoidRun — **NaN'd @ 6M** (Gaussian critic diverged, needs variance floor fix)
-
-### Active (2026-03-22)
-- [x] Fix and verify moved test files — 48 tests passing
-- [x] Commit cleanup changes (__init__ exports, test consolidation)
-- [x] FastDSAC rewrite — Huber loss (not Gaussian NLL), matches paper source code
-- [x] FastDSAC Inf guard — MJX velocity overflow produces Inf, not just NaN
+## Completed (2026-03-22)
+- [x] FastTD3 HumanoidRun — **665 eval** @ 100M steps
+- [x] FastSAC HumanoidRun — **892 eval** @ 100M steps
+- [x] FastDSAC rewrite — Huber loss from paper source code
+- [x] FastDSAC Inf guard — `isinf()` added, survived 54M+ steps (past 53M crash)
 - [x] FastDSAC buffer scaling — 51K→400K for 1024 envs
-- [x] Checkpoints purge — 87→15 runs, 624→149MB. benchmark_results.md created
-- [ ] TrainConfig cleanup — code done (PPO fields moved to PPOConfig), needs GPU test before commit
-- [ ] Q diagnostics — eval runner has optional `q_fn` for Q vs MC return. Needs GPU test + wiring into train scripts
-- [ ] FastDSAC 1024-env NaN test — running with Inf guard + 400K buffer, ~2hr to 53M crash point
+- [x] TrainConfig cleanup — PPO fields moved to PPOConfig (48 tests pass)
+- [x] Checkpoints purge — 87→15 runs, 624→149MB
+- [x] Go2 sim-to-real plan — comprehensive, cross-checked against all .context/ docs
 
-### Short-term
-- [ ] Revisit `lax.scan` for gradient loops — JAX buffer (on-device) may fix the carry overhead that killed scanned_update.py (see LESSONS.md, journal 03-18). Carry would be `(TrainingState, key)` only, not 4M buffer arrays.
-- [ ] MJX recompilation investigation — why does `jit(while)`/`jit(scan)` recompile with identical signatures ~2x/min? Is it MJX, Playground, or JAX?
-- [ ] Builders unification — all algos use `make_encoder()` factory. Prerequisite for CNN encoder
+## Active
+- [ ] Wire Q diagnostics (`q_fn`) into train scripts — eval runner ready, needs per-algo closure
+- [ ] Builders unification — `make_encoder()` factory. PPO uses builders, SAC/TD3/Fast* build inline. **Prerequisite for SAC on Go2 (Phase B) and vision RL.**
+- [ ] Create `jax_rl/utils/frame_stack.py` — shared utility for Go2 (state obs) and vision RL (pixel obs)
 
-### Mid-term (Vision RL)
-- [ ] Install `madrona_mjx`, verify Playground `vision=True` loads on RTX 5080
+## Short-term
+- [ ] Go2 env (`jax_rl/envs/locomotion/go2.py`) — subclass MjxEnv, legged_gym rewards, 31-dim obs
+- [ ] Domain rand wrapper (`jax_rl/envs/wrappers/domain_rand.py`) — robot-agnostic, vmap over MJX params
+- [ ] Go2 PPO Phase A — flat terrain walking, validates env/reward/domain-rand
+- [ ] Go2 SAC Phase B — off-policy validation (requires builders unification first)
+- [ ] Revisit `lax.scan` for gradient loops — JAX buffer may fix carry overhead (see LESSONS.md, journal 03-18)
+- [ ] MJX recompilation investigation — upstream `jit(while)`/`jit(scan)` recompile ~2x/min
+
+## Mid-term (Vision RL)
+- [ ] Install `madrona_mjx`, verify Playground `vision=True` on RTX 5080
 - [ ] CNN encoder (`jax_rl/networks/encoders/cnn.py`) + `CnnEncoderConfig`
-- [ ] `--vision` flag on train scripts (env loads with `vision=True`, encoder swaps to CNN)
 - [ ] DrQ augmentation (`jax_rl/utils/augmentation.py`)
-- [ ] Benchmark CartpoleBalance from pixels (Playground colab baseline: 57s on 4090)
+- [ ] `--vision` flag on train scripts
 - [ ] ManiSkill integration (Gymnasium adapter + DLPack bridge)
-- [ ] Memory budget testing — pixel replay buffer sizing on 16GB
+- [ ] Memory budget testing — pixel replay buffer on 16GB
 
-### Long-term (Phase 6 — North Star)
+## Mid-term (Go2 Deployment)
+- [ ] ONNX export utility (`jax_rl/utils/export.py`) — JAX weights → ONNX for Jetson
+- [ ] Deploy script (`deploy/deploy_go2.py`) — DDS loop, 50Hz, same interface for sim/real
+- [ ] Validate in `unitree_mujoco` before real hardware
+- [ ] DC motor model (`jax_rl/envs/actuators.py`) — Tier 2, add if sim-to-real gap > threshold
+- [ ] Confirm Go2 EDU edition in lab (ask Steven)
+
+## Long-term (Phase 6 — North Star)
 - [ ] DIAYN (skill discovery wrapping SAC)
 - [ ] METRA (contrastive + metric-aware skills)
 - [ ] Goal-conditioned RL (encoder `context_dim` + `context_fusion`)
