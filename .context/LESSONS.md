@@ -824,17 +824,31 @@ Why this is stable:
 7. Corrected UTD (16 grad updates for 1024 envs) at 1024 envs → still NaN ✗
 8. **128 envs (match paper exactly) → 490 eval, no NaN** ✓
 
-**Root cause of 1024-env failure:** FastDSAC was designed for 128 parallel envs. At 1024 envs with UTD matching (16 updates/step), alpha still collapses to zero and Q1σ→0. The exact mechanism is not fully isolated but likely involves:
-- Buffer dynamics: 51K buffer at 1024 envs turns over 20x faster than at 128 envs — data freshness changes
-- Batch composition: 32K batch from 51K buffer at 1024 envs is almost entirely from the last ~2 env steps, extreme correlation
-- The Huber loss delta=50 may not scale correctly when reward/Q magnitudes change with env count
+**Root cause of 1024-env failure (UPDATED — found the actual mechanism):**
 
-**Key result:** FastDSAC at 128 envs hit **490 peak eval on HumanoidRun in 5M steps** — competitive with vanilla SAC's 426 at 20M steps. The algorithm works; it just doesn't scale to 1024 envs without further tuning.
+The 1024-env failures had TWO distinct causes, diagnosed through targeted stress testing:
+
+**Cause 1 (NaN at 2M steps): Buffer too small.**
+With 51K buffer and 1024 envs, the buffer turns over in 50 steps. The 32K batch samples 64% of a buffer that's almost entirely from the last 2 env steps — extreme correlation. Alpha collapses because the critic overfits to near-identical data.
+- **Fix:** Scale buffer to 400K (51200 × 1024/128). Matches the paper's buffer-fill-time ratio.
+- **Result:** Survived to 53M steps, reached 316 eval. Proved the buffer hypothesis.
+
+**Cause 2 (NaN at 53M steps): `Inf` in MJX obs, not caught by NaN guard.**
+Stress test revealed: our NaN guard only checked `isnan()`, not `isinf()`. MJX can produce `Inf` obs from velocity overflow (different from NaN from solver failure). `Inf` passes the NaN check, enters the network, and `Inf * 0 = NaN` in a dot product kills everything.
+- **Proof:** `obs[0] = inf` → `dsac.update()` → NaN in all params. `obs[0] = 1e6` → no NaN.
+- **Fix:** Add `jnp.isinf()` to the env step guard alongside `jnp.isnan()`.
+
+**Key results:**
+- FastDSAC at 128 envs: **490 peak eval** on HumanoidRun in 5M steps
+- FastDSAC at 1024 envs (400K buffer): **316 peak eval** in 53M steps before Inf crash
+- FastDSAC at 1024 envs (51K buffer): NaN at 2M steps (buffer too small)
 
 **Lessons:**
 1. Always read the source code, not just the paper. "Gaussian distributional critic" does NOT mean Gaussian NLL loss.
-2. Scaling from 128 to 1024 envs is not just a UTD ratio change — buffer dynamics, batch correlation, and loss hyperparameters all interact.
-3. When debugging, match the paper's setup EXACTLY first (128 envs), then scale one variable at a time.
+2. Scaling from 128 to 1024 envs requires proportional buffer scaling, not just UTD matching.
+3. Guard against BOTH `NaN` AND `Inf` from physics engines. `Inf` is a separate failure mode (velocity overflow vs solver failure).
+4. Stress test edge cases directly (inject Inf/NaN/extreme values) instead of running full training to reproduce. A 30-second test found what 53M steps of training couldn't explain.
+5. When debugging, match the paper's setup EXACTLY first (128 envs), then scale one variable at a time.
 
 ---
 

@@ -276,8 +276,10 @@ FAST_DSAC_PRESETS: dict[str, tuple[TrainConfig, FastDSACConfig]] = {
     ),
     "HumanoidRun": (
         dataclasses.replace(_FAST_DSAC_BASE_CFG, env_name="HumanoidRun"),
-        dataclasses.replace(_FAST_DSAC_BASE_ALGO, target_entropy=0.0,  # paper default for high-dim
-                            q_layer_norm=True),
+        dataclasses.replace(_FAST_DSAC_BASE_ALGO, target_entropy=0.0,
+                            q_layer_norm=True,
+                            buffer_size=409_600,  # scaled 51200*(1024/128) to match fill-time ratio
+                            ),
     ),
 }
 
