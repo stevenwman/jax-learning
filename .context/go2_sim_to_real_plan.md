@@ -202,14 +202,18 @@ Swap to off-policy once PPO validates the pipeline. The research question: **can
 
 ## 5. Policy Export
 
-**PINNED — resolve when deployment pipeline is built.**
+**RESOLVED: ONNX export (or pure numpy for simplicity).**
 
-Options:
-- **JAX direct:** Run JAX inference in the deployment loop. Requires JAX on the deployment machine.
-- **ONNX:** `jax2onnx` or manual export. Framework-agnostic, runs anywhere.
-- **Numpy forward pass:** Export weights as numpy, reconstruct MLP in pure numpy/Python. Simple but no JIT.
+Go2 EDU has **Jetson Orin Nano 8GB** (SM 8.7). JAX does NOT run on it — aarch64 wheels don't target SM 8.7, building from source is painful ([JAX issue #22723](https://github.com/jax-ml/jax/issues/22723)).
 
-The deployment script just needs `obs → action` at 50Hz. Any of these work. Decision depends on what's on the Go2's onboard computer (Jetson? x86? JAX available?).
+| Option | Status | Notes |
+|---|---|---|
+| ~~JAX direct~~ | **Not viable** | SM 8.7 not supported on Jetson Orin Nano |
+| **ONNX Runtime** | **Recommended** | First-class Jetson support, CUDA execution provider |
+| **Pure numpy** | **Viable fallback** | For a 3-layer MLP at 50Hz, ~0.1ms inference on ARM CPU |
+| TensorRT | Overkill | Highest performance but unnecessary for small MLP |
+
+**Pipeline:** Train in JAX → extract weights as numpy → export to ONNX → deploy with `onnxruntime` on Jetson.
 
 ---
 
@@ -227,7 +231,7 @@ The deployment script just needs `obs → action` at 50Hz. Any of these work. De
 ### Sim validation: [unitree_mujoco](https://github.com/unitreerobotics/unitree_mujoco)
 Same DDS interface as real robot — deploy script works in sim and on hardware with zero code change (just different DDS domain ID).
 
-**PINNED:** Verify that JAX-trained policies can be loaded and run in the unitree_mujoco DDS loop. Existing examples assume PyTorch .pt files.
+**RESOLVED:** `unitree_mujoco` has **zero ML framework dependencies** — it's pure MuJoCo + DDS ([source](https://github.com/unitreerobotics/unitree_mujoco)). No PyTorch required. Our deployment script subscribes to `rt/lowstate`, runs numpy/ONNX inference, publishes `rt/lowcmd`. Same script works in `unitree_mujoco` (sim) and on the real Go2 (hardware) — just change DDS domain ID.
 
 ### Deployment script pattern (from [unitree_rl_gym deploy](https://github.com/unitreerobotics/unitree_rl_gym)):
 ```python
@@ -272,10 +276,10 @@ while running:
 | 1 | Can Playground's `MjxEnv` support custom reward functions cleanly? | Verify by subclassing | Before env implementation |
 | ~~2~~ | ~~Kp=20 vs 35 for Go2 PD controller~~ | **RESOLVED: Kp=20, Kd=0.5** | Unitree official, confirmed from [go2_config.py](https://github.com/unitreerobotics/unitree_rl_gym/blob/main/legged_gym/envs/go2/go2_config.py) |
 | 3 | Go2 EDU edition in lab? | **Ask Steven to check** | Before deployment work |
-| 4 | Policy export format (JAX vs ONNX) | Research target hardware (Jetson?) | Before deployment pipeline — don't defer too long |
+| ~~4~~ | ~~Policy export format (JAX vs ONNX)~~ | **RESOLVED: ONNX** | Jetson Orin Nano can't run JAX. ONNX Runtime has first-class support. |
 | 5 | Frame stack count (3 vs 5 vs 15) | Ablation | During training experiments |
 | 6 | action_scale=0.25 vs 0.3 | Test both | During training experiments |
-| 7 | `unitree_mujoco` DDS compatibility with JAX policies | Investigate | Before deployment |
+| ~~7~~ | ~~`unitree_mujoco` DDS compatibility with JAX policies~~ | **RESOLVED: Compatible** | No PyTorch dependency. Numpy/ONNX inference in DDS loop works. |
 | 8 | DC motor model — when to upgrade from simple PD? | After hardware test, use concrete metrics | Step freq ±10%, current ±20% thresholds |
 | 9 | Actuator delay modeling — needed? | After first hardware test | If sim policy oscillates on hardware |
 
@@ -302,7 +306,19 @@ These components serve both the Go2 target AND the broader north star:
 
 ---
 
-## 10. What NOT to Build
+## 10. Cross-Plan Alignment Notes
+
+**Builders unification:** Not needed for PPO Phase A (PPO already uses builders). Required before SAC Phase B — SAC/TD3/FastSAC build encoders inline. Order: Go2 env → PPO validation → builders unification → SAC Phase B.
+
+**Frame stacking:** Create `jax_rl/utils/frame_stack.py` as a shared utility. Used by Go2 (state obs) AND vision RL (pixel obs). Playground's `vision=True` handles rendering, NOT frame stacking — our code does frame stacking separately.
+
+**Vision integration path:** Go2Env is a standalone MjxEnv subclass for state-based RL. When vision RL lands, pixel-based Go2 training would use Playground's `vision=True` loader or a wrapper on Go2Env — separate code path, same frame stacking utility.
+
+**Memory budget for future pixel variant:** State-based Go2 at 400K buffer = ~150MB. Pixel-based (84×84×9) at 400K = ~25GB (OOM). Future pixel Go2 needs 50K-100K buffer. See `vision_rl_design.md`.
+
+---
+
+## 11. What NOT to Build
 
 - **Isaac Lab integration** — PyTorch-only, would abandon our JAX framework
 - **MJLab adoption** — PyTorch-only, but steal their actuator model patterns
