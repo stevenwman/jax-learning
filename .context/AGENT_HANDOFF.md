@@ -282,7 +282,8 @@ Every checkpoint directory contains:
 | Vanilla SAC | 426 | 20M | 128 | 4.4k | ~76 min |
 | FastTD3 | 665 | 100M | 1024 | 8k | ~3.4 hr |
 | **FastSAC** | **892** | 100M | 1024 | 12.3k | ~2.3 hr |
-| FastDSAC | NaN'd @ 6M (fix applied, rerunning) | | | | |
+| FastDSAC (128 envs) | 490 peak | 5M | 128 | 305 | ~4.5 hr |
+| FastDSAC (1024 envs) | 316 peak (Inf'd @ 53M, now guarded) | 53M | 1024 | 2.3k | *running with Inf fix* |
 
 ### What the benchmarks tell us
 - **Low-dim (CheetahRun):** Deterministic TD3 + C51 wins. SAC's entropy overhead isn't worth it when simple Gaussian noise suffices for 6-dim exploration.
@@ -309,12 +310,24 @@ MJX recompiles `jit(while)` and `jit(scan)` with identical signatures ~2x/min. O
 **Mitigation:** `XLA_CLIENT_MEM_FRACTION=0.7` leaves headroom. Set in all train scripts.
 **Root cause unknown:** Why does JAX recompile identical functions? Is it MJX, Playground, or JAX itself? Investigation pending — see `oom_investigation.md`.
 
-### FastDSAC Gaussian Critic Instability (FIX APPLIED, VERIFYING)
-Softplus variance parameterization caused near-zero variance → `1/var` explosion in NLL loss.
+### FastDSAC: Fully Rewritten to Match Paper Source Code (TESTING)
+The paper says "Gaussian NLL" but the actual source code uses **Huber loss** (delta=50) with bounded ratio weighting. Our Gaussian NLL implementation NaN'd; the Huber rewrite is stable. See LESSONS.md for the full diagnostic trail.
 
-**Fix:** Switched to log-variance with clamping: `exp(clip(log_var, -10, 2))` gives bounded variance [4.5e-5, 7.4]. Zero-initialized (start at var=1). NLL also clamps `max(var, 1e-4)`.
+**Two 1024-env scaling issues found and fixed:**
+1. **Buffer too small** (51K at 1024 envs → 2M NaN). Fix: scale buffer to 400K.
+2. **`Inf` not guarded** (MJX velocity overflow → 53M NaN). Fix: add `isinf()` to env step guard.
 
-CheetahRun smoke test passed (266 eval @ 500k). HumanoidRun rerunning — check if it survived past 6M steps.
+**Current status:** Running at 1024 envs with both fixes. If it survives past 53M steps, both fixes are confirmed. FastDSAC at 128 envs reached 490 peak eval on HumanoidRun.
+
+### Debugging workflow: stress test edge cases directly
+Don't wait for a full training run to reproduce a crash. Inject the suspected failure condition directly:
+```python
+# Instead of running 53M steps to see if it NaN's:
+batch['obs'] = batch['obs'].at[0].set(float('inf'))
+state, metrics = dsac.update(state, batch)
+# If NaN → confirmed. If fine → wrong hypothesis. 30 seconds, not 7 hours.
+```
+This found the Inf root cause in one test after multiple failed full runs.
 
 ### Paper Config Disparities (DOCUMENTED, MOSTLY FIXED)
 See `.context/FAST_ALGOS_LIT_MISMATCH.md` for the full audit. Key items still not matching paper:
