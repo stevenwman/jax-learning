@@ -240,7 +240,7 @@ cfg, sac_cfg = get_sac_preset("CheetahRun")
 # sac_cfg: SACConfig(tau=0.005, hidden_dim=(256,256), batch_size=512, ...)
 ```
 
-**Known issue:** `TrainConfig` has PPO-specific fields (`policy_hidden_dim`, `value_hidden_dim`, `squash`, etc.) that should be in `PPOConfig`. Cleanup is on the TODO list.
+**Note:** PPO-specific fields (`num_steps`, `policy_hidden_dim`, `value_hidden_dim`, `squash`, etc.) have been moved from `TrainConfig` to `PPOConfig` (code done 03-22, pending GPU test for commit). `train.py` reads from `cfg.ppo` for these fields.
 
 **Config override pattern** in train scripts:
 ```python
@@ -340,7 +340,8 @@ See `.context/FAST_ALGOS_LIT_MISMATCH.md` for the full audit. Key items still no
 ## Part 6: Upcoming Work
 
 ### Short-term (no GPU needed)
-1. **TrainConfig cleanup** — move PPO fields to PPOConfig
+1. **TrainConfig cleanup** — code done (PPO fields moved to PPOConfig), needs GPU test before commit
+2. **Q diagnostics** — eval runner has optional `q_fn` arg for Q vs MC return comparison. Not yet wired into train scripts. Pass `q_fn=lambda obs, act: algo._q_values(state.q1_params, obs, act)` at eval time to enable.
 2. **Checkpoints purge** — delete orbax weights from failed runs, keep meta.json + metrics.csv
 3. **Builders unification** — `make_encoder()` factory, prerequisite for CNN encoder
 
