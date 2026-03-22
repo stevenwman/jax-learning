@@ -14,45 +14,38 @@ PRESETS: dict[str, TrainConfig] = {
         env_name="CartpoleBalance",
         total_timesteps=1_000_000,
         num_envs=64,
-        num_steps=64,
         gamma=0.99,
         lr=3e-4,
         reward_scaling=1.0,
-        max_grad_norm=0.5,
-        ppo=PPOConfig(entropy_coef=0.01, num_epochs=4),
+        ppo=PPOConfig(num_steps=64, max_grad_norm=0.5, entropy_coef=0.01, num_epochs=4),
     ),
     "CheetahRun": TrainConfig(
         env_name="CheetahRun",
         total_timesteps=20_000_000,
         num_envs=2048,
-        num_steps=30,
         gamma=0.995,
         lr=1e-3,
         reward_scaling=10.0,
-        ppo=PPOConfig(entropy_coef=1e-2, num_epochs=16),
+        ppo=PPOConfig(num_steps=30, entropy_coef=1e-2, num_epochs=16),
     ),
     "WalkerWalk": TrainConfig(
         env_name="WalkerWalk",
         total_timesteps=60_000_000,
         num_envs=2048,
-        num_steps=30,
         gamma=0.995,
         lr=1e-3,
         reward_scaling=10.0,
-        ppo=PPOConfig(entropy_coef=1e-2, num_epochs=16),
+        ppo=PPOConfig(num_steps=30, entropy_coef=1e-2, num_epochs=16),
     ),
     "HumanoidRun": TrainConfig(
         env_name="HumanoidRun",
         total_timesteps=60_000_000,
         num_envs=2048,
-        num_steps=480,
         gamma=0.995,
         lr=1e-3,
-        anneal_lr=False,
         reward_scaling=10.0,
-        policy_hidden_dim=(128, 128, 128, 128),
-        state_dependent_std=True,
-        ppo=PPOConfig(entropy_coef=1e-2, num_epochs=16),
+        ppo=PPOConfig(num_steps=480, anneal_lr=False, entropy_coef=1e-2, num_epochs=16,
+                      policy_hidden_dim=(128, 128, 128, 128), state_dependent_std=True),
     ),
 }
 
@@ -65,11 +58,9 @@ _SAC_BASE_CFG = TrainConfig(
     num_envs=128,
     episode_length=1000,
     lr=1e-3,
-    anneal_lr=False,
     reward_scaling=1.0,
     gamma=0.99,
     handle_truncation=True,
-    ppo=None,
 )
 
 _SAC_BASE_ALGO = SACConfig(
@@ -114,11 +105,9 @@ _TD3_BASE_CFG = TrainConfig(
     num_envs=128,
     episode_length=1000,
     lr=3e-4,
-    anneal_lr=False,
     reward_scaling=1.0,
     gamma=0.99,
     handle_truncation=True,
-    ppo=None,
 )
 
 _TD3_BASE_ALGO = TD3Config(
@@ -156,12 +145,10 @@ _FAST_TD3_BASE_CFG = TrainConfig(
     num_envs=1024,
     episode_length=1000,
     lr=3e-4,
-    anneal_lr=False,
     reward_scaling=1.0,
     gamma=0.97,             # paper: 0.97 for locomotion
     num_eval_episodes=5,
     handle_truncation=True,
-    ppo=None,
 )
 
 _FAST_TD3_BASE_ALGO = FastTD3Config(
@@ -201,12 +188,10 @@ _FAST_SAC_BASE_CFG = TrainConfig(
     num_envs=1024,
     episode_length=1000,
     lr=3e-4,               # paper: 0.0003
-    anneal_lr=False,
     reward_scaling=1.0,
     gamma=0.97,             # paper: 0.97 for locomotion (NOT 0.99)
     num_eval_episodes=5,
     handle_truncation=True,
-    ppo=None,
 )
 
 _FAST_SAC_BASE_ALGO = SACConfig(
@@ -255,12 +240,10 @@ _FAST_DSAC_BASE_CFG = TrainConfig(
     num_envs=1024,
     episode_length=1000,
     lr=3e-4,
-    anneal_lr=False,
     reward_scaling=1.0,  # paper uses 0.2 for HumanoidBench (large rewards), 1.0 for dm_control (tiny rewards)
     gamma=0.99,
     num_eval_episodes=5,
     handle_truncation=True,
-    ppo=None,
 )
 
 _FAST_DSAC_BASE_ALGO = FastDSACConfig()

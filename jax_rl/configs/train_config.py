@@ -39,15 +39,5 @@ class TrainConfig:
     eval_every_n_episodes: int = 500
     num_eval_episodes: int = 10
 
-    # ── PPO-specific (kept here for backward compat with presets) ─────────
-    # These are only used by train.py (PPO). Off-policy scripts ignore them.
-    num_steps: int = 64
-    num_updates_per_batch: int = 1
-    policy_hidden_dim: tuple[int, ...] = (32, 32, 32, 32)
-    value_hidden_dim: tuple[int, ...] = (256, 256, 256, 256, 256)
-    activation: str = "swish"
-    squash: bool = True
-    state_dependent_std: bool = False
-    max_grad_norm: float | None = None
-    anneal_lr: bool = True
+    # PPO config (None for off-policy algos)
     ppo: PPOConfig | None = field(default_factory=PPOConfig)

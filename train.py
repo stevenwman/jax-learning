@@ -40,21 +40,21 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
     # ── Environment ──────────────────────────────────────────────────────
     env, env_step, env_state, eval_env, obs_dim, action_dim, key = make_envs(cfg, seed)
 
-    samples_per_update = cfg.num_envs * cfg.num_steps
-    samples_per_iter = samples_per_update * cfg.num_updates_per_batch
+    ppo_cfg = cfg.ppo
+    samples_per_update = cfg.num_envs * ppo_cfg.num_steps
+    samples_per_iter = samples_per_update * ppo_cfg.num_updates_per_batch
     num_iterations = cfg.total_timesteps // samples_per_iter
 
     print("=" * 80)
     print(f"PPO — {cfg.env_name} (MuJoCo Playground)")
     print("=" * 80)
     print(f"  obs_dim={obs_dim}, action_dim={action_dim}")
-    print(f"  num_envs={cfg.num_envs}, num_steps={cfg.num_steps}, "
-          f"num_updates_per_batch={cfg.num_updates_per_batch}, episode_length={cfg.episode_length}")
+    print(f"  num_envs={cfg.num_envs}, num_steps={ppo_cfg.num_steps}, "
+          f"num_updates_per_batch={ppo_cfg.num_updates_per_batch}, episode_length={cfg.episode_length}")
     print(f"  samples/update={samples_per_update:,}, samples/iter={samples_per_iter:,}, "
           f"iterations={num_iterations}, total_steps={cfg.total_timesteps:,}")
 
     # ── PPO setup ────────────────────────────────────────────────────────
-    ppo_cfg = cfg.ppo
     num_minibatches = ppo_cfg.num_minibatches
     minibatch_size = samples_per_update // num_minibatches
     if samples_per_update % num_minibatches != 0:
@@ -62,38 +62,38 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
         print(f"  WARNING: samples_per_update ({samples_per_update}) not divisible by "
               f"num_minibatches ({num_minibatches}). {samples_per_update - usable} "
               f"samples will be dropped per update.")
-    total_gradient_steps = num_iterations * cfg.num_updates_per_batch * ppo_cfg.num_epochs * num_minibatches
+    total_gradient_steps = num_iterations * ppo_cfg.num_updates_per_batch * ppo_cfg.num_epochs * num_minibatches
 
     ppo_config = dataclasses.replace(
         ppo_cfg,
-        encoder=EncoderConfig(obs_dim=obs_dim, hidden_dim=cfg.policy_hidden_dim, activation=cfg.activation),
-        critic_encoder=EncoderConfig(obs_dim=obs_dim, hidden_dim=cfg.value_hidden_dim, activation=cfg.activation),
-        policy_head=PolicyHeadConfig(action_dim=action_dim, squash=cfg.squash,
-                                     state_dependent_std=cfg.state_dependent_std),
+        encoder=EncoderConfig(obs_dim=obs_dim, hidden_dim=ppo_cfg.policy_hidden_dim, activation=ppo_cfg.activation),
+        critic_encoder=EncoderConfig(obs_dim=obs_dim, hidden_dim=ppo_cfg.value_hidden_dim, activation=ppo_cfg.activation),
+        policy_head=PolicyHeadConfig(action_dim=action_dim, squash=ppo_cfg.squash,
+                                     state_dependent_std=ppo_cfg.state_dependent_std),
         num_envs=cfg.num_envs,
         minibatch_size=minibatch_size,
         gamma=cfg.gamma,
     )
 
     # ── Optimizer ─────────────────────────────────────────────────────────
-    if cfg.anneal_lr:
+    if ppo_cfg.anneal_lr:
         lr_schedule = optax.linear_schedule(cfg.lr, 0.0, total_gradient_steps)
     else:
         lr_schedule = cfg.lr
 
-    if cfg.max_grad_norm is not None:
-        actor_optimizer = optax.chain(optax.clip_by_global_norm(cfg.max_grad_norm), optax.adam(lr_schedule))
-        critic_optimizer = optax.chain(optax.clip_by_global_norm(cfg.max_grad_norm), optax.adam(lr_schedule))
+    if ppo_cfg.max_grad_norm is not None:
+        actor_optimizer = optax.chain(optax.clip_by_global_norm(ppo_cfg.max_grad_norm), optax.adam(lr_schedule))
+        critic_optimizer = optax.chain(optax.clip_by_global_norm(ppo_cfg.max_grad_norm), optax.adam(lr_schedule))
     else:
         actor_optimizer = optax.adam(lr_schedule)
         critic_optimizer = optax.adam(lr_schedule)
 
-    print(f"  policy_net={cfg.policy_hidden_dim}, value_net={cfg.value_hidden_dim}, "
-          f"activation={cfg.activation}, minibatch_size={minibatch_size}, "
-          f"num_epochs={ppo_cfg.num_epochs}, updates_per_batch={cfg.num_updates_per_batch}, "
-          f"grad_updates/iter={num_minibatches * ppo_cfg.num_epochs * cfg.num_updates_per_batch}")
-    lr_desc = f"{cfg.lr} (linear anneal → 0 over {total_gradient_steps:,} grad steps)" if cfg.anneal_lr else f"{cfg.lr}"
-    print(f"  lr={lr_desc}, max_grad_norm={cfg.max_grad_norm}")
+    print(f"  policy_net={ppo_cfg.policy_hidden_dim}, value_net={ppo_cfg.value_hidden_dim}, "
+          f"activation={ppo_cfg.activation}, minibatch_size={minibatch_size}, "
+          f"num_epochs={ppo_cfg.num_epochs}, updates_per_batch={ppo_cfg.num_updates_per_batch}, "
+          f"grad_updates/iter={num_minibatches * ppo_cfg.num_epochs * ppo_cfg.num_updates_per_batch}")
+    lr_desc = f"{cfg.lr} (linear anneal → 0 over {total_gradient_steps:,} grad steps)" if ppo_cfg.anneal_lr else f"{cfg.lr}"
+    print(f"  lr={lr_desc}, max_grad_norm={ppo_cfg.max_grad_norm}")
     print(f"  clip_eps={ppo_cfg.clip_eps}, entropy_coef={ppo_cfg.entropy_coef}, reward_scaling={cfg.reward_scaling}")
     print(f"  gamma={cfg.gamma}, gae_lambda={ppo_cfg.gae_lambda}")
 
@@ -133,11 +133,11 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
         t0 = time.time()
 
         # ── Inner loop: multiple collect→update cycles per iteration ─────
-        for _update_cycle in range(cfg.num_updates_per_batch):
-            buffer = RolloutBuffer(cfg.num_steps, cfg.num_envs, obs_dim, action_dim)
+        for _update_cycle in range(ppo_cfg.num_updates_per_batch):
+            buffer = RolloutBuffer(ppo_cfg.num_steps, cfg.num_envs, obs_dim, action_dim)
 
             # ── Collect rollout ───────────────────────────────────────────
-            for step in range(cfg.num_steps):
+            for step in range(ppo_cfg.num_steps):
                 obs = env_state.obs
                 norm_state = norm_update(norm_state, obs)
                 normed_obs = norm_normalize(norm_state, obs)
@@ -292,30 +292,34 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     cfg = get_preset(args.env)
-    overrides = {}
+    cfg_overrides = {}
+    ppo_overrides = {}
     if args.num_envs is not None:
-        overrides["num_envs"] = args.num_envs
-    if args.num_steps is not None:
-        overrides["num_steps"] = args.num_steps
-    if args.num_updates_per_batch is not None:
-        overrides["num_updates_per_batch"] = args.num_updates_per_batch
+        cfg_overrides["num_envs"] = args.num_envs
     if args.total_timesteps is not None:
-        overrides["total_timesteps"] = args.total_timesteps
+        cfg_overrides["total_timesteps"] = args.total_timesteps
     if args.lr is not None:
-        overrides["lr"] = args.lr
-    if args.policy_hidden_dim is not None:
-        overrides["policy_hidden_dim"] = tuple(args.policy_hidden_dim)
-    if args.value_hidden_dim is not None:
-        overrides["value_hidden_dim"] = tuple(args.value_hidden_dim)
+        cfg_overrides["lr"] = args.lr
     if args.reward_scaling is not None:
-        overrides["reward_scaling"] = args.reward_scaling
+        cfg_overrides["reward_scaling"] = args.reward_scaling
     if args.episode_length is not None:
-        overrides["episode_length"] = args.episode_length
+        cfg_overrides["episode_length"] = args.episode_length
     if args.log_interval is not None:
-        overrides["log_interval"] = args.log_interval
-    if overrides:
-        cfg = dataclasses.replace(cfg, **overrides)
+        cfg_overrides["log_interval"] = args.log_interval
+    # PPO-specific overrides
+    if args.num_steps is not None:
+        ppo_overrides["num_steps"] = args.num_steps
+    if args.num_updates_per_batch is not None:
+        ppo_overrides["num_updates_per_batch"] = args.num_updates_per_batch
+    if args.policy_hidden_dim is not None:
+        ppo_overrides["policy_hidden_dim"] = tuple(args.policy_hidden_dim)
+    if args.value_hidden_dim is not None:
+        ppo_overrides["value_hidden_dim"] = tuple(args.value_hidden_dim)
     if args.entropy_coef is not None:
-        cfg = dataclasses.replace(cfg, ppo=dataclasses.replace(cfg.ppo, entropy_coef=args.entropy_coef))
+        ppo_overrides["entropy_coef"] = args.entropy_coef
+    if ppo_overrides:
+        cfg_overrides["ppo"] = dataclasses.replace(cfg.ppo, **ppo_overrides)
+    if cfg_overrides:
+        cfg = dataclasses.replace(cfg, **cfg_overrides)
 
     train(cfg, seed=args.seed, resume=args.resume)

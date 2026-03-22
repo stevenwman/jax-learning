@@ -21,6 +21,21 @@ class PPOConfig:
     num_epochs: int = 4
     num_minibatches: int = 32
 
+    # Rollout collection
+    num_steps: int = 64                     # steps per rollout before update
+    num_updates_per_batch: int = 1          # how many rollout+update cycles per iteration
+
+    # Network architecture
+    policy_hidden_dim: tuple[int, ...] = (32, 32, 32, 32)
+    value_hidden_dim: tuple[int, ...] = (256, 256, 256, 256, 256)
+    activation: str = "swish"
+    squash: bool = True
+    state_dependent_std: bool = False
+
+    # Optimizer
+    max_grad_norm: float | None = None
+    anneal_lr: bool = True
+
     # Runtime fields (populated by train.py — do not set manually)
     minibatch_size: int = 0
     num_envs: int = 0
