@@ -849,6 +849,7 @@ Stress test revealed: our NaN guard only checked `isnan()`, not `isinf()`. MJX c
 3. Guard against BOTH `NaN` AND `Inf` from physics engines. `Inf` is a separate failure mode (velocity overflow vs solver failure).
 4. Stress test edge cases directly (inject Inf/NaN/extreme values) instead of running full training to reproduce. A 30-second test found what 53M steps of training couldn't explain.
 5. When debugging, match the paper's setup EXACTLY first (128 envs), then scale one variable at a time.
+6. **Inf guard confirmed:** FastDSAC at 1024 envs survived 54.3M steps (past the 53M crash point) with zero NaN after adding `isinf()` to the env step guard. The fix is proven.
 
 ---
 

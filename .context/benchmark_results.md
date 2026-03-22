@@ -36,9 +36,9 @@
 | FastTD3 | 665 | 100M | 1024 | 8k | `20260320_205102_fast_td3_humanoidrun_seed0` |
 | **FastSAC** | **892** | 100M | 1024 | 12k | `20260321_010852_fast_sac_humanoidrun_seed0` |
 | FastDSAC (128 envs) | 490 peak | 5M | 128 | 305 | `20260321_194023_fast_dsac_humanoidrun_seed0` |
-| FastDSAC (1024 envs) | 316 peak | 53M | 1024 | 2.3k | *Inf'd at 53M, rerunning with guard* |
+| FastDSAC (1024 envs, Inf guard) | 282 peak | 54M+ | 1024 | 2.3k | Survived past 53M (Inf guard fix confirmed). High oscillation (58-282). |
 
-**Takeaway:** SAC's entropy-based exploration is decisive for 21-dim actions. TD3 can't explore. FastSAC (892) is the best result. FastDSAC works at 128 envs but struggles at 1024.
+**Takeaway:** SAC's entropy-based exploration is decisive for 21-dim actions. TD3 can't explore. FastSAC (892) is the best result. FastDSAC works but oscillates heavily at 1024 envs (DEM + population diversity causes eval variance).
 
 ## CartpoleBalance (obs=5, action=1)
 
