@@ -106,9 +106,9 @@ Output: (batch, feature_dim)
 
 New file: `jax_rl/networks/encoders/cnn.py`
 
-### Image Preprocessing / Pixel Wrapper — NOT NEEDED (Playground handles it)
+### Image Preprocessing / Pixel Wrapper — Playground can handle it (NOT YET INTEGRATED)
 
-**Key discovery (2026-03-20):** MuJoCo Playground already has vision support built in via Madrona MJX.
+**Discovery (2026-03-20):** MuJoCo Playground has vision support via Madrona MJX. This is a research finding — **not yet integrated into our training scripts.** No CNN encoder, no `--vision` flag, no `madrona_mjx` install exists yet. The API below is from Playground's docs, not our code.
 
 ```python
 config_overrides = {
