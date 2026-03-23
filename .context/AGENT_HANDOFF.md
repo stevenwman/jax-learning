@@ -434,8 +434,7 @@ uv run python -m pytest tests/test_normalization.py -v  # No GPU needed
 ### Launch a training run
 ```bash
 # Vanilla SAC on CheetahRun (quick, 128 envs)
-uv run python train_sac.py --env CheetahRun --jax-buffer
-
+uv run python train_sac.py --env CheetahRun 
 # FastTD3 on HumanoidRun (long, 1024 envs)
 uv run python train_fast_td3.py --env HumanoidRun --obs-norm
 

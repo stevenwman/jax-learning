@@ -12,9 +12,10 @@
 - [x] Q diagnostics — `get_q_value()` on all off-policy algos, wired into eval with Q bias/RMSE/corr
 - [x] Builders unification — Actor/DeterministicActor/VCritic in builders.py, all algos refactored. Encoder swappable.
 - [x] Numpy replay buffer archived — JAX buffer is now the only buffer. `--jax-buffer` flag removed.
+- [x] Frame stack utility (`jax_rl/utils/frame_stack.py`) — shared by Go2 and vision RL
 
 ## Active
-- [ ] Create `jax_rl/utils/frame_stack.py` — shared utility for Go2 (state obs) and vision RL (pixel obs)
+- *No active tasks — all infrastructure complete. Next: Go2 env or vision RL.*
 
 ## Short-term
 - [ ] Consolidate off-policy train scripts → `train_offpolicy.py --algo sac|td3|fast_td3|fast_sac`. Prerequisites: (1) builders unification, (2) `select_action` handles noise internally, (3) algo registry. Eliminates ~300 lines of duplication across 4 files. See builders_unification_plan.md.
