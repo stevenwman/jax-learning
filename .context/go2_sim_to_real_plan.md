@@ -31,7 +31,19 @@
 
 ## 2. Environment Design
 
-### File: `jax_rl/envs/go2.py`
+### Design Principle: Self-Contained Env
+
+**The env is a black box to the training script.** `env.step(state, action)` returns fully processed (obs, reward, done). The training script never touches obs construction, reward computation, frame stacking, obs noise, action scaling, or joint limits. `train_sac.py --env Go2JoystickFlat` and `train_sac.py --env CheetahRun` run the exact same code path.
+
+This separation means:
+- New robots = new env class, zero train script changes
+- New reward terms = env change, zero train script changes
+- Frame stacking, obs noise = env-internal, invisible to training loop
+- Domain rand = transparent wrapper applied at env creation via config
+
+The only env-facing config the train script knows about: `env_name`, `num_envs`, `episode_length`. Everything else is the env's business.
+
+### File: `jax_rl/envs/locomotion/go2.py`
 
 Subclass Playground's `MjxEnv` (same pattern as `Go1Env` in `mujoco_playground/_src/locomotion/go1/base.py`). Load `go2_mjx.xml` from Menagerie.
 
