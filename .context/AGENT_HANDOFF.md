@@ -136,7 +136,7 @@ This was a deliberate decision after researching Brax, SB3, Tianshou, CleanRL, I
 ### Directory structure
 ```
 jax-learning/
-├── train.py              # PPO (on-policy, fundamentally different loop)
+├── train_ppo.py              # PPO (on-policy, fundamentally different loop)
 ├── train_sac.py          # Vanilla SAC (128 envs, 5M steps default)
 ├── train_td3.py          # Vanilla TD3
 ├── train_fast_td3.py     # FastTD3: TD3 + C51 + large batch (1024 envs)
@@ -240,7 +240,7 @@ cfg, sac_cfg = get_sac_preset("CheetahRun")
 # sac_cfg: SACConfig(tau=0.005, hidden_dim=(256,256), batch_size=512, ...)
 ```
 
-**Note:** PPO-specific fields (`num_steps`, `policy_hidden_dim`, `value_hidden_dim`, `squash`, etc.) live in `PPOConfig`, not `TrainConfig`. `train.py` reads from `cfg.ppo` for these fields. `TrainConfig` has only shared fields (env, scale, optimizer, eval).
+**Note:** PPO-specific fields (`num_steps`, `policy_hidden_dim`, `value_hidden_dim`, `squash`, etc.) live in `PPOConfig`, not `TrainConfig`. `train_ppo.py` reads from `cfg.ppo` for these fields. `TrainConfig` has only shared fields (env, scale, optimizer, eval).
 
 **Config override pattern** in train scripts:
 ```python

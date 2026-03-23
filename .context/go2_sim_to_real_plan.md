@@ -183,7 +183,7 @@ Uses `jax.vmap` over MJX model parameters — each parallel env gets different p
 ## 4. Training
 
 ### Phase A: PPO validation
-Train Go2 flat terrain walking with PPO using our existing `train.py`. This validates the env, reward, and domain rand independently from the algo choice. If the humanoid falls over, it's the env, not the algo.
+Train Go2 flat terrain walking with PPO using our existing `train_ppo.py`. This validates the env, reward, and domain rand independently from the algo choice. If the humanoid falls over, it's the env, not the algo.
 
 **Config:** 1024-2048 envs, 50Hz control, 200Hz physics (decimation=4), gamma=0.97
 
