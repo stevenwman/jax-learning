@@ -16,6 +16,7 @@
 - [ ] Create `jax_rl/utils/frame_stack.py` — shared utility for Go2 (state obs) and vision RL (pixel obs)
 
 ## Short-term
+- [ ] Consolidate off-policy train scripts → `train_offpolicy.py --algo sac|td3|fast_td3|fast_sac`. Prerequisites: (1) builders unification, (2) `select_action` handles noise internally, (3) algo registry. Eliminates ~300 lines of duplication across 4 files. See builders_unification_plan.md.
 - [ ] Go2 env (`jax_rl/envs/locomotion/go2.py`) — subclass MjxEnv, legged_gym rewards, 31-dim obs
 - [ ] Domain rand wrapper (`jax_rl/envs/wrappers/domain_rand.py`) — robot-agnostic, vmap over MJX params
 - [ ] Go2 PPO Phase A — flat terrain walking, validates env/reward/domain-rand

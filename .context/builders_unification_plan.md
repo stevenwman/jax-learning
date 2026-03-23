@@ -47,9 +47,21 @@ Q heads need `concat(obs, action)` before the encoder, which breaks a single gen
 
 Once all algos use builders, swapping MLP for CNN means changing the builder internals (or adding an `encoder_type` field to `EncoderConfig`). No algo file touches required.
 
+## Follow-on: Unified off-policy train script
+
+Once builders unification is done, the 4 off-policy train scripts (SAC, TD3, FastTD3, FastSAC) can merge into one `train_offpolicy.py --algo sac|td3|fast_td3|fast_sac`.
+
+Prerequisites beyond builders:
+1. `select_action` handles exploration noise internally (TD3/FastTD3 currently add noise outside)
+2. Algo registry: `ALGOS = {"sac": SAC, "td3": TD3, ...}` + matching preset loaders
+3. Each algo returns its own metric keys — script logs whatever the algo returns without knowing the keys
+
+Eliminates ~300 lines of duplication. The loop is identical; only instantiation differs.
+
+**Not blocking Go2 or vision RL** — this is a cleanup once the interface is stable.
+
 ## What NOT to do
 
-- No factory/registry pattern — YAGNI until we have 3+ encoder types
+- No factory/registry pattern for encoders — YAGNI until we have 3+ encoder types
 - No generic `NetworkModule` with conditionals
-- No `BaseAlgorithm` ABC — algos stay as standalone dataclasses
-- Don't implement this until we actually need a second encoder
+- No `BaseAlgorithm` ABC — algos stay as standalone classes
