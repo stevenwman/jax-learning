@@ -23,11 +23,9 @@ from jax_rl.algos.sac import SAC
 from jax_rl.algos.td3 import TD3
 from jax_rl.algos.fast_td3 import FastTD3
 from jax_rl.algos.fast_sac import FastSAC
-from jax_rl.algos.fast_dsac import FastDSAC
 from jax_rl.configs.sac_config import SACConfig
 from jax_rl.configs.td3_config import TD3Config
 from jax_rl.configs.fast_td3_config import FastTD3Config
-from jax_rl.configs.fast_dsac_config import FastDSACConfig
 
 
 OBS_DIM = 10
@@ -113,22 +111,6 @@ def test_fast_sac_optimizer_compat(opt_fn):
     state = sac.init(KEY)
     batch = _make_batch(OBS_DIM, ACTION_DIM)
     new_state, metrics = sac.update(state, batch)
-    assert not jnp.isnan(metrics["q1_mean"]), "Q1 is NaN"
-
-
-@pytest.mark.parametrize("opt_fn", [
-    lambda lr: optax.adam(lr),
-    lambda lr: optax.adamw(lr, weight_decay=0.001),
-])
-def test_fast_dsac_optimizer_compat(opt_fn):
-    """FastDSAC should work with any optax optimizer."""
-    cfg = FastDSACConfig(hidden_dim=(32, 32), batch_size=64,
-                         min_buffer_size=1, buffer_size=1000)
-    opt = opt_fn(1e-3)
-    dsac = FastDSAC(cfg, OBS_DIM, ACTION_DIM, opt, opt, gamma=0.99)
-    state = dsac.init(KEY)
-    batch = _make_batch(OBS_DIM, ACTION_DIM)
-    new_state, metrics = dsac.update(state, batch)
     assert not jnp.isnan(metrics["q1_mean"]), "Q1 is NaN"
 
 
@@ -245,17 +227,6 @@ def test_fast_sac_alpha_init():
     assert abs(alpha - 0.01) < 1e-4, f"Alpha should be 0.01, got {alpha}"
 
 
-def test_fast_dsac_alpha_init():
-    """FastDSAC respects alpha_init from config."""
-    cfg = FastDSACConfig(hidden_dim=(32, 32), alpha_init=0.005,
-                         buffer_size=1000, batch_size=64)
-    opt = optax.adam(1e-3)
-    dsac = FastDSAC(cfg, OBS_DIM, ACTION_DIM, opt, opt, gamma=0.99)
-    state = dsac.init(KEY)
-    alpha = float(jnp.exp(state.log_alpha))
-    assert abs(alpha - 0.005) < 1e-4, f"Alpha should be 0.005, got {alpha}"
-
-
 # ── Tapered network dims ─────────────────────────────────────────────────
 
 
@@ -289,7 +260,7 @@ from jax_rl.training.env_setup import make_identity_norm_state
 
 def test_obs_normalization_config_exists():
     """All off-policy configs have obs_normalization field, default False."""
-    for cfg_cls in [SACConfig, TD3Config, FastTD3Config, FastDSACConfig]:
+    for cfg_cls in [SACConfig, TD3Config, FastTD3Config]:
         cfg = cfg_cls()
         assert hasattr(cfg, "obs_normalization"), f"{cfg_cls.__name__} missing obs_normalization"
         assert cfg.obs_normalization is False, f"{cfg_cls.__name__} should default to False"

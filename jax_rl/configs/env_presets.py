@@ -6,7 +6,6 @@ from jax_rl.configs.ppo_config import PPOConfig
 from jax_rl.configs.sac_config import SACConfig
 from jax_rl.configs.td3_config import TD3Config
 from jax_rl.configs.fast_td3_config import FastTD3Config
-from jax_rl.configs.fast_dsac_config import FastDSACConfig
 from jax_rl.configs.train_config import TrainConfig
 
 PRESETS: dict[str, TrainConfig] = {
@@ -233,45 +232,6 @@ def get_fast_sac_preset(env_name: str) -> tuple[TrainConfig, SACConfig]:
         return FAST_SAC_PRESETS[env_name]
     return dataclasses.replace(_FAST_SAC_BASE_CFG, env_name=env_name), _FAST_SAC_BASE_ALGO
 
-
-# FastDSAC presets — Huber-based distributional critic + DEM
-_FAST_DSAC_BASE_CFG = TrainConfig(
-    total_timesteps=100_000_000,
-    num_envs=1024,
-    episode_length=1000,
-    lr=3e-4,
-    reward_scaling=1.0,  # paper uses 0.2 for HumanoidBench (large rewards), 1.0 for dm_control (tiny rewards)
-    gamma=0.99,
-    num_eval_episodes=5,
-    handle_truncation=True,
-)
-
-_FAST_DSAC_BASE_ALGO = FastDSACConfig()
-
-FAST_DSAC_PRESETS: dict[str, tuple[TrainConfig, FastDSACConfig]] = {
-    "CheetahRun": (
-        dataclasses.replace(_FAST_DSAC_BASE_CFG, env_name="CheetahRun"),
-        _FAST_DSAC_BASE_ALGO,  # target_entropy=0.0 — negative values cause alpha collapse
-    ),
-    "WalkerWalk": (
-        dataclasses.replace(_FAST_DSAC_BASE_CFG, env_name="WalkerWalk"),
-        _FAST_DSAC_BASE_ALGO,
-    ),
-    "HumanoidRun": (
-        dataclasses.replace(_FAST_DSAC_BASE_CFG, env_name="HumanoidRun"),
-        dataclasses.replace(_FAST_DSAC_BASE_ALGO, target_entropy=0.0,
-                            q_layer_norm=True,
-                            buffer_size=409_600,  # scaled 51200*(1024/128) to match fill-time ratio
-                            ),
-    ),
-}
-
-
-def get_fast_dsac_preset(env_name: str) -> tuple[TrainConfig, FastDSACConfig]:
-    """Return FastDSAC preset (TrainConfig, FastDSACConfig) for env, or a default."""
-    if env_name in FAST_DSAC_PRESETS:
-        return FAST_DSAC_PRESETS[env_name]
-    return dataclasses.replace(_FAST_DSAC_BASE_CFG, env_name=env_name), _FAST_DSAC_BASE_ALGO
 
 
 def get_preset(env_name: str) -> TrainConfig:

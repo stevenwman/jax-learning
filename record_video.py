@@ -109,18 +109,6 @@ def _build_select_action(meta, obs_dim, action_dim):
             td3 = TD3(td3_cfg, obs_dim, action_dim, dummy_opt, dummy_opt, gamma=0.99)
         return td3, "offpolicy"
 
-    elif algo == "fast_dsac":
-        from jax_rl.algos.fast_dsac import FastDSAC
-        from jax_rl.configs.fast_dsac_config import FastDSACConfig
-        dc = meta.get("fast_dsac_config", {})
-        dsac_cfg = FastDSACConfig(
-            hidden_dim=tuple(dc.get("hidden_dim", (512, 512))),
-            activation=dc.get("activation", "relu"),
-            q_layer_norm=dc.get("q_layer_norm", True),
-        )
-        dsac = FastDSAC(dsac_cfg, obs_dim, action_dim, dummy_opt, dummy_opt, gamma=0.99)
-        return dsac, "offpolicy"
-
     else:
         raise ValueError(f"Unknown algo: {algo}")
 
