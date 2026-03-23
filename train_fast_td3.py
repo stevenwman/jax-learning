@@ -30,7 +30,6 @@ from jax_rl.training import (
     log_training_step, make_metrics_row,
     maybe_eval_and_checkpoint, final_eval_and_checkpoint,
 )
-from jax_rl.utils.distributional import logits_to_q, make_support
 from jax_rl.utils.normalization import (
     init as norm_init, update as norm_update, normalize as norm_normalize,
 )
@@ -204,26 +203,22 @@ def train(cfg: TrainConfig, td3_cfg: FastTD3Config, seed: int = 0, resume: str |
         # ── Eval + checkpoint ─────────────────────────────────────────────
         obs_norm_fn = (lambda o: norm_normalize(norm_state, o, eps=td3_cfg.obs_norm_eps)) if use_obs_norm else None
         _ts = training_state
-        _support = make_support(td3_cfg.v_min, td3_cfg.v_max, td3_cfg.num_atoms)
-        def _q_fn(obs, action):
-            return logits_to_q(td3.q1.apply(_ts.q1_params, obs, action), _support)
         last_eval_eps, key = maybe_eval_and_checkpoint(
             td3.select_action, training_state.actor_params, eval_env, tracker,
             cfg, td3_cfg, "fast_td3", ckpt_dir, training_state, norm_state,
             obs_dim, action_dim, metrics_log, last_eval_eps, key, resume,
-            obs_normalize_fn=obs_norm_fn, q_fn=_q_fn,
+            obs_normalize_fn=obs_norm_fn,
+            q_fn=lambda obs, action: td3.get_q_value(_ts, obs, action),
         )
 
     # ── Final eval ────────────────────────────────────────────────────────
     obs_norm_fn = (lambda o: norm_normalize(norm_state, o, eps=td3_cfg.obs_norm_eps)) if use_obs_norm else None
-    _support = make_support(td3_cfg.v_min, td3_cfg.v_max, td3_cfg.num_atoms)
-    def _q_fn_final(obs, action):
-        return logits_to_q(td3.q1.apply(training_state.q1_params, obs, action), _support)
     final_eval_and_checkpoint(
         td3.select_action, training_state.actor_params, eval_env, tracker,
         cfg, td3_cfg, "fast_td3", ckpt_dir, training_state, norm_state,
         obs_dim, action_dim, metrics_log, key, resume, total_gradient_steps,
-        obs_normalize_fn=obs_norm_fn, q_fn=_q_fn_final,
+        obs_normalize_fn=obs_norm_fn,
+        q_fn=lambda obs, action: td3.get_q_value(training_state, obs, action),
     )
 
 

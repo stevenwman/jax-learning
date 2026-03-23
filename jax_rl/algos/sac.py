@@ -253,6 +253,10 @@ class SAC:
         self.select_action = select_action
         self._actor_forward = _actor_forward
 
+    def get_q_value(self, state: TrainingState, obs: jax.Array, action: jax.Array) -> jax.Array:
+        """Return scalar Q1 value for (obs, action). Used for Q diagnostics."""
+        return self.q1.apply(state.q1_params, obs, action)
+
     def init(self, key: jax.Array) -> TrainingState:
         """Initialize parameters and optimizer states."""
         key, k1, k2, k3, k4 = jax.random.split(key, 5)

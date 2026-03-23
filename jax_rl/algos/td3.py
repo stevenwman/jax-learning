@@ -136,15 +136,6 @@ class TD3:
             }
             return q1_loss + q2_loss, metrics
 
-        # ── Actor loss ───────────────────────────────────────────────────
-        def _actor_loss(actor_params, q1_params_):
-            """Maximize Q1(s, μ(s)). Uses Q1 only (original TD3)."""
-            obs = batch_ref[0]  # will be set via closure trick below
-            action = _actor_forward(actor_params, obs)
-            q1_val = q1.apply(q1_params_, obs, action)
-            loss = -jnp.mean(q1_val)
-            return loss, {"actor_loss": loss}
-
         # ── Polyak soft update ───────────────────────────────────────────
         def _soft_update(online, target):
             return jax.tree.map(lambda o, t: tau * o + (1.0 - tau) * t, online, target)
@@ -243,6 +234,10 @@ class TD3:
         self.update = update
         self.select_action = select_action
         self._actor_forward = _actor_forward
+
+    def get_q_value(self, state: TrainingState, obs: jax.Array, action: jax.Array) -> jax.Array:
+        """Return scalar Q1 value for (obs, action). Used for Q diagnostics."""
+        return self.q1.apply(state.q1_params, obs, action)
 
     def init(self, key: jax.Array) -> TrainingState:
         """Initialize parameters and optimizer states."""

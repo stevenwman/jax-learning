@@ -183,25 +183,23 @@ def train(cfg: TrainConfig, sac_cfg: SACConfig, seed: int = 0, resume: str | Non
 
         # ── Eval + checkpoint ─────────────────────────────────────────────
         obs_norm_fn = (lambda o: norm_normalize(norm_state, o, eps=sac_cfg.obs_norm_eps)) if use_obs_norm else None
-        _ts = training_state  # capture for closure
-        def _q_fn(obs, action):
-            return sac.q1.apply(_ts.q1_params, obs, action)
+        _ts = training_state
         last_eval_eps, key = maybe_eval_and_checkpoint(
             sac.select_action, training_state.actor_params, eval_env, tracker,
             cfg, sac_cfg, "sac", ckpt_dir, training_state, norm_state,
             obs_dim, action_dim, metrics_log, last_eval_eps, key, resume,
-            obs_normalize_fn=obs_norm_fn, q_fn=_q_fn,
+            obs_normalize_fn=obs_norm_fn,
+            q_fn=lambda obs, action: sac.get_q_value(_ts, obs, action),
         )
 
     # ── Final eval ────────────────────────────────────────────────────────
     obs_norm_fn = (lambda o: norm_normalize(norm_state, o, eps=sac_cfg.obs_norm_eps)) if use_obs_norm else None
-    def _q_fn_final(obs, action):
-        return sac.q1.apply(training_state.q1_params, obs, action)
     final_eval_and_checkpoint(
         sac.select_action, training_state.actor_params, eval_env, tracker,
         cfg, sac_cfg, "sac", ckpt_dir, training_state, norm_state,
         obs_dim, action_dim, metrics_log, key, resume, total_gradient_steps,
-        obs_normalize_fn=obs_norm_fn, q_fn=_q_fn_final,
+        obs_normalize_fn=obs_norm_fn,
+        q_fn=lambda obs, action: sac.get_q_value(training_state, obs, action),
     )
 
 

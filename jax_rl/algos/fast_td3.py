@@ -86,6 +86,7 @@ class FastTD3:
 
         # C51 support atoms (fixed, not trainable)
         support = make_support(config.v_min, config.v_max, config.num_atoms)
+        self._support = support
 
         # Freeze refs
         actor_enc = self.actor_enc
@@ -276,6 +277,11 @@ class FastTD3:
         self.update = update
         self.select_action = select_action
         self._actor_forward = _actor_forward
+
+    def get_q_value(self, state, obs: jax.Array, action: jax.Array) -> jax.Array:
+        """Return scalar Q1 value (expected value from C51 logits)."""
+        logits = self.q1.apply(state.q1_params, obs, action)
+        return logits_to_q(logits, self._support)
 
     def init(self, key: jax.Array) -> TrainingState:
         key, k1, k2, k3, k4 = jax.random.split(key, 5)

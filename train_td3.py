@@ -195,24 +195,22 @@ def train(cfg: TrainConfig, td3_cfg: TD3Config, seed: int = 0, resume: str | Non
         # ── Eval + checkpoint ─────────────────────────────────────────────
         obs_norm_fn = (lambda o: norm_normalize(norm_state, o, eps=td3_cfg.obs_norm_eps)) if use_obs_norm else None
         _ts = training_state
-        def _q_fn(obs, action):
-            return td3.q1.apply(_ts.q1_params, obs, action)
         last_eval_eps, key = maybe_eval_and_checkpoint(
             td3.select_action, training_state.actor_params, eval_env, tracker,
             cfg, td3_cfg, "td3", ckpt_dir, training_state, norm_state,
             obs_dim, action_dim, metrics_log, last_eval_eps, key, resume,
-            obs_normalize_fn=obs_norm_fn, q_fn=_q_fn,
+            obs_normalize_fn=obs_norm_fn,
+            q_fn=lambda obs, action: td3.get_q_value(_ts, obs, action),
         )
 
     # ── Final eval ────────────────────────────────────────────────────────
     obs_norm_fn = (lambda o: norm_normalize(norm_state, o, eps=td3_cfg.obs_norm_eps)) if use_obs_norm else None
-    def _q_fn_final(obs, action):
-        return td3.q1.apply(training_state.q1_params, obs, action)
     final_eval_and_checkpoint(
         td3.select_action, training_state.actor_params, eval_env, tracker,
         cfg, td3_cfg, "td3", ckpt_dir, training_state, norm_state,
         obs_dim, action_dim, metrics_log, key, resume, total_gradient_steps,
-        obs_normalize_fn=obs_norm_fn, q_fn=_q_fn_final,
+        obs_normalize_fn=obs_norm_fn,
+        q_fn=lambda obs, action: td3.get_q_value(training_state, obs, action),
     )
 
 
