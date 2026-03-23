@@ -172,7 +172,7 @@ Pixel replay buffers are much larger than state buffers. Rough estimates suggest
 
 ### Builders Unification (prerequisite)
 
-All algos need to use `make_encoder()` factory instead of hardcoding `MlpEncoder(...)`. This is the builders unification plan already documented in `.context/archive/builders_unification_plan.md`.
+**DONE (2026-03-22):** All algos now use `Actor`/`DeterministicActor`/`VCritic` from `builders.py`. Encoder is swappable — adding CNN means changing builders, zero algo changes. See `.context/archive/builders_unification_plan.md` for the original plan.
 
 **Order of execution:**
 1. Install `madrona_mjx` and verify vision env loads on our hardware
