@@ -66,7 +66,7 @@ When implementing from a paper:
 1. **Read the paper text** — get the high-level algorithm
 2. **Find the source code** — paper text omits critical details (tau, network arch, activation, etc.)
 3. **Dispatch agents to audit** — compare source code configs against our implementation
-4. **Document ALL disparities** in `.context/FAST_ALGOS_LIT_MISMATCH.md`
+4. **Document ALL disparities** in `.context/archive/FAST_ALGOS_LIT_MISMATCH.md`
 5. **Fix configs to match paper exactly** before benchmarking
 
 We learned this the hard way — our FastTD3/FastSAC had 11+ critical config mismatches vs the paper's holosoma source code. tau was 25x wrong, network architecture was completely different, activation function was wrong. Always check the source.
@@ -330,7 +330,7 @@ state, metrics = dsac.update(state, batch)
 This found the Inf root cause in one test after multiple failed full runs.
 
 ### Paper Config Disparities (DOCUMENTED, MOSTLY FIXED)
-See `.context/FAST_ALGOS_LIT_MISMATCH.md` for the full audit. Key items still not matching paper:
+See `.context/archive/FAST_ALGOS_LIT_MISMATCH.md` for the full audit. Key items still not matching paper:
 - Obs normalization: paper uses it, we have it as opt-in toggle
 - Separate actor/critic normalizers: paper has two, we have one
 - Some per-task hyperparameters not tuned (DEM temperature, beta range)
@@ -486,12 +486,12 @@ git commit -m "fix: description of what and why"
 | Doc | Path | What it tells you |
 |-----|------|-------------------|
 | Lessons | `.context/LESSONS.md` | Every debugging victory — **check here before investigating**, the answer might already exist |
-| OOM investigation | `.context/oom_investigation.md` | Full trail of the GPU memory investigation: hypotheses, tests, root cause (MJX recompilation) |
+| OOM investigation | `.context/archive/oom_investigation.md` | Full trail of the GPU memory investigation: hypotheses, tests, root cause (MJX recompilation) |
 
 ### Read when implementing algorithms
 | Doc | Path | What it tells you |
 |-----|------|-------------------|
-| Lit mismatch audit | `.context/FAST_ALGOS_LIT_MISMATCH.md` | Every config where our code differs from the paper, with severity ratings and source code citations |
+| Lit mismatch audit | `.context/archive/FAST_ALGOS_LIT_MISMATCH.md` | Every config where our code differs from the paper, with severity ratings and source code citations |
 | Framework plan | `.context/rl_framework_plan.md` | North star architecture (Phases 1-6), with documented deviations explaining where/why we diverged |
 | Builders plan | `.context/builders_unification_plan.md` | How to make encoders swappable (MLP→CNN→ViT). Prerequisite for vision RL |
 
