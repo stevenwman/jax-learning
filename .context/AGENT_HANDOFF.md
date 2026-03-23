@@ -341,7 +341,7 @@ See `.context/archive/FAST_ALGOS_LIT_MISMATCH.md` for the full audit. Key items 
 
 ### Short-term (no GPU needed)
 1. ~~TrainConfig cleanup~~ — **DONE** (PPO fields in PPOConfig, 48 tests pass)
-2. **Q diagnostics** — eval runner has optional `q_fn` arg for Q vs MC return comparison. Not yet wired into train scripts.
+2. ~~Q diagnostics~~ — **DONE**. All off-policy algos have `get_q_value(state, obs, action)`. Eval prints Q bias, RMSE, correlation vs MC returns automatically.
 3. **Builders unification** — `make_encoder()` factory. Next immediate task. Prerequisite for SAC on Go2 and vision RL.
 4. **Go2 sim-to-real** — comprehensive plan in `.context/go2_sim_to_real_plan.md`. Go2 MJCF from Menagerie, MjxEnv subclass, legged_gym rewards, deploy via ONNX on Jetson Orin Nano.
 2. **Checkpoints purge** — delete orbax weights from failed runs, keep meta.json + metrics.csv
