@@ -853,4 +853,27 @@ Stress test revealed: our NaN guard only checked `isnan()`, not `isinf()`. MJX c
 
 ---
 
+### MJX Eval Recompilation — Root Cause Identified, Upstream Issue
+
+**Problem:** `jit(while)` and `jit(scan)` inside MJX's physics solver recompile ~2x per eval call. Over 100 evals in a 100M step run = ~200 extra compilations, accumulating CUDA command buffers until OOM.
+
+**Diagnostic trail (systematic isolation):**
+1. Env-only (500 steps, no algo, no eval): 2 while compiles (startup) — stable
+2. Env + algo updates (no eval): 2 while compiles — algo doesn't cause recompilation
+3. **Env + 5 evals: 12 while compiles** — each eval adds ~2 recompilations
+4. Back-to-back evals (no env steps between): still recompiles every call
+5. Identified `weak_type=True` on `.data.time` field (known MuJoCo Issue #2306)
+6. Applied `jax.tree.map(x.astype(x.dtype))` after `env.reset()` — weak_type removed at pytree level
+7. **Recompilation persisted** — the JIT cache invalidation is internal to MJX's step, not from input pytree
+
+**Conclusion:** Something internal to MJX's physics step (likely closure identity or internal state in the while_loop body) changes between eval calls. The weak_type `.time` field is a contributor but fixing it externally doesn't prevent recompilation. This is an upstream MJX/JAX issue.
+
+**Mitigation:** `XLA_CLIENT_MEM_FRACTION=0.7` leaves headroom for accumulated command buffers. ~5% performance overhead. Set in all train scripts via `env_setup.py`.
+
+**Action:** File upstream issue on `google-deepmind/mujoco` with reproduction: 3 back-to-back `evaluate()` calls produce 8 while + 8 scan recompilations with identical pytree signatures.
+
+**Lesson:** When debugging recompilation, isolate components systematically (env only → env+algo → env+eval → env+algo+eval). Don't assume the obvious suspect (weak_type) is the full answer — verify the fix actually works before claiming it's solved.
+
+---
+
 *"The best way to learn is to break things, then fix them systematically."*

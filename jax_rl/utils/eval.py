@@ -61,6 +61,10 @@ def evaluate(
     # Reset batch_dim envs (may be larger than num_episodes to match training shape)
     key, reset_key = jax.random.split(key)
     env_state = env.reset(jax.random.split(reset_key, batch_dim))
+    # NOTE: MJX env.reset() produces weak_type fields (.data.time) that cause
+    # env.step() to recompile on every eval (~2 while + 2 scan). We tried casting
+    # weak_types here but it didn't fix it — the issue is internal to MJX's step.
+    # Mitigated by XLA_CLIENT_MEM_FRACTION=0.7. See LESSONS.md.
 
     episode_returns = np.zeros(batch_dim)
     episode_done = np.zeros(batch_dim, dtype=bool)
