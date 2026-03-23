@@ -638,7 +638,7 @@ class Trainer:
 - [x] Value head V(s)
 - [x] Gaussian policy head
 - [x] Deterministic policy head — `DeterministicHead` (features → tanh)
-- [x] Network builder (compose encoder + head from config, init params) — currently only PPO uses builders.py; SAC/TD3/FastTD3/FastSAC build inline. Unify before adding second encoder (see `.context/builders_unification_plan.md`)
+- [x] Network builder (compose encoder + head from config, init params) — currently only PPO uses builders.py; SAC/TD3/FastTD3/FastSAC build inline. Unify before adding second encoder (see `.context/archive/builders_unification_plan.md`)
 - [x] Distribution utilities (TanhNormal, rsample)
 - [x] Observation normalization (running mean/std, Welford running stats)
 - [x] Rollout buffer
@@ -702,7 +702,7 @@ DM Control rewards are normalized 0–1000. These targets are approximate — wi
 | FastSAC vs SAC | CheetahRun | Speedup | ≥3x wall-clock | Internal ablation |
 
 ### Phase 3: Fast Variants
-- [ ] Unify builders.py across all algos (prerequisite for new encoders — see `.context/builders_unification_plan.md`)
+- [ ] Unify builders.py across all algos (prerequisite for new encoders — see `.context/archive/builders_unification_plan.md`)
 - [ ] SimbaV2 encoder (hyperspherical normalization — recommended for FastTD3)
 - [x] Distributional Q head (C51) — `DistributionalQHead`
 - [x] Gaussian distributional Q head — `GaussianQHead` (for FastDSAC)
@@ -851,7 +851,7 @@ The architecture section above was written at Phase 1 as a north star. Several d
 ### 5. builders.py only covers PPO
 **Plan says:** Network builder composes encoder + head from config for all algos (marked done in Phase 1).
 **Reality:** Only PPO uses `builders.py` (Actor, Critic modules). Off-policy algos build networks inline.
-**Why:** Q heads need `concat(obs, action)` (see #3), and each algo has different head types. Unification planned via `.context/builders_unification_plan.md` but deferred until we add a second encoder type (CNN/Transformer).
+**Why:** Q heads need `concat(obs, action)` (see #3), and each algo has different head types. Unification planned via `.context/archive/builders_unification_plan.md` but deferred until we add a second encoder type (CNN/Transformer).
 
 ### 6. Directory tree is stale
 **Plan shows:** `configs/base.py`, `networks/types.py`, `algos/base.py`, `envs/`, `utils/rng.py`, etc.

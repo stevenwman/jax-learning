@@ -172,7 +172,7 @@ Pixel replay buffers are much larger than state buffers. Rough estimates suggest
 
 ### Builders Unification (prerequisite)
 
-All algos need to use `make_encoder()` factory instead of hardcoding `MlpEncoder(...)`. This is the builders unification plan already documented in `.context/builders_unification_plan.md`.
+All algos need to use `make_encoder()` factory instead of hardcoding `MlpEncoder(...)`. This is the builders unification plan already documented in `.context/archive/builders_unification_plan.md`.
 
 **Order of execution:**
 1. Install `madrona_mjx` and verify vision env loads on our hardware

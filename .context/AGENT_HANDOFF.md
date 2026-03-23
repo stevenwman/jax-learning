@@ -490,7 +490,7 @@ git commit -m "fix: description of what and why"
 |-----|------|-------------------|
 | Lit mismatch audit | `.context/archive/FAST_ALGOS_LIT_MISMATCH.md` | Every config where our code differs from the paper, with severity ratings and source code citations |
 | Framework plan | `.context/rl_framework_plan.md` | North star architecture (Phases 1-6), with documented deviations explaining where/why we diverged |
-| Builders plan | `.context/builders_unification_plan.md` | How to make encoders swappable (MLP→CNN→ViT). Prerequisite for vision RL |
+| Builders plan | `.context/archive/builders_unification_plan.md` | How to make encoders swappable (MLP→CNN→ViT). Prerequisite for vision RL |
 
 ### Read when working on vision
 | Doc | Path | What it tells you |
