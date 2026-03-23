@@ -21,8 +21,8 @@
 - [ ] Domain rand wrapper (`jax_rl/envs/wrappers/domain_rand.py`) — robot-agnostic, vmap over MJX params
 - [ ] Go2 PPO Phase A — flat terrain walking, validates env/reward/domain-rand
 - [ ] Go2 SAC Phase B — off-policy validation (requires builders unification first)
-- [ ] Revisit `lax.scan` for gradient loops — JAX buffer may fix carry overhead (see LESSONS.md, journal 03-18)
-- [ ] MJX recompilation investigation — upstream `jit(while)`/`jit(scan)` recompile ~2x/min
+- [x] `lax.scan` for gradient loops — benchmarked: 1.03x (no speedup). Dispatch overhead is negligible vs compute cost (~64ms/update). Not worth implementing.
+- [x] MJX recompilation — researched: likely caused by structural field mutation during auto-reset or LRU cache eviction (4096 entries). MEM_FRACTION=0.7 mitigates. ~5% overhead. Not urgent. See archive/oom_investigation.md.
 
 ## Mid-term (Vision RL)
 - [ ] Install `madrona_mjx`, verify Playground `vision=True` on RTX 5080
