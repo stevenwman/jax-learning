@@ -19,7 +19,6 @@ import numpy as np
 import optax
 
 from jax_rl.algos.fast_td3 import FastTD3
-from jax_rl.buffers.replay_buffer import ReplayBuffer
 from jax_rl.buffers.jax_replay_buffer import JaxReplayBuffer
 from jax_rl.configs.fast_td3_config import FastTD3Config
 from jax_rl.configs.train_config import TrainConfig
@@ -36,7 +35,7 @@ from jax_rl.utils.normalization import (
 
 
 def train(cfg: TrainConfig, td3_cfg: FastTD3Config, seed: int = 0, resume: str | None = None,
-          jax_buffer: bool = True):
+          ):
     # ── Environment ──────────────────────────────────────────────────────
     env, env_step, env_state, eval_env, obs_dim, action_dim, key = make_envs(cfg, seed)
     total_env_steps = cfg.total_timesteps
@@ -89,8 +88,8 @@ def train(cfg: TrainConfig, td3_cfg: FastTD3Config, seed: int = 0, resume: str |
 
     use_obs_norm = td3_cfg.obs_normalization
     norm_state = norm_init(obs_dim) if use_obs_norm else make_identity_norm_state(obs_dim)
-    BufferCls = JaxReplayBuffer if jax_buffer else ReplayBuffer
-    buffer = BufferCls(obs_dim, action_dim, max_size=td3_cfg.buffer_size)
+    
+    buffer = JaxReplayBuffer(obs_dim, action_dim, max_size=td3_cfg.buffer_size)
 
     # ── Resume ────────────────────────────────────────────────────────────
     start_step = 0
@@ -149,17 +148,10 @@ def train(cfg: TrainConfig, td3_cfg: FastTD3Config, seed: int = 0, resume: str |
                       else jnp.zeros_like(env_state.done))
 
         # ── Buffer ────────────────────────────────────────────────────────
-        if jax_buffer:
-            buffer.add_batch(obs=obs, action=action,
-                             reward=env_state.reward * cfg.reward_scaling,
-                             next_obs=env_state.obs, done=env_state.done,
-                             truncation=truncation)
-        else:
-            buffer.add_batch(obs=np.asarray(obs), action=np.asarray(action),
-                             reward=np.asarray(env_state.reward * cfg.reward_scaling),
-                             next_obs=np.asarray(env_state.obs),
-                             done=np.asarray(env_state.done),
-                             truncation=np.asarray(truncation))
+        buffer.add_batch(obs=obs, action=action,
+                         reward=env_state.reward * cfg.reward_scaling,
+                         next_obs=env_state.obs, done=env_state.done,
+                         truncation=truncation)
 
         tracker.step(np.asarray(env_state.reward), np.asarray(env_state.done))
 
@@ -167,12 +159,8 @@ def train(cfg: TrainConfig, td3_cfg: FastTD3Config, seed: int = 0, resume: str |
         if len(buffer) >= td3_cfg.min_buffer_size:
             last_metrics = {}
             for _ in range(td3_cfg.grad_updates_per_step):
-                if jax_buffer:
-                    key, sample_key = jax.random.split(key)
-                    jax_batch = buffer.sample(td3_cfg.batch_size, key=sample_key)
-                else:
-                    batch = buffer.sample(td3_cfg.batch_size)
-                    jax_batch = {k: jnp.array(v) for k, v in batch.items()}
+                key, sample_key = jax.random.split(key)
+                jax_batch = buffer.sample(td3_cfg.batch_size, key=sample_key)
                 if use_obs_norm:
                     jax_batch["obs"] = norm_normalize(norm_state, jax_batch["obs"], eps=td3_cfg.obs_norm_eps)
                     jax_batch["next_obs"] = norm_normalize(norm_state, jax_batch["next_obs"], eps=td3_cfg.obs_norm_eps)
@@ -236,8 +224,6 @@ if __name__ == "__main__":
     parser.add_argument("--reward-scaling", type=float, default=None)
     parser.add_argument("--episode-length", type=int, default=None)
     parser.add_argument("--exploration-noise", type=float, default=None)
-    parser.add_argument("--jax-buffer", action=argparse.BooleanOptionalAction, default=True,
-                        help="Use GPU-resident JAX replay buffer (default: True)")
     parser.add_argument("--obs-norm", action="store_true", help="Enable sample-time obs normalization")
     args = parser.parse_args()
 
@@ -271,4 +257,4 @@ if __name__ == "__main__":
     if td3_overrides:
         td3_cfg = dataclasses.replace(td3_cfg, **td3_overrides)
 
-    train(cfg, td3_cfg, seed=args.seed, resume=args.resume, jax_buffer=args.jax_buffer)
+    train(cfg, td3_cfg, seed=args.seed, resume=args.resume)
