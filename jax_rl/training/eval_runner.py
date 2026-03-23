@@ -25,6 +25,7 @@ def maybe_eval_and_checkpoint(
     key: jax.Array,
     resume: str | None,
     obs_normalize_fn=None,
+    q_fn=None,
 ) -> tuple[int, jax.Array]:
     """Run eval + save checkpoint if enough episodes completed since last eval.
 
@@ -42,13 +43,20 @@ def maybe_eval_and_checkpoint(
         episode_length=cfg.episode_length, key=eval_key,
         num_envs=cfg.num_envs,
         obs_normalize_fn=obs_normalize_fn,
+        q_fn=q_fn,
+        gamma=cfg.gamma,
     )
 
-    total_steps = tracker.n_episodes * cfg.episode_length  # approximate
+    q_str = ""
+    if "q_bias" in eval_metrics:
+        q_str = (f" | Q bias={eval_metrics['q_bias']:.2f}"
+                 f" RMSE={eval_metrics['q_rmse']:.2f}"
+                 f" corr={eval_metrics['q_corr']:.3f}")
     print(
         f"  EVAL @ {n_eps} eps | "
         f"Return {eval_metrics['eval_mean']:.1f} ± {eval_metrics['eval_std']:.1f} "
         f"[{eval_metrics['eval_min']:.0f}, {eval_metrics['eval_max']:.0f}]"
+        f"{q_str}"
     )
 
     if metrics_log:
@@ -79,6 +87,7 @@ def final_eval_and_checkpoint(
     resume: str | None,
     total_gradient_steps: int,
     obs_normalize_fn=None,
+    q_fn=None,
 ) -> dict:
     """Run final eval + save checkpoint after training completes. Returns eval_metrics."""
     key, eval_key = jax.random.split(key)
@@ -88,6 +97,8 @@ def final_eval_and_checkpoint(
         episode_length=cfg.episode_length, key=eval_key,
         num_envs=cfg.num_envs,
         obs_normalize_fn=obs_normalize_fn,
+        q_fn=q_fn,
+        gamma=cfg.gamma,
     )
 
     save_checkpoint(ckpt_dir, training_state, norm_state, cfg, algo_cfg,
@@ -102,6 +113,10 @@ def final_eval_and_checkpoint(
         print(f"  Online avg return (last 100 eps): {np.mean(final):.1f}")
     print(f"  Eval return: {eval_metrics['eval_mean']:.1f} ± {eval_metrics['eval_std']:.1f} "
           f"[{eval_metrics['eval_min']:.0f}, {eval_metrics['eval_max']:.0f}]")
+    if "q_bias" in eval_metrics:
+        print(f"  Q diagnostics: bias={eval_metrics['q_bias']:.2f}, "
+              f"RMSE={eval_metrics['q_rmse']:.2f}, corr={eval_metrics['q_corr']:.3f}")
+        print(f"  Q mean={eval_metrics['q_mean']:.2f}, MC mean={eval_metrics['mc_mean']:.2f}")
     print(f"  Total gradient steps: {total_gradient_steps:,}")
     print(f"  Final checkpoint: {ckpt_dir}")
 
