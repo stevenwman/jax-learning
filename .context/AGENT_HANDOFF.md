@@ -122,12 +122,13 @@ Three docs serve different purposes:
 ### The refactor philosophy
 We chose **Brax-style shared utilities** over SB3-style class hierarchy or Tianshou-style Trainer class. The reasoning:
 
-- **Algos own their training loops** — each `train_*.py` is self-contained
+- **Envs are self-contained black boxes** — `env.step()` returns fully processed (obs, reward, done). The training script never touches obs construction, frame stacking, obs noise, reward terms, or action scaling. New robot = new env class, zero train script changes. See Go2 plan design principle.
+- **Algos own their training loops** — each `train_*.py` is self-contained. The 4 off-policy scripts are ~80% identical and may be consolidated into `train_offpolicy.py --algo sac|td3|...` once the algo interface is fully unified (see builders_unification_plan.md).
 - **Shared utilities handle infra** — checkpointing, episode tracking, eval, env setup, logging
 - **No Trainer base class** — too many layers to trace, PPO doesn't fit the off-policy template
-- **No BaseAlgorithm ABC** — premature, interface is informal (`init`, `update`, `select_action`)
+- **No BaseAlgorithm ABC** — premature, but `get_q_value()` is now on all off-policy algos as a step toward a consistent interface
 
-This was a deliberate decision after researching Brax, SB3, Tianshou, CleanRL, Isaac Lab, and MuJoCo Playground architectures. The full analysis is referenced in the 03-19 journal.
+This was a deliberate decision after researching Brax, SB3, Tianshou, CleanRL, Isaac Lab, MuJoCo Playground, and MJLab architectures. See 03-19 journal and builders_unification_plan.md.
 
 ---
 
@@ -141,7 +142,7 @@ jax-learning/
 ├── train_td3.py          # Vanilla TD3
 ├── train_fast_td3.py     # FastTD3: TD3 + C51 + large batch (1024 envs)
 ├── train_fast_sac.py     # FastSAC: SAC + C51 + paper recipe
-├── train_fast_dsac.py    # FastDSAC: Gaussian distributional + DEM
+├── # train_fast_dsac.py  # ARCHIVED — peaked 282, heavy oscillation, see tests/archive/
 ├── record_video.py       # Algo-agnostic: loads any checkpoint, renders rollout
 │
 ├── jax_rl/
@@ -310,14 +311,8 @@ MJX recompiles `jit(while)` and `jit(scan)` with identical signatures ~2x/min. O
 **Mitigation:** `XLA_CLIENT_MEM_FRACTION=0.7` leaves headroom. Set in all train scripts.
 **Root cause unknown:** Why does JAX recompile identical functions? Is it MJX, Playground, or JAX itself? Investigation pending — see `oom_investigation.md`.
 
-### FastDSAC: Fully Rewritten to Match Paper Source Code (TESTING)
-The paper says "Gaussian NLL" but the actual source code uses **Huber loss** (delta=50) with bounded ratio weighting. Our Gaussian NLL implementation NaN'd; the Huber rewrite is stable. See LESSONS.md for the full diagnostic trail.
-
-**Two 1024-env scaling issues found and fixed:**
-1. **Buffer too small** (51K at 1024 envs → 2M NaN). Fix: scale buffer to 400K.
-2. **`Inf` not guarded** (MJX velocity overflow → 53M NaN). Fix: add `isinf()` to env step guard.
-
-**Current status:** Running at 1024 envs with both fixes. If it survives past 53M steps, both fixes are confirmed. FastDSAC at 128 envs reached 490 peak eval on HumanoidRun.
+### FastDSAC: ARCHIVED
+Peaked at 282 eval on HumanoidRun (1024 envs) with heavy oscillation (58-282) vs FastSAC's stable 892. The algorithm was numerically fixed (Huber loss, Inf guard, buffer scaling) but doesn't produce competitive policies at our scale. Archived in `jax_rl/algos/archive/`, `tests/archive/`. The debugging journey is documented in LESSONS.md — valuable for the "paper says X but code does Y" lesson.
 
 ### Debugging workflow: stress test edge cases directly
 Don't wait for a full training run to reproduce a crash. Inject the suspected failure condition directly:
