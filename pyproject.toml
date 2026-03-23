@@ -17,5 +17,6 @@ flax = { git = "https://github.com/google/flax.git" }
 
 [dependency-groups]
 dev = [
+    "gdown>=5.2.1",
     "pytest>=9.0.2",
 ]
