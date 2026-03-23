@@ -15,7 +15,7 @@ import jax.numpy as jnp
 import optax
 
 from jax_rl.configs import PPOConfig
-from jax_rl.networks.builders import Actor, Critic
+from jax_rl.networks.builders import Actor, VCritic
 from jax_rl.buffers import RolloutBatch
 from jax_rl.buffers.rollout import compute_gae
 from jax_rl.networks.distributions import entropy_gaussian, gaussian_log_prob, sample_gaussian
@@ -52,7 +52,7 @@ class PPO:
         self.obs_dim = obs_dim
 
         self.actor = Actor(encoder_config, policy_config)
-        self.critic = Critic(critic_encoder_config, config.value_head)
+        self.critic = VCritic(critic_encoder_config, config.value_head)
         self.actor_optimizer = actor_optimizer
         self.critic_optimizer = critic_optimizer
 

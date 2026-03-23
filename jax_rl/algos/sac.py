@@ -19,8 +19,7 @@ import optax
 
 from jax_rl.configs.sac_config import SACConfig
 from jax_rl.configs.networks_config import EncoderConfig, PolicyHeadConfig
-from jax_rl.networks.encoders.mlp import MlpEncoder
-from jax_rl.networks.heads.gaussian import GaussianHead
+from jax_rl.networks.builders import Actor
 from jax_rl.networks.heads.q_head import QHead
 from jax_rl.networks.distributions import sample_gaussian
 
@@ -59,7 +58,7 @@ class SAC:
         self.handle_truncation = handle_truncation
         self.target_entropy = -config.target_entropy_scale * action_dim
 
-        # Networks
+        # Networks — use builders for actor (encoder swappable), QHead directly for critics
         enc_cfg = EncoderConfig(
             obs_dim=obs_dim,
             hidden_dim=config.hidden_dim,
@@ -71,8 +70,7 @@ class SAC:
             min_std=0.001,
             squash=True,
         )
-        self.actor_enc = MlpEncoder(enc_cfg)
-        self.actor_head = GaussianHead(pol_cfg)
+        self.actor = Actor(enc_cfg, pol_cfg)
         critic_dim = config.critic_hidden_dim or config.hidden_dim
         self.q1 = QHead(critic_dim, config.activation, config.q_layer_norm)
         self.q2 = QHead(critic_dim, config.activation, config.q_layer_norm)
@@ -81,8 +79,7 @@ class SAC:
         self.alpha_optimizer = alpha_optimizer
 
         # Freeze refs for closures
-        actor_enc = self.actor_enc
-        actor_head = self.actor_head
+        actor = self.actor
         q1 = self.q1
         q2 = self.q2
         tau = config.tau
@@ -91,10 +88,7 @@ class SAC:
         # ── Actor forward (used in losses and select_action) ──────────────
         def _actor_forward(actor_params, obs, key):
             """Returns (action, log_prob) using reparameterization."""
-            enc_params, head_params = actor_params
-            features = actor_enc.apply(enc_params, obs)
-            mean, log_std = actor_head.apply(head_params, features)
-            # sample_gaussian with squash=True: sample raw → Jacobian → tanh
+            mean, log_std = actor.apply(actor_params, obs)
             action, log_prob = sample_gaussian(mean, log_std, key, squash=True)
             return action, log_prob
 
@@ -243,9 +237,7 @@ class SAC:
             deterministic: bool = False,
         ) -> jax.Array:
             """Return tanh-squashed action. Deterministic = tanh(mean)."""
-            enc_params, head_params = actor_params
-            features = actor_enc.apply(enc_params, obs)
-            mean, log_std = actor_head.apply(head_params, features)
+            mean, log_std = actor.apply(actor_params, obs)
             action, _ = sample_gaussian(mean, log_std, key, squash=True)
             return jax.lax.cond(deterministic, lambda: jnp.tanh(mean), lambda: action)
 
@@ -259,16 +251,13 @@ class SAC:
 
     def init(self, key: jax.Array) -> TrainingState:
         """Initialize parameters and optimizer states."""
-        key, k1, k2, k3, k4 = jax.random.split(key, 5)
+        key, k1, k3, k4 = jax.random.split(key, 4)
 
         dummy_obs = jnp.zeros((1, self.obs_dim))
         dummy_action = jnp.zeros((1, self.action_dim))
 
-        # Actor params = (encoder_params, head_params)
-        enc_params = self.actor_enc.init(k1, dummy_obs)
-        dummy_features = jnp.zeros((1, self.config.hidden_dim[-1]))
-        head_params = self.actor_head.init(k2, dummy_features)
-        actor_params = (enc_params, head_params)
+        # Actor params (single init via composed Actor module)
+        actor_params = self.actor.init(k1, dummy_obs)
 
         # Q params (twin, identical structure but separate init)
         q1_params = self.q1.init(k3, dummy_obs, dummy_action)

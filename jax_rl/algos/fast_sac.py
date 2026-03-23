@@ -18,8 +18,7 @@ import optax
 
 from jax_rl.configs.sac_config import SACConfig
 from jax_rl.configs.networks_config import EncoderConfig, PolicyHeadConfig
-from jax_rl.networks.encoders.mlp import MlpEncoder
-from jax_rl.networks.heads.gaussian import GaussianHead
+from jax_rl.networks.builders import Actor
 from jax_rl.networks.heads.q_distributional import DistributionalQHead
 from jax_rl.networks.distributions import sample_gaussian
 from jax_rl.utils.distributional import (
@@ -84,8 +83,7 @@ class FastSAC:
             log_std_max=log_std_max,
             squash=True,
         )
-        self.actor_enc = MlpEncoder(enc_cfg)
-        self.actor_head = GaussianHead(pol_cfg)
+        self.actor = Actor(enc_cfg, pol_cfg)
         critic_dim = config.critic_hidden_dim or config.hidden_dim
         self.q1 = DistributionalQHead(
             critic_dim, num_atoms, config.activation, config.q_layer_norm,
@@ -102,8 +100,7 @@ class FastSAC:
         self._support = support
 
         # Freeze refs
-        actor_enc = self.actor_enc
-        actor_head = self.actor_head
+        actor = self.actor
         q1 = self.q1
         q2 = self.q2
         tau = config.tau
@@ -112,9 +109,7 @@ class FastSAC:
 
         # ── Actor forward ────────────────────────────────────────────────
         def _actor_forward(actor_params, obs, key):
-            enc_params, head_params = actor_params
-            features = actor_enc.apply(enc_params, obs)
-            mean, log_std = actor_head.apply(head_params, features)
+            mean, log_std = actor.apply(actor_params, obs)
             action, log_prob = sample_gaussian(mean, log_std, key, squash=True)
             return action, log_prob
 
@@ -296,9 +291,7 @@ class FastSAC:
             key: jax.Array,
             deterministic: bool = False,
         ) -> jax.Array:
-            enc_params, head_params = actor_params
-            features = actor_enc.apply(enc_params, obs)
-            mean, log_std = actor_head.apply(head_params, features)
+            mean, log_std = actor.apply(actor_params, obs)
             action, _ = sample_gaussian(mean, log_std, key, squash=True)
             return jax.lax.cond(deterministic, lambda: jnp.tanh(mean), lambda: action)
 
@@ -312,15 +305,12 @@ class FastSAC:
         return logits_to_q(logits, self._support)
 
     def init(self, key: jax.Array) -> TrainingState:
-        key, k1, k2, k3, k4 = jax.random.split(key, 5)
+        key, k1, k3, k4 = jax.random.split(key, 4)
 
         dummy_obs = jnp.zeros((1, self.obs_dim))
         dummy_action = jnp.zeros((1, self.action_dim))
 
-        enc_params = self.actor_enc.init(k1, dummy_obs)
-        dummy_features = jnp.zeros((1, self.config.hidden_dim[-1]))
-        head_params = self.actor_head.init(k2, dummy_features)
-        actor_params = (enc_params, head_params)
+        actor_params = self.actor.init(k1, dummy_obs)
 
         q1_params = self.q1.init(k3, dummy_obs, dummy_action)
         q2_params = self.q2.init(k4, dummy_obs, dummy_action)

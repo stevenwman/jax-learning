@@ -1,6 +1,6 @@
 """Neural network components."""
 
-from jax_rl.networks.builders import Actor, Critic
+from jax_rl.networks.builders import Actor, DeterministicActor, VCritic
 from jax_rl.networks.distributions import (
     sample_gaussian,
     gaussian_log_prob,
@@ -9,7 +9,8 @@ from jax_rl.networks.distributions import (
 
 __all__ = [
     "Actor",
-    "Critic",
+    "DeterministicActor",
+    "VCritic",
     "sample_gaussian",
     "gaussian_log_prob",
     "entropy_gaussian",

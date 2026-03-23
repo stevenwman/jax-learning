@@ -10,9 +10,9 @@
 - [x] Checkpoints purge — 87→15 runs, 624→149MB
 - [x] Go2 sim-to-real plan — comprehensive, cross-checked against all .context/ docs
 - [x] Q diagnostics — `get_q_value()` on all off-policy algos, wired into eval with Q bias/RMSE/corr
+- [x] Builders unification — Actor/DeterministicActor/VCritic in builders.py, all algos refactored. Encoder swappable.
 
 ## Active
-- [ ] Builders unification — `make_encoder()` factory. PPO uses builders, SAC/TD3/Fast* build inline. **Prerequisite for SAC on Go2 (Phase B) and vision RL.**
 - [ ] Create `jax_rl/utils/frame_stack.py` — shared utility for Go2 (state obs) and vision RL (pixel obs)
 
 ## Short-term

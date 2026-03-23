@@ -21,8 +21,7 @@ import optax
 
 from jax_rl.configs.td3_config import TD3Config
 from jax_rl.configs.networks_config import EncoderConfig
-from jax_rl.networks.encoders.mlp import MlpEncoder
-from jax_rl.networks.heads.deterministic import DeterministicHead
+from jax_rl.networks.builders import DeterministicActor
 from jax_rl.networks.heads.q_head import QHead
 
 
@@ -59,14 +58,13 @@ class TD3:
         self.gamma = gamma
         self.handle_truncation = handle_truncation
 
-        # Networks
+        # Networks — DeterministicActor via builder, QHead directly
         enc_cfg = EncoderConfig(
             obs_dim=obs_dim,
             hidden_dim=config.hidden_dim,
             activation=config.activation,
         )
-        self.actor_enc = MlpEncoder(enc_cfg)
-        self.actor_head = DeterministicHead(action_dim=action_dim)
+        self.actor = DeterministicActor(enc_cfg, action_dim)
         critic_dim = config.critic_hidden_dim or config.hidden_dim
         self.q1 = QHead(critic_dim, config.activation, config.q_layer_norm)
         self.q2 = QHead(critic_dim, config.activation, config.q_layer_norm)
@@ -75,8 +73,7 @@ class TD3:
         self.critic_optimizer = critic_optimizer
 
         # Freeze refs for closures
-        actor_enc = self.actor_enc
-        actor_head = self.actor_head
+        actor = self.actor
         q1 = self.q1
         q2 = self.q2
         tau = config.tau
@@ -87,9 +84,7 @@ class TD3:
         # ── Actor forward ────────────────────────────────────────────────
         def _actor_forward(actor_params, obs):
             """Returns deterministic action in [-1, 1]."""
-            enc_params, head_params = actor_params
-            features = actor_enc.apply(enc_params, obs)
-            return actor_head.apply(head_params, features)
+            return actor.apply(actor_params, obs)
 
         # ── Critic loss ──────────────────────────────────────────────────
         def _critic_loss(q_params, target_actor_params, target_q1_params,
@@ -241,16 +236,13 @@ class TD3:
 
     def init(self, key: jax.Array) -> TrainingState:
         """Initialize parameters and optimizer states."""
-        key, k1, k2, k3, k4 = jax.random.split(key, 5)
+        key, k1, k3, k4 = jax.random.split(key, 4)
 
         dummy_obs = jnp.zeros((1, self.obs_dim))
         dummy_action = jnp.zeros((1, self.action_dim))
 
-        # Actor params = (encoder_params, head_params)
-        enc_params = self.actor_enc.init(k1, dummy_obs)
-        dummy_features = jnp.zeros((1, self.config.hidden_dim[-1]))
-        head_params = self.actor_head.init(k2, dummy_features)
-        actor_params = (enc_params, head_params)
+        # Actor params (single init via composed DeterministicActor)
+        actor_params = self.actor.init(k1, dummy_obs)
 
         # Q params (twin)
         q1_params = self.q1.init(k3, dummy_obs, dummy_action)
