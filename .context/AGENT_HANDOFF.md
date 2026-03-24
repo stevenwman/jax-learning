@@ -1,8 +1,8 @@
 # Agent Handoff — JAX RL Framework
 
-**Last updated:** 2026-03-21
+**Last updated:** 2026-03-24
 **Branch:** `new_slate_linen`
-**Status:** Active development — off-policy RL algorithms, approaching vision RL phase
+**Status:** Active development — Go2 sim-to-real (PPO Phase A), PPO fixes validated on Go1
 
 ---
 
@@ -137,12 +137,15 @@ This was a deliberate decision after researching Brax, SB3, Tianshou, CleanRL, I
 ### Directory structure
 ```
 jax-learning/
-├── train_ppo.py              # PPO (on-policy, fundamentally different loop)
+├── train_ppo.py              # PPO (Python loop — works with all envs, ~32k sps)
+├── train_ppo_fast.py         # PPO (lax.scan collect — JIT-able envs only, ~110k sps on Go1)
 ├── train_sac.py          # Vanilla SAC (128 envs, 5M steps default)
 ├── train_td3.py          # Vanilla TD3
 ├── train_fast_td3.py     # FastTD3: TD3 + C51 + large batch (1024 envs)
 ├── train_fast_sac.py     # FastSAC: SAC + C51 + paper recipe
 ├── # train_fast_dsac.py  # ARCHIVED — peaked 282, heavy oscillation, see tests/archive/
+├── train_brax_ppo_go1.py # Brax PPO baseline on Go1 (A/B test script)
+├── train_brax_ppo_go2.py # Brax PPO baseline on Go2 (A/B test script)
 ├── record_video.py       # Algo-agnostic: loads any checkpoint, renders rollout
 │
 ├── jax_rl/
@@ -153,6 +156,13 @@ jax-learning/
 │   │   ├── fast_td3.py   # + C51 distributional critic, Q averaging
 │   │   ├── fast_sac.py   # + C51, policy delay=4, AdamW
 │   │   └── fast_dsac.py  # + Gaussian critic, DEM, population diversity
+│   │
+│   ├── envs/
+│   │   └── locomotion/
+│   │       ├── go2_base.py           # Go2 base MjxEnv subclass (physics, sensors, contact fix)
+│   │       ├── go2_constants.py      # Joint ordering, default pose, limits
+│   │       ├── go2_joystick.py       # Joystick task: command tracking + legged_gym rewards
+│   │       └── xmls/go2_scene_flat.xml  # Scene XML with added sensors
 │   │
 │   ├── buffers/
 │   │   ├── replay_buffer.py      # Numpy circular FIFO (CPU, default for vanilla)
@@ -193,12 +203,13 @@ jax-learning/
 │       ├── eval.py               # evaluate() — deterministic rollout with NaN guard
 │       └── distributional.py     # C51: make_support, project_distribution, logits_to_q
 │
-├── tests/                        # 48 tests, all passing
+├── tests/                        # 60 tests, all passing
 │   ├── test_algo_configs.py      # All algos: init, update, optimizer compat, NaN guard
 │   ├── test_checkpoint.py        # Save/load, meta.json, metrics CSV, orbax
 │   ├── test_determinism.py       # Env + PPO training determinism
 │   ├── test_normalization.py     # Normalization utilities
 │   ├── test_ppo_setup.py         # PPO init, action, update, buffer/GAE
+│   ├── test_go2_env.py           # Go2 env: reset, step, obs shape, rewards, contact fix
 │   └── debug_fasttd3_nan.py      # Diagnostic script (not a pytest test)
 │
 ├── checkpoints/                  # Training outputs (gitignored, ~299MB, needs purge)
@@ -208,7 +219,10 @@ jax-learning/
     ├── TODO.md                   # Prioritized task list
     ├── LESSONS.md                # Accumulated debugging lessons (~800 lines)
     ├── journals/                 # Daily work logs
-    │   ├── 2026-03-12.md through 2026-03-20.md
+    │   ├── 2026-03-12.md through 2026-03-24.md
+    ├── go2_sim_to_real_plan.md   # Go2 deployment plan: PPO→SAC→ONNX→Jetson
+    ├── go2_ppo_debugging.md      # Full debugging trail for Go2 PPO training
+    ├── integration_debt.md       # 7 tracked integration debt items
     ├── rl_framework_plan.md      # North star architecture (Phases 1-6)
     ├── refactor_idea.md          # Shared utilities design (Brax-style, not Trainer class)
     ├── vision_rl_design.md       # Vision RL: CNN encoder, MJWarp, ManiSkill
@@ -324,23 +338,52 @@ state, metrics = dsac.update(state, batch)
 ```
 This found the Inf root cause in one test after multiple failed full runs.
 
+### PPO Implementation Fixes (2026-03-24)
+Our PPO had two critical differences vs Brax PPO that caused 2x slower sample efficiency:
+1. **Value loss scaling** — Brax uses 0.25x, we used 1.0. Larger coefficient makes the critic dominate the shared loss, destabilizing the actor.
+2. **Advantage normalization** — Brax normalizes across the full batch BEFORE minibatch split. We normalized per-minibatch, which shifts the advantage distribution differently per minibatch.
+
+After fixing both, our fast PPO **beats Brax PPO** on Go1: 27.3 eval at 28.5M steps vs Brax's 18 at the same point. See `go2_ppo_debugging.md` for the full investigation trail.
+
+### Go2 Env (IMPLEMENTED, TRAINING IN PROGRESS)
+Go2Env subclasses MjxEnv with:
+- **Dict obs**: `{"state": (48,), "privileged_state": (116,)}` — asymmetric actor-critic
+- **16 reward terms** — identical math to Go1 Joystick (verified by diff)
+- **Firm contacts** — Menagerie Go2 has solimp=0.015 (soft), overridden to 0.9 (firm, matches Go1)
+- **Scene XML** adds sensors missing from Menagerie: local_linvel, upvector, foot contacts
+- 12/12 tests pass
+
+Go2 PPO training still in progress. See `go2_ppo_debugging.md` for run log, hypotheses, and current status.
+
+### train_ppo_fast.py (PREFERRED for JIT-able envs)
+Uses `jax.lax.scan` for env collection instead of Python loop. **110k sps on Go1 vs 32k with train_ppo.py** (3.4x speedup). Falls back to train_ppo.py for non-JIT-able envs (e.g., future MJWarp rendering).
+
 ### Paper Config Disparities (DOCUMENTED, MOSTLY FIXED)
 See `.context/archive/FAST_ALGOS_LIT_MISMATCH.md` for the full audit. Key items still not matching paper:
 - Obs normalization: paper uses it, we have it as opt-in toggle
 - Separate actor/critic normalizers: paper has two, we have one
 - Some per-task hyperparameters not tuned (DEM temperature, beta range)
 
+### Integration Debt
+See `.context/integration_debt.md` for 7 tracked items including:
+- select_action dual role (inference vs training)
+- Two normalizers in checkpoint (policy + critic)
+- PPO test coverage for asymmetric actor-critic
+
 ---
 
 ## Part 6: Upcoming Work
 
-### Short-term (no GPU needed)
-1. ~~TrainConfig cleanup~~ — **DONE** (PPO fields in PPOConfig, 48 tests pass)
-2. ~~Q diagnostics~~ — **DONE**. All off-policy algos have `get_q_value(state, obs, action)`. Eval prints Q bias, RMSE, correlation vs MC returns automatically.
-3. ~~Builders unification~~ — **DONE**. All algos use `Actor`/`DeterministicActor`/`VCritic` from `builders.py`. Encoder is swappable — add CNN by changing builders, zero algo changes.
-4. **Go2 sim-to-real** — comprehensive plan in `.context/go2_sim_to_real_plan.md`. Go2 MJCF from Menagerie, MjxEnv subclass, legged_gym rewards, deploy via ONNX on Jetson Orin Nano.
-2. **Checkpoints purge** — delete orbax weights from failed runs, keep meta.json + metrics.csv
-3. **Builders unification** — `make_encoder()` factory, prerequisite for CNN encoder
+### Active (Go2 Phase A)
+1. **Go2 PPO validation** — Validate Go2 walks with our fast PPO at 200M steps. Currently beating Brax on Go1 A/B test.
+2. **Go2 Phase B (SAC)** — After PPO validates, switch to SAC for better sample efficiency. See `go2_sim_to_real_plan.md`.
+
+### Short-term
+1. ~~TrainConfig cleanup~~ — **DONE**
+2. ~~Q diagnostics~~ — **DONE**
+3. ~~Builders unification~~ — **DONE**
+4. ~~Go2 env~~ — **DONE** (MjxEnv subclass, 12/12 tests)
+5. **Checkpoints purge** — delete orbax weights from failed runs, keep meta.json + metrics.csv
 
 ### Mid-term: Vision RL
 Design doc: `.context/vision_rl_design.md`
@@ -433,13 +476,16 @@ uv run python -m pytest tests/test_normalization.py -v  # No GPU needed
 
 ### Launch a training run
 ```bash
+# Go2 PPO (preferred — uses lax.scan, 110k sps)
+uv run python train_ppo_fast.py --env Go2JoystickFlat --num-envs 1024 --total-timesteps 200000000
+
+# PPO with Python loop (for non-JIT-able envs)
+uv run python train_ppo.py --env Go2JoystickFlat --num-envs 512 --total-timesteps 50000000
+
 # Vanilla SAC on CheetahRun (quick, 128 envs)
-uv run python train_sac.py --env CheetahRun 
+uv run python train_sac.py --env CheetahRun
 # FastTD3 on HumanoidRun (long, 1024 envs)
 uv run python train_fast_td3.py --env HumanoidRun --obs-norm
-
-# With custom params
-uv run python train_sac.py --env WalkerWalk --total-timesteps 10000000 --lr 3e-4 --obs-norm
 ```
 
 ### Check a running training
@@ -482,6 +528,8 @@ git commit -m "fix: description of what and why"
 | Doc | Path | What it tells you |
 |-----|------|-------------------|
 | Lessons | `.context/LESSONS.md` | Every debugging victory — **check here before investigating**, the answer might already exist |
+| Go2 PPO debugging | `.context/go2_ppo_debugging.md` | Full hypothesis log, run table, reward analysis, Brax PPO A/B comparison |
+| Integration debt | `.context/integration_debt.md` | 7 tracked items: select_action dual role, normalizer checkpoint, etc. |
 | OOM investigation | `.context/archive/oom_investigation.md` | Full trail of the GPU memory investigation: hypotheses, tests, root cause (MJX recompilation) |
 
 ### Read when implementing algorithms

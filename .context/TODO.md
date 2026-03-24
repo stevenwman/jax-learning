@@ -15,19 +15,27 @@
 - [x] Frame stack utility (`jax_rl/utils/frame_stack.py`) — shared by Go2 and vision RL
 
 ## Completed (2026-03-23)
-- [x] Go2 env (`jax_rl/envs/locomotion/go2_joystick.py`) — MjxEnv subclass, 31-dim obs, legged_gym rewards, 10 tests pass
+- [x] Go2 env (`jax_rl/envs/locomotion/go2_joystick.py`) — MjxEnv subclass, dict obs (48d state + 116d privileged), 16 reward terms, 12 tests pass
 - [x] env_setup.py → unified registry loading (Go2 + DM Control Suite both work)
 - [x] Go2 PPO preset in env_presets.py (1024 envs, gamma=0.97)
-- [x] PPO smoke test — eval 18.5 ± 5.8 @ 500k steps, 64 envs (GPU shared, could not run 1024)
+
+## Completed (2026-03-24)
+- [x] PPO fix: value loss 0.25x scaling + full-batch advantage normalization (matched Brax PPO)
+- [x] train_ppo_fast.py — lax.scan collect, 110k sps on Go1 (3.4x speedup vs Python loop)
+- [x] Brax PPO A/B baselines — Go1: 21.7 @ 50M, Go2: 17.9 @ 50M
+- [x] Our fast PPO beats Brax: 27.3 eval @ 28.5M steps on Go1 (Brax: 18 at same point)
+- [x] Go2 contact fix — solimp 0.015→0.9 (firm, matches Go1)
 
 ## Active
-- [ ] Go2 PPO Phase A — **1024 envs, 20M steps** (needs GPU freed from nuclio PID 1130821)
+- [ ] Go2 PPO Phase A — Go1 A/B validation running (50M steps, 110k sps). Next: Go2 200M steps.
 
 ## Short-term
-- [ ] Wire frame stacking into Go2 env (currently no frame stack — just raw 31-dim obs)
+- [ ] Fix train_ppo_fast.py online tracker (shows 0.0 early — SI notation fix applied, needs validation)
+- [ ] Wire frame stacking into Go2 env (currently no frame stack — just raw obs)
 - [ ] Domain rand wrapper (`jax_rl/envs/wrappers/domain_rand.py`) — robot-agnostic, vmap over MJX params
 - [ ] Go2 SAC Phase B — off-policy validation after PPO confirms env works
 - [ ] Consolidate off-policy train scripts → `train_offpolicy.py --algo sac|td3|fast_td3|fast_sac`
+- [ ] Integration debt items (see `.context/integration_debt.md`): select_action dual role, two normalizers in checkpoint
 - [x] `lax.scan` for gradient loops — benchmarked: 1.03x (no speedup)
 - [x] MJX recompilation — root cause found, upstream issue, MEM_FRACTION=0.7 mitigates
 
