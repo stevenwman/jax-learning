@@ -285,7 +285,7 @@ while running:
 
 | # | Question | Status | When to Resolve |
 |---|---|---|---|
-| 1 | Can Playground's `MjxEnv` support custom reward functions cleanly? | Verify by subclassing | Before env implementation |
+| 1 | Can Playground's `MjxEnv` support custom reward functions cleanly? | **RESOLVED: Yes, works cleanly** — Go2Env subclasses MjxEnv, overrides `_get_obs()`, `_get_reward()`, `_get_termination()`. Composable reward dict weighted by config. Scene XML adds missing sensors (local_linvel, upvector, foot contacts). Verified 2026-03-23. | Done |
 | ~~2~~ | ~~Kp=20 vs 35 for Go2 PD controller~~ | **RESOLVED: Kp=20, Kd=0.5** | Unitree official, confirmed from [go2_config.py](https://github.com/unitreerobotics/unitree_rl_gym/blob/main/legged_gym/envs/go2/go2_config.py) |
 | 3 | Go2 EDU edition in lab? | **Ask Steven to check** | Before deployment work |
 | ~~4~~ | ~~Policy export format (JAX vs ONNX)~~ | **RESOLVED: ONNX** | Jetson Orin Nano can't run JAX. ONNX Runtime has first-class support. |

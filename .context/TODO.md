@@ -14,17 +14,22 @@
 - [x] Numpy replay buffer archived — JAX buffer is now the only buffer. `--jax-buffer` flag removed.
 - [x] Frame stack utility (`jax_rl/utils/frame_stack.py`) — shared by Go2 and vision RL
 
+## Completed (2026-03-23)
+- [x] Go2 env (`jax_rl/envs/locomotion/go2_joystick.py`) — MjxEnv subclass, 31-dim obs, legged_gym rewards, 10 tests pass
+- [x] env_setup.py → unified registry loading (Go2 + DM Control Suite both work)
+- [x] Go2 PPO preset in env_presets.py (1024 envs, gamma=0.97)
+- [x] PPO smoke test — eval 18.5 ± 5.8 @ 500k steps, 64 envs (GPU shared, could not run 1024)
+
 ## Active
-- *No active tasks — all infrastructure complete. Next: Go2 env or vision RL.*
+- [ ] Go2 PPO Phase A — **1024 envs, 20M steps** (needs GPU freed from nuclio PID 1130821)
 
 ## Short-term
-- [ ] Consolidate off-policy train scripts → `train_offpolicy.py --algo sac|td3|fast_td3|fast_sac`. Prerequisites: (1) builders unification, (2) `select_action` handles noise internally, (3) algo registry. Eliminates ~300 lines of duplication across 4 files. See builders_unification_plan.md.
-- [ ] Go2 env (`jax_rl/envs/locomotion/go2.py`) — subclass MjxEnv, legged_gym rewards, 31-dim obs
+- [ ] Wire frame stacking into Go2 env (currently no frame stack — just raw 31-dim obs)
 - [ ] Domain rand wrapper (`jax_rl/envs/wrappers/domain_rand.py`) — robot-agnostic, vmap over MJX params
-- [ ] Go2 PPO Phase A — flat terrain walking, validates env/reward/domain-rand
-- [ ] Go2 SAC Phase B — off-policy validation (requires builders unification first)
-- [x] `lax.scan` for gradient loops — benchmarked: 1.03x (no speedup). Dispatch overhead negligible vs ~64ms/update compute.
-- [x] MJX recompilation — **root cause found:** eval env.reset() triggers ~2 while+scan recompiles per eval call (internal to MJX step, not weak_type). Tested weak_type cast fix — didn't help. Upstream issue. MEM_FRACTION=0.7 mitigates (~5% overhead). See LESSONS.md.
+- [ ] Go2 SAC Phase B — off-policy validation after PPO confirms env works
+- [ ] Consolidate off-policy train scripts → `train_offpolicy.py --algo sac|td3|fast_td3|fast_sac`
+- [x] `lax.scan` for gradient loops — benchmarked: 1.03x (no speedup)
+- [x] MJX recompilation — root cause found, upstream issue, MEM_FRACTION=0.7 mitigates
 
 ## Mid-term (Vision RL)
 - [ ] Install `madrona_mjx`, verify Playground `vision=True` on RTX 5080

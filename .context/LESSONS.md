@@ -5,6 +5,70 @@ JAX/Flax fundamentals moved to LEARNER_LESSONS.md. Superseded content in outdate
 
 ---
 
+## Match Reference Implementation EXACTLY Before Investigating (2026-03-24)
+
+**What happened:** Our PPO had 2x sample efficiency gap vs Brax PPO on the same env. We were about to launch multiple 100M-step training runs to "investigate" when we should have just diffed the code.
+
+**Root cause (found in 5 minutes of code reading):**
+1. **Value loss scaling:** Brax uses `0.5 * 0.5 = 0.25x`, we used `1.0x` → our critic gradients were 4x larger
+2. **Advantage normalization scope:** Brax normalizes over the full batch, we normalized per-minibatch → higher variance gradients
+
+**Lesson:** When a reference implementation outperforms yours, **diff the code first**. Don't throw compute at it. Every line that differs is a potential cause. "Match everything" means match the MATH, not just the config values.
+
+---
+
+## Python Collect Loops Kill JAX Throughput — Use lax.scan (2026-03-24)
+
+**What happened:** Our PPO training was 5x slower wall-clock than Brax's PPO on the same env (47 min vs 10 min for 50M steps at 512 envs).
+
+**Root cause:** The Python-level rollout loop (20 env.step calls with per-step select_action, buffer.add, norm_update) forces GPU pipeline synchronization at every step. Each Python→JAX→Python roundtrip breaks the GPU's ability to pipeline operations.
+
+```
+Pure env.step (512 envs, 20 steps): 0.111s → 92,000 sps
+Python collect loop (same):         9.729s → 1,053 sps
+Overhead ratio: 87x
+```
+
+**The fix:** Brax puts the entire collect→update cycle in a single `jax.lax.scan`. Zero Python-GPU sync during training. The collect loop carries `(env_state, policy_state, rng, buffer_arrays)` as scan state.
+
+**Lesson:** In JAX, **every Python-level operation between JIT'd calls is a sync point**. If you have a loop that alternates Python and JAX, the GPU sits idle waiting for Python between each call. The only way to eliminate this is to put the entire loop body inside a single JIT'd function (via `lax.scan` or `lax.while_loop`).
+
+**Corollary:** Our reported "32k sps" was misleading — it included JAX's async dispatch partially hiding the overhead. The actual GPU utilization was ~1k/92k = 1%.
+
+---
+
+## Menagerie MJCF May Have Different Contact Physics Than Playground (2026-03-24)
+
+**What happened:** Go2 robot shuffled instead of walking, even with identical reward weights to Go1.
+
+**Root cause:** Menagerie's Go2 MJCF uses extremely soft foot contacts (solimp=0.015 1 0.031, condim=6) while Playground's Go1 uses firm contacts (solimp=0.9 0.95 0.023, condim=3). The soft contacts prevent crisp ground reaction forces for push-off.
+
+**Fix:** Override foot geom properties in go2_base.py after model loading: `mj_model.geom_solimp[gid] = [0.9, 0.95, 0.023]`.
+
+**Lesson:** When porting a robot between Menagerie and Playground, don't assume the contact physics match. Menagerie models are designed for accuracy; Playground models are tuned for learning. Always diff solimp, condim, friction, and geom size.
+
+---
+
+## Verify Training Budget Against Published Results Before Debugging (2026-03-24)
+
+**What happened:** We spent hours investigating reward weights, obs spaces, and PPO implementation when Go2 PPO plateaued at eval ~17.
+
+**Root cause:** The Playground paper shows Go1 Joystick reaching ~25 reward at 100M steps. Our 50M-step runs were simply undertrained — Go1 scored 21.7 at 50M with Brax PPO, exactly on the published curve.
+
+**Lesson:** Before debugging a "failed" training run, check what the reference implementation achieves at the same training budget. A reward of 17 at 50M steps is not broken — it's on-curve.
+
+---
+
+## Always Use Scientific Notation for Metric Printouts
+
+**What happened:** PPO's VLoss was formatted as `{:8.2f}`, which printed `0.00` for values like 0.003. We wasted debugging time thinking the value function wasn't learning when it actually was — just below the display threshold.
+
+**Fix:** All metric printouts (both shared `log_training_step` and PPO's inline format) now use `.3e` (scientific notation). `0.003` displays as `3.000e-03`, not `0.00`.
+
+**Rule:** Never use fixed-point format for loss/metric values — they span many orders of magnitude. Scientific notation always.
+
+---
+
 ## Session 4: CheetahRun, Performance, & Tooling (Mar 2026)
 
 ### `jax.lax.scan` vs Python Loops — 542x Speedup
@@ -873,6 +937,32 @@ Stress test revealed: our NaN guard only checked `isnan()`, not `isinf()`. MJX c
 **Action:** File upstream issue on `google-deepmind/mujoco` with reproduction: 3 back-to-back `evaluate()` calls produce 8 while + 8 scan recompilations with identical pytree signatures.
 
 **Lesson:** When debugging recompilation, isolate components systematically (env only → env+algo → env+eval → env+algo+eval). Don't assume the obvious suspect (weak_type) is the full answer — verify the fix actually works before claiming it's solved.
+
+---
+
+## Custom Locomotion Envs — Playground Integration (Mar 2026)
+
+### Subclassing MjxEnv Works Cleanly
+
+**Context:** Needed to create a Go2 locomotion env. Open question: does Playground's MjxEnv support custom reward functions without hacks?
+
+**Answer: Yes.** Go1's Joystick env is the template:
+- Subclass `MjxEnv`, override `_get_obs()`, `_get_reward()`, `_get_termination()`
+- `_get_reward()` returns a dict of term→scalar, weighted by config
+- `step()` sums `weight * term * dt`, clips to [0, 10000]
+- Composable — add/remove terms by editing the dict
+
+**Key gotcha: Menagerie MJCF ≠ Playground MJCF.** Menagerie's `go2_mjx.xml` is missing sensors that the env needs: `local_linvel` (velocimeter), `upvector` (framezaxis), foot position/velocity sensors, floor contact sensors. Playground's Go1 has its own XML (`go1_mjx_feetonly.xml`) with all sensors built in. For Go2, we created a scene XML that `<include>`s the Menagerie model and adds the missing sensors.
+
+**Flat obs vs dict obs:** Go1 returns `{"state": ..., "privileged_state": ...}`. Our training scripts expect flat `state.obs.shape[-1]`. Rather than modify all scripts, Go2 returns flat obs. Simpler, follows the self-contained env principle.
+
+### Playground Registry for Custom Envs
+
+**Pattern:** Register custom envs with `locomotion.register_environment(name, class, config_fn)`. Then `registry.load(name)` routes to the right loader. Changed `env_setup.py` from `dm_control_suite.load()` to `registry.load()` — works for both DM Control Suite AND custom locomotion envs with zero training script changes.
+
+### Go2 vs Go1 Naming Differences
+
+Body: `base` (Go1: `trunk`). Foot sites: `FL_foot` etc. (Go1: `FL`). Actuators: `general` biastype=affine (Go1 Playground: `position`). Joint order: FL, FR, RL, RR. PD override (`actuator_gainprm`, `actuator_biasprm`) works identically despite different actuator types.
 
 ---
 
