@@ -7,6 +7,10 @@ os.environ.setdefault("XLA_CLIENT_MEM_FRACTION", "0.7")
 Wires together: env, collect loop, GAE, PPO update, obs normalization.
 Uses wrap_for_brax_training for vectorized auto-reset + truncation tracking.
 
+Supports asymmetric actor-critic: if env returns dict obs with "state" and
+"privileged_state" keys, actor sees "state" and critic sees "privileged_state".
+If env returns flat obs, both see the same obs (symmetric mode).
+
 Truncation handling (matches Brax):
   Playground envs signal timeout via info['truncation']. The env auto-resets,
   so obs after truncation is the RESET state, not the terminal state.
@@ -36,9 +40,28 @@ from jax_rl.utils.normalization import (
 )
 
 
+def _extract_obs(obs):
+    """Extract policy obs and critic obs from env output.
+
+    Dict obs → policy gets "state", critic gets "privileged_state".
+    Flat obs → both get the same array.
+    """
+    if isinstance(obs, dict):
+        return obs["state"], obs["privileged_state"]
+    return obs, obs
+
+
 def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
     # ── Environment ──────────────────────────────────────────────────────
     env, env_step, env_state, eval_env, obs_dim, action_dim, key = make_envs(cfg, seed)
+
+    # Detect asymmetric obs (dict with privileged_state).
+    dict_obs = isinstance(env_state.obs, dict)
+    if dict_obs:
+        critic_obs_dim = env_state.obs["privileged_state"].shape[-1]
+        print(f"  Asymmetric actor-critic: policy obs={obs_dim}, critic obs={critic_obs_dim}")
+    else:
+        critic_obs_dim = obs_dim
 
     ppo_cfg = cfg.ppo
     samples_per_update = cfg.num_envs * ppo_cfg.num_steps
@@ -48,7 +71,7 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
     print("=" * 80)
     print(f"PPO — {cfg.env_name} (MuJoCo Playground)")
     print("=" * 80)
-    print(f"  obs_dim={obs_dim}, action_dim={action_dim}")
+    print(f"  obs_dim={obs_dim}, critic_obs_dim={critic_obs_dim}, action_dim={action_dim}")
     print(f"  num_envs={cfg.num_envs}, num_steps={ppo_cfg.num_steps}, "
           f"num_updates_per_batch={ppo_cfg.num_updates_per_batch}, episode_length={cfg.episode_length}")
     print(f"  samples/update={samples_per_update:,}, samples/iter={samples_per_iter:,}, "
@@ -67,7 +90,7 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
     ppo_config = dataclasses.replace(
         ppo_cfg,
         encoder=EncoderConfig(obs_dim=obs_dim, hidden_dim=ppo_cfg.policy_hidden_dim, activation=ppo_cfg.activation),
-        critic_encoder=EncoderConfig(obs_dim=obs_dim, hidden_dim=ppo_cfg.value_hidden_dim, activation=ppo_cfg.activation),
+        critic_encoder=EncoderConfig(obs_dim=critic_obs_dim, hidden_dim=ppo_cfg.value_hidden_dim, activation=ppo_cfg.activation),
         policy_head=PolicyHeadConfig(action_dim=action_dim, squash=ppo_cfg.squash,
                                      state_dependent_std=ppo_cfg.state_dependent_std),
         num_envs=cfg.num_envs,
@@ -97,7 +120,8 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
     print(f"  clip_eps={ppo_cfg.clip_eps}, entropy_coef={ppo_cfg.entropy_coef}, reward_scaling={cfg.reward_scaling}")
     print(f"  gamma={cfg.gamma}, gae_lambda={ppo_cfg.gae_lambda}")
 
-    ppo = PPO(ppo_config, obs_dim, action_dim, actor_optimizer, critic_optimizer)
+    ppo = PPO(ppo_config, obs_dim, action_dim, actor_optimizer, critic_optimizer,
+              critic_obs_dim=critic_obs_dim)
     key, init_key = jax.random.split(key)
     training_state = ppo.init(init_key)
 
@@ -107,6 +131,7 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
 
     # ── Observation normalization ─────────────────────────────────────────
     norm_state = norm_init(obs_dim)
+    critic_norm_state = norm_init(critic_obs_dim)
 
     # ── Resume ────────────────────────────────────────────────────────────
     start_iteration = 0
@@ -135,16 +160,23 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
         # ── Inner loop: multiple collect→update cycles per iteration ─────
         for _update_cycle in range(ppo_cfg.num_updates_per_batch):
             buffer = RolloutBuffer(ppo_cfg.num_steps, cfg.num_envs, obs_dim, action_dim)
+            # Separate buffer for critic obs if asymmetric
+            if dict_obs:
+                critic_obs_buf = jnp.zeros((ppo_cfg.num_steps, cfg.num_envs, critic_obs_dim))
 
             # ── Collect rollout ───────────────────────────────────────────
             for step in range(ppo_cfg.num_steps):
-                obs = env_state.obs
-                norm_state = norm_update(norm_state, obs)
-                normed_obs = norm_normalize(norm_state, obs)
+                policy_obs, critic_obs = _extract_obs(env_state.obs)
+
+                norm_state = norm_update(norm_state, policy_obs)
+                normed_obs = norm_normalize(norm_state, policy_obs)
+                critic_norm_state = norm_update(critic_norm_state, critic_obs)
+                normed_critic_obs = norm_normalize(critic_norm_state, critic_obs)
 
                 key, action_key = jax.random.split(key)
                 action, log_prob, value = ppo.select_action(
-                    training_state, normed_obs, action_key
+                    training_state, normed_obs, action_key,
+                    critic_obs=normed_critic_obs,
                 )
                 clipped_action = jnp.clip(action, -1.0, 1.0)
                 env_state = env_step(env_state, clipped_action)
@@ -158,20 +190,31 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
                     done=env_state.done, truncation=truncation,
                     log_prob=log_prob, value=value,
                 )
+                if dict_obs:
+                    critic_obs_buf = critic_obs_buf.at[step].set(normed_critic_obs)
 
                 tracker.step(np.asarray(env_state.reward), np.asarray(env_state.done))
 
             # ── Bootstrap + GAE + PPO update ──────────────────────────────
-            normed_next_obs = norm_normalize(norm_state, env_state.obs)
+            next_policy_obs, next_critic_obs = _extract_obs(env_state.obs)
+            normed_next_obs = norm_normalize(norm_state, next_policy_obs)
+            normed_next_critic_obs = norm_normalize(critic_norm_state, next_critic_obs)
+
             key, bootstrap_key = jax.random.split(key)
             _, _, next_value = ppo.select_action(
-                training_state, normed_next_obs, bootstrap_key, deterministic=True
+                training_state, normed_next_obs, bootstrap_key, deterministic=True,
+                critic_obs=normed_next_critic_obs,
             )
-            batch = buffer.get(next_value, gamma=cfg.gamma, gae_lambda=ppo_cfg.gae_lambda)
 
             key, update_key = jax.random.split(key)
-            training_state, metrics = ppo.update(training_state, batch, update_key,
-                                                  next_obs=normed_next_obs)
+            batch = buffer.get(next_value, gamma=cfg.gamma, gae_lambda=ppo_cfg.gae_lambda)
+
+            training_state, metrics = ppo.update(
+                training_state, batch, update_key,
+                next_obs=normed_next_obs,
+                critic_obs=critic_obs_buf if dict_obs else None,
+                critic_next_obs=normed_next_critic_obs if dict_obs else None,
+            )
 
         # ── Logging ───────────────────────────────────────────────────────
         iter_time = time.time() - t0
@@ -185,11 +228,11 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
                 f"Steps {total_steps:>9,} | "
                 f"Eps {stats['n_eps']:>5} | "
                 f"Return {stats['avg']:7.1f} [{stats['min']:4.0f},{stats['max']:4.0f}] | "
-                f"PLoss {metrics['policy_loss']:7.4f} | "
-                f"VLoss {metrics['value_loss']:8.2f} | "
-                f"Ent {metrics['entropy']:.3f} | "
-                f"KL {metrics['approx_kl']:.4f} | "
-                f"Clip {metrics['clip_fraction']:.3f} | "
+                f"PLoss {metrics['policy_loss']:.3e} | "
+                f"VLoss {metrics['value_loss']:.3e} | "
+                f"Ent {metrics['entropy']:.3e} | "
+                f"KL {metrics['approx_kl']:.3e} | "
+                f"Clip {metrics['clip_fraction']:.3e} | "
                 f"logσ {metrics['log_std_mean']:.2f} [{metrics['log_std_min']:.2f},{metrics['log_std_max']:.2f}] | "
                 f"{sps:>6,} sps | "
                 f"{iter_time:.1f}s"
@@ -220,15 +263,18 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
         n_eps_total = tracker.n_episodes
         if n_eps_total >= last_eval_eps + cfg.eval_every_n_episodes:
             frozen_norm = norm_state
-            frozen_state = training_state
+            frozen_actor = training_state.actor_params
+
+            @jax.jit
             def _ppo_eval_action(actor_params, obs, key, deterministic=True):
-                normed = norm_normalize(frozen_norm, obs)
-                action, _, _ = ppo.select_action(frozen_state, normed, key, deterministic=True)
-                return jnp.clip(action, -1.0, 1.0)
+                policy_obs, _ = _extract_obs(obs)
+                normed = norm_normalize(frozen_norm, policy_obs)
+                mean, log_std = ppo.actor.apply(actor_params, normed)
+                return jnp.clip(mean, -1.0, 1.0)  # deterministic = use mean
 
             key, eval_key = jax.random.split(key)
             eval_metrics = evaluate(
-                _ppo_eval_action, training_state.actor_params,
+                _ppo_eval_action, frozen_actor,
                 eval_env, num_episodes=cfg.num_eval_episodes,
                 episode_length=cfg.episode_length, key=eval_key,
                 num_envs=cfg.num_envs,
@@ -247,15 +293,18 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
 
     # ── Final eval ────────────────────────────────────────────────────────
     frozen_norm = norm_state
-    frozen_state = training_state
+    frozen_actor = training_state.actor_params
+
+    @jax.jit
     def _ppo_eval_action(actor_params, obs, key, deterministic=True):
-        normed = norm_normalize(frozen_norm, obs)
-        action, _, _ = ppo.select_action(frozen_state, normed, key, deterministic=True)
-        return jnp.clip(action, -1.0, 1.0)
+        policy_obs, _ = _extract_obs(obs)
+        normed = norm_normalize(frozen_norm, policy_obs)
+        mean, log_std = ppo.actor.apply(actor_params, normed)
+        return jnp.clip(mean, -1.0, 1.0)
 
     key, eval_key = jax.random.split(key)
     eval_metrics = evaluate(
-        _ppo_eval_action, training_state.actor_params,
+        _ppo_eval_action, frozen_actor,
         eval_env, num_episodes=cfg.num_eval_episodes,
         episode_length=cfg.episode_length, key=eval_key,
         num_envs=cfg.num_envs,

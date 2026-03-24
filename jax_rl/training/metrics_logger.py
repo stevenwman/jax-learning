@@ -41,14 +41,14 @@ def log_training_step(
         f"Step {total_steps:>9,}",
         f"Eps {stats['n_eps']:>5}",
         f"Return {stats['avg']:7.1f} [{stats['min']:4.0f},{stats['max']:4.0f}]",
-        f"Q1 {float(last_metrics.get('q1_mean', 0)):7.2f}",
-        f"ActLoss {float(last_metrics.get('actor_loss', 0)):7.3f}",
+        f"Q1 {float(last_metrics.get('q1_mean', 0)):.3e}",
+        f"ActLoss {float(last_metrics.get('actor_loss', 0)):.3e}",
     ]
 
     if extra_fields:
         for label, key, fmt in extra_fields:
             val = float(last_metrics.get(key, 0))
-            parts.append(f"{label} {val:{fmt}}")
+            parts.append(f"{label} {val:.3e}")
 
     parts.append(f"{sps:>6,} sps")
     print(" | ".join(parts))

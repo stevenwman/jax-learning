@@ -3,9 +3,9 @@
 Same as ppo_jit.py but replaces the Python epoch/minibatch loops in update()
 with jax.lax.scan, so the entire update is a single compiled XLA program.
 
-Difference from ppo_jit.py:
-  ppo_jit.py:  Python loop calls @jax.jit _minibatch_step 64 times
-  ppo_scan.py: @jax.jit _update scans over all 64 minibatches in one kernel
+Supports asymmetric actor-critic: actor sees policy obs (e.g. 48d noisy state),
+critic sees privileged obs (e.g. 116d ground truth). If critic_obs is not
+provided, critic uses the same obs as actor (symmetric mode).
 """
 
 from typing import Any
@@ -38,18 +38,20 @@ class PPO:
         action_dim: int,
         actor_optimizer: optax.GradientTransformation,
         critic_optimizer: optax.GradientTransformation,
+        critic_obs_dim: int | None = None,
     ) -> None:
         self.config = config
+        self.obs_dim = obs_dim
+        self.critic_obs_dim = critic_obs_dim or obs_dim
 
         encoder_config = config.encoder
         critic_encoder_config = config.critic_encoder or encoder_config
         policy_config = config.policy_head
         encoder_config.obs_dim = obs_dim
-        critic_encoder_config.obs_dim = obs_dim
+        critic_encoder_config.obs_dim = self.critic_obs_dim
         policy_config.action_dim = action_dim
 
         self.num_envs = config.num_envs
-        self.obs_dim = obs_dim
 
         self.actor = Actor(encoder_config, policy_config)
         self.critic = VCritic(critic_encoder_config, config.value_head)
@@ -67,15 +69,14 @@ class PPO:
         minibatch_size = config.minibatch_size
         gamma = config.gamma
         gae_lambda = config.gae_lambda
+        c_obs_dim = self.critic_obs_dim
 
-        def _minibatch_step(state, mb_obs, mb_actions, mb_old_log_probs, mb_returns, mb_adv, key):
-            # Per-minibatch advantage normalization (matches Brax)
-            if normalize_advantage:
-                mb_adv = (mb_adv - mb_adv.mean()) / (mb_adv.std() + 1e-8)
+        def _minibatch_step(state, mb_obs, mb_critic_obs, mb_actions, mb_old_log_probs, mb_returns, mb_adv, key):
+            # Advantages already normalized at full-batch level (matches Brax)
 
             def value_loss_fn(critic_params):
-                values = critic.apply(critic_params, mb_obs)
-                return jnp.mean((values - mb_returns) ** 2)
+                values = critic.apply(critic_params, mb_critic_obs)
+                return jnp.mean((values - mb_returns) ** 2) * 0.5 * 0.5
 
             def actor_loss_fn(actor_params):
                 mb_mean, mb_log_std = actor.apply(actor_params, mb_obs)
@@ -116,12 +117,15 @@ class PPO:
             return new_state, metrics
 
         @jax.jit
-        def _update(state, obs_t, actions_t, old_log_probs_t,
-                    rewards_t, dones_t, truncations_t, next_obs, key):
+        def _update(state, obs_t, critic_obs_t, actions_t, old_log_probs_t,
+                    rewards_t, dones_t, truncations_t, next_obs, critic_next_obs, key):
             """PPO update with per-epoch GAE recomputation.
 
             Args have temporal shape: (T, E, ...) where T=num_steps, E=num_envs.
             Each epoch recomputes V(s) from current critic and re-runs GAE.
+
+            obs_t: policy obs (T, E, obs_dim) — used by actor
+            critic_obs_t: critic obs (T, E, critic_obs_dim) — used by critic
             """
             T, E = rewards_t.shape
             N = T * E
@@ -137,10 +141,10 @@ class PPO:
                 state, key, metrics_sum = carry
 
                 # Recompute values from current critic (per-epoch, matches Brax)
-                obs_flat = obs_t.reshape(N, obs_dim)
-                values_flat = critic.apply(state.critic_params, obs_flat)
+                c_obs_flat = critic_obs_t.reshape(N, c_obs_dim)
+                values_flat = critic.apply(state.critic_params, c_obs_flat)
                 values = values_flat.reshape(T, E)
-                next_value = critic.apply(state.critic_params, next_obs)
+                next_value = critic.apply(state.critic_params, critic_next_obs)
 
                 # Recompute GAE with fresh values
                 advantages, returns = compute_gae(
@@ -148,6 +152,9 @@ class PPO:
                     next_value, gamma, gae_lambda,
                 )
                 adv_flat = advantages.reshape(N)
+                # Normalize advantages over full batch (matches Brax)
+                if normalize_advantage:
+                    adv_flat = (adv_flat - adv_flat.mean()) / (adv_flat.std() + 1e-8)
                 ret_flat = returns.reshape(N)
 
                 key, subkey = jax.random.split(key)
@@ -155,7 +162,9 @@ class PPO:
                 usable = num_minibatches * minibatch_size
                 perm = perm[:usable]
 
+                obs_flat = obs_t.reshape(N, obs_dim)
                 mb_obs = obs_flat[perm].reshape(num_minibatches, minibatch_size, obs_dim)
+                mb_critic_obs = c_obs_flat[perm].reshape(num_minibatches, minibatch_size, c_obs_dim)
                 mb_actions = actions_flat[perm].reshape(num_minibatches, minibatch_size, action_dim)
                 mb_old_lp = old_lp_flat[perm].reshape(num_minibatches, minibatch_size)
                 mb_returns = ret_flat[perm].reshape(num_minibatches, minibatch_size)
@@ -166,15 +175,15 @@ class PPO:
 
                 def scan_minibatch(carry, minibatch):
                     state, metrics_sum = carry
-                    o, a, olp, r, adv, mb_key = minibatch
-                    state, metrics = _minibatch_step(state, o, a, olp, r, adv, mb_key)
+                    o, co, a, olp, r, adv, mb_key = minibatch
+                    state, metrics = _minibatch_step(state, o, co, a, olp, r, adv, mb_key)
                     metrics_sum = jax.tree.map(jnp.add, metrics_sum, metrics)
                     return (state, metrics_sum), None
 
                 (state, metrics_sum), _ = jax.lax.scan(
                     scan_minibatch,
                     (state, metrics_sum),
-                    (mb_obs, mb_actions, mb_old_lp, mb_returns, mb_adv, mb_keys),
+                    (mb_obs, mb_critic_obs, mb_actions, mb_old_lp, mb_returns, mb_adv, mb_keys),
                 )
                 return (state, key, metrics_sum), None
 
@@ -203,17 +212,17 @@ class PPO:
         self._update = _update
 
         @jax.jit
-        def _select_stochastic(actor_params, critic_params, obs, key):
+        def _select_stochastic(actor_params, critic_params, obs, critic_obs, key):
             mean, log_std = actor.apply(actor_params, obs)
             action, log_prob = sample_gaussian(mean, log_std, key, squash=squash)
-            value = critic.apply(critic_params, obs)
+            value = critic.apply(critic_params, critic_obs)
             return action, log_prob, value
 
         @jax.jit
-        def _select_deterministic(actor_params, critic_params, obs):
+        def _select_deterministic(actor_params, critic_params, obs, critic_obs):
             mean, log_std = actor.apply(actor_params, obs)
             log_prob = gaussian_log_prob(mean, log_std, mean, squash=squash)
-            value = critic.apply(critic_params, obs)
+            value = critic.apply(critic_params, critic_obs)
             return mean, log_prob, value
 
         self._select_stochastic = _select_stochastic
@@ -222,9 +231,10 @@ class PPO:
     def init(self, key: jax.Array) -> TrainingState:
         actor_key, critic_key = jax.random.split(key, 2)
         dummy_obs = jnp.zeros(self.obs_dim)
+        dummy_critic_obs = jnp.zeros(self.critic_obs_dim)
 
         actor_params = self.actor.init(actor_key, dummy_obs)
-        critic_params = self.critic.init(critic_key, dummy_obs)
+        critic_params = self.critic.init(critic_key, dummy_critic_obs)
 
         return TrainingState(
             actor_params=actor_params,
@@ -234,10 +244,16 @@ class PPO:
         )
 
     def update(self, state: TrainingState, batch: RolloutBatch, key: jax.Array,
-               next_obs: jax.Array = None) -> tuple[TrainingState, dict]:
+               next_obs: jax.Array = None, critic_obs: jax.Array = None,
+               critic_next_obs: jax.Array = None) -> tuple[TrainingState, dict]:
+        # Fall back to actor obs if no separate critic obs
+        if critic_obs is None:
+            critic_obs = batch.obs
+        if critic_next_obs is None:
+            critic_next_obs = next_obs
         return self._update(
-            state, batch.obs, batch.actions, batch.log_probs,
-            batch.rewards, batch.dones, batch.truncations, next_obs, key,
+            state, batch.obs, critic_obs, batch.actions, batch.log_probs,
+            batch.rewards, batch.dones, batch.truncations, next_obs, critic_next_obs, key,
         )
 
     def select_action(
@@ -246,7 +262,10 @@ class PPO:
         obs: jax.Array,
         key: jax.Array,
         deterministic: bool = False,
+        critic_obs: jax.Array = None,
     ) -> tuple[jax.Array, jax.Array, jax.Array]:
+        if critic_obs is None:
+            critic_obs = obs
         if deterministic:
-            return self._select_deterministic(state.actor_params, state.critic_params, obs)
-        return self._select_stochastic(state.actor_params, state.critic_params, obs, key)
+            return self._select_deterministic(state.actor_params, state.critic_params, obs, critic_obs)
+        return self._select_stochastic(state.actor_params, state.critic_params, obs, critic_obs, key)

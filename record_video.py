@@ -23,20 +23,23 @@ import jax.numpy as jnp
 import numpy as np
 import optax
 
-from mujoco_playground import dm_control_suite
+from mujoco_playground import registry as pg_registry
 
 from jax_rl.training.checkpointing import load_actor_for_inference
+# Register custom envs (Go2 etc.) with Playground's registry.
+import jax_rl.training.env_setup  # noqa: F401 — side effect: registers custom envs
 from jax_rl.utils.normalization import normalize as norm_normalize
 
 
 ENV_DEFAULTS = {
-    "CartpoleBalance": ((64, 64), "fixed"),
-    "CheetahRun":      ((256, 256), "side"),
-    "WalkerWalk":      ((256, 256), "side"),
-    "WalkerRun":       ((256, 256), "side"),
-    "HumanoidRun":     ((256, 256), "side"),
-    "HumanoidWalk":    ((256, 256), "side"),
-    "HumanoidStand":   ((256, 256), "side"),
+    "CartpoleBalance":  ((64, 64), "fixed"),
+    "CheetahRun":       ((256, 256), "side"),
+    "WalkerWalk":       ((256, 256), "side"),
+    "WalkerRun":        ((256, 256), "side"),
+    "HumanoidRun":      ((256, 256), "side"),
+    "HumanoidWalk":     ((256, 256), "side"),
+    "HumanoidStand":    ((256, 256), "side"),
+    "Go2JoystickFlat":  ((480, 480), "track"),
 }
 
 
@@ -48,21 +51,28 @@ def _build_select_action(meta, obs_dim, action_dim):
     """
     algo = meta.get("algo", "ppo")
     tc = meta.get("train_config", {})
+    # PPO config may be nested under "ppo" key.
+    ppo_tc = tc.get("ppo", {}) if tc.get("ppo") else {}
     dummy_opt = optax.adam(1e-3)
 
     if algo == "ppo":
         from jax_rl.algos.ppo import PPO
         from jax_rl.configs import PPOConfig, EncoderConfig, PolicyHeadConfig
+        policy_dim = tuple(ppo_tc.get("policy_hidden_dim", None) or tc.get("policy_hidden_dim", None) or (32, 32, 32, 32))
+        value_dim = tuple(ppo_tc.get("value_hidden_dim", None) or tc.get("value_hidden_dim", None) or (256, 256, 256, 256, 256))
+        activation = ppo_tc.get("activation", None) or tc.get("activation", "swish")
+        squash = ppo_tc.get("squash", tc.get("squash", True))
+        state_dep_std = ppo_tc.get("state_dependent_std", tc.get("state_dependent_std", False))
         config = PPOConfig(
             encoder=EncoderConfig(obs_dim=obs_dim,
-                                  hidden_dim=tuple(tc.get("policy_hidden_dim", (32, 32, 32, 32))),
-                                  activation=tc.get("activation", "swish")),
+                                  hidden_dim=policy_dim,
+                                  activation=activation),
             critic_encoder=EncoderConfig(obs_dim=obs_dim,
-                                         hidden_dim=tuple(tc.get("value_hidden_dim", (256, 256, 256, 256, 256))),
-                                         activation=tc.get("activation", "swish")),
+                                         hidden_dim=value_dim,
+                                         activation=activation),
             policy_head=PolicyHeadConfig(action_dim=action_dim,
-                                         squash=tc.get("squash", True),
-                                         state_dependent_std=tc.get("state_dependent_std", False)),
+                                         squash=squash,
+                                         state_dependent_std=state_dep_std),
             num_envs=1,
         )
         ppo = PPO(config, obs_dim, action_dim, dummy_opt, dummy_opt)
@@ -137,14 +147,16 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
     camera = camera or defaults[1]
 
     # ── Create env (unwrapped — single env, no auto-reset) ────────────────
-    env = dm_control_suite.load(env_name)
+    env = pg_registry.load(env_name)
     env_step = jax.jit(env.step)
 
     key = jax.random.PRNGKey(0)
     key, reset_key = jax.random.split(key)
     env_state = env.reset(reset_key)
 
-    obs_dim = env_state.obs.shape[-1]
+    raw_obs = env_state.obs
+    policy_obs = raw_obs["state"] if isinstance(raw_obs, dict) else raw_obs
+    obs_dim = policy_obs.shape[-1]
     action_dim = env.action_size
 
     # ── Build algo for select_action ──────────────────────────────────────
@@ -167,7 +179,8 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
         from jax_rl.utils.normalization import update as norm_update
         def rollout_step(carry, _):
             env_state, ns, key = carry
-            obs = env_state.obs[None]
+            raw = env_state.obs
+            obs = (raw["state"] if isinstance(raw, dict) else raw)[None]
             ns = norm_update(ns, obs)
             normed_obs = norm_normalize(ns, obs)
             key, action_key = jax.random.split(key)
