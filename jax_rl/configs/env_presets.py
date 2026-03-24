@@ -46,6 +46,26 @@ PRESETS: dict[str, TrainConfig] = {
         ppo=PPOConfig(num_steps=480, anneal_lr=False, entropy_coef=1e-2, num_epochs=16,
                       policy_hidden_dim=(128, 128, 128, 128), state_dependent_std=True),
     ),
+    # Go2 locomotion — matches Playground Go1 Joystick PPO recipe.
+    "Go2JoystickFlat": TrainConfig(
+        env_name="Go2JoystickFlat",
+        total_timesteps=100_000_000,
+        num_envs=4096,
+        gamma=0.97,
+        lr=3e-4,
+        reward_scaling=1.0,
+        episode_length=1000,
+        ppo=PPOConfig(
+            num_steps=20,
+            num_minibatches=32,
+            num_updates_per_batch=4,
+            num_epochs=4,
+            entropy_coef=1e-2,
+            max_grad_norm=1.0,
+            policy_hidden_dim=(512, 256, 128),
+            value_hidden_dim=(512, 256, 128),
+        ),
+    ),
 }
 
 
