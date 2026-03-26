@@ -47,14 +47,22 @@ class Go2Env(mjx_env.MjxEnv):
             epath.Path(xml_path).read_text(), assets=self._model_assets
         )
         self._mj_model.opt.timestep = self._config.sim_dt
+        self._mj_model.opt.ccd_iterations = 20  # Match Go1 (default 4 is too few)
 
         # Set PD gains (overrides Menagerie defaults).
         # Menagerie Go2 uses general actuators with biastype="affine":
         #   force = Kp * ctrl + (-Kp * qpos) + (-Kd * qvel)
         # This is a PD controller when ctrl = q_target.
+        import numpy as _np
         self._mj_model.dof_damping[6:] = config.Kd
         self._mj_model.actuator_gainprm[:, 0] = config.Kp
         self._mj_model.actuator_biasprm[:, 1] = -config.Kp
+
+        # Fix go2_mjx.xml bug: calf forcerange is [-24, 24] but real is [-45.43, 45.43].
+        for i in range(self._mj_model.nu):
+            name = mujoco.mj_id2name(self._mj_model, mujoco.mjtObj.mjOBJ_ACTUATOR, i)
+            if 'calf' in name.lower():
+                self._mj_model.actuator_forcerange[i] = _np.array([-45.43, 45.43])
 
         # Override Menagerie's soft foot contacts with Go1-style firm contacts.
         # Menagerie: solimp=0.015 1 0.031, condim=6 (marshmallow-soft, full friction)

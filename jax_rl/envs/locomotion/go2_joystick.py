@@ -29,9 +29,8 @@ def default_config() -> config_dict.ConfigDict:
         ctrl_dt=0.02,
         sim_dt=0.004,
         episode_length=1000,
-        # PD gains — match Playground Go1 Joystick exactly.
-        # NOTE: Unitree official is Kp=20, action_scale=0.25. We use PG values
-        # for training parity; will switch to Unitree values for sim-to-real.
+        # PD gains — Kp=35 from Playground Go1. action_scale=0.5 to match Go1
+        # (0.3 was too restrictive — only 15% thigh range, 34% calf range).
         Kp=35.0,
         Kd=0.5,
         action_repeat=1,
@@ -48,12 +47,12 @@ def default_config() -> config_dict.ConfigDict:
                 linvel=0.1,
             ),
         ),
-        # Reward terms — match Playground Go1 Joystick exactly.
+        # Reward terms — Go1 PG defaults. Double damping fix is the real change.
         reward_config=config_dict.create(
             scales=config_dict.create(
                 # Tracking.
-                tracking_lin_vel=1.0,
-                tracking_ang_vel=0.5,
+                tracking_lin_vel=10.0,
+                tracking_ang_vel=5.0,
                 # Base stability.
                 lin_vel_z=-0.5,
                 ang_vel_xy=-0.05,
@@ -192,6 +191,9 @@ class Joystick(go2_base.Go2Env):
             "feet_air_time": jp.zeros(4),
             "last_contact": jp.zeros(4, dtype=bool),
             "swing_peak": jp.zeros(4),
+            "reward_components": {
+                k: jp.zeros(()) for k in self._config.reward_config.scales.keys()
+            },
         }
 
         metrics = {}
@@ -232,6 +234,9 @@ class Joystick(go2_base.Go2Env):
             for k, v in rewards.items()
         }
         reward = jp.clip(sum(rewards.values()) * self.dt, 0.0, 10000.0)
+
+        # Store per-term weighted rewards for diagnostics.
+        state.info["reward_components"] = rewards
 
         # Update info.
         state.info["last_last_act"] = state.info["last_act"]
@@ -339,9 +344,13 @@ class Joystick(go2_base.Go2Env):
         angvel = self.get_global_angvel(data)
         feet_vel = data.sensordata[self._foot_linvel_sensor_adr].ravel()
 
+        accelerometer = self.get_accelerometer(data)
+        torso_body_id = self._mj_model.body(consts.ROOT_BODY).id
+
         privileged_state = jp.hstack([
             state,                                    # 48
             gyro,                                     # 3  (unnoised)
+            accelerometer,                            # 3  (match Go1)
             gravity,                                  # 3  (unnoised)
             linvel,                                   # 3  (unnoised)
             angvel,                                   # 3
@@ -351,7 +360,8 @@ class Joystick(go2_base.Go2Env):
             info["last_contact"].astype(jp.float32),  # 4
             feet_vel,                                 # 12 (4 feet × 3)
             info["feet_air_time"],                    # 4
-        ])  # Total: 116
+            data.xfrc_applied[torso_body_id, :3],     # 3  (match Go1)
+        ])  # Total: 122
 
         return {
             "state": state,
@@ -361,8 +371,12 @@ class Joystick(go2_base.Go2Env):
     # ── Termination ─────────────────────────────────────────────────────
 
     def _get_termination(self, data: mjx.Data) -> jax.Array:
-        # Fall detection: upvector z < 0 means robot is flipped.
-        return self.get_upvector(data)[-1] < 0.0
+        flipped = self.get_upvector(data)[-1] < 0.0
+        # Height termination: prevent crouching local optimum.
+        # Go2 stands at ~0.30m; terminate below 0.18m (alexeiplatzer).
+        base_z = data.subtree_com[self._torso_body_id][2]
+        too_low = base_z < 0.18
+        return flipped | too_low
 
     # ── Rewards ─────────────────────────────────────────────────────────
 
