@@ -15,6 +15,8 @@
 
 **Design decisions:**
 - Start with vanilla SAC (QHead, not C51). C51/FastSAC swap is a future upgrade avenue when scaling.
+- **Buffer-agnostic:** z is concatenated into augmented obs, intrinsic reward stored as regular reward. No buffer modifications — works with both replay buffer (SAC) and rollout buffer (PPO). For auxiliary updates, split augmented obs by known offset.
+- **Off-policy reward staleness (accepted tradeoff):** Intrinsic rewards are computed at collection time and stored in the buffer. As the discriminator/φ evolves during training, stored rewards become stale. This isn't an issue for PPO (on-policy, data consumed immediately). For SAC, it's acceptable for v1 — revisit if skill learning stalls.
 - Style rewards: investigate further, D3's penalty-based style factor as starting reference.
 - Eval metrics: design separately before calling implementation done.
 
@@ -33,7 +35,6 @@ New files:
   tests/test_skill_discovery.py               — Tests for all skill discovery components
 
 Modified files:
-  jax_rl/buffers/jax_replay_buffer.py         — add optional skill_z field
   jax_rl/envs/locomotion/go2_joystick.py      — add include_base_position/height config flags
   jax_rl/training/env_setup.py                — register Go2SkillDiscovery preset
   jax_rl/configs/env_presets.py               — add skill discovery presets
@@ -160,91 +161,7 @@ git commit -m "feat: skill discovery config — FactorConfig and SkillDiscoveryC
 
 ---
 
-### Task 2: Replay Buffer Extension
-
-**Files:**
-- Modify: `jax_rl/buffers/jax_replay_buffer.py`
-- Test: `tests/test_replay_buffer.py` (add new tests)
-
-The buffer needs an optional `skill_z` field. When `skill_dim` is set, `add_batch()` accepts a `skill_z` kwarg and `sample()` returns it. When `skill_dim=None` (default), the buffer behaves identically to today.
-
-- [ ] **Step 1: Write buffer skill_z tests**
-
-Append to `tests/test_replay_buffer.py`:
-
-```python
-def test_skill_z_init():
-    """Buffer with skill_dim pre-allocates skill_z array."""
-    buf = JaxReplayBuffer(OBS_DIM, ACTION_DIM, max_size=100, skill_dim=10)
-    assert buf.skill_z.shape == (100, 10)
-    assert len(buf) == 0
-
-
-def test_skill_z_add_and_sample():
-    """skill_z is stored and sampled correctly."""
-    buf = JaxReplayBuffer(OBS_DIM, ACTION_DIM, max_size=100, skill_dim=4)
-    z = jnp.array([[1, 0, 0, 0]] * 10, dtype=jnp.float32)  # one-hot
-    buf.add_batch(
-        obs=jnp.zeros((10, OBS_DIM)),
-        action=jnp.zeros((10, ACTION_DIM)),
-        reward=jnp.zeros(10),
-        next_obs=jnp.zeros((10, OBS_DIM)),
-        done=jnp.zeros(10),
-        skill_z=z,
-    )
-    assert len(buf) == 10
-    batch = buf.sample(5, key=KEY)
-    assert "skill_z" in batch
-    assert batch["skill_z"].shape == (5, 4)
-    # All stored z's were [1,0,0,0], so sampled should match
-    assert jnp.allclose(batch["skill_z"], jnp.array([[1, 0, 0, 0]] * 5))
-
-
-def test_no_skill_z_backward_compatible():
-    """Buffer without skill_dim works exactly as before."""
-    buf = JaxReplayBuffer(OBS_DIM, ACTION_DIM, max_size=100)
-    buf.add_batch(
-        obs=jnp.zeros((10, OBS_DIM)),
-        action=jnp.zeros((10, ACTION_DIM)),
-        reward=jnp.zeros(10),
-        next_obs=jnp.zeros((10, OBS_DIM)),
-        done=jnp.zeros(10),
-    )
-    batch = buf.sample(5, key=KEY)
-    assert "skill_z" not in batch
-```
-
-- [ ] **Step 2: Run tests to verify new tests fail (old tests still pass)**
-
-Run: `uv run python -m pytest tests/test_replay_buffer.py -v`
-Expected: 3 new tests fail (TypeError — unexpected kwarg), 7 old tests pass
-
-- [ ] **Step 3: Implement skill_z support in JaxReplayBuffer**
-
-Modify `jax_rl/buffers/jax_replay_buffer.py`:
-- Add `skill_dim: int | None = None` parameter to `__init__`
-- When `skill_dim` is set, pre-allocate `self.skill_z = jnp.zeros((max_size, skill_dim))`
-- Update `_jit_add` cached property to include skill_z scatter (when enabled)
-- Update `add_batch()` to accept optional `skill_z` kwarg
-- Update `sample()` and `_make_jit_sample()` to include skill_z in returned dict
-
-Key constraint: the `_jit_add` cached property compiles once. Since `skill_dim` is fixed at init, we can branch on `self.skill_dim is not None` in `__init__` to create the appropriate JIT'd functions. Do NOT try to make a single JIT'd function handle both cases.
-
-- [ ] **Step 4: Run all buffer tests**
-
-Run: `uv run python -m pytest tests/test_replay_buffer.py -v`
-Expected: 10 passed (7 old + 3 new)
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add jax_rl/buffers/jax_replay_buffer.py tests/test_replay_buffer.py
-git commit -m "feat: replay buffer skill_z support — optional per-transition skill storage"
-```
-
----
-
-### Task 3: DIAYN Reward Module
+### Task 2: DIAYN Reward Module
 
 **Files:**
 - Create: `jax_rl/skill_discovery/diayn.py`
@@ -415,7 +332,7 @@ git commit -m "feat: DIAYN reward module — discriminator, intrinsic reward, gr
 
 ---
 
-### Task 4: METRA Reward Module
+### Task 3: METRA Reward Module
 
 **Files:**
 - Create: `jax_rl/skill_discovery/metra.py`
@@ -623,7 +540,7 @@ git commit -m "feat: METRA reward module — representation phi, inner-product r
 
 ---
 
-### Task 5: Skill Manager
+### Task 4: Skill Manager
 
 **Files:**
 - Create: `jax_rl/skill_discovery/manager.py`
@@ -955,7 +872,7 @@ Expected: 5 passed
 - [ ] **Step 5: Run all skill discovery tests together**
 
 Run: `uv run python -m pytest tests/test_skill_discovery.py -v`
-Expected: All passed (3 config + 3 DIAYN + 3 METRA + 5 manager = 14)
+Expected: All passed (3 config + 3 DIAYN + 3 METRA + 5 manager = 14 total)
 
 - [ ] **Step 6: Commit**
 
@@ -966,7 +883,7 @@ git commit -m "feat: SkillManager — z lifecycle, reward composition, auxiliary
 
 ---
 
-### Task 6: Go2 Env Extension
+### Task 5: Go2 Env Extension
 
 **Files:**
 - Modify: `jax_rl/envs/locomotion/go2_joystick.py`
@@ -1088,7 +1005,7 @@ git commit -m "feat: Go2SkillDiscovery env — base position/height in obs for s
 
 ---
 
-### Task 7: Training Script
+### Task 6: Training Script
 
 **Files:**
 - Create: `train_skill_discovery.py`
@@ -1097,9 +1014,17 @@ This is the main training loop. It follows `train_offpolicy.py` closely but adds
 1. SkillManager creation from config
 2. z sampling at start, resampling on done
 3. Obs augmentation (concat z before passing to algo)
-4. Intrinsic reward computed at sample time (replaces env reward)
-5. Auxiliary network updates alongside algo.update()
-6. Skill-specific logging (discriminator accuracy, METRA norm, etc.)
+4. Intrinsic reward replaces env reward at collection time
+5. Buffer stores augmented obs and intrinsic reward as regular fields (buffer-agnostic)
+6. Auxiliary network updates alongside algo.update() (z split from augmented obs by offset)
+7. Skill-specific logging (discriminator accuracy, METRA norm, etc.)
+
+**Buffer-agnostic design:** The buffer has no knowledge of skill discovery. It stores `augmented_obs` (raw obs + z) as its regular `obs` field, and intrinsic reward as its regular `reward` field. This means:
+- No buffer modifications needed — works with both replay buffer (SAC) and rollout buffer (PPO)
+- The training script computes intrinsic reward at collection time and stores it directly
+- For auxiliary updates, the training script splits augmented obs by known offset: `raw_obs = batch["obs"][:, :obs_dim]`, `z = batch["obs"][:, obs_dim:]`
+
+**Off-policy reward staleness tradeoff:** When using SAC (off-policy), intrinsic rewards computed at collection time become stale as the discriminator/φ evolves during training. A transition stored with reward `r_t` based on discriminator at time `t` may have a very different reward under the discriminator at time `t+1000`. This is an accepted tradeoff for v1 — the D3 paper uses PPO (on-policy) where data is consumed immediately and this isn't an issue. For off-policy, two mitigations exist but are deferred: (a) recompute intrinsic rewards at sample time (doubles forward passes), (b) high UTD ratio to keep discriminator/buffer drift small. Worth revisiting if off-policy skill learning stalls.
 
 The script should support both pure single-factor mode (vanilla DIAYN/METRA) and multi-factor mode (D3-style factorized USD).
 
@@ -1192,9 +1117,10 @@ augmented_obs_dim = obs_dim + skill_manager.total_skill_dim
 algo = _make_algo(algo_name, algo_cfg, augmented_obs_dim, action_dim, cfg)
 training_state = algo.init(init_key)
 
-# Buffer stores raw obs + z (NOT augmented obs)
-buffer = JaxReplayBuffer(obs_dim, action_dim, max_size=algo_cfg.buffer_size,
-                         skill_dim=skill_manager.total_skill_dim)
+# Buffer stores augmented obs (raw obs + z) as regular obs — no special fields needed.
+# This keeps the buffer completely agnostic to skill discovery and works with
+# both replay buffer (off-policy) and rollout buffer (on-policy/PPO).
+buffer = JaxReplayBuffer(augmented_obs_dim, action_dim, max_size=algo_cfg.buffer_size)
 ```
 
 **Training loop core (key differences from train_offpolicy.py):**
@@ -1216,10 +1142,22 @@ for outer_step in range(...):
     env_state = env_step(env_state, action)
     next_raw_obs = _get_obs(env_state.obs)
 
-    # Buffer: store raw obs + z. Env reward stored for logging/style, not used directly.
-    buffer.add_batch(obs=raw_obs, action=action, reward=env_state.reward * cfg.reward_scaling,
-                     next_obs=next_raw_obs, done=env_state.done,
-                     truncation=truncation, skill_z=current_z)
+    # Compute intrinsic reward at collection time
+    intrinsic_reward = skill_manager.compute_reward(
+        aux_state, obs_normed,
+        norm_normalize(norm_state, next_raw_obs) if use_obs_norm else next_raw_obs,
+        current_z)
+    if skill_cfg.style_weight > 0:
+        intrinsic_reward += skill_cfg.style_weight * env_state.reward * cfg.reward_scaling
+
+    # Buffer: store augmented obs (raw+z) and intrinsic reward as regular fields.
+    # The buffer is completely unaware of skill discovery.
+    next_obs_normed = norm_normalize(norm_state, next_raw_obs) if use_obs_norm else next_raw_obs
+    augmented_next = skill_manager.augment_obs(next_obs_normed, current_z)
+    buffer.add_batch(obs=augmented_obs, action=action,
+                     reward=intrinsic_reward,
+                     next_obs=augmented_next, done=env_state.done,
+                     truncation=truncation)
 
     # Resample z for reset envs
     key, resample_key = jax.random.split(key)
@@ -1230,31 +1168,20 @@ for outer_step in range(...):
         for _ in range(algo_cfg.grad_updates_per_step):
             batch = buffer.sample(algo_cfg.batch_size, key=sample_key)
 
-            # Normalize sampled obs (if enabled)
-            sampled_obs = norm_normalize(norm_state, batch["obs"]) if use_obs_norm else batch["obs"]
-            sampled_next = norm_normalize(norm_state, batch["next_obs"]) if use_obs_norm else batch["next_obs"]
+            # SAC update — batch already has augmented obs and intrinsic reward
+            training_state, sac_metrics = algo.update(training_state, batch)
 
-            # Compute intrinsic reward from current auxiliary networks
-            intrinsic_reward = skill_manager.compute_reward(
-                aux_state, sampled_obs, sampled_next, batch["skill_z"])
-            if skill_cfg.style_weight > 0:
-                intrinsic_reward += skill_cfg.style_weight * batch["reward"].squeeze(-1)
-
-            # Build SAC batch with augmented obs and intrinsic reward
-            sac_batch = {
-                "obs": skill_manager.augment_obs(sampled_obs, batch["skill_z"]),
-                "action": batch["action"],
-                "reward": intrinsic_reward.reshape(-1, 1),
-                "next_obs": skill_manager.augment_obs(sampled_next, batch["skill_z"]),
-                "done": batch["done"],
-                "truncation": batch["truncation"],
-            }
-            training_state, sac_metrics = algo.update(training_state, sac_batch)
+            # Split augmented obs back into raw obs + z for auxiliary updates
+            sampled_raw_obs = batch["obs"][:, :obs_dim]
+            sampled_raw_next = batch["next_obs"][:, :obs_dim]
+            sampled_z = batch["obs"][:, obs_dim:]
 
             # Update auxiliary networks (discriminator / phi)
             aux_state, aux_metrics = skill_manager.update(
-                aux_state, sampled_obs, sampled_next, batch["skill_z"])
+                aux_state, sampled_raw_obs, sampled_raw_next, sampled_z)
 ```
+
+**Note on obs normalization with buffer-agnostic design:** When `--obs-norm` is enabled, raw obs are normalized *before* augmentation with z, so the buffer stores `[normalized_obs, z]`. This means normalization is applied at collection time, which technically violates the "normalize at sample time" rule for off-policy (see `.context/lessons/offpolicy.md`). However, since z is fixed per transition and the normalized obs + z are consumed together, this is acceptable. The obs norm statistics are frozen after the warmup period anyway. If staleness becomes an issue, we can store raw obs in the buffer and normalize at sample time — but this requires splitting augmented obs, normalizing just the obs portion, and re-concatenating, which adds complexity for minimal benefit.
 
 **Eval structure:**
 For v1, eval is simpler than `train_offpolicy.py` because there's no single env reward to track. The eval loop:
@@ -1318,7 +1245,7 @@ git commit -m "feat: skill discovery training script — DIAYN, METRA, and facto
 
 ---
 
-### Task 8: Integration Validation
+### Task 7: Integration Validation
 
 **Files:**
 - Test: `tests/test_skill_discovery.py` (append integration test)
