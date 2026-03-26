@@ -98,3 +98,19 @@ Body: `base` (Go1: `trunk`). Foot sites: `FL_foot` (Go1: `FL`). Joint order: FL/
 1. Train directly on unitree_mujoco's `go2.xml` (cleanest for deployment, but need MJX compatibility)
 2. Make our MjxEnv load unitree_mujoco's MJCF (keep training pipeline, match deployment physics)
 3. Domain randomization across both models (most robust, most work)
+
+Full comparison table: `.context/go2/mjcf_comparison.md`
+
+---
+
+## Actuator Type Mismatch Is the #1 Sim2Sim Failure Mode (2026-03-26)
+
+**What happened:** Policy stands up correctly (FSM works), falls the instant it takes control.
+
+**Root cause:** Our MJX env uses `general` actuators with `biastype="affine"` — PD control is baked INTO the actuator. `ctrl[i] = position_target`, and MuJoCo internally applies `force = Kp*(ctrl-q) - Kd*qvel`. The unitree_mujoco model uses `motor` actuators — `ctrl[i] = raw_torque`. The DDS bridge computes PD externally and writes torque.
+
+Although the PD math is the same, the integration timing differs: training PD is inside the physics substep (applied per-substep), deploy PD is computed once at DDS rate (50Hz) and held constant across substeps. This creates a 5-substep lag in the effective control response.
+
+**Also:** Joint damping is 5x different (0.5 training vs 0.1 deploy), foot contact model differs (condim 3 vs 6, different friction), friction cone differs (pyramidal vs elliptic).
+
+**Lesson:** When building a sim2real pipeline, the deployment simulator's physics must be auditable against the training env. Don't assume "same robot model = same physics." Audit: actuator type, damping, contact params, solver settings, timestep. Full comparison template in `.context/go2/mjcf_comparison.md`.
