@@ -1,4 +1,17 @@
-"""Gaussian policy head for stochastic policies (PPO, SAC)."""
+"""Gaussian policy head for stochastic policies (PPO, SAC, FastSAC).
+
+Outputs (mean, log_std) for a diagonal Gaussian action distribution.
+The caller (via distributions.py) samples actions as:
+    action = tanh(mean + std * noise)    [squashed Gaussian]
+
+Two std modes:
+    state_dependent_std=True:  std = softplus(Dense(features)) + min_std
+    state_dependent_std=False: std = learned parameter (same for all states)
+
+Optional DEM (Dimension-wise Entropy Modulation) for FastDSAC:
+    When config.dem=True, outputs a third tensor (dem_logits) that controls
+    per-action-dimension exploration weighting. See LESSONS.md "DEM".
+"""
 
 import jax
 from flax import linen as nn
@@ -7,6 +20,15 @@ from jax_rl.configs.networks_config import PolicyHeadConfig
 
 
 class GaussianHead(nn.Module):
+    """Gaussian policy head.
+
+    Args:
+        config: PolicyHeadConfig specifying action_dim, std mode, noise bounds.
+
+    Input:  features from encoder, shape (batch, feature_dim)
+    Output: (mean, log_std) each shape (batch, action_dim)
+            or (mean, log_std, dem_logits) if config.dem=True
+    """
     config: PolicyHeadConfig
 
     @nn.compact

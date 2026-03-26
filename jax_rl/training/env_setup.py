@@ -50,6 +50,11 @@ def _make_nan_safe_step(raw_step):
     velocity overflow). This happens stochastically with humanoid envs at
     1024 parallel worlds.
 
+    IMPORTANT: Must check BOTH isnan() AND isinf(). MJX produces Inf from
+    velocity overflow (different from NaN which comes from solver failure).
+    Inf * 0 = NaN, so unguarded Inf corrupts network params silently.
+    See LESSONS.md "Inf guard" for the full debugging trail.
+
     When NaN/Inf is detected:
     - obs replaced with zeros (safe for network forward pass)
     - reward set to 0

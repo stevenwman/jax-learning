@@ -148,8 +148,12 @@ class FastTD3:
             q1_logits = q1.apply(q1_params_, obs, action)
             q2_logits = q2.apply(q2_params_, obs, action)
 
-            # Cross-entropy loss for each Q network
-            # Clamp log_probs to prevent -inf * 0 = NaN in cross-entropy
+            # Cross-entropy loss for C51: -sum(target_probs * log(predicted_probs))
+            # CRITICAL: log_softmax produces -inf for zero-probability atoms.
+            # In cross-entropy, target_prob * log_pred can be 0 * (-inf) = NaN.
+            # Clamping to -30 (≈ prob 1e-13) prevents this while preserving
+            # valid gradients for non-zero atoms.
+            # See LESSONS.md "C51 log_prob NaN" for the debugging trail.
             q1_log_probs = jnp.maximum(jax.nn.log_softmax(q1_logits, axis=-1), -30.0)
             q2_log_probs = jnp.maximum(jax.nn.log_softmax(q2_logits, axis=-1), -30.0)
             q1_loss = -jnp.mean(jnp.sum(projected * q1_log_probs, axis=-1))

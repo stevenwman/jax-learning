@@ -7,14 +7,7 @@ Used with C51 categorical distribution over return atoms.
 import jax
 import jax.numpy as jnp
 from flax import linen as nn
-
-ACTIVATIONS = {
-    "relu": jax.nn.relu,
-    "tanh": jnp.tanh,
-    "elu": jax.nn.elu,
-    "gelu": jax.nn.gelu,
-    "swish": jax.nn.swish,
-}
+from jax_rl.networks.activations import ACTIVATIONS
 
 
 class DistributionalQHead(nn.Module):

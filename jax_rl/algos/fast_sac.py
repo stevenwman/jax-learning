@@ -160,6 +160,7 @@ class FastSAC:
 
             # Cross-entropy loss
             # Clamp log_probs to prevent -inf * 0 = NaN in cross-entropy
+            # See fast_td3.py for why this clamp is critical (C51 -inf * 0 = NaN).
             q1_log_probs = jnp.maximum(jax.nn.log_softmax(q1_logits, axis=-1), -30.0)
             q2_log_probs = jnp.maximum(jax.nn.log_softmax(q2_logits, axis=-1), -30.0)
             q1_loss = -jnp.mean(jnp.sum(projected * q1_log_probs, axis=-1))
@@ -231,31 +232,42 @@ class FastSAC:
                 q_grads, state.q_opt_state, params=q_params)
             new_q1_params, new_q2_params = optax.apply_updates(q_params, q_updates)
 
-            # Actor + Alpha (delayed by policy_delay)
+            # Actor + Alpha (delayed by policy_delay steps, like TD3)
             def _do_actor_alpha_update(args):
-                ap, ao, la, aao, nq1, nq2, tq1, tq2 = args
-                # Actor
-                (_, am), ag = jax.value_and_grad(
+                (actor_params, actor_opt, log_alpha, alpha_opt,
+                 new_q1, new_q2, target_q1, target_q2) = args
+
+                # Update actor: maximize Q - alpha * log_prob
+                (_, actor_metrics), actor_grads = jax.value_and_grad(
                     _actor_loss, argnums=0, has_aux=True
-                )(ap, nq1, nq2, la, batch, k2)
-                au, nao = optimizer.update(ag, ao, params=ap)
-                nap = optax.apply_updates(ap, au)
-                # Alpha
-                (_, alm), alg = jax.value_and_grad(
+                )(actor_params, new_q1, new_q2, log_alpha, batch, k2)
+                actor_updates, new_actor_opt = optimizer.update(
+                    actor_grads, actor_opt, params=actor_params)
+                new_actor_params = optax.apply_updates(actor_params, actor_updates)
+
+                # Update alpha (entropy temperature): track target entropy
+                (_, alpha_metrics), alpha_grads = jax.value_and_grad(
                     _alpha_loss, argnums=0, has_aux=True
-                )(la, ap, batch, k3)
-                alu, naao = alpha_optimizer.update(alg, aao, params=la)
-                nla = optax.apply_updates(la, alu)
-                # Polyak
-                ntq1 = _soft_update(nq1, tq1)
-                ntq2 = _soft_update(nq2, tq2)
-                return nap, nao, nla, naao, ntq1, ntq2, {**am, **alm}
+                )(log_alpha, actor_params, batch, k3)
+                alpha_updates, new_alpha_opt = alpha_optimizer.update(
+                    alpha_grads, alpha_opt, params=log_alpha)
+                new_log_alpha = optax.apply_updates(log_alpha, alpha_updates)
+
+                # Polyak-average target Q networks
+                new_target_q1 = _soft_update(new_q1, target_q1)
+                new_target_q2 = _soft_update(new_q2, target_q2)
+
+                return (new_actor_params, new_actor_opt, new_log_alpha,
+                        new_alpha_opt, new_target_q1, new_target_q2,
+                        {**actor_metrics, **alpha_metrics})
 
             def _skip_actor_alpha_update(args):
-                ap, ao, la, aao, nq1, nq2, tq1, tq2 = args
+                (actor_params, actor_opt, log_alpha, alpha_opt,
+                 _new_q1, _new_q2, target_q1, target_q2) = args
                 dummy = {"actor_loss": jnp.float32(0.0), "entropy": jnp.float32(0.0),
-                         "alpha_loss": jnp.float32(0.0), "alpha": jnp.exp(la)}
-                return ap, ao, la, aao, tq1, tq2, dummy
+                         "alpha_loss": jnp.float32(0.0), "alpha": jnp.exp(log_alpha)}
+                return (actor_params, actor_opt, log_alpha,
+                        alpha_opt, target_q1, target_q2, dummy)
 
             do_update = (new_count % policy_delay) == 0
             (new_actor_params, new_actor_opt_state, new_log_alpha,

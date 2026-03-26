@@ -39,7 +39,19 @@ class TrainingState:
 
 
 class SAC:
-    """SAC algorithm with auto-tuned temperature."""
+    """SAC algorithm with auto-tuned temperature.
+
+    Architecture note — why closures instead of methods:
+        JAX's JIT compiler traces Python functions and captures the values they
+        close over. If we used regular methods (self.update), JAX would try to
+        trace `self`, which is a mutable Python object — this breaks JIT.
+
+        Instead, we define JIT'd functions as closures inside __init__ that
+        capture only JAX-compatible values (networks, configs, constants), then
+        assign them to self._update, self.select_action, etc. This pattern is
+        used by all algos in this codebase — it looks unusual but is standard
+        for JAX RL implementations (Brax, PureJaxRL use the same pattern).
+    """
 
     def __init__(
         self,
