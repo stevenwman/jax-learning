@@ -1,31 +1,36 @@
 # New Agent Onboarding Prompt
 
-Copy-paste this when starting a fresh agent session.
-
 ---
 
-Read .context/AGENT_HANDOFF.md thoroughly before responding. This is your onboarding document — it contains everything you need to know about the project, the user, the codebase, and how to work effectively.
+Read .context/AGENT_HANDOFF.md for project overview. Then read .context/TODO.md for current priorities. Do NOT read all docs upfront — use the lookup pattern below.
 
-Key context for current state:
-- Go2 PPO Phase A is DONE (robot walks, eval 233, seed 2100)
-- SAC Phase B is in progress — eval ~142 at 16M steps, climbing slowly
-- Root cause of the entire Go2 debugging saga: reward rebalancing (tracking 10x), not physics or algo bugs. Full trail in .context/go2/ppo_debugging.md
-- Codebase was significantly cleaned up: 5 root scripts, consolidated train_offpolicy.py, .context/go2/ subfolder
-- All docs are current as of 2026-03-26
+## Doc lookup pattern (save context, read on demand)
 
-Important operational patterns:
-- Always use `uv run python` (not python3)
-- Go2 env returns dict obs: {"state": 48d, "privileged_state": 122d}
-- train_ppo_fast.py for PPO (lax.scan, 80k sps), train_offpolicy.py for SAC/TD3
-- record_video.py saves _traj.npz + command arrow overlay — use trajectory data for diagnosis, not video analysis
-- CheckpointManager saves best policy to ckpt_dir/best/
-- Nuclio (SAM ViT-H) may respawn on GPU — kill via `sudo docker stop nuclio-nuclio-pth-facebookresearch-sam-vit-h`
+The `.context/` folder is a graph of interconnected docs. Read only what you need:
 
-Read these files in order:
-1. .context/AGENT_HANDOFF.md (full project context)
-2. .context/TODO.md (what's next)
-3. .context/go2/lessons.md (Go2-specific lessons)
-4. .context/LESSONS.md (general framework lessons)
+```
+AGENT_HANDOFF.md          ← START HERE (project overview, codebase map)
+  └→ TODO.md              ← What's done, what's next
+  └→ LESSONS.md           ← Index of framework lessons (click through, don't read all)
+  └→ go2/                 ← Go2-specific docs (read only when working on Go2)
+      ├→ lessons.md       ← Go2 gotchas (reward rebalancing, torque bug)
+      ├→ ppo_debugging.md ← 19-hypothesis debugging trail
+      ├→ sim_to_real_plan.md
+      └→ sac_phase_b.md
+  └→ vision_rl_design.md  ← Read only when working on vision
+  └→ integration_debt.md  ← Tech debt tracker
+```
+
+**Rule:** Don't pre-load docs into context. When you encounter a topic (e.g., "why does Go2 use 10x tracking?"), grep `.context/` or read the specific file. Treat docs like a reference manual, not a textbook.
+
+**Rule:** When you're about to make an assumption about past decisions, stop and check the docs first. The project memory file `feedback_check_docs.md` exists for this reason.
+
+## Quick facts (always true)
+- `uv run python` (not python3)
+- No Co-Authored-By in commits
+- Go2 dict obs: {"state": 48d, "privileged_state": 122d}
+- PPO: asymmetric (critic sees privileged_state). SAC/TD3: both see state.
+- 5 root scripts: train_ppo_fast.py, train_ppo.py, train_offpolicy.py, record_video.py, live_viewer.py
 
 Say "Ready" and wait for instructions.
 
@@ -77,38 +82,3 @@ Test the new agent's understanding before giving real tasks. Questions span tech
 31. How do you verify a JIT recompilation bug?
 32. You want to test if a physics change helps. Do you launch a 50M step run or something else first?
 33. The user asks you to remember something for future sessions. Where do you save it?
-
-## Answer Key (brief)
-1. train_ppo_fast.py (PPO JIT), train_ppo.py (PPO fallback), train_offpolicy.py (SAC/TD3/Fast*), record_video.py, live_viewer.py
-2. `uv run python train_offpolicy.py --algo sac --env Go2JoystickFlat --obs-norm`
-3. Dict: {"state": 48d, "privileged_state": 122d}. **PPO**: asymmetric — actor sees state, critic sees privileged_state. **SAC/TD3**: both actor and critic see state (no asymmetric). This is a common trip-up.
-4. ckpt_dir/best/ — CheckpointManager compares eval_mean, saves when new high
-5. None algorithmically. Fast uses lax.scan for collection (3-5x faster wall-clock). Same PPO.update().
-6. PPO branch uses frozen_state + norm passthrough. SAC/TD3 branch extracts obs["state"] and adds batch dim.
-7. Local-frame velocity command transformed to world frame. Rotates for TWO reasons: (a) commands resample every ~5s (discrete jumps), (b) robot heading changes continuously from yaw_rate commands (smooth rotation). Both contribute.
-8. Go2: .context/go2/lessons.md. General: .context/LESSONS.md
-9. Crouching local optimum. Pose reward (~450) dominates tracking (~130). Fix: 10x tracking reward.
-10. Problem is env/reward, not PPO implementation.
-11. Policy can't commit to any strategy. Exploration prevents convergence. The reward landscape (not exploration) was the real issue.
-12. Not a bug early — episodes are 1000 steps, scan is 20 steps, takes ~50 iters for first episode to complete. After that it should show values.
-13. Eval function recreated as new closure each call → JIT recompiles. Fix: pass norm_state as arg via action_fn_kwargs.
-14. Q1 is stable (good). Concern: entropy very negative, alpha tiny — SAC's entropy objective is barely active. Policy is near-deterministic, may limit further improvement.
-15. Robot is sitting on its thighs/calves instead of standing on feet. Body geoms should be disabled (feetonly) or reward should incentivize standing.
-16. Skill discovery (DIAYN/METRA) on real Go2 robot.
-17. PPO is simpler, validates the env works. SAC is needed for DIAYN (wraps SAC).
-18. No. PPO gets ~10 on HumanoidRun — wrong algo for high-dim. FastSAC gets 892.
-19. PPO confirms the env produces walking (Phase A). SAC is Phase B.
-20. Push back. The reward weights work (eval 233). Move to SAC Phase B or vision RL instead.
-21. Find a working reference implementation and diff the FULL env code, not just config.
-22. Push back. Go1 weights gave eval 12 on Go2. Reward balance differs per robot dynamics. Always check tracking/pose ratio > 0.5.
-23. Push back. We tested 0.01/0.02/0.05 — higher entropy made it worse. The issue was reward balance, not exploration.
-24. Push back. Over-engineering. The 4 algos have similar-enough interfaces. A closure in train_offpolicy.py handles the differences.
-25. Push back. Two policies with identical eval=11.6 had opposite behaviors (standing vs crouching). Only trajectory data revealed this.
-26. Push back. Diff the code first. We found vloss 0.25x + adv norm scope in 5 minutes of code reading.
-27. Partial agree. Feetonly helps but the real fix was 10x tracking reward. Removing contacts alone didn't solve it.
-28. Update journal, lessons (if reusable), TODO, debugging doc. In that order.
-29. .context/go2/ppo_debugging.md — 19 hypotheses, run table, wrong hypothesis summary.
-30. MJX physics NaN (not algo). Contact solver produces NaN/Inf at scale. Check env_setup.py NaN guard.
-31. JAX_LOG_COMPILES=1 or time consecutive calls — first call ~100ms (compile), subsequent should be <1ms (cached).
-32. Cheap sanity test first (kinematic sweep, manual joint command, CPU check). Never launch 50M runs to test a hypothesis you can verify in 30 seconds.
-33. .claude/projects/.../memory/ as a memory file with frontmatter (type, name, description).

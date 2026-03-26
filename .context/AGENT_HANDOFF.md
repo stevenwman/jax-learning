@@ -1,8 +1,10 @@
 # Agent Handoff — JAX RL Framework
 
-**Last updated:** 2026-03-25
+**Last updated:** 2026-03-26
 **Branch:** `new_slate_linen`
-**Status:** Active development — Go2 PPO Phase A COMPLETE (eval 233), Go2 Phase B (SAC) next
+**Status:** Active development — Go2 Phase A (PPO 233) and Phase B (FastSAC 226) COMPLETE.
+
+> **Context budget:** This doc is your overview — skim structure, read details on demand. Other `.context/` docs are reference material. Don't pre-load them. When you hit a topic (Go2 rewards, PPO debugging, vision RL), grep or read the specific file. Treat `.context/` as a wiki, not a textbook.
 
 ---
 
@@ -15,7 +17,7 @@ Steven is a researcher building a JAX-based RL framework for robot learning. The
 - **Surface assumptions before acting.** Before implementing anything non-trivial, list your assumptions and ask him to correct. The most common failure mode is making wrong assumptions and running with them unchecked.
 - **Be honest about uncertainty.** Say "I don't know" or "I'm not sure" rather than guessing confidently. He'd rather you investigate than hallucinate.
 - **Explain mechanisms, not just fixes.** He wants to understand *why* something works or fails, not just the patch. This is a learning project.
-- **Get to the root cause, not just a workaround.** He does NOT accept vague explanations. "It works at 8K batch but not 32K" is a correlation, not a cause. You must isolate the exact mechanism — which computation produces the first NaN, which gradient explodes, which parameter collapses. If you can't solve it, that's OK, but the cause must be crystal clear.
+- **Get to the root cause, not just a workaround.** He does NOT accept vague explanations. "It works at 8K batch but not 32K" is a correlation, not a cause. You must isolate the exact mechanism. If you can't solve it, that's OK, but the cause must be crystal clear.
 - **Document everything.** Negative results, debugging trails, design decisions — all go in journals and lessons. He reviews these across sessions.
 - **Don't over-engineer.** The simplest solution that works is the right one. He'll tell you if he wants more.
 
@@ -29,7 +31,7 @@ Steven is a researcher building a JAX-based RL framework for robot learning. The
 ### Hard rules
 - Always use `uv run python` (never `python` or `python3`)
 - No `Co-Authored-By` lines in git commits — he explicitly removed these and doesn't want them
-- Off-policy algos must NOT normalize obs before storing in replay buffer (see LESSONS.md for the full disaster story)
+- Off-policy algos must NOT normalize obs before storing in replay buffer (normalize at sample time with `--obs-norm` instead)
 - Check memory files at the path in MEMORY.md before starting work
 
 ---
@@ -44,59 +46,31 @@ Steven is a researcher building a JAX-based RL framework for robot learning. The
 5. He reviews, adjusts
 6. You execute
 
-**Don't skip to implementation.** Even if it seems simple, present the approach first. He caught several wrong assumptions this way (e.g., we almost built a pixel wrapper before discovering Playground has `vision=True` built in).
+**Don't skip to implementation.** Even if it seems simple, present the approach first.
 
 ### The debugging pattern
-When something breaks:
 1. **State the symptom clearly** — what failed, at what step, what error
 2. **Form hypotheses** — ranked by likelihood
 3. **Test each systematically** — one at a time, with concrete evidence
-4. **Don't guess-and-fix** — the NaN investigation went through 3 wrong hypotheses before finding the real cause (MJX physics NaN, not algo instability)
-5. **Document the trail** — even wrong hypotheses go in the journal. Future sessions need to know what was tried.
-
-Example debugging trail (FastTD3 HumanoidRun NaN):
-- H1: tau=0.125 too aggressive → wrong (debug script survived 2M steps)
-- H2: obs normalization causing NaN → wrong (NaN'd with and without)
-- H3: v_min/v_max mismatch → wrong (Q values stable before NaN)
-- H4: MJX physics NaN (stochastic) → **correct** (debug sync points masked it, different step counts each run)
-- Fix: NaN guard on env output + C51 log_prob clamp + action NaN guard
+4. **Don't guess-and-fix** — stress test edge cases directly (inject NaN/Inf) instead of running full training to reproduce
+5. **Document the trail** — even wrong hypotheses go in the journal
 
 ### The paper audit pattern
 When implementing from a paper:
 1. **Read the paper text** — get the high-level algorithm
 2. **Find the source code** — paper text omits critical details (tau, network arch, activation, etc.)
 3. **Dispatch agents to audit** — compare source code configs against our implementation
-4. **Document ALL disparities** in `.context/archive/FAST_ALGOS_LIT_MISMATCH.md`
-5. **Fix configs to match paper exactly** before benchmarking
+4. **Fix configs to match paper exactly** before benchmarking
 
-We learned this the hard way — our FastTD3/FastSAC had 11+ critical config mismatches vs the paper's holosoma source code. tau was 25x wrong, network architecture was completely different, activation function was wrong. Always check the source.
-
-### The "paper says X but code does Y" lesson (FastDSAC saga)
-The most expensive debugging lesson from this project: FastDSAC's paper describes a "Gaussian distributional critic" with "Gaussian NLL loss." We implemented exactly that. It NaN'd. We spent two days trying variance clamping, log-variance parameterization, batch size reduction — all treating symptoms. Then we downloaded the paper's source code and discovered **the actual loss is Huber-based, not Gaussian NLL.** No `1/variance` anywhere in the real code. The name "Gaussian distributional" describes the output parameterization (mean, std), not the loss function.
-
-**Rule:** When implementing from a paper, ALWAYS get the source code before writing the loss function. The paper text is insufficient. If source code is behind a paywall or anonymous link:
-1. Try `uv run gdown --folder <google_drive_url>` for Google Drive links
-2. Try `git clone` for anonymous review repos (4open.science, openreview)
-3. Ask the user to download and place it locally — you can read local files
-4. WebFetch often gets blocked by Cloudflare on anonymous review sites
+**Rule:** ALWAYS get the source code before writing the loss function. The paper text is insufficient. We lost 2 days on FastDSAC because "Gaussian distributional critic" actually uses Huber loss, not Gaussian NLL.
 
 ### Accessing external resources
-WebFetch gets blocked by many sites (Cloudflare challenges, bot detection, auth-required pages). When you hit a block:
-1. **Google Drive:** `uv add gdown --dev && uv run gdown --folder <url> -O /tmp/output`
+WebFetch gets blocked by many sites. Workarounds:
+1. **Google Drive:** `uv run gdown --folder <url> -O /tmp/output`
 2. **GitHub private repos:** Ask user to clone locally
-3. **Anonymous review sites (4open.science, openreview):** Usually blocked. Ask user to download ZIP and place in `/tmp/`
+3. **Anonymous review sites:** Usually blocked. Ask user to download and place in `/tmp/`
 4. **ArXiv HTML:** Usually works with WebFetch
-5. **PyPI packages:** Check if already installed (`uv run python -c "import X"`) before adding
-6. **Local files are always readable** — if user can download it anywhere on the filesystem, you can read it
-
-### Algorithm implementation tips
-- **Q head outputs (mean, std) via softplus** — NOT (mean, variance). The loss formulation depends on this distinction.
-- **Huber loss > MSE for distributional RL** — Huber caps large TD errors at linear growth, MSE lets them explode quadratically.
-- **Per-sample gradient weighting with clamped ratios** — `clamp(weight, 0.1, 10)` prevents any single sample from dominating the batch gradient.
-- **`z.clamp(-3, 3)` on target sampling** — prevents extreme tail samples from the target distribution.
-- **EMA of batch std (`mean_std`)** — used for ratio computation, updated with tau_b=0.005 (much slower than Polyak tau).
-- **`num_updates=2` for distributional critics** — more updates per step amplifies any instability. The paper uses 2, not 8.
-- **`reward_scale=0.2`** — smaller rewards → smaller TD errors → more stable variance learning.
+5. **Local files are always readable**
 
 ### The training run pattern
 1. **Smoke test first** — 200k-500k steps to verify no crashes
@@ -104,135 +78,68 @@ WebFetch gets blocked by many sites (Cloudflare challenges, bot detection, auth-
 3. **Check periodically** — `grep "EVAL" <output_file> | tail -10`
 4. **Kill zombie GPU processes before new runs** — `nvidia-smi | grep python`, then `kill <pid>`
 5. **Log results immediately** — update journal with eval scores, step counts, wall-clock time
-6. **Queue next runs** — GPU can only handle one 1024-env run at a time
 
-**Critical:** When launching background tasks, do NOT pipe through `| head -N` or `| tail -N` — the pipe kills the process after N lines of output. Use `run_in_background=true` and check the output file separately.
+**Critical:** Do NOT pipe background tasks through `| head -N` or `| tail -N` — the pipe kills the process.
 
 ### The documentation pattern
-Three docs serve different purposes:
 
 | Doc | What goes in it | When to update |
 |---|---|---|
-| `.context/journals/YYYY-MM-DD.md` | What happened today — runs, results, decisions, failures | After every significant event |
-| `.context/LESSONS.md` | Reusable debugging lessons — root causes, gotchas, patterns | When you learn something future sessions need |
-| `.context/TODO.md` | Prioritized task list with status | When tasks complete or priorities shift |
-
-**Rule:** Steven will ask "did you update lessons and journal?" after significant findings. If you haven't, do it before moving on. Don't batch documentation — it gets forgotten.
+| `.context/journals/YYYY-MM-DD.md` | What happened today | After every significant event |
+| `.context/LESSONS.md` → `lessons/*.md` | Reusable debugging lessons | When you learn something future sessions need |
+| `.context/TODO.md` | Prioritized task list | When tasks complete or priorities shift |
 
 ### The refactor philosophy
-We chose **Brax-style shared utilities** over SB3-style class hierarchy or Tianshou-style Trainer class. The reasoning:
-
-- **Envs are self-contained black boxes** — `env.step()` returns fully processed (obs, reward, done). The training script never touches obs construction, frame stacking, obs noise, reward terms, or action scaling. New robot = new env class, zero train script changes. See Go2 plan design principle.
-- **Algos own their training loops** — each `train_*.py` is self-contained. The 4 off-policy scripts are ~80% identical and may be consolidated into `train_offpolicy.py --algo sac|td3|...` once the algo interface is fully unified (see builders_unification_plan.md).
-- **Shared utilities handle infra** — checkpointing, episode tracking, eval, env setup, logging
-- **No Trainer base class** — too many layers to trace, PPO doesn't fit the off-policy template
-- **No BaseAlgorithm ABC** — premature, but `get_q_value()` is now on all off-policy algos as a step toward a consistent interface
-
-This was a deliberate decision after researching Brax, SB3, Tianshou, CleanRL, Isaac Lab, MuJoCo Playground, and MJLab architectures. See 03-19 journal and builders_unification_plan.md.
+Brax-style shared utilities. No Trainer base class, no BaseAlgorithm ABC. Envs are self-contained black boxes, algos own their math, training scripts mediate. See `refactor_idea.md` for the full reasoning.
 
 ---
 
-## Part 3: Repository Deep Dive
+## Part 3: How to Find Answers
 
-### Directory structure
-```
-jax-learning/
-├── train_ppo.py              # PPO (Python loop — works with all envs, ~32k sps)
-├── train_ppo_fast.py         # PPO (lax.scan collect — JIT-able envs only, ~110k sps on Go1)
-├── train_sac.py          # Vanilla SAC (128 envs, 5M steps default)
-├── train_td3.py          # Vanilla TD3
-├── train_fast_td3.py     # FastTD3: TD3 + C51 + large batch (1024 envs)
-├── train_fast_sac.py     # FastSAC: SAC + C51 + paper recipe
-├── # train_fast_dsac.py  # ARCHIVED — peaked 282, heavy oscillation, see tests/archive/
-├── train_brax_ppo_go1.py # Brax PPO baseline on Go1 (A/B test script)
-├── train_brax_ppo_go2.py # Brax PPO baseline on Go2 (A/B test script)
-├── record_video.py       # Algo-agnostic: loads any checkpoint, renders rollout
-│
-├── jax_rl/
-│   ├── algos/            # Each algo is a standalone class, no base class
-│   │   ├── ppo.py        # On-policy, uses RolloutBuffer + GAE
-│   │   ├── sac.py        # Twin Q, entropy + alpha auto-tuning
-│   │   ├── td3.py        # Twin Q, deterministic policy, delayed updates
-│   │   ├── fast_td3.py   # + C51 distributional critic, Q averaging
-│   │   ├── fast_sac.py   # + C51, policy delay=4, AdamW
-│   │   └── fast_dsac.py  # + Gaussian critic, DEM, population diversity
-│   │
-│   ├── envs/
-│   │   └── locomotion/
-│   │       ├── go2_base.py           # Go2 base MjxEnv subclass (physics, sensors, contact fix)
-│   │       ├── go2_constants.py      # Joint ordering, default pose, limits
-│   │       ├── go2_joystick.py       # Joystick task: command tracking + legged_gym rewards
-│   │       └── xmls/go2_scene_flat.xml  # Scene XML with added sensors
-│   │
-│   ├── buffers/
-│   │   ├── replay_buffer.py      # Numpy circular FIFO (CPU, default for vanilla)
-│   │   ├── jax_replay_buffer.py  # GPU-resident, JIT'd add/sample (default for Fast)
-│   │   └── rollout_buffer.py     # PPO on-policy buffer with GAE
-│   │
-│   ├── configs/
-│   │   ├── train_config.py       # Shared: env_name, lr, gamma, num_envs, etc.
-│   │   ├── ppo_config.py         # PPO-specific (clip_eps, gae_lambda, etc.)
-│   │   ├── sac_config.py         # SAC + obs_normalization toggle
-│   │   ├── td3_config.py         # TD3 + exploration noise
-│   │   ├── fast_td3_config.py    # + C51 atoms, v_min/v_max, tapered dims
-│   │   ├── fast_dsac_config.py   # + DEM temperature, beta range, variance eps
-│   │   ├── env_presets.py        # Per-env config tuples: get_sac_preset("CheetahRun")
-│   │   └── networks_config.py   # EncoderConfig, PolicyHeadConfig, etc.
-│   │
-│   ├── networks/
-│   │   ├── encoders/mlp.py       # MlpEncoder (CNN planned)
-│   │   ├── heads/
-│   │   │   ├── gaussian.py       # GaussianHead (SAC actor, with optional DEM logits)
-│   │   │   ├── deterministic.py  # DeterministicHead (TD3 actor)
-│   │   │   ├── q_head.py         # Monolithic QHead (obs+action → scalar)
-│   │   │   ├── q_distributional.py  # C51 QHead (obs+action → atom logits)
-│   │   │   ├── q_gaussian.py     # Gaussian QHead (obs+action → mean+variance)
-│   │   │   └── value.py          # ValueHead (PPO critic)
-│   │   ├── builders.py           # Actor/Critic builders (PPO only currently)
-│   │   └── distributions.py      # TanhNormal sampling via distrax
-│   │
-│   ├── training/                 # Shared utilities (the refactor result)
-│   │   ├── checkpointing.py      # save_checkpoint, load_checkpoint, load_actor_for_inference
-│   │   ├── episode_tracker.py    # EpisodeTracker class
-│   │   ├── env_setup.py          # make_envs (with NaN guard), make_identity_norm_state
-│   │   ├── metrics_logger.py     # log_training_step, make_metrics_row
-│   │   └── eval_runner.py        # maybe_eval_and_checkpoint, final_eval_and_checkpoint
-│   │
-│   └── utils/
-│       ├── normalization.py      # NormalizationState, update, normalize (with eps param)
-│       ├── eval.py               # evaluate() — deterministic rollout with NaN guard
-│       └── distributional.py     # C51: make_support, project_distribution, logits_to_q
-│
-├── tests/                        # 60 tests, all passing
-│   ├── test_algo_configs.py      # All algos: init, update, optimizer compat, NaN guard
-│   ├── test_checkpoint.py        # Save/load, meta.json, metrics CSV, orbax
-│   ├── test_determinism.py       # Env + PPO training determinism
-│   ├── test_normalization.py     # Normalization utilities
-│   ├── test_ppo_setup.py         # PPO init, action, update, buffer/GAE
-│   ├── test_go2_env.py           # Go2 env: reset, step, obs shape, rewards, contact fix
-│   └── debug_fasttd3_nan.py      # Diagnostic script (not a pytest test)
-│
-├── checkpoints/                  # Training outputs (gitignored, ~299MB, needs purge)
-│
-└── .context/                     # Project documentation hub
-    ├── AGENT_HANDOFF.md          # This file
-    ├── TODO.md                   # Prioritized task list
-    ├── LESSONS.md                # Accumulated debugging lessons (~800 lines)
-    ├── journals/                 # Daily work logs
-    │   ├── 2026-03-12.md through 2026-03-24.md
-    ├── go2_sim_to_real_plan.md   # Go2 deployment plan: PPO→SAC→ONNX→Jetson
-    ├── go2_ppo_debugging.md      # Active debugging trail for Go2 PPO training
-    ├── go2_physics_audit.md      # Go2 vs Go1 physics comparison (torque limits, solimp, sensors)
-    ├── integration_debt.md       # Tracked tech debt items
-    ├── rl_framework_plan.md      # North star architecture (Phases 1-6)
-    ├── refactor_idea.md          # Shared utilities design (Brax-style, not Trainer class)
-    ├── vision_rl_design.md       # Vision RL: CNN encoder, MJWarp, ManiSkill
-    ├── oom_investigation.md      # GPU OOM root cause (MJX recompilation)
-    ├── FAST_ALGOS_LIT_MISMATCH.md # Paper vs implementation config audit
-    └── builders_unification_plan.md # Encoder swappability for CNN/ViT
-```
+The lessons system is your search engine for "has this been solved before?" Read the index BEFORE investigating any bug, implementing any algorithm, or tuning any hyperparameter.
 
-### The three layers of the codebase
+### The retrieval pattern
+
+**Step 1: Read the index.** `.context/LESSONS.md` (~87 lines). Every lesson is a one-liner grouped by topic.
+
+**Step 2: Drill into the relevant topic file.** Only read what's relevant:
+
+| Topic file | When to read it |
+|------------|----------------|
+| `lessons/ppo.md` | Debugging PPO (entropy, GAE, VLoss, tanh squashing, Brax parity) |
+| `lessons/offpolicy.md` | SAC/TD3 (obs norm, replay ratio, exploration, target entropy) |
+| `lessons/distributional.md` | C51/FastTD3/FastSAC/FastDSAC (V_min/V_max, paper-vs-code) |
+| `lessons/jax_performance.md` | Slow training or JIT issues (lax.scan, recompilation, carry cost) |
+| `lessons/infrastructure.md` | Checkpoint/eval/recording bugs (orbax, preprocessing mismatch) |
+| `lessons/mjx.md` | NaN/Inf crashes, GPU OOM, MJX recompilation |
+| `lessons/go2.md` | Go2 env (reward balance, actuator limits, contact physics) |
+
+**Step 3: Don't read what you don't need.** The index tells you exactly which file has what.
+
+### When to check lessons
+- **Before debugging** — the answer might already exist
+- **Before implementing from a paper** — check the "paper says X but code does Y" pattern
+- **Before tuning HPs** — entropy_coef, gamma, tau, target_entropy all have documented conclusions
+- **After solving a bug** — add a lesson to the topic file AND a one-liner to the index
+
+### Other docs
+
+| Doc | Path | When |
+|-----|------|------|
+| TODO list | `.context/TODO.md` | What to work on |
+| Latest journal | `.context/journals/` (highest date) | What happened last session |
+| Memory files | Path in `MEMORY.md` | Behavioral preferences, project references |
+| Go2 PPO debugging | `.context/go2/ppo_debugging.md` | Full hypothesis log, run table |
+| Go2 SAC Phase B | `.context/go2/sac_phase_b.md` | SAC plan, replay ratio research |
+| Lit mismatch audit | `.context/archive/FAST_ALGOS_LIT_MISMATCH.md` | Paper vs code config audit |
+| Framework plan | `.context/rl_framework_plan.md` | North star architecture (Phases 1-6) |
+| Vision design | `.context/vision_rl_design.md` | CNN encoder, MJWarp, ManiSkill |
+
+---
+
+## Part 4: Codebase Overview
+
+### The three layers
 ```
 Environment (MuJoCo Playground)
     ↓ obs, reward, done
@@ -241,343 +148,102 @@ Training Script (train_*.py) — glue layer, owns the loop
 Algorithm (jax_rl/algos/*.py) — pure math, no env knowledge
 ```
 
-- **Env** produces obs, consumes actions. We don't own this layer.
-- **Algo** owns the math: `init()`, `update()`, `select_action()`. Never touches the env directly.
-- **Training script** mediates: env step → buffer add → buffer sample → algo update → log → eval → checkpoint.
-
 The algo **never** knows about the env. The training script decides how to collect data (on-policy rollouts for PPO, single steps for off-policy).
 
-### Config system in detail
-Each algo has its own config dataclass. Presets in `env_presets.py` return `(TrainConfig, AlgoConfig)` tuples:
-
-```python
-cfg, sac_cfg = get_sac_preset("CheetahRun")
-# cfg: TrainConfig(env_name="CheetahRun", num_envs=128, lr=1e-3, gamma=0.99, ...)
-# sac_cfg: SACConfig(tau=0.005, hidden_dim=(256,256), batch_size=512, ...)
+### Key entry points
+```
+jax-learning/
+├── train_ppo.py              # PPO (Python loop, ~32k sps, all envs)
+├── train_ppo_fast.py         # PPO (lax.scan, ~110k sps, JIT-able envs only)
+├── train_offpolicy.py        # SAC/TD3/FastTD3/FastSAC via --algo flag
+├── record_video.py           # Loads any checkpoint, renders rollout + _traj.npz
+├── jax_rl/algos/             # ppo.py, sac.py, td3.py, fast_td3.py, fast_sac.py
+├── jax_rl/envs/locomotion/   # go2_base.py, go2_joystick.py, go2_constants.py
+├── jax_rl/configs/           # train_config.py, *_config.py, env_presets.py
+├── jax_rl/training/          # checkpointing, eval_runner, env_setup, metrics_logger
+├── jax_rl/buffers/           # jax_replay_buffer.py, rollout_buffer.py
+├── tests/                    # ~48 tests (uv run python -m pytest tests/ -v)
+└── tools/brax_baselines/     # Brax PPO A/B test scripts
 ```
 
-**Note:** PPO-specific fields (`num_steps`, `policy_hidden_dim`, `value_hidden_dim`, `squash`, etc.) live in `PPOConfig`, not `TrainConfig`. `train_ppo.py` reads from `cfg.ppo` for these fields. `TrainConfig` has only shared fields (env, scale, optimizer, eval).
-
-**Config override pattern** in train scripts:
-```python
-parser.add_argument("--lr", type=float, default=None)
-if args.lr is not None:
-    cfg = dataclasses.replace(cfg, lr=args.lr)
-```
+### Config system
+Each algo has its own config dataclass. Presets in `env_presets.py` return `(TrainConfig, AlgoConfig)` tuples. PPO-specific fields live in `PPOConfig`, not `TrainConfig`. CLI overrides via `dataclasses.replace(cfg, lr=args.lr)`.
 
 ### Checkpoint format
-Every checkpoint directory contains:
-- `meta.json` — full config (TrainConfig + AlgoConfig), obs_dim, action_dim, algo name
-- `metrics.csv` — full training curve (step, return, Q1, loss, sps, eval scores)
-- `actor_params.npy` — actor params + norm state (for inference/recording)
-- `orbax/` — full training state for resume (actor + critic + optimizer + target nets)
+Every checkpoint contains: `meta.json` (full config), `metrics.csv` (training curve), `actor_params.npy` (inference), `orbax/` (training resume). `load_actor_for_inference()` loads just actor_params.npy — no orbax needed.
 
-`load_actor_for_inference()` loads just actor_params.npy — no orbax, no algo import needed. This is what `record_video.py` uses.
-
----
-
-## Part 4: Benchmark Results and What They Mean
-
-### Full comparison table (as of 2026-03-21)
-
-**CheetahRun** (6-dim actions — low-dim, deterministic policies work well):
-| Algo | Eval | Steps | Envs | sps | Wall-clock |
-|------|------|-------|------|-----|------------|
-| PPO | 826 | 20M | 4096 | 65k | ~5 min |
-| Vanilla SAC | 771 | 5M | 128 | 10k | ~8 min |
-| Vanilla TD3 | 749 | 5M | 128 | 10k | ~7 min |
-| **FastTD3** | **880** | 86M | 1024 | 18k | ~78 min |
-| FastSAC (best) | 582 | 100M | 1024 | 15k | ~108 min |
-| FastDSAC (best) | 567 | 30M | 1024 | 18k | ~28 min |
-
-**Go2 Joystick** (12-dim actions — locomotion, dict obs, asymmetric AC):
-| Algo | Eval | Steps | Envs | Notes |
-|------|------|-------|------|-------|
-| Brax PPO (baseline) | 17.9 | 50M | 512 | A/B test script |
-| Our PPO (fast) | **233** | 50M | 1024 | Seed 2100: 10x tracking + height term + torque fix. Robot walks at 0.31m. |
-
-**HumanoidRun** (21-dim actions — high-dim, entropy exploration critical):
-| Algo | Eval | Steps | Envs | sps | Wall-clock |
-|------|------|-------|------|-----|------------|
-| PPO | ~10 | 60M | 4096 | 65k | ~15 min |
-| Vanilla TD3 | 4.3 | 5M | 128 | 10k | ~7 min |
-| Vanilla SAC | 426 | 20M | 128 | 4.4k | ~76 min |
-| FastTD3 | 665 | 100M | 1024 | 8k | ~3.4 hr |
-| **FastSAC** | **892** | 100M | 1024 | 12.3k | ~2.3 hr |
-| FastDSAC (128 envs) | 490 peak | 5M | 128 | 305 | ~4.5 hr |
-| FastDSAC (1024 envs) | 316 peak (Inf'd @ 53M, now guarded) | 53M | 1024 | 2.3k | *running with Inf fix* |
-
-### What the benchmarks tell us
-- **Low-dim (CheetahRun):** Deterministic TD3 + C51 wins. SAC's entropy overhead isn't worth it when simple Gaussian noise suffices for 6-dim exploration.
-- **High-dim (HumanoidRun):** SAC's entropy-based exploration is decisive. TD3 can't explore 21-dim action spaces with additive noise. FastSAC 892 vs FastTD3 665.
-- **C51 distributional critic helps at scale** — both FastTD3 (880 vs 749) and FastSAC (892 vs 426) benefit from distributional representation.
-- **Vanilla algos at 128 envs / 5M steps are competitive** — SAC 771 on CheetahRun beats FastSAC 582 at 100M steps. More envs ≠ better if the algorithm recipe is wrong.
-- **gamma=0.97 is critical** — FastSAC went from 375 (gamma=0.99) to 582 (gamma=0.97) on CheetahRun. Same algo, same everything else.
+### Go2 env key facts
+- **Dict obs**: `{"state": (48,), "privileged_state": (116-122,)}`
+- **PPO**: asymmetric AC — actor sees "state", critic sees "privileged_state"
+- **SAC/TD3**: both actor AND critic see "state" (48d) — no asymmetric
+- **Working PPO config**: tracking_lin_vel=10.0, tracking_ang_vel=5.0, height_termination=True, calf_torque=45.43Nm
+- **Seed 2100**: eval 233 @ 50M steps, robot walks at 0.31m base height
 
 ---
 
-## Part 5: Known Issues and Active Investigations
+## Part 5: Current State
 
-### MJX Physics NaN (SOLVED)
-MuJoCo's MJX backend produces NaN obs stochastically on humanoid envs at 1024 parallel worlds. Contact solver failures or singular mass matrices.
+### Benchmark results (as of 2026-03-26)
 
-**Fix:** Three-layer NaN guard in `env_setup.py`:
-1. Zero NaN actions before `env.step()` (prevents NaN→actor→NaN action→crash chain)
-2. Zero NaN obs after `env.step()`, force `done=True` (auto-resets crashed envs)
-3. C51 log_prob clamp (`jnp.maximum(log_softmax, -30)`) prevents `-inf * 0 = NaN`
+**CheetahRun** (6-dim actions):
+| Algo | Eval | Steps | Notes |
+|------|------|-------|-------|
+| PPO | 826 | 20M | 2048 envs |
+| Vanilla SAC | 771 | 5M | 128 envs, 8 min |
+| **FastTD3** | **880** | 86M | 1024 envs |
 
-### GPU OOM at 67-85M Steps (MITIGATED, NOT FULLY SOLVED)
-MJX recompiles `jit(while)` and `jit(scan)` with identical signatures ~2x/min. Over 2 hours, this accumulates ~480 CUDA command buffers that exhaust GPU driver memory.
+**HumanoidRun** (21-dim actions):
+| Algo | Eval | Steps | Notes |
+|------|------|-------|-------|
+| PPO | ~10 | 60M | Algorithm limit, not bug |
+| Vanilla SAC | 426 | 20M | 128 envs |
+| **FastSAC** | **892** | 100M | 1024 envs, SOTA |
 
-**Mitigation:** `XLA_CLIENT_MEM_FRACTION=0.7` leaves headroom. Set in all train scripts.
-**Root cause unknown:** Why does JAX recompile identical functions? Is it MJX, Playground, or JAX itself? Investigation pending — see `oom_investigation.md`.
+**Go2 Joystick** (12-dim actions):
+| Algo | Eval | Steps | Notes |
+|------|------|-------|-------|
+| Our PPO | **233** | 50M | Seed 2100, robot walks |
+| Brax PPO | 17.9 | 50M | A/B baseline |
 
-### FastDSAC: ARCHIVED
-Peaked at 282 eval on HumanoidRun (1024 envs) with heavy oscillation (58-282) vs FastSAC's stable 892. The algorithm was numerically fixed (Huber loss, Inf guard, buffer scaling) but doesn't produce competitive policies at our scale. Archived in `jax_rl/algos/archive/`, `tests/archive/`. The debugging journey is documented in LESSONS.md — valuable for the "paper says X but code does Y" lesson.
+**Key takeaways:** Low-dim → FastTD3. High-dim → FastSAC. gamma=0.97 for locomotion. C51 helps at scale. Vanilla algos at 128 envs are competitive for sample efficiency.
 
-### Debugging workflow: stress test edge cases directly
-Don't wait for a full training run to reproduce a crash. Inject the suspected failure condition directly:
-```python
-# Instead of running 53M steps to see if it NaN's:
-batch['obs'] = batch['obs'].at[0].set(float('inf'))
-state, metrics = dsac.update(state, batch)
-# If NaN → confirmed. If fine → wrong hypothesis. 30 seconds, not 7 hours.
-```
-This found the Inf root cause in one test after multiple failed full runs.
-
-### PPO Implementation Fixes (2026-03-24)
-Our PPO had two critical differences vs Brax PPO that caused 2x slower sample efficiency:
-1. **Value loss scaling** — Brax uses 0.25x, we used 1.0. Larger coefficient makes the critic dominate the shared loss, destabilizing the actor.
-2. **Advantage normalization** — Brax normalizes across the full batch BEFORE minibatch split. We normalized per-minibatch, which shifts the advantage distribution differently per minibatch.
-
-After fixing both, our fast PPO **beats Brax PPO** on Go1: 27.3 eval at 28.5M steps vs Brax's 18 at the same point. See `go2_ppo_debugging.md` for the full investigation trail.
-
-### Go2 Env (IMPLEMENTED, PPO PHASE A COMPLETE)
-Go2Env subclasses MjxEnv with:
-- **Dict obs**: `{"state": (48,), "privileged_state": (116-122,)}` — PPO uses asymmetric actor-critic (actor sees "state", critic sees "privileged_state"). Off-policy algos (SAC/TD3) use "state" for BOTH actor and critic (no asymmetric).
-- **16 reward terms** — Go1 reward math but with Go2-specific tracking weights (see below)
-- **Firm contacts** — Menagerie Go2 has solimp=0.015 (soft), overridden to 0.9 (firm, matches Go1)
-- **Scene XML** adds sensors missing from Menagerie: local_linvel, upvector, foot contacts
-- **Calf torque bug fixed** — Menagerie sets 24 Nm for calf joints; real Go2 is 45.43 Nm. Fixed in `go2_base.py`.
-- **Height termination** — base_z < 0.18m terminates episode. Prevents crouching local optimum.
-- **action_scale=0.5** — matched to Go1 PG
-- 12/12 tests pass
-
-**Working config (seed 2100, eval 233 @ 50M steps):**
-- `tracking_lin_vel=10.0` (NOT 1.0 — Go1's weight does not transfer to Go2)
-- `tracking_ang_vel=5.0` (NOT 0.5)
-- `height_termination=True` (base_z < 0.18m)
-- `calf_torque=45.43 Nm` (fixed from Menagerie's wrong 24 Nm)
-- Robot stands at 0.31m base height, locomotes, tracks velocity commands.
-
-**Critical warning:** Go1 PG weights (tracking_lin_vel=1.0, tracking_ang_vel=0.5) do NOT work for Go2. At those weights, pose reward (~450) dominates tracking reward (~130) and the optimal strategy is crouching. 10x tracking is required to make walking dominate. When porting to new robots, always verify reward term balance numerically before assuming weights transfer.
-
-See `go2_ppo_debugging.md` for the full investigation trail (20+ seeds, 10 hypotheses, root cause analysis).
-
-### train_ppo_fast.py (PREFERRED for JIT-able envs)
-Uses `jax.lax.scan` for env collection instead of Python loop. **110k sps on Go1 vs 32k with train_ppo.py** (3.4x speedup). Falls back to train_ppo.py for non-JIT-able envs (e.g., future MJWarp rendering).
-
-### Paper Config Disparities (DOCUMENTED, MOSTLY FIXED)
-See `.context/archive/FAST_ALGOS_LIT_MISMATCH.md` for the full audit. Key items still not matching paper:
-- Obs normalization: paper uses it, we have it as opt-in toggle
-- Separate actor/critic normalizers: paper has two, we have one
-- Some per-task hyperparameters not tuned (DEM temperature, beta range)
-
-### Integration Debt
-See `.context/integration_debt.md` for 7 tracked items including:
-- select_action dual role (inference vs training)
-- Two normalizers in checkpoint (policy + critic)
-- PPO test coverage for asymmetric actor-critic
+### Roadmap
+See `TODO.md` for full prioritized list. Summary:
+- **Active:** Go2 SAC Phase B — can SAC match PPO eval=233? (prerequisite for DIAYN)
+- **Short-term:** Frame stacking, domain rand, W&B HP tuning agent
+- **Mid-term:** Vision RL (Madrona MJX `vision=True`, CNN encoder, DrQ)
+- **Long-term:** DIAYN → METRA → USD (skill discovery on real Go2)
 
 ---
 
-## Part 6: Upcoming Work
+## Part 6: Quick Reference
 
-### Active (Go2 Phase B)
-1. ~~**Go2 Phase A (PPO)**~~ — **DONE.** Seed 2100: eval 233 @ 50M steps. Robot walks.
-2. **Go2 Phase B (SAC)** — Validate off-policy on Go2 env. Research Q: can SAC match eval=233? Required prerequisite for DIAYN/METRA (skill discovery wraps SAC). See `go2_sim_to_real_plan.md`.
-
-### Short-term
-1. ~~TrainConfig cleanup~~ — **DONE**
-2. ~~Q diagnostics~~ — **DONE**
-3. ~~Builders unification~~ — **DONE**
-4. ~~Go2 env~~ — **DONE** (MjxEnv subclass, 12/12 tests)
-5. **Checkpoints purge** — delete orbax weights from failed runs, keep meta.json + metrics.csv
-
-### Mid-term: Vision RL
-Design doc: `.context/vision_rl_design.md`
-
-**Key discovery:** Playground has built-in `vision=True` via Madrona MJX. No custom pixel wrapper needed:
-```python
-config_overrides = {"vision": True, "vision_config.render_batch_size": num_envs}
-env = dm_control_suite.load(env_name, config_overrides=config_overrides)
-env = wrapper.wrap_for_brax_training(env, vision=True, num_vision_envs=num_envs, ...)
-```
-
-**MJWarp rendering also verified working** on our hardware (RTX 5080):
-```python
-rc = mjx.create_render_context(model, nworld=4)  # works
-result = mjx.render(mx, data, rc.pytree())        # produces (nworld, H*W) uint32 packed RGBA
-```
-
-Implementation order:
-1. Install `madrona_mjx`, verify vision env loads
-2. Builders unification
-3. CNN encoder (`NatureCNN` + optional MLP layers, `CnnEncoderConfig`)
-4. `--vision` flag on train scripts
-5. DrQ augmentation (random image shifts)
-6. Benchmark CartpoleBalance from pixels
-7. ManiSkill integration (Gymnasium adapter + DLPack torch→JAX bridge)
-
-### Long-term: Phase 6 (North Star)
-- DIAYN — skill discovery wrapping SAC
-- METRA — contrastive + metric-aware skills
-- Goal-conditioned RL — encoder `context_dim` + `context_fusion`
-- USD — Unified Skill Discovery
-
----
-
-## Part 7: Common Gotchas
-
-### GPU management
-1. **Always check for zombie processes before launching:** `nvidia-smi | grep python`
-2. **Kill zombies:** `kill <pid>`, wait 3 seconds, verify with `nvidia-smi`
-3. **cuSolver errors** ("gpusolverDnCreate failed") = zombie hogging GPU memory
-4. **Can't run two 1024-env trainings simultaneously** on 16GB — queue them
-5. **JIT compilation takes 1-3 min** for 1024-env humanoid. Empty output is normal during this time.
-
-### JAX/Flax specifics
-6. **`jax.jit` caches by (function identity + input shapes + shardings)** — same shapes always reuse the cached compilation (except MJX's while/scan bug)
-7. **`jax.lax.scan` > Python loops** for repeated computation — 542x speedup measured
-8. **`@flax.struct.dataclass`** for training state, not regular `@dataclass` — needed for JAX tree operations
-9. **`jnp.where` for conditional updates** — no Python `if` inside JIT'd functions
-10. **DLPack for torch→JAX conversion** — zero-copy on same GPU, but has sync point
-
-### Training pitfalls
-11. **`| tail -N` pipe kills background processes** — never pipe background training output
-12. **Obs normalization before buffer storage = disaster** — stale stats → ±2 billion values → Q divergence
-13. **C51 `log_softmax` can produce `-inf`** — always clamp: `jnp.maximum(log_softmax(...), -30)`
-14. **Softplus variance → 0 for large negative inputs** — use log-variance with clamping instead
-15. **`tau=0.125` is not a typo** — Fast variants need it for high UTD ratio (8-12 gradient steps per env step)
-16. **gamma=0.97 for locomotion** — paper uses it, verified massive performance difference
-17. **FastDSAC batch size is 32K** (paper spec) — 4x larger than other algos
-
-### Documentation pitfalls
-18. **Don't batch documentation** — update journal/lessons immediately after discoveries
-19. **Check LESSONS.md before debugging** — the answer might already be there from a previous session
-20. **Journal ≠ Lessons** — journal is "what happened today", lessons are "what to remember forever"
-
----
-
-## Part 8: Testing
-
+### Commands
 ```bash
-uv run python -m pytest tests/ -v              # Full suite, 48 tests, ~2.5 min (needs GPU)
-uv run python -m pytest tests/ -v -k "not ppo" # Skip PPO tests (less GPU)
-uv run python -m pytest tests/test_normalization.py -v  # No GPU needed
-```
-
-### What the tests cover
-- **test_algo_configs.py** (28 tests) — every algo: init + 1 update step with Adam/AdamW, critic_hidden_dim, policy delay, alpha init, obs norm config, NaN guard
-- **test_checkpoint.py** (7 tests) — save/load round-trip, meta.json structure, metrics CSV, orbax restore
-- **test_determinism.py** (2 tests) — env determinism, full PPO training determinism
-- **test_normalization.py** (6 tests) — normalization utilities
-- **test_ppo_setup.py** (5 tests) — PPO init, action selection, deterministic, update, buffer/GAE
-
-### Test gaps (known)
-- No integration test for sample-time obs normalization in training loop
-- No test for record_video.py (needs display or EGL)
-- No test for vision pipeline (not built yet)
-
----
-
-## Part 9: Quick Reference
-
-### Launch a training run
-```bash
-# Go2 PPO (preferred — uses lax.scan, 110k sps)
+# Training
 uv run python train_ppo_fast.py --env Go2JoystickFlat --num-envs 1024 --total-timesteps 200000000
+uv run python train_offpolicy.py --algo sac --env Go2JoystickFlat --obs-norm
 
-# PPO with Python loop (for non-JIT-able envs)
-uv run python train_ppo.py --env Go2JoystickFlat --num-envs 512 --total-timesteps 50000000
-
-# Vanilla SAC on CheetahRun (quick, 128 envs)
-uv run python train_sac.py --env CheetahRun
-# FastTD3 on HumanoidRun (long, 1024 envs)
-uv run python train_fast_td3.py --env HumanoidRun --obs-norm
-```
-
-### Check a running training
-```bash
+# Monitoring
 nvidia-smi | grep python                    # Is it running?
 grep "EVAL" /tmp/claude-*/tasks/*.output     # Eval scores
-tail -3 /tmp/claude-*/tasks/*.output         # Latest metrics
-```
 
-### Record a video from checkpoint
-```bash
+# Recording
 MUJOCO_GL=egl uv run python record_video.py --checkpoint checkpoints/<dir>
-```
 
-### Run tests
-```bash
+# Testing
 uv run python -m pytest tests/ -v
+
+# Committing
+git add <files> && git commit -m "fix: description"  # No Co-Authored-By
 ```
 
-### Commit
-```bash
-git add <files>
-git commit -m "fix: description of what and why"
-# No Co-Authored-By lines
-```
-
----
-
-## Part 10: Document Navigation Guide
-
-### Always read first
-| Doc | Path | When |
-|-----|------|------|
-| This handoff | `.context/AGENT_HANDOFF.md` | Start of every session |
-| TODO list | `.context/TODO.md` | To know what to work on |
-| Memory files | Path in `MEMORY.md` (in the memory directory) | For behavioral preferences, project references |
-| Latest journal | `.context/journals/` (highest date) | To know what happened last session |
-
-### Read when debugging
-| Doc | Path | What it tells you |
-|-----|------|-------------------|
-| Lessons | `.context/LESSONS.md` | Every debugging victory — **check here before investigating**, the answer might already exist |
-| Go2 PPO debugging | `.context/go2_ppo_debugging.md` | Full hypothesis log, run table, reward analysis, Brax PPO A/B comparison |
-| Integration debt | `.context/integration_debt.md` | 7 tracked items: select_action dual role, normalizer checkpoint, etc. |
-| OOM investigation | `.context/archive/oom_investigation.md` | Full trail of the GPU memory investigation: hypotheses, tests, root cause (MJX recompilation) |
-
-### Read when implementing algorithms
-| Doc | Path | What it tells you |
-|-----|------|-------------------|
-| Lit mismatch audit | `.context/archive/FAST_ALGOS_LIT_MISMATCH.md` | Every config where our code differs from the paper, with severity ratings and source code citations |
-| Framework plan | `.context/rl_framework_plan.md` | North star architecture (Phases 1-6), with documented deviations explaining where/why we diverged |
-| Builders plan | `.context/archive/builders_unification_plan.md` | How to make encoders swappable (MLP→CNN→ViT). Prerequisite for vision RL |
-
-### Read when working on vision
-| Doc | Path | What it tells you |
-|-----|------|-------------------|
-| Vision design | `.context/vision_rl_design.md` | Full design: CNN encoder, MJWarp verification, Madrona MJX `vision=True`, ManiSkill integration, DrQ augmentation, memory budget |
-
-### Read when refactoring
-| Doc | Path | What it tells you |
-|-----|------|-------------------|
-| Refactor idea | `.context/refactor_idea.md` | Brax-style shared utilities approach, framework comparison table (Brax vs SB3 vs Tianshou vs CleanRL), why we chose utilities over Trainer class |
-
-### Read when adding a new algo
-| Doc | Path | What it tells you |
-|-----|------|-------------------|
-| Any existing `jax_rl/algos/*.py` | Codebase | Pattern to follow: `__init__` builds networks, `init()` creates TrainingState, `update()` is JIT'd, `select_action()` for inference |
-| Any existing `train_*.py` | Codebase | Training loop pattern: env step → buffer → sample → normalize → update → log → eval → checkpoint |
-| `jax_rl/configs/env_presets.py` | Codebase | How to add per-env hyperparameter presets |
-
-### Cross-references within docs
-- **Journal mentions a lesson** → full lesson in LESSONS.md
-- **LESSONS.md mentions a config mismatch** → full audit in FAST_ALGOS_LIT_MISMATCH.md
-- **TODO.md references a design doc** → full design in the linked `.context/*.md`
-- **Framework plan mentions a deviation** → deviation reason inline, implementation details in the relevant journal entry
-- **Lit mismatch cites source code** → holosoma repo (`github.com/amazon-far/holosoma`) for FastTD3/FastSAC, arXiv 2603.12612 for FastDSAC
+### Gotchas (quick-reference)
+1. **Kill zombie GPU processes before launching** — `nvidia-smi | grep python`
+2. **JIT compilation takes 1-3 min** — empty output is normal at start
+3. **Can't run two 1024-env trainings** on 16GB — queue them
+4. **`| tail -N` pipe kills background processes** — never pipe background output
+5. **`@flax.struct.dataclass`** for training state, not regular `@dataclass`
+6. **`jnp.where` for conditional updates** — no Python `if` inside JIT'd functions
+7. **`XLA_CLIENT_MEM_FRACTION=0.7`** set in all train scripts — prevents OOM from MJX recompilation
+8. **Check lessons before debugging** — the answer might already be there
