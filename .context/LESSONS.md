@@ -86,3 +86,4 @@ JAX/Flax fundamentals in `LEARNER_LESSONS.md`.
 - **Compare full env implementation, not just config** — diff collision geometry, termination, reward balance
 - **Menagerie vs Playground contact physics** — solimp 0.015 (soft) vs 0.9 (firm), body collisions encourage crouching
 - **Custom locomotion env integration** — subclass MjxEnv, scene XML adds missing sensors, Go2 vs Go1 naming
+- **Training MJCF != deployment MJCF** — Menagerie go2_mjx.xml vs unitree_mujoco go2.xml are different physics; policy doesn't transfer

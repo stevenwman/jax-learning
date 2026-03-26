@@ -81,3 +81,20 @@ Subclass `MjxEnv`, override `_get_obs()`, `_get_reward()`, `_get_termination()`.
 
 ### Go2 vs Go1 Naming Differences
 Body: `base` (Go1: `trunk`). Foot sites: `FL_foot` (Go1: `FL`). Joint order: FL/FR/RL/RR (Go1: FR/FL/RR/RL). PD override works identically.
+
+---
+
+## Training MJCF != Deployment MJCF — Unify Before Expecting Transfer (2026-03-26)
+
+**What happened:** Built full sim2sim pipeline (DDS, headless simulator, numpy policy inference). Robot stands up perfectly at 0.27m via the FSM. Policy takes over, robot falls immediately.
+
+**Root cause:** We train on Menagerie `go2_mjx.xml` (with custom overrides: solimp=0.9, calf torque=45.43Nm, feetonly-ish contacts). We deploy to unitree_mujoco's `go2.xml` which has different actuator models (pure torque motors vs position-controlled), different contact parameters, different damping. These aren't two copies of the same sim — they're two completely different physics environments that happen to model the same robot.
+
+**What proved the pipeline is correct:** The stand-up FSM works perfectly (cosine interpolation to default pose, robot reaches 0.27m). Joint remapping is correct (FL/FR/RL/RR ↔ FR/FL/RR/RL). DDS round-trip works. Policy inference produces valid actions. The failure is purely physics mismatch.
+
+**Lesson:** "Sim2sim" only works if both sims use the same MJCF and physics config. Training on one model and deploying to another is really sim-to-different-sim — same gap as sim-to-real, just with known physics on both sides. Before expecting policy transfer, unify the MJCF: either train on the deployment model, or make the deployment model match the training model.
+
+**Options going forward:**
+1. Train directly on unitree_mujoco's `go2.xml` (cleanest for deployment, but need MJX compatibility)
+2. Make our MjxEnv load unitree_mujoco's MJCF (keep training pipeline, match deployment physics)
+3. Domain randomization across both models (most robust, most work)
