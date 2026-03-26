@@ -28,19 +28,16 @@
 
 ## Completed (2026-03-25)
 - [x] Go2 PPO Phase A — DONE. Seed 2100: eval 233 @ 50M steps. Config: tracking_lin_vel=10.0, tracking_ang_vel=5.0, height_term=0.18m, calf_torque=45.43Nm. Robot stands at 0.31m and locomotes.
+- [x] Reward breakdown in record_video.py — saved in _traj.npz as reward_* arrays
+- [x] record_video.py dict obs support + command arrow overlay
+- [x] Fix eval recompilation — norm_state passed as arg, JIT compiles once
+- [x] Fix train_ppo_fast.py online return tracker — running_ep_return persists across collect calls
+- [x] Print elapsed time + --eval-every CLI flag + line-buffered output
 
 ## Active
 
-## Short-term — Blocking Go2 walking
-- [x] Reward breakdown in record_video.py — saved in _traj.npz as reward_* arrays. Used to diagnose crouching vs walking.
-- [ ] Best-policy checkpointing — save best eval checkpoint separately from most-recent. Currently overwrites each eval.
-
 ## Short-term — Training script quality
-- [x] Fix eval recompilation — norm_state passed as arg, JIT compiles once. Was adding ~15s per eval.
-- [x] Fix train_ppo_fast.py online return tracker — episode returns accumulated inside scan carry.
-- [x] Print elapsed time in training scripts — wall-clock since start on each iteration.
-- [x] Add --eval-every CLI flag and PYTHONUNBUFFERED=1 for real-time output.
-- [x] record_video.py dict obs support — fixed, also saves _traj.npz + command arrow overlay.
+- [ ] Best-policy checkpointing — save best eval checkpoint separately from most-recent. Currently overwrites each eval.
 
 ## Short-term — Go2 env maturity
 - [ ] Wire frame stacking into Go2 env (currently no frame stack — just raw obs)
