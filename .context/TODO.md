@@ -34,10 +34,11 @@
 - [x] Fix train_ppo_fast.py online return tracker — running_ep_return persists across collect calls
 - [x] Print elapsed time + --eval-every CLI flag + line-buffered output
 
-## Active
+## Completed (2026-03-25, cont.)
+- [x] Best-policy checkpointing — CheckpointManager saves to ckpt_dir/best/ on new eval high
+- [x] Sync train_ppo.py with train_ppo_fast.py — frozen obs norm, CheckpointManager, eval fix, --eval-every, .3g format
 
-## Short-term — Training script quality
-- [ ] Best-policy checkpointing — save best eval checkpoint separately from most-recent. Currently overwrites each eval.
+## Active
 
 ## Short-term — Go2 env maturity
 - [ ] Wire frame stacking into Go2 env (currently no frame stack — just raw obs)
