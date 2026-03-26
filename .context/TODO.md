@@ -51,6 +51,10 @@
 - [x] `lax.scan` for gradient loops — benchmarked: 1.03x (no speedup)
 - [x] MJX recompilation — root cause found, upstream issue, MEM_FRACTION=0.7 mitigates
 
+## Short-term — Experiment tracking
+- [ ] W&B integration — log training curves (return, Q, entropy, loss, sps) to wandb
+- [ ] W&B HP tuning agent — Claude reads wandb curves via API, diagnoses stagnation/divergence, proposes HP changes (lr, entropy_coef, UTD ratio, reward weights). Could be a hook or a scheduled agent.
+
 ## Mid-term (Vision RL)
 - [ ] Install `madrona_mjx`, verify Playground `vision=True` on RTX 5080
 - [ ] CNN encoder (`jax_rl/networks/encoders/cnn.py`) + `CnnEncoderConfig`
