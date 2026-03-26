@@ -29,15 +29,18 @@ class CheckpointManager:
 
     def save(self, training_state, norm_state, cfg, algo_cfg,
              algo_name, obs_dim, action_dim, metrics_log, resume=None,
-             eval_mean: float | None = None) -> bool:
+             eval_mean: float | None = None,
+             critic_norm_state: NormalizationState | None = None) -> bool:
         """Save latest checkpoint. Returns True if new best."""
         save_checkpoint(self.ckpt_dir, training_state, norm_state, cfg, algo_cfg,
-                        algo_name, obs_dim, action_dim, metrics_log, resume)
+                        algo_name, obs_dim, action_dim, metrics_log, resume,
+                        critic_norm_state=critic_norm_state)
         is_best = False
         if eval_mean is not None and eval_mean > self.best_eval:
             self.best_eval = eval_mean
             save_checkpoint(self.best_dir, training_state, norm_state, cfg, algo_cfg,
-                            algo_name, obs_dim, action_dim, metrics_log, resume)
+                            algo_name, obs_dim, action_dim, metrics_log, resume,
+                            critic_norm_state=critic_norm_state)
             is_best = True
         return is_best
 
@@ -53,6 +56,7 @@ def save_checkpoint(
     action_dim: int,
     metrics_log: list[dict],
     resume: str | None,
+    critic_norm_state: NormalizationState | None = None,
 ) -> None:
     """Save meta.json + metrics.csv + actor_params.npy + orbax checkpoint.
 
@@ -114,6 +118,8 @@ def save_checkpoint(
     # Full checkpoint for resume
     orbax_dir = os.path.join(ckpt_dir, "orbax")
     ckpt = {"training_state": training_state, "norm_state": norm_state}
+    if critic_norm_state is not None:
+        ckpt["critic_norm_state"] = critic_norm_state
     checkpointer = ocp.StandardCheckpointer()
     checkpointer.save(os.path.abspath(orbax_dir), ckpt, force=True)
     checkpointer.wait_until_finished()
@@ -123,10 +129,13 @@ def load_checkpoint(
     ckpt_dir: str,
     training_state,
     norm_state: NormalizationState,
+    critic_norm_state: NormalizationState | None = None,
 ) -> tuple:
-    """Load orbax checkpoint. Returns (training_state, norm_state, start_step)."""
+    """Load orbax checkpoint. Returns (training_state, norm_state, start_step[, critic_norm_state])."""
     orbax_dir = os.path.join(ckpt_dir, "orbax")
     target = {"training_state": training_state, "norm_state": norm_state}
+    if critic_norm_state is not None:
+        target["critic_norm_state"] = critic_norm_state
     ckpt = ocp.StandardCheckpointer().restore(os.path.abspath(orbax_dir), target=target)
 
     start_step = 0
@@ -137,6 +146,8 @@ def load_checkpoint(
         if rows:
             start_step = int(rows[-1]["total_steps"])
 
+    if critic_norm_state is not None and "critic_norm_state" in ckpt:
+        return ckpt["training_state"], ckpt["norm_state"], start_step, ckpt["critic_norm_state"]
     return ckpt["training_state"], ckpt["norm_state"], start_step
 
 
