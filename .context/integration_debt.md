@@ -27,21 +27,15 @@ Fixed. Also saves `_traj.npz` + command arrow overlay.
 
 ---
 
-## 4. `_extract_obs` is a free function, not part of env interface
+## 4. ~~`_extract_obs` hardcoded keys~~ — RESOLVED BY CONVENTION (2026-03-25)
 
-**Problem:** `_extract_obs(obs)` in `train_ppo.py` hardcodes `"state"` and `"privileged_state"` key names. If another env uses different keys, it breaks silently. Still relevant for `train_ppo.py`; `train_ppo_fast.py` bakes the key extraction at trace time so it fails loudly at compile rather than silently at runtime.
-
-**Fix:** Either standardize the key names in all envs (document as convention), or have envs expose `policy_obs_key` / `critic_obs_key` properties.
+All envs use `"state"` / `"privileged_state"` keys, matching Playground Go1. Convention documented. Three scripts use it consistently.
 
 ---
 
-## 5. Obs normalization: two separate normalizers
+## 5. ~~Critic norm state lost on resume~~ — DONE (2026-03-26)
 
-**Problem:** `train_ppo.py` maintains `norm_state` (policy) and `critic_norm_state` (critic) separately. Only `norm_state` is saved to checkpoint. Critic norm state is lost on resume.
-
-**Fix:** Save both normalizer states in checkpoint, or compute critic norm from policy norm (since privileged_state contains state as a prefix).
-
-**Risk if not fixed:** Resume from checkpoint will have stale critic normalization for the first few iterations.
+`save_checkpoint` and `load_checkpoint` now accept optional `critic_norm_state`. Saved to orbax checkpoint alongside policy norm state.
 
 ---
 
