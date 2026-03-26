@@ -263,6 +263,7 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
 
     # ── Training loop ────────────────────────────────────────────────────
     running_ep_return = jnp.zeros(cfg.num_envs)
+    best_eval = -float('inf')
     import time as _time
     _t_start = _time.time()
     print(f"\nJIT-compiling first iteration (expect a delay)...")
@@ -372,7 +373,15 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
                 metrics_log[-1].update(eval_metrics)
             save_checkpoint(ckpt_dir, training_state, norm_state, cfg, cfg.ppo,
                             "ppo", obs_dim, action_dim, metrics_log, resume)
-            print(f"  Checkpoint saved to {ckpt_dir}")
+            # Save best checkpoint separately
+            if eval_metrics['eval_mean'] > best_eval:
+                best_eval = eval_metrics['eval_mean']
+                best_dir = os.path.join(ckpt_dir, "best")
+                save_checkpoint(best_dir, training_state, norm_state, cfg, cfg.ppo,
+                                "ppo", obs_dim, action_dim, metrics_log, resume)
+                print(f"  New best! eval={best_eval:.1f} → {best_dir}")
+            else:
+                print(f"  Checkpoint saved to {ckpt_dir}")
             last_eval_eps = n_eps_total
 
     # ── Final eval ────────────────────────────────────────────────────────
