@@ -4,7 +4,9 @@ version = "0.1.0"
 description = "Deploy JAX RL policies on Unitree Go2 (sim and real)"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "mujoco>=3.6.0",
     "numpy>=1.26",
+    "pygame>=2.6.1",
 ]
 
 [project.optional-dependencies]

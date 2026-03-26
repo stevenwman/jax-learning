@@ -12,8 +12,15 @@ Usage:
 FSM: IDLE -> STAND (interpolation) -> HOLD -> POLICY (runs until Ctrl+C)
 """
 import argparse
+import os
+import sys
 import time
 import numpy as np
+
+# Ensure project root is on path when running as `deploy/.venv/bin/python deploy/deploy_go2.py`
+_project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
 
 from deploy.policy_runner import PolicyRunner
 from deploy.obs_builder import ObsBuilder
