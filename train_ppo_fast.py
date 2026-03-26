@@ -1,7 +1,3 @@
-import os
-os.environ.setdefault("XLA_FLAGS", "--xla_gpu_enable_command_buffer=")
-os.environ.setdefault("XLA_CLIENT_MEM_FRACTION", "0.7")
-
 """Fast PPO training using lax.scan for the collect phase.
 
 Same algorithm as train_ppo.py but ~5x faster wall-clock on JIT-able envs
@@ -12,6 +8,11 @@ during collection.
 NOT suitable for envs that require Python-level operations per step (e.g.,
 MJWarp rendering). Use train_ppo.py for those.
 """
+
+import os, sys
+os.environ.setdefault("XLA_FLAGS", "--xla_gpu_enable_command_buffer=")
+os.environ.setdefault("XLA_CLIENT_MEM_FRACTION", "0.7")
+sys.stdout.reconfigure(line_buffering=True)  # Unbuffered output without PYTHONUNBUFFERED
 
 import argparse
 import dataclasses
@@ -48,6 +49,17 @@ class StepData(NamedTuple):
     reward: jax.Array         # (E,)
     done: jax.Array           # (E,)
     truncation: jax.Array     # (E,)
+
+
+def _make_eval_action(ppo, get_policy_obs):
+    """Build a JIT'd eval action function. Norm state passed as kwarg (no recompilation)."""
+    @jax.jit
+    def _ppo_eval_action(actor_params, obs, key=None, deterministic=True, *, norm_state):
+        policy_obs = get_policy_obs(obs)
+        normed = norm_normalize(norm_state, policy_obs)
+        mean, _log_std = ppo.actor.apply(actor_params, normed)
+        return jnp.clip(mean, -1.0, 1.0)
+    return _ppo_eval_action
 
 
 def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
@@ -157,19 +169,17 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
     _select_deterministic = ppo._select_deterministic
 
     @jax.jit
-    def _collect(training_state, env_state, norm_state, critic_norm_state, key):
+    def _collect(training_state, env_state, norm_state, critic_norm_state, key, running_ep_return):
         """Collect num_steps of experience using lax.scan. Zero Python overhead."""
 
         def collect_step(carry, _unused):
-            env_state, ns, cns, key = carry
+            env_state, ns, cns, key, ep_return, ep_count, ep_return_sum = carry
 
             policy_obs = _get_policy_obs(env_state.obs)
             critic_obs = _get_critic_obs(env_state.obs)
 
-            # Update normalization
-            ns = norm_update(ns, policy_obs)
+            # Normalize with FROZEN stats (updated after full rollout, like Brax)
             normed_obs = norm_normalize(ns, policy_obs)
-            cns = norm_update(cns, critic_obs)
             normed_critic_obs = norm_normalize(cns, critic_obs)
 
             # Select action
@@ -189,6 +199,13 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
                 jnp.zeros_like(env_state.done),
             )
 
+            # Track episode returns inside scan
+            ep_return = ep_return + env_state.reward
+            done_mask = env_state.done
+            ep_return_sum = ep_return_sum + jnp.sum(ep_return * done_mask)
+            ep_count = ep_count + jnp.sum(done_mask)
+            ep_return = ep_return * (1.0 - done_mask)  # Reset on done
+
             step_data = StepData(
                 obs=normed_obs,
                 critic_obs=normed_critic_obs,
@@ -200,14 +217,24 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
                 truncation=truncation,
             )
 
-            return (env_state, ns, cns, key), step_data
+            return (env_state, ns, cns, key, ep_return, ep_count, ep_return_sum), (step_data, policy_obs, critic_obs)
 
-        (env_state, norm_state, critic_norm_state, key), rollout = jax.lax.scan(
+        init_ep_count = jnp.zeros(())
+        init_ep_return_sum = jnp.zeros(())
+
+        (env_state, norm_state, critic_norm_state, key, running_ep_return, ep_count, ep_return_sum), (rollout, raw_policy_obs, raw_critic_obs) = jax.lax.scan(
             collect_step,
-            (env_state, norm_state, critic_norm_state, key),
+            (env_state, norm_state, critic_norm_state, key, running_ep_return, init_ep_count, init_ep_return_sum),
             None,
             length=num_steps,
         )
+
+        # Update norm stats AFTER collection (Brax-style: frozen during rollout)
+        # raw_policy_obs: (num_steps, num_envs, obs_dim) → reshape to (N, obs_dim)
+        flat_policy_obs = raw_policy_obs.reshape(-1, raw_policy_obs.shape[-1])
+        flat_critic_obs = raw_critic_obs.reshape(-1, raw_critic_obs.shape[-1])
+        norm_state = norm_update(norm_state, flat_policy_obs)
+        critic_norm_state = norm_update(critic_norm_state, flat_critic_obs)
 
         # Bootstrap value for the state after the last step
         next_policy_obs = _get_policy_obs(env_state.obs)
@@ -220,7 +247,8 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
         )
 
         return (env_state, norm_state, critic_norm_state, key,
-                rollout, normed_next, normed_next_critic, next_value)
+                rollout, normed_next, normed_next_critic, next_value,
+                ep_count, ep_return_sum, running_ep_return)
 
     # ── Tracking + infra ─────────────────────────────────────────────────
     tracker = EpisodeTracker(cfg.num_envs)
@@ -230,9 +258,16 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
     ckpt_dir = os.path.join("checkpoints", f"{timestamp}_{env_short}_seed{seed}")
     last_eval_eps = 0
 
+    # Create eval action fn ONCE (no recompilation per eval call).
+    _ppo_eval_action = _make_eval_action(ppo, _get_policy_obs)
+
     # ── Training loop ────────────────────────────────────────────────────
+    running_ep_return = jnp.zeros(cfg.num_envs)
+    import time as _time
+    _t_start = _time.time()
     print(f"\nJIT-compiling first iteration (expect a delay)...")
     print("-" * 80)
+    import sys; sys.stdout.reconfigure(line_buffering=True)
 
     for iteration in range(start_iteration, num_iterations):
         t0 = time.time()
@@ -240,16 +275,16 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
         for _update_cycle in range(ppo_cfg.num_updates_per_batch):
             # ── Scan-based collect ──────────────────────────────────────
             (env_state, norm_state, critic_norm_state, key,
-             rollout, normed_next, normed_next_critic, next_value) = _collect(
-                training_state, env_state, norm_state, critic_norm_state, key,
+             rollout, normed_next, normed_next_critic, next_value,
+             scan_ep_count, scan_ep_return_sum, running_ep_return) = _collect(
+                training_state, env_state, norm_state, critic_norm_state, key, running_ep_return,
             )
 
-            # ── Episode tracking (host-side, after scan) ────────────────
-            # rollout.reward has reward_scaling applied; tracker needs raw rewards
-            rewards_np = np.asarray(rollout.reward / reward_scaling if reward_scaling != 1.0 else rollout.reward)  # (T, E)
-            dones_np = np.asarray(rollout.done)      # (T, E)
-            for t in range(ppo_cfg.num_steps):
-                tracker.step(rewards_np[t], dones_np[t])
+            # ── Episode tracking (from scan-accumulated stats) ─────────
+            scan_n = int(scan_ep_count)
+            if scan_n > 0:
+                scan_avg = float(scan_ep_return_sum / scan_ep_count)
+                tracker.completed_returns.extend([scan_avg] * scan_n)
 
             # ── PPO update ──────────────────────────────────────────────
             batch = RolloutBatch(
@@ -281,7 +316,7 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
                 f"Iter {iteration:4d}/{num_iterations} | "
                 f"Steps {total_steps:>9,} | "
                 f"Eps {stats['n_eps']:>5} | "
-                f"Return {stats['avg']:.3e} [{stats['min']:.3e},{stats['max']:.3e}] | "
+                f"Return {stats['avg']:9.3g} [{stats['min']:7.3g},{stats['max']:7.3g}] | "
                 f"PLoss {metrics['policy_loss']:.3e} | "
                 f"VLoss {metrics['value_loss']:.3e} | "
                 f"Ent {metrics['entropy']:.3e} | "
@@ -289,7 +324,8 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
                 f"Clip {metrics['clip_fraction']:.3e} | "
                 f"logσ {metrics['log_std_mean']:.2f} [{metrics['log_std_min']:.2f},{metrics['log_std_max']:.2f}] | "
                 f"{sps:>6,} sps | "
-                f"{iter_time:.1f}s"
+                f"{iter_time:.1f}s | "
+                f"{_time.time() - _t_start:.0f}s elapsed"
             )
             if iteration == 0:
                 print(f"  ^ first iteration includes JIT compilation time")
@@ -319,24 +355,18 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
             frozen_norm = norm_state
             frozen_actor = training_state.actor_params
 
-            @jax.jit
-            def _ppo_eval_action(actor_params, obs, key, deterministic=True):
-                policy_obs = _get_policy_obs(obs)
-                normed = norm_normalize(frozen_norm, policy_obs)
-                mean, log_std = ppo.actor.apply(actor_params, normed)
-                return jnp.clip(mean, -1.0, 1.0)
-
             key, eval_key = jax.random.split(key)
             eval_metrics = evaluate(
                 _ppo_eval_action, frozen_actor,
                 eval_env, num_episodes=cfg.num_eval_episodes,
                 episode_length=cfg.episode_length, key=eval_key,
                 num_envs=cfg.num_envs,
+                action_fn_kwargs={"norm_state": frozen_norm},
             )
             print(
                 f"  EVAL @ {n_eps_total} eps ({total_steps:,} steps) | "
-                f"Return {eval_metrics['eval_mean']:.3e} ± {eval_metrics['eval_std']:.3e} "
-                f"[{eval_metrics['eval_min']:.3e}, {eval_metrics['eval_max']:.3e}]"
+                f"Return {eval_metrics['eval_mean']:.1f} ± {eval_metrics['eval_std']:.1f} "
+                f"[{eval_metrics['eval_min']:.0f}, {eval_metrics['eval_max']:.0f}]"
             )
             if metrics_log:
                 metrics_log[-1].update(eval_metrics)
@@ -349,19 +379,13 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
     frozen_norm = norm_state
     frozen_actor = training_state.actor_params
 
-    @jax.jit
-    def _ppo_eval_action(actor_params, obs, key, deterministic=True):
-        policy_obs = _get_policy_obs(obs)
-        normed = norm_normalize(frozen_norm, policy_obs)
-        mean, log_std = ppo.actor.apply(actor_params, normed)
-        return jnp.clip(mean, -1.0, 1.0)
-
     key, eval_key = jax.random.split(key)
     eval_metrics = evaluate(
         _ppo_eval_action, frozen_actor,
         eval_env, num_episodes=cfg.num_eval_episodes,
         episode_length=cfg.episode_length, key=eval_key,
         num_envs=cfg.num_envs,
+        action_fn_kwargs={"norm_state": frozen_norm},
     )
     save_checkpoint(ckpt_dir, training_state, norm_state, cfg, cfg.ppo,
                     "ppo", obs_dim, action_dim, metrics_log, resume)
@@ -389,6 +413,7 @@ if __name__ == "__main__":
     parser.add_argument("--policy-hidden-dim", type=int, nargs="+", default=None)
     parser.add_argument("--value-hidden-dim", type=int, nargs="+", default=None)
     parser.add_argument("--entropy-coef", type=float, default=None)
+    parser.add_argument("--eval-every", type=int, default=None, help="Eval every N episodes")
     parser.add_argument("--reward-scaling", type=float, default=None)
     parser.add_argument("--episode-length", type=int, default=None)
     parser.add_argument("--log-interval", type=int, default=None)
@@ -419,6 +444,8 @@ if __name__ == "__main__":
         ppo_overrides["value_hidden_dim"] = tuple(args.value_hidden_dim)
     if args.entropy_coef is not None:
         ppo_overrides["entropy_coef"] = args.entropy_coef
+    if args.eval_every is not None:
+        cfg_overrides["eval_every_n_episodes"] = args.eval_every
     if ppo_overrides:
         cfg_overrides["ppo"] = dataclasses.replace(cfg.ppo, **ppo_overrides)
     if cfg_overrides:

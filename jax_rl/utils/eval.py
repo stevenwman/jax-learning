@@ -21,6 +21,7 @@ def evaluate(
     obs_normalize_fn: Callable | None = None,
     q_fn: Callable | None = None,
     gamma: float = 0.99,
+    action_fn_kwargs: dict | None = None,
 ) -> dict:
     """Run deterministic evaluation episodes.
 
@@ -66,6 +67,7 @@ def evaluate(
     # weak_types here but it didn't fix it — the issue is internal to MJX's step.
     # Mitigated by XLA_CLIENT_MEM_FRACTION=0.7. See LESSONS.md.
 
+    _action_kwargs = action_fn_kwargs or {}
     episode_returns = np.zeros(batch_dim)
     episode_done = np.zeros(batch_dim, dtype=bool)
 
@@ -84,7 +86,7 @@ def evaluate(
         obs = env_state.obs
         if obs_normalize_fn is not None:
             obs = obs_normalize_fn(obs)
-        action = select_action_fn(actor_params, obs, ak, deterministic=True)
+        action = select_action_fn(actor_params, obs, ak, deterministic=True, **_action_kwargs)
 
         # Record Q prediction before stepping
         if q_fn is not None:

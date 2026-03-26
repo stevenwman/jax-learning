@@ -21,6 +21,7 @@ import imageio
 import jax
 import jax.numpy as jnp
 import numpy as np
+from tqdm import tqdm
 import optax
 
 from mujoco_playground import registry as pg_registry
@@ -187,7 +188,7 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
             action, _, _ = algo.select_action(frozen_state, normed_obs, action_key, deterministic=True)
             clipped_action = jnp.clip(action, -1.0, 1.0).squeeze(0)
             env_state = env_step(env_state, clipped_action)
-            return (env_state, ns, key), env_state
+            return (env_state, ns, key), (env_state, clipped_action)
         init_carry = (env_state, norm_state, key)
     else:
         frozen_params = training_state.actor_params
@@ -196,14 +197,15 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
             obs = env_state.obs[None]
             key, action_key = jax.random.split(key)
             action = algo.select_action(frozen_params, obs, action_key, deterministic=True)
-            env_state = env_step(env_state, action.squeeze(0))
-            return (env_state, key), env_state
+            clipped_action = action.squeeze(0)
+            env_state = env_step(env_state, clipped_action)
+            return (env_state, key), (env_state, clipped_action)
         init_carry = (env_state, key)
 
     # ── Phase 1: JIT-scan rollout on GPU ──────────────────────────────────
     print("JIT-compiling rollout scan...")
     t0 = time.time()
-    _, trajectory = jax.lax.scan(rollout_step, init_carry, None, length=max_steps)
+    _, (trajectory, actions) = jax.lax.scan(rollout_step, init_carry, None, length=max_steps)
     jax.block_until_ready(trajectory.obs)
     t_rollout = time.time() - t0
     print(f"Rollout done: {max_steps} steps in {t_rollout:.2f}s (includes JIT compilation)")
@@ -230,7 +232,60 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
         state_i = jax.tree.map(lambda x: x[i], trajectory)
         states.append(state_i)
 
-    frames = env.render(states, camera=camera)
+    # Render with mujoco.Renderer for better quality + resolution control
+    import mujoco
+    renderer = mujoco.Renderer(env.mj_model, width=640, height=480)
+    frames = []
+    mj_data = mujoco.MjData(env.mj_model)
+
+    has_commands = hasattr(trajectory, 'info') and 'command' in trajectory.info
+
+    for idx, state_i in enumerate(tqdm(states)):
+        mj_data.qpos[:] = np.array(state_i.data.qpos)
+        mj_data.qvel[:] = np.array(state_i.data.qvel)
+        mujoco.mj_forward(env.mj_model, mj_data)
+        renderer.update_scene(mj_data, camera=camera)
+
+        # Add command arrow in robot's local frame
+        if has_commands and idx > 0 and idx <= len(trajectory.info['command']):
+            cmd = np.array(trajectory.info['command'][idx - 1])
+            vx, vy = float(cmd[0]), float(cmd[1])
+            speed = np.sqrt(vx**2 + vy**2)
+            if speed > 0.05:
+                # Rotate command from local to world frame using robot's yaw
+                quat = mj_data.qpos[3:7]
+                # Extract yaw from quaternion: rotation matrix row 0/1
+                w, x, y, z = quat
+                fwd_x = 1 - 2*(y*y + z*z)
+                fwd_y = 2*(x*y + w*z)
+                right_x = 2*(x*y - w*z)
+                right_y = 1 - 2*(x*x + z*z)
+                # Local to world: world_v = vx * forward + vy * right
+                world_vx = vx * fwd_x + vy * right_x
+                world_vy = vx * fwd_y + vy * right_y
+
+                base_pos = mj_data.qpos[:3].copy()
+                base_pos[2] = 0.4
+                end_pos = base_pos.copy()
+                end_pos[0] += world_vx * 0.3
+                end_pos[1] += world_vy * 0.3
+                mujoco.mjv_initGeom(
+                    renderer.scene.geoms[renderer.scene.ngeom],
+                    mujoco.mjtGeom.mjGEOM_ARROW,
+                    np.zeros(3), np.zeros(3), np.zeros(9), np.zeros(4),
+                )
+                mujoco.mjv_connector(
+                    renderer.scene.geoms[renderer.scene.ngeom],
+                    mujoco.mjtGeom.mjGEOM_ARROW,
+                    0.015,
+                    base_pos.astype(np.float64),
+                    end_pos.astype(np.float64),
+                )
+                renderer.scene.geoms[renderer.scene.ngeom].rgba = np.array([0, 1, 0, 0.8], dtype=np.float32)
+                renderer.scene.ngeom += 1
+
+        frames.append(renderer.render())
+    renderer.close()
     t_render = time.time() - t0
     print(f"Render done: {len(frames)} frames in {t_render:.2f}s "
           f"({t_render / len(frames) * 1000:.1f}ms/frame)")
@@ -245,6 +300,25 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
     print(f"Saving to {video_path}...")
     imageio.mimsave(video_path, frames, fps=30)
     print(f"Done: {video_path}")
+
+    # ── Save trajectory .npz for offline analysis ────────────────────────
+    npz_path = video_path.replace(".mp4", "_traj.npz")
+    traj_data = {
+        "qpos": np.array(trajectory.data.qpos[:num_frames]),
+        "qvel": np.array(trajectory.data.qvel[:num_frames]),
+        "actions": np.array(actions[:num_frames]),
+        "rewards": np.array(trajectory.reward[:num_frames]),
+    }
+    # Save reward components if available
+    if hasattr(trajectory, 'info') and 'reward_components' in trajectory.info:
+        for k, v in trajectory.info['reward_components'].items():
+            traj_data[f"reward_{k}"] = np.array(v[:num_frames])
+    # Save commands if available
+    if hasattr(trajectory, 'info') and 'command' in trajectory.info:
+        traj_data["commands"] = np.array(trajectory.info['command'][:num_frames])
+
+    np.savez_compressed(npz_path, **traj_data)
+    print(f"Trajectory saved: {npz_path} ({len(traj_data)} arrays)")
 
 
 if __name__ == "__main__":
