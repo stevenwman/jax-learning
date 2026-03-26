@@ -32,7 +32,7 @@
 ## Active
 
 ## Short-term — Blocking Go2 walking
-- [ ] Reward breakdown in record_video.py — print per-term reward fractions alongside video. Essential for diagnosing reward gaming.
+- [x] Reward breakdown in record_video.py — saved in _traj.npz as reward_* arrays. Used to diagnose crouching vs walking.
 - [ ] Best-policy checkpointing — save best eval checkpoint separately from most-recent. Currently overwrites each eval.
 
 ## Short-term — Training script quality
