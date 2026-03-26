@@ -137,10 +137,19 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
         meta, actor_params, norm_state = load_actor_for_inference(checkpoint)
         algo_name = meta.get("algo", "ppo")
         env_name = env_name or meta.get("train_config", {}).get("env_name")
-        print(f"Loaded checkpoint: algo={algo_name}, env={env_name}")
+        # Detect if training used obs normalization (stored in algo config)
+        algo_cfg_keys = [f"{algo_name}_config", "sac_config", "fast_sac_config",
+                         "td3_config", "fast_td3_config", "ppo"]
+        use_obs_norm = False
+        for k in algo_cfg_keys:
+            if k in meta and meta[k].get("obs_normalization", False):
+                use_obs_norm = True
+                break
+        print(f"Loaded checkpoint: algo={algo_name}, env={env_name}, obs_norm={use_obs_norm}")
     else:
         meta = {}
         algo_name = "ppo"
+        use_obs_norm = False
         print("Using random (untrained) policy")
 
     env_name = env_name or "CartpoleBalance"
@@ -199,7 +208,8 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
             if isinstance(obs, dict):
                 obs = obs["state"]
             obs = obs[None]  # add batch dim
-            obs = norm_normalize(frozen_norm, obs)  # match training normalization
+            if use_obs_norm:
+                obs = norm_normalize(frozen_norm, obs)
             key, action_key = jax.random.split(key)
             action = algo.select_action(frozen_params, obs, action_key, deterministic=True)
             clipped_action = action.squeeze(0)
