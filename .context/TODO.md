@@ -64,9 +64,11 @@
 - [ ] Memory budget testing — pixel replay buffer on 16GB
 
 ## Mid-term (Go2 Deployment)
-- [ ] ONNX export utility (`jax_rl/utils/export.py`) — JAX weights → ONNX for Jetson
-- [ ] Deploy script (`deploy/deploy_go2.py`) — DDS loop, 50Hz, same interface for sim/real
-- [ ] Validate in `unitree_mujoco` before real hardware
+- [x] Deploy script (`deploy/deploy_go2.py`) — DDS loop, 50Hz, FSM, works for sim and real
+- [x] Headless sim2sim (`deploy/sim_headless.py`) — runs over SSH, records video
+- [x] Separate deploy venv (Python 3.12) — CycloneDDS + Unitree SDK, setup script
+- [ ] **Unify training and deployment MJCF** — our MJX env uses Menagerie `go2_mjx.xml` (with custom overrides), unitree_mujoco uses its own `go2.xml`. Different actuators, contacts, damping. Policy trained in one doesn't transfer to the other. Options: (a) train directly on unitree_mujoco's model, (b) make our MjxEnv load unitree_mujoco's MJCF, (c) domain rand to cover both. This is the real sim2sim gap.
+- [ ] ONNX export utility (`jax_rl/utils/export.py`) — JAX weights → ONNX for Jetson (deferred — numpy inference at 50Hz is fine for now)
 - [ ] DC motor model (`jax_rl/envs/actuators.py`) — Tier 2, add if sim-to-real gap > threshold
 - [ ] Confirm Go2 EDU edition in lab (ask Steven)
 
