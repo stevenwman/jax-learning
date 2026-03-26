@@ -50,5 +50,75 @@ def test_policy_runner_loads_and_infers():
     print("PASS")
 
 
+def test_obs_builder_shape_and_layout():
+    """ObsBuilder should produce 48d obs with correct layout."""
+    from deploy.obs_builder import ObsBuilder
+    from deploy.go2_constants import NUM_JOINTS
+
+    builder = ObsBuilder()
+
+    joint_pos_sdk = np.zeros(NUM_JOINTS, dtype=np.float32)
+    joint_vel_sdk = np.zeros(NUM_JOINTS, dtype=np.float32)
+    gyro = np.array([0.1, 0.2, 0.3], dtype=np.float32)
+    quat = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)  # identity
+    command = np.array([0.5, 0.0, 0.1], dtype=np.float32)
+
+    obs = builder.build(
+        joint_pos_sdk=joint_pos_sdk,
+        joint_vel_sdk=joint_vel_sdk,
+        gyroscope=gyro,
+        quaternion=quat,
+        command=command,
+    )
+
+    assert obs.shape == (48,), f"Expected (48,), got {obs.shape}"
+    assert not np.any(np.isnan(obs)), "NaN in obs"
+
+    # Verify linvel zeroed (dims 0:3)
+    np.testing.assert_array_equal(obs[0:3], [0, 0, 0])
+
+    # Verify gyro (dims 3:6)
+    np.testing.assert_array_almost_equal(obs[3:6], [0.1, 0.2, 0.3])
+
+    # Verify projected gravity for identity quaternion = [0, 0, -1]
+    np.testing.assert_array_almost_equal(obs[6:9], [0.0, 0.0, -1.0], decimal=5)
+
+    # Verify command at end (dims 45:48)
+    np.testing.assert_array_almost_equal(obs[45:48], [0.5, 0.0, 0.1])
+
+    # Verify joint offsets: pos=0 minus default=[0, 0.9, -1.8]*4
+    expected_offsets = np.array([0, -0.9, 1.8] * 4, dtype=np.float32)
+    np.testing.assert_array_almost_equal(obs[9:21], expected_offsets)
+
+    print("test_obs_builder_shape_and_layout PASS")
+
+
+def test_obs_builder_gravity_tilted():
+    """Projected gravity should change when robot is tilted."""
+    from deploy.obs_builder import ObsBuilder
+    from deploy.go2_constants import NUM_JOINTS
+
+    builder = ObsBuilder()
+    zeros12 = np.zeros(NUM_JOINTS, dtype=np.float32)
+    zeros3 = np.zeros(3, dtype=np.float32)
+    cmd = np.zeros(3, dtype=np.float32)
+
+    # 90-degree pitch forward: quat = [cos(45), 0, sin(45), 0] = [0.707, 0, 0.707, 0]
+    angle = np.pi / 2
+    quat_pitched = np.array([np.cos(angle / 2), 0, np.sin(angle / 2), 0], dtype=np.float32)
+
+    obs = builder.build(zeros12, zeros12, zeros3, quat_pitched, cmd)
+    proj_grav = obs[6:9]
+
+    # When pitched 90 deg forward, gravity in body frame should be roughly [1, 0, 0] or [-1, 0, 0]
+    # (depending on convention — the z component should be ~0)
+    assert abs(proj_grav[2]) < 0.1, f"Expected near-zero z gravity when pitched 90deg, got {proj_grav}"
+    assert np.linalg.norm(proj_grav) > 0.9, f"Gravity magnitude should be ~1, got {np.linalg.norm(proj_grav)}"
+
+    print(f"test_obs_builder_gravity_tilted PASS (proj_gravity={proj_grav})")
+
+
 if __name__ == "__main__":
     test_policy_runner_loads_and_infers()
+    test_obs_builder_shape_and_layout()
+    test_obs_builder_gravity_tilted()
