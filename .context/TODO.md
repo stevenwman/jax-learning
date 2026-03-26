@@ -40,7 +40,7 @@
 - [x] Fix train_ppo_fast.py online return tracker — episode returns accumulated inside scan carry.
 - [x] Print elapsed time in training scripts — wall-clock since start on each iteration.
 - [x] Add --eval-every CLI flag and PYTHONUNBUFFERED=1 for real-time output.
-- [ ] record_video.py dict obs support — crashes on Go2 checkpoints (wrong meta.json nesting).
+- [x] record_video.py dict obs support — fixed, also saves _traj.npz + command arrow overlay.
 
 ## Short-term — Go2 env maturity
 - [ ] Wire frame stacking into Go2 env (currently no frame stack — just raw obs)
