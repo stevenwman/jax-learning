@@ -291,21 +291,35 @@ def train(cfg: TrainConfig, algo_cfg, algo_name: str, seed: int = 0, resume: str
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--algo", type=str, required=True, choices=list(ALGO_REGISTRY.keys()))
-    parser.add_argument("--env", type=str, default="WalkerWalk")
-    parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--resume", type=str, default=None)
-    parser.add_argument("--num-envs", type=int, default=None)
-    parser.add_argument("--total-timesteps", type=int, default=None)
-    parser.add_argument("--lr", type=float, default=None)
-    parser.add_argument("--batch-size", type=int, default=None)
-    parser.add_argument("--grad-updates-per-step", type=int, default=None)
-    parser.add_argument("--buffer-size", type=int, default=None)
-    parser.add_argument("--reward-scaling", type=float, default=None)
-    parser.add_argument("--episode-length", type=int, default=None)
-    parser.add_argument("--exploration-noise", type=float, default=None, help="TD3-family only")
-    parser.add_argument("--eval-every", type=int, default=None, help="Eval every N episodes")
-    parser.add_argument("--obs-norm", action="store_true", help="Enable sample-time obs normalization")
+    parser.add_argument("--algo", type=str, required=True, choices=list(ALGO_REGISTRY.keys()),
+                        help="RL algorithm: sac, td3, fast_td3, fast_sac")
+    parser.add_argument("--env", type=str, default="WalkerWalk",
+                        help="Environment name (e.g., CheetahRun, HumanoidRun, Go2JoystickFlat)")
+    parser.add_argument("--seed", type=int, default=0, help="Random seed")
+    parser.add_argument("--resume", type=str, default=None,
+                        help="Resume from checkpoint directory path")
+    parser.add_argument("--num-envs", type=int, default=None,
+                        help="Number of parallel environments (default: from env preset)")
+    parser.add_argument("--total-timesteps", type=int, default=None,
+                        help="Total environment steps to train (default: from env preset)")
+    parser.add_argument("--lr", type=float, default=None,
+                        help="Learning rate for actor and critic (default: from algo config)")
+    parser.add_argument("--batch-size", type=int, default=None,
+                        help="Batch size for gradient updates (default: from algo config)")
+    parser.add_argument("--grad-updates-per-step", type=int, default=None,
+                        help="Gradient updates per env step (UTD ratio, default: from config)")
+    parser.add_argument("--buffer-size", type=int, default=None,
+                        help="Replay buffer capacity (default: from algo config)")
+    parser.add_argument("--reward-scaling", type=float, default=None,
+                        help="Multiply rewards by this factor (default: 1.0)")
+    parser.add_argument("--episode-length", type=int, default=None,
+                        help="Max steps per episode (default: from env preset)")
+    parser.add_argument("--exploration-noise", type=float, default=None,
+                        help="Exploration noise std for TD3-family (SAC uses entropy instead)")
+    parser.add_argument("--eval-every", type=int, default=None,
+                        help="Evaluate every N episodes (default: every 512 episodes)")
+    parser.add_argument("--obs-norm", action="store_true",
+                        help="Enable sample-time obs normalization (recommended for humanoid tasks)")
     args = parser.parse_args()
 
     # Load preset

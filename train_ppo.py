@@ -343,21 +343,35 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--env", type=str, default="CartpoleBalance")
-    parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--resume", type=str, default=None, help="Path to checkpoint dir to resume from")
-    parser.add_argument("--num-envs", type=int, default=None)
-    parser.add_argument("--num-steps", type=int, default=None)
-    parser.add_argument("--num-updates-per-batch", type=int, default=None)
-    parser.add_argument("--total-timesteps", type=int, default=None)
-    parser.add_argument("--lr", type=float, default=None)
-    parser.add_argument("--policy-hidden-dim", type=int, nargs="+", default=None)
-    parser.add_argument("--value-hidden-dim", type=int, nargs="+", default=None)
-    parser.add_argument("--entropy-coef", type=float, default=None)
-    parser.add_argument("--reward-scaling", type=float, default=None)
-    parser.add_argument("--episode-length", type=int, default=None)
-    parser.add_argument("--log-interval", type=int, default=None)
-    parser.add_argument("--eval-every", type=int, default=None, help="Eval every N episodes")
+    parser.add_argument("--env", type=str, default="CartpoleBalance",
+                        help="Environment name (e.g., CartpoleBalance, CheetahRun, Go2JoystickFlat)")
+    parser.add_argument("--seed", type=int, default=0, help="Random seed")
+    parser.add_argument("--resume", type=str, default=None,
+                        help="Resume from checkpoint directory path")
+    parser.add_argument("--num-envs", type=int, default=None,
+                        help="Number of parallel environments (default: from env preset)")
+    parser.add_argument("--num-steps", type=int, default=None,
+                        help="Rollout steps per env before each update (default: from preset)")
+    parser.add_argument("--num-updates-per-batch", type=int, default=None,
+                        help="SGD epochs over collected rollout data (default: from preset)")
+    parser.add_argument("--total-timesteps", type=int, default=None,
+                        help="Total environment steps to train (default: from env preset)")
+    parser.add_argument("--lr", type=float, default=None,
+                        help="Learning rate (default: from preset)")
+    parser.add_argument("--policy-hidden-dim", type=int, nargs="+", default=None,
+                        help="Actor network hidden layer sizes (e.g., 256 256)")
+    parser.add_argument("--value-hidden-dim", type=int, nargs="+", default=None,
+                        help="Critic network hidden layer sizes (e.g., 256 256)")
+    parser.add_argument("--entropy-coef", type=float, default=None,
+                        help="Entropy bonus coefficient (higher = more exploration)")
+    parser.add_argument("--reward-scaling", type=float, default=None,
+                        help="Multiply rewards by this factor (default: 1.0)")
+    parser.add_argument("--episode-length", type=int, default=None,
+                        help="Max steps per episode (default: from env preset)")
+    parser.add_argument("--log-interval", type=int, default=None,
+                        help="Print training stats every N iterations")
+    parser.add_argument("--eval-every", type=int, default=None,
+                        help="Evaluate every N episodes (default: every 512 episodes)")
     args = parser.parse_args()
 
     cfg = get_preset(args.env)
