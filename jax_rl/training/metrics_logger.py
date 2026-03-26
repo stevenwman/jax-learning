@@ -7,6 +7,46 @@ W&B is never imported unless the flag is set.
 
 from jax_rl.training.episode_tracker import EpisodeTracker
 
+# Flat metric key -> W&B prefixed key for dashboard sections.
+# Keys not in this mapping pass through unchanged.
+_WANDB_PREFIX = {
+    # perf — the "how's it doing" section
+    "eval_mean": "perf/eval_mean",
+    "eval_std": "perf/eval_std",
+    "eval_min": "perf/eval_min",
+    "eval_max": "perf/eval_max",
+    "avg_return": "perf/avg_return",
+    "min_return": "perf/min_return",
+    "max_return": "perf/max_return",
+    # critic — value estimation health
+    "q1_mean": "critic/q1_mean",
+    "q2_mean": "critic/q2_mean",
+    "q_bias": "critic/q_bias",
+    "q_rmse": "critic/q_rmse",
+    "q_corr": "critic/q_corr",
+    "q_mean": "critic/q_mean",
+    "mc_mean": "critic/mc_mean",
+    # actor — policy optimization (superset of PPO + off-policy)
+    "actor_loss": "actor/actor_loss",
+    "policy_loss": "actor/policy_loss",
+    "value_loss": "actor/value_loss",
+    "entropy": "actor/entropy",
+    "alpha": "actor/alpha",
+    "alpha_loss": "actor/alpha_loss",
+    "approx_kl": "actor/approx_kl",
+    "clip_fraction": "actor/clip_fraction",
+    "log_std_mean": "actor/log_std_mean",
+    "log_std_min": "actor/log_std_min",
+    "log_std_max": "actor/log_std_max",
+    # infra — throughput & progress
+    "sps": "infra/sps",
+    "elapsed": "infra/elapsed",
+    "grad_steps": "infra/grad_steps",
+    "episodes": "infra/episodes",
+    "iteration": "infra/iteration",
+    "iter_time": "infra/iter_time",
+}
+
 
 def log_training_step(
     total_steps: int,
@@ -114,16 +154,42 @@ def wandb_init(project: str, name: str, config: dict) -> bool:
         return False
 
 
+def wandb_setup_metrics() -> None:
+    """Define W&B metric summary behavior. Called once after wandb_init().
+
+    Sets summary types so the W&B runs table shows useful values
+    (e.g., best eval return, final sps). Guarded for version compat.
+    """
+    try:
+        import wandb
+        if wandb.run is None:
+            return
+        summaries = {
+            "perf/eval_mean": "max",
+            "perf/avg_return": "max",
+            "infra/sps": "last",
+            "infra/episodes": "max",
+        }
+        for metric, summary in summaries.items():
+            try:
+                wandb.define_metric(metric, summary=summary)
+            except TypeError:
+                break  # older wandb without summary param — skip all
+    except ImportError:
+        pass
+
+
 def wandb_log(metrics: dict, step: int) -> None:
     """Log metrics to W&B if a run is active. No-op if wandb not initialized.
 
-    Safe to call even if wandb is not installed or not initialized —
-    silently does nothing.
+    Remaps flat metric keys to prefixed keys (e.g., q1_mean -> critic/q1_mean)
+    for dashboard section grouping. Keys not in _WANDB_PREFIX pass through.
     """
     try:
         import wandb
         if wandb.run is not None:
-            wandb.log(metrics, step=step)
+            remapped = {_WANDB_PREFIX.get(k, k): v for k, v in metrics.items()}
+            wandb.log(remapped, step=step)
     except ImportError:
         pass
 

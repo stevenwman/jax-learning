@@ -52,7 +52,7 @@
 - [x] MJX recompilation — root cause found, upstream issue, MEM_FRACTION=0.7 mitigates
 
 ## Short-term — Experiment tracking
-- [x] W&B integration — `--wandb` flag on all 3 train scripts, logs step + eval metrics. Needs testing.
+- [x] W&B integration — `--wandb` flag on all 3 train scripts, logs step + eval metrics. Tested: SAC (CheetahRun 200k), PPO (CartpoleBalance 500k), no-flag passthrough. All working.
 - [ ] W&B HP tuning agent — Claude reads wandb curves via API, diagnoses stagnation/divergence, proposes HP changes (lr, entropy_coef, UTD ratio, reward weights). Could be a hook or a scheduled agent.
 
 ## Mid-term (Vision RL)

@@ -2,4 +2,5 @@
 .pytest_cache/
 .venv/
 checkpoints/
+wandb/
 *.mp4

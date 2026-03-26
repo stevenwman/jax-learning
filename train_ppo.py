@@ -36,7 +36,7 @@ from jax_rl.buffers import RolloutBuffer
 from jax_rl.configs import EncoderConfig, PolicyHeadConfig, TrainConfig, get_preset
 from jax_rl.training import make_envs, EpisodeTracker, load_checkpoint
 from jax_rl.training.checkpointing import CheckpointManager
-from jax_rl.training.metrics_logger import wandb_init, wandb_log, wandb_finish
+from jax_rl.training.metrics_logger import wandb_init, wandb_setup_metrics, wandb_log, wandb_finish
 from jax_rl.utils.eval import evaluate
 from jax_rl.utils.normalization import (
     init as norm_init,
@@ -90,6 +90,7 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
             name=f"ppo_{cfg.env_name}_seed{seed}",
             config={**dataclasses.asdict(cfg)},
         )
+        wandb_setup_metrics()
 
     # ── PPO setup ────────────────────────────────────────────────────────
     num_minibatches = ppo_cfg.num_minibatches

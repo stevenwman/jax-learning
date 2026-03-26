@@ -36,7 +36,7 @@ from jax_rl.training import (
     maybe_eval_and_checkpoint, final_eval_and_checkpoint,
 )
 from jax_rl.training.checkpointing import CheckpointManager
-from jax_rl.training.metrics_logger import wandb_init, wandb_log, wandb_finish
+from jax_rl.training.metrics_logger import wandb_init, wandb_setup_metrics, wandb_log, wandb_finish
 from jax_rl.utils.normalization import (
     init as norm_init, update as norm_update, normalize as norm_normalize,
 )
@@ -146,6 +146,7 @@ def train(cfg: TrainConfig, algo_cfg, algo_name: str, seed: int = 0, resume: str
                 **{f"algo_{k}": v for k, v in dataclasses.asdict(algo_cfg).items()},
             },
         )
+        wandb_setup_metrics()
 
     # ── Algo setup ─────────────────────────────────────────────────────────
     algo = _make_algo(algo_name, algo_cfg, obs_dim, action_dim, cfg)
