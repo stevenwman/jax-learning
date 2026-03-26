@@ -126,7 +126,7 @@ def _build_select_action(meta, obs_dim, action_dim):
 
 def record(env_name: str | None = None, checkpoint: str | None = None,
            out: str = "rollout.mp4", max_steps: int = 1000,
-           camera: str | None = None):
+           camera: str | None = None, video_seed: int = 0):
 
     # ── Load checkpoint ───────────────────────────────────────────────────
     algo_type = "ppo"  # default
@@ -151,7 +151,7 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
     env = pg_registry.load(env_name)
     env_step = jax.jit(env.step)
 
-    key = jax.random.PRNGKey(0)
+    key = jax.random.PRNGKey(video_seed)
     key, reset_key = jax.random.split(key)
     env_state = env.reset(reset_key)
 
@@ -331,9 +331,10 @@ if __name__ == "__main__":
     parser.add_argument("--out", type=str, default="rollout.mp4")
     parser.add_argument("--max-steps", type=int, default=1000)
     parser.add_argument("--camera", type=str, default=None)
+    parser.add_argument("--seed", type=int, default=0, help="Random seed for env reset")
     args = parser.parse_args()
     record(
         env_name=args.env, checkpoint=args.checkpoint, out=args.out,
         max_steps=args.max_steps,
-        camera=args.camera,
+        camera=args.camera, video_seed=args.seed,
     )
