@@ -47,12 +47,12 @@
 
 ## Short-term — Cleanup
 - [x] Consolidate off-policy train scripts → `train_offpolicy.py --algo sac|td3|fast_td3|fast_sac` (commit 14a17df)
-- [ ] Integration debt items (see `.context/integration_debt.md`): select_action dual role, two normalizers in checkpoint
+- [x] Integration debt — 7/7 resolved (select_action_eval, asymmetric PPO test, etc.)
 - [x] `lax.scan` for gradient loops — benchmarked: 1.03x (no speedup)
 - [x] MJX recompilation — root cause found, upstream issue, MEM_FRACTION=0.7 mitigates
 
 ## Short-term — Experiment tracking
-- [ ] W&B integration — log training curves (return, Q, entropy, loss, sps) to wandb
+- [x] W&B integration — `--wandb` flag on all 3 train scripts, logs step + eval metrics. Needs testing.
 - [ ] W&B HP tuning agent — Claude reads wandb curves via API, diagnoses stagnation/divergence, proposes HP changes (lr, entropy_coef, UTD ratio, reward weights). Could be a hook or a scheduled agent.
 
 ## Mid-term (Vision RL)
