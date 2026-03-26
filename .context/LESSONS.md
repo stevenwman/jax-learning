@@ -105,6 +105,20 @@ Overhead ratio: 87x
 
 ---
 
+## Eval/Recording Must Match Training Preprocessing Exactly (2026-03-26)
+
+**What happened:** FastSAC eval during training showed 225.7 avg. But `record_video.py` produced episodes of 7-50 steps (instant death). We thought the policy was bad. SAC seed 1 (eval 139) also looked terrible on video — we concluded "SAC isn't doing well on Go2."
+
+**Root cause:** `record_video.py` didn't apply obs normalization for the SAC/TD3 path. Training used `--obs-norm` (normalize at sample time), but the recording fed **raw unnormalized obs** to a policy trained on normalized obs. The policy saw completely different input distributions and produced garbage actions.
+
+**Fix:** One line — `obs = norm_normalize(frozen_norm, obs)` in the SAC rollout path.
+
+**After fix:** FastSAC: 206.7 reward, full 1000 steps. SAC: 90.3, full 1000 steps. Both survive and walk.
+
+**Lesson:** Any eval/recording/deployment code must replicate the EXACT preprocessing pipeline from training. If training normalizes obs, eval must normalize with the same stats. If training extracts dict keys, eval must extract the same keys. This applies to: obs normalization, action clipping, frame stacking, reward scaling (if used in obs). Test recordings BEFORE concluding a policy is bad.
+
+---
+
 ## Session 4: CheetahRun, Performance, & Tooling (Mar 2026)
 
 ### `jax.lax.scan` vs Python Loops — 542x Speedup
