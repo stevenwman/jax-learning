@@ -257,6 +257,7 @@ def train(cfg: TrainConfig, algo_cfg, algo_name: str, seed: int = 0, resume: str
                 is_training=is_training,
                 buffer_size=len(buffer), min_buffer=algo_cfg.min_buffer_size,
                 extra_fields=log_extra_fields,
+                elapsed=elapsed,
             )
 
             if is_training:

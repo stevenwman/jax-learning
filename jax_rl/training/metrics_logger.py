@@ -12,6 +12,7 @@ def log_training_step(
     buffer_size: int | None = None,
     min_buffer: int | None = None,
     extra_fields: list[tuple[str, str, str]] | None = None,
+    elapsed: float | None = None,
 ) -> None:
     """Print training step to stdout.
 
@@ -40,7 +41,7 @@ def log_training_step(
     parts = [
         f"Step {total_steps:>9,}",
         f"Eps {stats['n_eps']:>5}",
-        f"Return {stats['avg']:7.1f} [{stats['min']:4.0f},{stats['max']:4.0f}]",
+        f"Return {stats['avg']:9.3g} [{stats['min']:7.3g},{stats['max']:7.3g}]",
         f"Q1 {float(last_metrics.get('q1_mean', 0)):.3e}",
         f"ActLoss {float(last_metrics.get('actor_loss', 0)):.3e}",
     ]
@@ -51,6 +52,8 @@ def log_training_step(
             parts.append(f"{label} {val:.3e}")
 
     parts.append(f"{sps:>6,} sps")
+    if elapsed is not None:
+        parts.append(f"{elapsed:.0f}s")
     print(" | ".join(parts))
 
 
