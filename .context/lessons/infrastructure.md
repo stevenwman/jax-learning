@@ -78,6 +78,21 @@ PPO's VLoss formatted as `{:8.2f}` printed `0.00` for values like 0.003. We thou
 
 ---
 
+## CycloneDDS Requires Python <3.13 — Use Separate Deploy Venv (2026-03-26)
+
+`cyclonedds==0.10.x` Python bindings have a C extension that references `_Py_IsFinalizing` — a symbol that changed in Python 3.13. Building from source (pip or git) all fail with `undefined symbol`.
+
+**Fix:** Separate deploy venv with Python 3.12. Training stays on 3.13 (JAX/MJX). Deploy code is pure numpy anyway — no JAX dependency at runtime.
+
+```
+.venv/        → Python 3.13, JAX/MJX/Flax (training)
+deploy/.venv/ → Python 3.12, numpy/cyclonedds/unitree_sdk2 (deployment)
+```
+
+Setup: `bash deploy/setup_deploy_deps.sh`
+
+---
+
 ## Integer Division Truncation in Training Loop Bounds
 
 `total_env_steps=200000`, `num_envs=128`. `200000 // 128 * 128 = 199936 < 200000`. Final eval never fired.

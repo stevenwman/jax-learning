@@ -67,6 +67,7 @@ JAX/Flax fundamentals in `LEARNER_LESSONS.md`.
 - **Save trajectory data alongside videos** — two policies with same eval=11.6 had completely different behaviors
 - **Eval/recording must match training preprocessing** — missing obs norm → instant death on video
 - **Scientific notation for metrics** — `{:8.2f}` printed `0.00` for VLoss=0.003
+- **CycloneDDS requires Python <3.13** — separate deploy venv (3.12) from training venv (3.13)
 - **Integer division truncation** — `200000 // 128 * 128 = 199936`, final eval never fired
 - **Verify training budget before debugging** — eval ~17 at 50M steps was on-curve, not broken
 
