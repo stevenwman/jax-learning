@@ -53,8 +53,6 @@ Fixed. Also saves `_traj.npz` + command arrow overlay.
 
 ---
 
-## 7. `train_ppo_fast.py` online tracker shows 0.0 early
+## 7. ~~`train_ppo_fast.py` online tracker shows 0.0 early~~ — DONE (2026-03-25)
 
-**Problem:** The online reward tracker formats rewards with `.1f`. Early in training, tiny rewards (e.g., 0.004) round to `0.0`, making it look like nothing is happening.
-
-**Fix:** Already applied in code — switched to SI notation so small values display correctly. Needs validation that the fix actually renders correctly during a real training run.
+Fixed: `.3g` format + `running_ep_return` persistence across scan calls. Validated on seed 2100 (shows real values from ~iter 50).
