@@ -19,4 +19,5 @@ flax = { git = "https://github.com/google/flax.git" }
 dev = [
     "gdown>=5.2.1",
     "pytest>=9.0.2",
+    "wandb>=0.25.1",
 ]

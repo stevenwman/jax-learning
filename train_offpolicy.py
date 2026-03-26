@@ -36,6 +36,7 @@ from jax_rl.training import (
     maybe_eval_and_checkpoint, final_eval_and_checkpoint,
 )
 from jax_rl.training.checkpointing import CheckpointManager
+from jax_rl.training.metrics_logger import wandb_init, wandb_log, wandb_finish
 from jax_rl.utils.normalization import (
     init as norm_init, update as norm_update, normalize as norm_normalize,
 )
@@ -105,7 +106,8 @@ def _make_algo(algo_name, algo_cfg, obs_dim, action_dim, cfg):
 
 # ── Training ───────────────────────────────────────────────────────────────
 
-def train(cfg: TrainConfig, algo_cfg, algo_name: str, seed: int = 0, resume: str | None = None):
+def train(cfg: TrainConfig, algo_cfg, algo_name: str, seed: int = 0, resume: str | None = None,
+          use_wandb: bool = False, wandb_project: str = "jax-rl"):
     family = ALGO_REGISTRY[algo_name]["family"]
 
     # ── Environment ────────────────────────────────────────────────────────
@@ -130,6 +132,20 @@ def train(cfg: TrainConfig, algo_cfg, algo_name: str, seed: int = 0, resume: str
     print(f"  batch_size={algo_cfg.batch_size}, grad_updates_per_step={algo_cfg.grad_updates_per_step}")
     print(f"  tau={algo_cfg.tau}, lr={cfg.lr}, gamma={cfg.gamma}")
     print(f"  reward_scaling={cfg.reward_scaling}")
+
+    # ── W&B (optional) ─────────────────────────────────────────────────────
+    if use_wandb:
+        wandb_init(
+            project=wandb_project,
+            name=f"{algo_name}_{cfg.env_name}_seed{seed}",
+            config={
+                "algo": algo_name,
+                "env": cfg.env_name,
+                "seed": seed,
+                **{k: v for k, v in dataclasses.asdict(cfg).items() if k != "ppo"},
+                **{f"algo_{k}": v for k, v in dataclasses.asdict(algo_cfg).items()},
+            },
+        )
 
     # ── Algo setup ─────────────────────────────────────────────────────────
     algo = _make_algo(algo_name, algo_cfg, obs_dim, action_dim, cfg)
@@ -262,10 +278,12 @@ def train(cfg: TrainConfig, algo_cfg, algo_name: str, seed: int = 0, resume: str
             )
 
             if is_training:
-                metrics_log.append(make_metrics_row(
+                row = make_metrics_row(
                     total_steps, tracker, last_metrics, total_gradient_steps, sps, elapsed,
                     extra_keys=log_extra_keys,
-                ))
+                )
+                metrics_log.append(row)
+                wandb_log(row, step=total_steps)
 
         # ── Eval + checkpoint ──────────────────────────────────────────
         obs_norm_fn = (lambda o: norm_normalize(norm_state, _get_obs(o), eps=obs_norm_eps)) if use_obs_norm else (lambda o: _get_obs(o)) if dict_obs else None
@@ -289,6 +307,8 @@ def train(cfg: TrainConfig, algo_cfg, algo_name: str, seed: int = 0, resume: str
         q_fn=lambda obs, action: algo.get_q_value(training_state, obs, action),
         ckpt_mgr=ckpt_mgr,
     )
+
+    wandb_finish()
 
 
 # ── CLI ────────────────────────────────────────────────────────────────────
@@ -324,6 +344,10 @@ if __name__ == "__main__":
                         help="Evaluate every N episodes (default: every 512 episodes)")
     parser.add_argument("--obs-norm", action="store_true",
                         help="Enable sample-time obs normalization (recommended for humanoid tasks)")
+    parser.add_argument("--wandb", action="store_true",
+                        help="Enable W&B experiment tracking (requires wandb installed)")
+    parser.add_argument("--wandb-project", type=str, default="jax-rl",
+                        help="W&B project name (default: jax-rl)")
     args = parser.parse_args()
 
     # Load preset
@@ -348,4 +372,5 @@ if __name__ == "__main__":
     if cfg_overrides: cfg = dataclasses.replace(cfg, **cfg_overrides)
     if algo_overrides: algo_cfg = dataclasses.replace(algo_cfg, **algo_overrides)
 
-    train(cfg, algo_cfg, algo_name=args.algo, seed=args.seed, resume=args.resume)
+    train(cfg, algo_cfg, algo_name=args.algo, seed=args.seed, resume=args.resume,
+          use_wandb=args.wandb, wandb_project=args.wandb_project)

@@ -4,6 +4,7 @@ import jax
 
 from jax_rl.training.checkpointing import save_checkpoint, CheckpointManager
 from jax_rl.training.episode_tracker import EpisodeTracker
+from jax_rl.training.metrics_logger import wandb_log
 from jax_rl.utils.eval import evaluate
 
 
@@ -62,6 +63,9 @@ def maybe_eval_and_checkpoint(
 
     if metrics_log:
         metrics_log[-1].update(eval_metrics)
+
+    # Log eval metrics to W&B (no-op if wandb not initialized)
+    wandb_log(eval_metrics, step=metrics_log[-1]["total_steps"] if metrics_log else 0)
 
     if ckpt_mgr is not None:
         is_best = ckpt_mgr.save(

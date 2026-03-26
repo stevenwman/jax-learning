@@ -29,6 +29,7 @@ from jax_rl.algos.ppo import PPO
 from jax_rl.buffers import RolloutBatch
 from jax_rl.configs import EncoderConfig, PolicyHeadConfig, TrainConfig, get_preset
 from jax_rl.training import make_envs, EpisodeTracker, load_checkpoint
+from jax_rl.training.metrics_logger import wandb_init, wandb_log, wandb_finish
 from jax_rl.training.checkpointing import save_checkpoint, CheckpointManager
 from jax_rl.utils.eval import evaluate
 from jax_rl.utils.normalization import (
@@ -62,7 +63,8 @@ def _make_eval_action(ppo, get_policy_obs):
     return _ppo_eval_action
 
 
-def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
+def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
+          use_wandb: bool = False, wandb_project: str = "jax-rl"):
     # ── Environment ──────────────────────────────────────────────────────
     env, env_step, env_state, eval_env, obs_dim, action_dim, key = make_envs(cfg, seed)
 
@@ -86,6 +88,14 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
           f"num_updates_per_batch={ppo_cfg.num_updates_per_batch}, episode_length={cfg.episode_length}")
     print(f"  samples/update={samples_per_update:,}, samples/iter={samples_per_iter:,}, "
           f"iterations={num_iterations}, total_steps={cfg.total_timesteps:,}")
+
+    # ── W&B (optional) ─────────────────────────────────────────────────────
+    if use_wandb:
+        wandb_init(
+            project=wandb_project,
+            name=f"ppo_{cfg.env_name}_seed{seed}",
+            config={**dataclasses.asdict(cfg)},
+        )
 
     # ── PPO setup ────────────────────────────────────────────────────────
     num_minibatches = ppo_cfg.num_minibatches
@@ -349,6 +359,7 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
                 "sps": sps,
                 "iter_time": iter_time,
             })
+            wandb_log(metrics_log[-1], step=total_steps)
 
         # ── Eval + checkpoint ─────────────────────────────────────────────
         n_eps_total = tracker.n_episodes
@@ -407,6 +418,8 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
           f"[{eval_metrics['eval_min']:.0f}, {eval_metrics['eval_max']:.0f}]")
     print(f"  Final checkpoint: {ckpt_dir}")
 
+    wandb_finish()
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -439,6 +452,10 @@ if __name__ == "__main__":
                         help="Max steps per episode (default: from env preset)")
     parser.add_argument("--log-interval", type=int, default=None,
                         help="Print training stats every N iterations")
+    parser.add_argument("--wandb", action="store_true",
+                        help="Enable W&B experiment tracking")
+    parser.add_argument("--wandb-project", type=str, default="jax-rl",
+                        help="W&B project name (default: jax-rl)")
     args = parser.parse_args()
 
     cfg = get_preset(args.env)
@@ -473,4 +490,5 @@ if __name__ == "__main__":
     if cfg_overrides:
         cfg = dataclasses.replace(cfg, **cfg_overrides)
 
-    train(cfg, seed=args.seed, resume=args.resume)
+    train(cfg, seed=args.seed, resume=args.resume,
+          use_wandb=args.wandb, wandb_project=args.wandb_project)

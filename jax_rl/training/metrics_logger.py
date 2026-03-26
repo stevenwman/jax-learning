@@ -1,4 +1,9 @@
-"""Training metrics logging — replaces the stdout print + CSV row blocks across all train scripts."""
+"""Training metrics logging — stdout + CSV + optional W&B.
+
+W&B integration is opt-in via --wandb flag. When enabled, all metrics
+logged to CSV are also sent to wandb.ai for real-time experiment tracking.
+W&B is never imported unless the flag is set.
+"""
 
 from jax_rl.training.episode_tracker import EpisodeTracker
 
@@ -90,3 +95,44 @@ def make_metrics_row(
         for key in extra_keys:
             row[key] = float(last_metrics.get(key, float("nan")))
     return row
+
+
+def wandb_init(project: str, name: str, config: dict) -> bool:
+    """Initialize W&B run. Returns True if successful, False if wandb not installed.
+
+    Args:
+        project: W&B project name (e.g., "jax-rl")
+        name: Run name (e.g., "sac_CheetahRun_seed0")
+        config: Dict of hyperparameters to log (typically the meta dict from checkpointing)
+    """
+    try:
+        import wandb
+        wandb.init(project=project, name=name, config=config)
+        return True
+    except ImportError:
+        print("WARNING: wandb not installed. Install with: uv add wandb")
+        return False
+
+
+def wandb_log(metrics: dict, step: int) -> None:
+    """Log metrics to W&B if a run is active. No-op if wandb not initialized.
+
+    Safe to call even if wandb is not installed or not initialized —
+    silently does nothing.
+    """
+    try:
+        import wandb
+        if wandb.run is not None:
+            wandb.log(metrics, step=step)
+    except ImportError:
+        pass
+
+
+def wandb_finish() -> None:
+    """Finish the W&B run. No-op if not initialized."""
+    try:
+        import wandb
+        if wandb.run is not None:
+            wandb.finish()
+    except ImportError:
+        pass
