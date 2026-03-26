@@ -46,7 +46,7 @@
 - [ ] Go2 SAC Phase B — off-policy validation now that PPO confirms env works. Research Q: can SAC match PPO eval=233 on Go2? Required for DIAYN north star.
 
 ## Short-term — Cleanup
-- [ ] Consolidate off-policy train scripts → `train_offpolicy.py --algo sac|td3|fast_td3|fast_sac`
+- [x] Consolidate off-policy train scripts → `train_offpolicy.py --algo sac|td3|fast_td3|fast_sac` (commit 14a17df)
 - [ ] Integration debt items (see `.context/integration_debt.md`): select_action dual role, two normalizers in checkpoint
 - [x] `lax.scan` for gradient loops — benchmarked: 1.03x (no speedup)
 - [x] MJX recompilation — root cause found, upstream issue, MEM_FRACTION=0.7 mitigates
