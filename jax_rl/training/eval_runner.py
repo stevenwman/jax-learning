@@ -2,7 +2,7 @@
 
 import jax
 
-from jax_rl.training.checkpointing import save_checkpoint
+from jax_rl.training.checkpointing import save_checkpoint, CheckpointManager
 from jax_rl.training.episode_tracker import EpisodeTracker
 from jax_rl.utils.eval import evaluate
 
@@ -26,6 +26,7 @@ def maybe_eval_and_checkpoint(
     resume: str | None,
     obs_normalize_fn=None,
     q_fn=None,
+    ckpt_mgr: CheckpointManager | None = None,
 ) -> tuple[int, jax.Array]:
     """Run eval + save checkpoint if enough episodes completed since last eval.
 
@@ -62,9 +63,20 @@ def maybe_eval_and_checkpoint(
     if metrics_log:
         metrics_log[-1].update(eval_metrics)
 
-    save_checkpoint(ckpt_dir, training_state, norm_state, cfg, algo_cfg,
-                    algo_name, obs_dim, action_dim, metrics_log, resume)
-    print(f"  Checkpoint saved to {ckpt_dir}")
+    if ckpt_mgr is not None:
+        is_best = ckpt_mgr.save(
+            training_state, norm_state, cfg, algo_cfg,
+            algo_name, obs_dim, action_dim, metrics_log, resume,
+            eval_mean=eval_metrics['eval_mean'],
+        )
+        if is_best:
+            print(f"  New best! eval={ckpt_mgr.best_eval:.1f}")
+        else:
+            print(f"  Checkpoint saved to {ckpt_dir}")
+    else:
+        save_checkpoint(ckpt_dir, training_state, norm_state, cfg, algo_cfg,
+                        algo_name, obs_dim, action_dim, metrics_log, resume)
+        print(f"  Checkpoint saved to {ckpt_dir}")
 
     return n_eps, key
 
@@ -88,6 +100,7 @@ def final_eval_and_checkpoint(
     total_gradient_steps: int,
     obs_normalize_fn=None,
     q_fn=None,
+    ckpt_mgr: CheckpointManager | None = None,
 ) -> dict:
     """Run final eval + save checkpoint after training completes. Returns eval_metrics."""
     key, eval_key = jax.random.split(key)
@@ -101,8 +114,13 @@ def final_eval_and_checkpoint(
         gamma=cfg.gamma,
     )
 
-    save_checkpoint(ckpt_dir, training_state, norm_state, cfg, algo_cfg,
-                    algo_name, obs_dim, action_dim, metrics_log, resume)
+    if ckpt_mgr is not None:
+        ckpt_mgr.save(training_state, norm_state, cfg, algo_cfg,
+                       algo_name, obs_dim, action_dim, metrics_log, resume,
+                       eval_mean=eval_metrics['eval_mean'])
+    else:
+        save_checkpoint(ckpt_dir, training_state, norm_state, cfg, algo_cfg,
+                        algo_name, obs_dim, action_dim, metrics_log, resume)
 
     print("=" * 80)
     print("Training complete.")

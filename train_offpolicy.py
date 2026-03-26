@@ -275,6 +275,7 @@ def train(cfg: TrainConfig, algo_cfg, algo_name: str, seed: int = 0, resume: str
             obs_dim, action_dim, metrics_log, last_eval_eps, key, resume,
             obs_normalize_fn=obs_norm_fn,
             q_fn=lambda obs, action: algo.get_q_value(_ts, obs, action),
+            ckpt_mgr=ckpt_mgr,
         )
 
     # ── Final eval ─────────────────────────────────────────────────────────
@@ -285,6 +286,7 @@ def train(cfg: TrainConfig, algo_cfg, algo_name: str, seed: int = 0, resume: str
         obs_dim, action_dim, metrics_log, key, resume, total_gradient_steps,
         obs_normalize_fn=obs_norm_fn,
         q_fn=lambda obs, action: algo.get_q_value(training_state, obs, action),
+        ckpt_mgr=ckpt_mgr,
     )
 
 
