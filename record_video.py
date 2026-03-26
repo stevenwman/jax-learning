@@ -192,12 +192,14 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
         init_carry = (env_state, norm_state, key)
     else:
         frozen_params = training_state.actor_params
+        frozen_norm = norm_state
         def rollout_step(carry, _):
             env_state, key = carry
             obs = env_state.obs
             if isinstance(obs, dict):
                 obs = obs["state"]
             obs = obs[None]  # add batch dim
+            obs = norm_normalize(frozen_norm, obs)  # match training normalization
             key, action_key = jax.random.split(key)
             action = algo.select_action(frozen_params, obs, action_key, deterministic=True)
             clipped_action = action.squeeze(0)
