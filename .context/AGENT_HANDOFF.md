@@ -354,7 +354,7 @@ After fixing both, our fast PPO **beats Brax PPO** on Go1: 27.3 eval at 28.5M st
 
 ### Go2 Env (IMPLEMENTED, PPO PHASE A COMPLETE)
 Go2Env subclasses MjxEnv with:
-- **Dict obs**: `{"state": (48,), "privileged_state": (116-122,)}` — asymmetric actor-critic: policy sees "state", critic sees "privileged_state"
+- **Dict obs**: `{"state": (48,), "privileged_state": (116-122,)}` — PPO uses asymmetric actor-critic (actor sees "state", critic sees "privileged_state"). Off-policy algos (SAC/TD3) use "state" for BOTH actor and critic (no asymmetric).
 - **16 reward terms** — Go1 reward math but with Go2-specific tracking weights (see below)
 - **Firm contacts** — Menagerie Go2 has solimp=0.015 (soft), overridden to 0.9 (firm, matches Go1)
 - **Scene XML** adds sensors missing from Menagerie: local_linvel, upvector, foot contacts

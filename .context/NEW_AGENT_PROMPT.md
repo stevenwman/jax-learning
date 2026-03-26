@@ -81,11 +81,11 @@ Test the new agent's understanding before giving real tasks. Questions span tech
 ## Answer Key (brief)
 1. train_ppo_fast.py (PPO JIT), train_ppo.py (PPO fallback), train_offpolicy.py (SAC/TD3/Fast*), record_video.py, live_viewer.py
 2. `uv run python train_offpolicy.py --algo sac --env Go2JoystickFlat --obs-norm`
-3. Dict: {"state": 48d, "privileged_state": 122d}. Actor sees state, critic sees state too (off-policy). PPO critic sees privileged_state (asymmetric).
+3. Dict: {"state": 48d, "privileged_state": 122d}. **PPO**: asymmetric — actor sees state, critic sees privileged_state. **SAC/TD3**: both actor and critic see state (no asymmetric). This is a common trip-up.
 4. ckpt_dir/best/ — CheckpointManager compares eval_mean, saves when new high
 5. None algorithmically. Fast uses lax.scan for collection (3-5x faster wall-clock). Same PPO.update().
 6. PPO branch uses frozen_state + norm passthrough. SAC/TD3 branch extracts obs["state"] and adds batch dim.
-7. Local-frame velocity command transformed to world frame. Rotates because the robot turns (yaw command changes heading).
+7. Local-frame velocity command transformed to world frame. Rotates for TWO reasons: (a) commands resample every ~5s (discrete jumps), (b) robot heading changes continuously from yaw_rate commands (smooth rotation). Both contribute.
 8. Go2: .context/go2/lessons.md. General: .context/LESSONS.md
 9. Crouching local optimum. Pose reward (~450) dominates tracking (~130). Fix: 10x tracking reward.
 10. Problem is env/reward, not PPO implementation.

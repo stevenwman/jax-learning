@@ -541,8 +541,10 @@ meta = {
 **Update (2026-03-20):** The FastTD3 paper (holosoma source) actually uses obs normalization for off-policy — but they store **raw** obs in the buffer and normalize **at sample time** with current running statistics (`EmpiricalNormalization` with eps=1e-2). This is safe because buffer entries never go stale. They also use separate normalizers for actor and critic obs, and stop updating stats after a threshold. Our explosion happened because we normalized *before* storing — the exact antipattern they avoid.
 
 Two valid approaches for off-policy:
-1. No normalization + Q LayerNorm (our current approach, simpler)
-2. Raw obs in buffer + normalize at sample time with large eps (paper's approach, may improve tasks with large obs scale differences)
+1. No normalization + Q LayerNorm (simpler)
+2. Raw obs in buffer + normalize at sample time with large eps (paper's approach)
+
+**Update (2026-03-26):** Our `--obs-norm` flag implements approach #2 correctly — stores raw obs in buffer, normalizes at sample time. SAC on Go2 with `--obs-norm` got eval 139 vs 97 without. So obs normalization DOES help off-policy when done correctly (at sample time, not at storage time). The original lesson "must NOT use online obs normalization" was misleading — the rule is: must NOT normalize BEFORE storing in the buffer.
 
 ---
 
