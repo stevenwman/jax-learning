@@ -37,6 +37,107 @@ Overhead ratio: 87x
 
 ---
 
+## Always Verify MJCF Actuator Limits Against Hardware Specs (2026-03-25)
+
+**What happened:** Go2 couldn't lift its feet after 100M+ steps of PPO training. Every reward weight combination, every env fix, every PPO tuning — nothing worked. We spent ~10 hours debugging.
+
+**Root cause:** Menagerie's `go2_mjx.xml` has a bug. The parent actuator class sets `forcerange="-24 24"` for all joints. The `knee` subclass doesn't override it. Real Go2 calf torque is **45.43 Nm** (from Unitree's URDF), but the sim limited it to **24 Nm** — 53% of real. Meanwhile Go1's Menagerie model correctly has calf at 35.55 Nm.
+
+With 24 Nm calf torque on a 15.2 kg robot, the calf literally couldn't generate enough force to lift the foot during a walking stride. The policy correctly learned that shuffling was optimal because lifting feet was physically impossible within the torque budget.
+
+**Fix:** Override `actuator_forcerange` for calf joints to [-45.43, 45.43] in `go2_base.py`.
+
+**Lesson:** When porting a robot to sim:
+1. **Cross-check EVERY actuator limit against the hardware URDF/spec sheet** — don't trust the MJCF
+2. Menagerie has TWO Go2 models (`go2.xml` and `go2_mjx.xml`) with DIFFERENT actuator specs — the MJX variant has the bug
+3. When training fails and the robot "won't move," check if it physically CAN move — run the kinematic sweep diagnostic (`tools/kinematic_sweep.py`)
+4. The debugging trail that found this: reward breakdown → "pose dominates, tracking weak" → "why won't feet lift?" → kinematic sweep → "feet can't lift on ground" → "is the torque too low?" → hardware spec cross-check → MJCF bug
+
+**Meta-lesson:** We tried reward tuning, obs changes, PPO fixes, reference configs — none worked because the physics were wrong. Always verify the physics model against hardware specs BEFORE debugging the algorithm.
+
+---
+
+## Env Parity Is Not Just Reward Math — Audit Physics, Sensors, and Privileged State (2026-03-24, COMPLETE)
+
+**What happened:** Go2 plateaued at eval ~15 while Go1 hit 27 with identical reward weights. We spent hours tuning reward weights (feet_clearance, feet_air_time, tracking) and trying different reward_scaling values. None broke through.
+
+**Root cause (found by deep env audit):**
+1. **Missing CCD iterations:** Go1 sets `mj_model.opt.ccd_iterations=20` for accurate contact detection. Go2 used the MuJoCo default of 4. Fewer CCD iterations = missed foot contacts = corrupted feet_air_time/feet_slip/feet_clearance rewards.
+2. **Incomplete privileged state:** Go2 critic received 116d obs. Go1 critic receives 122-130d (includes accelerometer, external forces, perturbation status). The critic had less information to learn value estimates.
+
+**Status:** Fixes applied (CCD=20, accelerometer + xfrc_applied added to privileged state). Smoke test running — not yet validated.
+
+**Lesson:** "Identical reward math" means nothing if the INPUTS to that math differ. When porting an env from one robot to another:
+- Diff the physics config line by line (timestep, CCD iterations, solver iterations)
+- Diff the privileged state field by field — missing 6 dims can cripple the critic
+- Diff the sensor setup — same sensor names don't guarantee same calibration
+- Don't tune reward weights to compensate for an env bug. Fix the env first.
+
+**Meta-lesson:** When training plateaus, the first instinct is "tune hyperparameters." The right instinct is "audit the env integration." We wasted ~6 hours on reward tuning that a 20-minute code audit would have caught.
+
+**Conclusion (2026-03-25):** The full list of env parity issues found: (1) missing joint_vel + full gyro in obs, (2) incomplete privileged_state for critic, (3) soft foot contacts (solimp 0.015 vs 0.9), (4) calf torque limited to 24 Nm vs real 45.43 Nm, (5) double damping (dof_damping + actuator Kd). Items 1-4 fixed. Item 5 investigated but damping alone doesn't explain the plateau. The actual fix was reward rebalancing: tracking_lin_vel=10.0 (10x Go1 weight) made walking dominate over crouching in reward space. Physics fixes were necessary but not sufficient — reward balance was the final blocker.
+
+---
+
+## JIT Closure Recompilation in Eval Loops (2026-03-25)
+
+**What happened:** Training that should take 15 min was projected at 2.5 hours. Eval ran every iteration and each eval recompiled the eval function from scratch.
+
+**Root cause:** `_make_eval_action()` created a new closure capturing `frozen_norm` each eval call. `@jax.jit` on a new function object = cache miss = full recompilation (~15s each).
+
+**Fix:** Define the eval function once, pass `norm_state` as an argument instead of baking it into the closure. Same function object every call → JAX cache hit → zero recompilation.
+
+**Lesson:** Never create `@jax.jit`-decorated functions inside loops. If a value changes between calls, pass it as an argument (same shapes = cached). If you capture it in a closure, JAX treats it as a new function every time.
+
+---
+
+## Entropy Collapse Blocks Exploration — Monitor logσ (2026-03-25, RESOLVED)
+
+**What happened:** Go2 PPO locked into shuffling strategy by 9M steps. Entropy dropped to -7.6, logσ to -1.4 (std ≈ 0.24). Policy stopped exploring before discovering foot-lifting was now possible (after torque fix).
+
+**Observation:** Default `entropy_coef=0.01` is too low for this env — policy commits too early. `entropy_coef=0.05` too high — never commits. Testing `0.02` as middle ground.
+
+**Lesson:** When changing env physics mid-debug (torque fix, damping fix), the policy needs enough exploration to discover the NEW capabilities. A torque fix means nothing if the policy already converged to the old optimum. Monitor logσ — if it drops below -1.0 before 20M steps, exploration is collapsing too early.
+
+**Resolution (2026-03-25):** Entropy collapse was a SYMPTOM, not the root cause. Three entropy_coef values tested: 0.01 (entropy collapses by 9M, eval ~12-14), 0.02 (collapses slower, eval ~4-5 — worse), 0.05 (never commits, eval ~2-4). Higher entropy_coef made training WORSE. The real problem was the reward landscape: pose reward (~450) dominated tracking (~130), making crouching the optimal strategy regardless of exploration level. The fix was 10x tracking reward (tracking_lin_vel=10.0, tracking_ang_vel=5.0), not entropy tuning. Seed 2100: eval 233, base height 0.31m, actual locomotion at 50M steps.
+
+---
+
+## Save Trajectory Data Alongside Videos — Always (2026-03-25)
+
+**What happened:** Two policies with identical eval=11.6 had completely different behaviors: Brax standing at 0.31m vs ours crouching at 0.17m with calves saturated at -1.0. This was invisible from video but immediately obvious from .npz trajectory data (base height, action distribution, reward breakdown).
+
+**Lesson:** Video is for qualitative checks. Trajectory data (qpos, qvel, actions, rewards, reward components, commands) is for quantitative diagnosis. Always save both. `record_video.py` now auto-saves `_traj.npz` alongside every `.mp4`.
+
+---
+
+## Compare Full Env Implementation, Not Just Config (2026-03-25, IN PROGRESS)
+
+**What happened:** Matched Go1's reward weights, Kp, Kd, action_scale, obs structure. Go2 still plateaued at 12-15. Both Brax PPO and our PPO hit the same ceiling — confirming env, not algo.
+
+**Root cause (found by diffing alexeiplatzer's working Go2):**
+1. Go1 uses "feetonly" collision — only foot spheres contact floor. Our Go2 had ALL body geoms active. At crouching pose, 4/6 contacts were body-floor (thighs sitting on ground).
+2. No height termination. Working implementations terminate at base_z < 0.18m.
+3. Reward landscape: pose reward (~450) dominated tracking (~130). Crouching was optimal.
+
+**Resolution (2026-03-25):** 10x tracking reward (tracking_lin_vel=10.0, tracking_ang_vel=5.0) + height termination (base_z < 0.18m) + calf torque fix (45.43 Nm) = eval 233 at 50M steps (seed 2100). Robot stands at 0.31m, locomotes, and tracks velocity commands. All three ingredients required: torque fix alone gave eval ~12-14, height termination alone gave eval ~4-7 (died too fast without locomotion), but 10x tracking tipped the reward balance decisively toward walking.
+
+**Lesson:** When porting an env between robots, diff the FULL implementation of a working reference — not just config values. Collision geometry, termination conditions, and reward balance matter as much as weights.
+
+---
+
+## lax.scan Episode Return Tracking Requires Persistent Carry (2026-03-25)
+
+**What happened:** Online training return showed `0.0` for entire runs despite episodes completing. The reward breakdown (via Brax baseline) was the only way to diagnose training.
+
+**Root cause:** `ep_return` (per-env cumulative reward) was reset to zeros at each `_collect()` call. Episodes span ~50 collect calls (1000 steps / 20 per scan). So the running total was thrown away every 20 steps and only captured the last 20 steps of reward before `done`.
+
+**Fix:** Make `running_ep_return` persist across collect calls as part of the outer training loop state, not reinitialized inside `_collect`.
+
+**Lesson:** When using `lax.scan` for env collection, any state that spans episode boundaries must live OUTSIDE the scan init and persist across calls. The scan carry handles within-scan persistence, but between-scan persistence needs the outer loop.
+
+---
+
 ## Menagerie MJCF May Have Different Contact Physics Than Playground (2026-03-24)
 
 **What happened:** Go2 robot shuffled instead of walking, even with identical reward weights to Go1.
@@ -963,6 +1064,32 @@ Stress test revealed: our NaN guard only checked `isnan()`, not `isinf()`. MJX c
 ### Go2 vs Go1 Naming Differences
 
 Body: `base` (Go1: `trunk`). Foot sites: `FL_foot` etc. (Go1: `FL`). Actuators: `general` biastype=affine (Go1 Playground: `position`). Joint order: FL, FR, RL, RR. PD override (`actuator_gainprm`, `actuator_biasprm`) works identically despite different actuator types.
+
+---
+
+## When Porting Reward Weights Between Robots, Rebalance — Don't Copy (2026-03-25)
+
+**What happened:** Go2 PPO trained for 100M+ equivalent steps across 20+ seeds without ever producing walking. The env was structurally correct (correct obs, correct physics, correct reward math). The reward WEIGHTS were copied from Go1's working config (tracking_lin_vel=1.0, tracking_ang_vel=0.5). Go2 never walked.
+
+**Root cause:** Go1's dynamics make walking easy enough that tracking_lin_vel=1.0 is sufficient to make walking dominate in reward space. Go2 has different dynamics (heavier robot, different joint geometry) — at the same weights, the pose reward (~450 per episode) dominated tracking reward (~130 per episode). Crouching was the reward-maximizing strategy because the policy earned ~450 for pose + limited tracking, with zero effort. Walking would require overcoming ~-89 feet_clearance penalty and much higher energy costs, while only gaining tracking reward incrementally.
+
+At 10x tracking (tracking_lin_vel=10.0, tracking_ang_vel=5.0): pose still earns ~450 but perfect tracking earns ~4500. Walking dominates immediately.
+
+**The wrong hypotheses we chased first (all real bugs, none sufficient alone):**
+- Calf torque fix (24→45.43 Nm): real bug, eval improved from ~15 → ~12-14 but no walking
+- Entropy collapse tuning: symptom, not cause — higher entropy_coef made things worse
+- Obs normalization differences (Brax vs ours): no effect — seed 1900 same plateau
+- Network initialization: no effect
+- Double damping: real bug but not the blocker
+- Action scale 0.3 vs 0.5: no effect alone
+- MJX reference config (alexeiplatzer): made things WORSE (eval ~8)
+- Height termination alone: eval dropped to 4-7 (policy crouched at exactly 0.18m)
+
+**The actual fix:** 10x tracking_lin_vel + 10x tracking_ang_vel + height termination (base_z < 0.18m) + calf torque fix. Seed 2100: eval 233 at 50M steps, base height 0.31m, confirmed locomotion.
+
+**Lesson:** When porting a trained policy from Robot A to Robot B, the reward weights that work for A will NOT necessarily work for B. The absolute values of competing reward terms depend on the robot's dynamics, mass, joint geometry, and default pose. Before debugging the algorithm or env, compute the per-term reward breakdown during training and verify that the reward terms you WANT to dominate actually DO dominate numerically. If pose reward (400+) swamps tracking reward (100), no amount of algo tuning will produce tracking behavior.
+
+**Rule of thumb:** After any port, run a 5M-step training, extract reward breakdown, and verify: `tracking_reward / (pose_reward + tracking_reward) > 0.5`. If not, increase tracking weights until it is.
 
 ---
 

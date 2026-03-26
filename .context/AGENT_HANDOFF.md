@@ -1,8 +1,8 @@
 # Agent Handoff — JAX RL Framework
 
-**Last updated:** 2026-03-24
+**Last updated:** 2026-03-25
 **Branch:** `new_slate_linen`
-**Status:** Active development — Go2 sim-to-real (PPO Phase A), PPO fixes validated on Go1
+**Status:** Active development — Go2 PPO Phase A COMPLETE (eval 233), Go2 Phase B (SAC) next
 
 ---
 
@@ -221,8 +221,9 @@ jax-learning/
     ├── journals/                 # Daily work logs
     │   ├── 2026-03-12.md through 2026-03-24.md
     ├── go2_sim_to_real_plan.md   # Go2 deployment plan: PPO→SAC→ONNX→Jetson
-    ├── go2_ppo_debugging.md      # Full debugging trail for Go2 PPO training
-    ├── integration_debt.md       # 7 tracked integration debt items
+    ├── go2_ppo_debugging.md      # Active debugging trail for Go2 PPO training
+    ├── go2_physics_audit.md      # Go2 vs Go1 physics comparison (torque limits, solimp, sensors)
+    ├── integration_debt.md       # Tracked tech debt items
     ├── rl_framework_plan.md      # North star architecture (Phases 1-6)
     ├── refactor_idea.md          # Shared utilities design (Brax-style, not Trainer class)
     ├── vision_rl_design.md       # Vision RL: CNN encoder, MJWarp, ManiSkill
@@ -289,6 +290,12 @@ Every checkpoint directory contains:
 | FastSAC (best) | 582 | 100M | 1024 | 15k | ~108 min |
 | FastDSAC (best) | 567 | 30M | 1024 | 18k | ~28 min |
 
+**Go2 Joystick** (12-dim actions — locomotion, dict obs, asymmetric AC):
+| Algo | Eval | Steps | Envs | Notes |
+|------|------|-------|------|-------|
+| Brax PPO (baseline) | 17.9 | 50M | 512 | A/B test script |
+| Our PPO (fast) | **233** | 50M | 1024 | Seed 2100: 10x tracking + height term + torque fix. Robot walks at 0.31m. |
+
 **HumanoidRun** (21-dim actions — high-dim, entropy exploration critical):
 | Algo | Eval | Steps | Envs | sps | Wall-clock |
 |------|------|-------|------|-----|------------|
@@ -345,15 +352,27 @@ Our PPO had two critical differences vs Brax PPO that caused 2x slower sample ef
 
 After fixing both, our fast PPO **beats Brax PPO** on Go1: 27.3 eval at 28.5M steps vs Brax's 18 at the same point. See `go2_ppo_debugging.md` for the full investigation trail.
 
-### Go2 Env (IMPLEMENTED, TRAINING IN PROGRESS)
+### Go2 Env (IMPLEMENTED, PPO PHASE A COMPLETE)
 Go2Env subclasses MjxEnv with:
-- **Dict obs**: `{"state": (48,), "privileged_state": (116,)}` — asymmetric actor-critic
-- **16 reward terms** — identical math to Go1 Joystick (verified by diff)
+- **Dict obs**: `{"state": (48,), "privileged_state": (116-122,)}` — asymmetric actor-critic: policy sees "state", critic sees "privileged_state"
+- **16 reward terms** — Go1 reward math but with Go2-specific tracking weights (see below)
 - **Firm contacts** — Menagerie Go2 has solimp=0.015 (soft), overridden to 0.9 (firm, matches Go1)
 - **Scene XML** adds sensors missing from Menagerie: local_linvel, upvector, foot contacts
+- **Calf torque bug fixed** — Menagerie sets 24 Nm for calf joints; real Go2 is 45.43 Nm. Fixed in `go2_base.py`.
+- **Height termination** — base_z < 0.18m terminates episode. Prevents crouching local optimum.
+- **action_scale=0.5** — matched to Go1 PG
 - 12/12 tests pass
 
-Go2 PPO training still in progress. See `go2_ppo_debugging.md` for run log, hypotheses, and current status.
+**Working config (seed 2100, eval 233 @ 50M steps):**
+- `tracking_lin_vel=10.0` (NOT 1.0 — Go1's weight does not transfer to Go2)
+- `tracking_ang_vel=5.0` (NOT 0.5)
+- `height_termination=True` (base_z < 0.18m)
+- `calf_torque=45.43 Nm` (fixed from Menagerie's wrong 24 Nm)
+- Robot stands at 0.31m base height, locomotes, tracks velocity commands.
+
+**Critical warning:** Go1 PG weights (tracking_lin_vel=1.0, tracking_ang_vel=0.5) do NOT work for Go2. At those weights, pose reward (~450) dominates tracking reward (~130) and the optimal strategy is crouching. 10x tracking is required to make walking dominate. When porting to new robots, always verify reward term balance numerically before assuming weights transfer.
+
+See `go2_ppo_debugging.md` for the full investigation trail (20+ seeds, 10 hypotheses, root cause analysis).
 
 ### train_ppo_fast.py (PREFERRED for JIT-able envs)
 Uses `jax.lax.scan` for env collection instead of Python loop. **110k sps on Go1 vs 32k with train_ppo.py** (3.4x speedup). Falls back to train_ppo.py for non-JIT-able envs (e.g., future MJWarp rendering).
@@ -374,9 +393,9 @@ See `.context/integration_debt.md` for 7 tracked items including:
 
 ## Part 6: Upcoming Work
 
-### Active (Go2 Phase A)
-1. **Go2 PPO validation** — Validate Go2 walks with our fast PPO at 200M steps. Currently beating Brax on Go1 A/B test.
-2. **Go2 Phase B (SAC)** — After PPO validates, switch to SAC for better sample efficiency. See `go2_sim_to_real_plan.md`.
+### Active (Go2 Phase B)
+1. ~~**Go2 Phase A (PPO)**~~ — **DONE.** Seed 2100: eval 233 @ 50M steps. Robot walks.
+2. **Go2 Phase B (SAC)** — Validate off-policy on Go2 env. Research Q: can SAC match eval=233? Required prerequisite for DIAYN/METRA (skill discovery wraps SAC). See `go2_sim_to_real_plan.md`.
 
 ### Short-term
 1. ~~TrainConfig cleanup~~ — **DONE**

@@ -181,6 +181,21 @@ Fix: clip actions away from boundaries:
 action = jnp.clip(action, -1.0 + 1e-6, 1.0 - 1e-6)
 ```
 
+### JAX/XLA GPU Memory Model
+
+JAX pre-allocates a fixed GPU memory pool on first use (`XLA_CLIENT_MEM_FRACTION`, default 75%). All buffers come from this pool — no dynamic OS allocation at runtime.
+
+**Compilation (JIT):** Runs on CPU. XLA plans a deterministic memory schedule — exactly when each buffer is allocated, used, and freed. The schedule must fit the pool.
+
+**When pool is tight:** XLA compensates by:
+- **Rematerialization** — recompute values instead of keeping them in memory (same result, slower)
+- Different **tiling/layout strategies** for matmuls
+- **Autotuning** tests fewer kernel variants (less scratch space available)
+
+**Runtime:** Completely deterministic. No dynamic allocation. Compiled kernels run within the fixed pool.
+
+**Practical impact:** More VRAM → less rematerialization → ~5-10% faster. Restarting a training run with more free VRAM only helps if you recompile (JIT again). Once compiled, the memory schedule is baked in.
+
 ### Package Structure
 Use `__init__.py` for clean public APIs:
 ```python

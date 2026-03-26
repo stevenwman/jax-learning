@@ -26,14 +26,28 @@
 - [x] Our fast PPO beats Brax: 27.3 eval @ 28.5M steps on Go1 (Brax: 18 at same point)
 - [x] Go2 contact fix — solimp 0.015→0.9 (firm, matches Go1)
 
-## Active
-- [ ] Go2 PPO Phase A — Go1 A/B validation running (50M steps, 110k sps). Next: Go2 200M steps.
+## Completed (2026-03-25)
+- [x] Go2 PPO Phase A — DONE. Seed 2100: eval 233 @ 50M steps. Config: tracking_lin_vel=10.0, tracking_ang_vel=5.0, height_term=0.18m, calf_torque=45.43Nm. Robot stands at 0.31m and locomotes.
 
-## Short-term
-- [ ] Fix train_ppo_fast.py online tracker (shows 0.0 early — SI notation fix applied, needs validation)
+## Active
+
+## Short-term — Blocking Go2 walking
+- [ ] Reward breakdown in record_video.py — print per-term reward fractions alongside video. Essential for diagnosing reward gaming.
+- [ ] Best-policy checkpointing — save best eval checkpoint separately from most-recent. Currently overwrites each eval.
+
+## Short-term — Training script quality
+- [x] Fix eval recompilation — norm_state passed as arg, JIT compiles once. Was adding ~15s per eval.
+- [x] Fix train_ppo_fast.py online return tracker — episode returns accumulated inside scan carry.
+- [x] Print elapsed time in training scripts — wall-clock since start on each iteration.
+- [x] Add --eval-every CLI flag and PYTHONUNBUFFERED=1 for real-time output.
+- [ ] record_video.py dict obs support — crashes on Go2 checkpoints (wrong meta.json nesting).
+
+## Short-term — Go2 env maturity
 - [ ] Wire frame stacking into Go2 env (currently no frame stack — just raw obs)
 - [ ] Domain rand wrapper (`jax_rl/envs/wrappers/domain_rand.py`) — robot-agnostic, vmap over MJX params
-- [ ] Go2 SAC Phase B — off-policy validation after PPO confirms env works
+- [ ] Go2 SAC Phase B — off-policy validation now that PPO confirms env works. Research Q: can SAC match PPO eval=233 on Go2? Required for DIAYN north star.
+
+## Short-term — Cleanup
 - [ ] Consolidate off-policy train scripts → `train_offpolicy.py --algo sac|td3|fast_td3|fast_sac`
 - [ ] Integration debt items (see `.context/integration_debt.md`): select_action dual role, two normalizers in checkpoint
 - [x] `lax.scan` for gradient loops — benchmarked: 1.03x (no speedup)

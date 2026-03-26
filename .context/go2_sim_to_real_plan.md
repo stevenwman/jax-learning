@@ -66,24 +66,32 @@ This avoids MJLab's full manager framework (too heavy for us) while getting the 
 
 **OPEN QUESTION:** Playground's `MjxEnv` may be too opinionated for custom reward functions. Verify by subclassing `Go1Env` with a modified reward and confirming it works before committing to this approach.
 
-### Observation Space (31 dims per step, no base_lin_vel)
+### Observation Space (asymmetric actor-critic)
 
-Based on [unitree-go2-mjx-rl obs construction](https://github.com/alexeiplatzer/unitree-go2-mjx-rl) and [Genesis 45-dim approach](https://github.com/Genesis-Embodied-AI/Genesis/blob/main/examples/locomotion/go2_train.py):
+**Current implementation** matches Playground Go1 Joystick obs space.
 
-| Component | Dims | Scale | Source |
-|---|---|---|---|
-| Commanded velocity (vx, vy, yaw_rate) | 3 | [2.0, 2.0, 0.25] | Joystick input |
-| Yaw rate | 1 | 0.25 | IMU gyroscope |
-| Projected gravity (body frame) | 3 | 1.0 | IMU quaternion → rotation |
-| Joint position offsets (q - q_default) | 12 | 1.0 | Encoders |
-| Previous action | 12 | 1.0 | Stored from last step |
-| **Total per step** | **31** | | |
+**State obs (48d)** — policy input:
 
-**Frame stacking:** 3-5 frames (configurable). Total obs = 31 × N. Start with N=3 (93 dims), ablate.
-Implementation: `jnp.roll` FIFO buffer (same pattern as go2-mjx-rl repo).
+| Component | Dims | Notes |
+|---|---|---|
+| Command (vx, vy, yaw_rate) | 3 | Joystick input |
+| Gyroscope (full 3-axis) | 3 | IMU |
+| Projected gravity (body frame) | 3 | IMU quaternion → rotation |
+| Joint position offsets (q - q_default) | 12 | Encoders |
+| Joint velocity | 12 | Encoders |
+| Previous action | 12 | Stored from last step |
+| Local linear velocity | 3 | Sensor (sim only; dropped at deploy) |
+| **Total** | **48** | |
 
-**Why no base_lin_vel:** Not measurable on hardware without GPS. Dropping it eliminates a sim-to-real gap. The policy infers velocity from joint position changes across the frame stack.
-Sources: [Genesis Go2 example](https://github.com/Genesis-Embodied-AI/Genesis/blob/main/examples/locomotion/go2_train.py), [unitree-go2-mjx-rl](https://github.com/alexeiplatzer/unitree-go2-mjx-rl)
+**Privileged state (116-122d)** — critic input only:
+
+State obs + unnoised sensors, accelerometer, contact forces (per foot), feet velocities, air time. Dict obs: `{"state": 48d, "privileged_state": ~120d}`.
+
+**Asymmetric actor-critic:** policy sees `state` (48d), critic sees `privileged_state` (~120d). At deployment only the policy is used — privileged_state is sim-only.
+
+**Why local_linvel is included (sim only):** Available as a MuJoCo sensor. Dropped at deployment since it requires GPS or EKF on hardware. The policy learns to work without it through obs noise and domain rand.
+
+**Frame stacking:** Not currently used (single-step 48d obs). May revisit if policy struggles with velocity estimation without frame history.
 
 **CRITICAL: No online obs normalization for off-policy algos (SAC/FastSAC Phase B).** Use raw obs + Q LayerNorm. Online normalization with replay buffers causes distribution shift that explodes training. See LESSONS.md "Off-Policy Obs Normalization Explodes Replay." Sample-time normalization (`--obs-norm`) is the safe alternative if needed.
 
@@ -147,8 +155,8 @@ Configurable source via `reward_source` flag. Start with legged_gym terms (prove
 
 | Term | Weight (legged_gym) | Weight (Playground Go1) | Description |
 |---|---|---|---|
-| tracking_lin_vel | 1.0 | 1.0 | `exp(-error² / σ²)`, σ=0.25 |
-| tracking_ang_vel | 0.5 | 0.5 | Same formulation |
+| tracking_lin_vel | 1.0 | 1.0 | `exp(-error² / σ²)`, σ=0.25. **Go2 requires 10.0 — see note below.** |
+| tracking_ang_vel | 0.5 | 0.5 | Same formulation. **Go2 requires 5.0.** |
 | lin_vel_z | -2.0 | -0.5 | Vertical velocity penalty |
 | ang_vel_xy | -0.05 | -0.05 | Roll/pitch rate penalty |
 | orientation | 0.0 | -5.0 | Non-upright penalty |
@@ -166,6 +174,8 @@ Configurable source via `reward_source` flag. Start with legged_gym terms (prove
 | pose | — | 0.5 | Default pose tracking |
 
 Sources: [legged_gym LeggedRobotCfg](https://github.com/leggedrobotics/legged_gym), [Playground Go1 joystick.py default_config()](https://github.com/google-deepmind/mujoco_playground)
+
+**CRITICAL — Go2-specific reward rebalancing required:** Go1's tracking weights (1.0/0.5) do NOT transfer to Go2. At 1.0/0.5, pose reward (~450/episode) dominates tracking reward (~130/episode) and the policy learns to crouch rather than walk. Go2 requires tracking_lin_vel=10.0, tracking_ang_vel=5.0 to make walking the reward-maximizing strategy. When porting to any new robot, always compute reward breakdown during early training and verify that tracking dominates pose. See LESSONS.md "When Porting Reward Weights Between Robots, Rebalance — Don't Copy".
 
 **Variable posture rewards** (from [MJLab](https://arxiv.org/html/2601.22074v1)): speed-dependent joint penalties — standing, walking, running have different ideal poses. Add as a future enhancement.
 
