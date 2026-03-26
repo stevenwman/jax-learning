@@ -176,10 +176,10 @@ Pixel replay buffers are much larger than state buffers. Rough estimates suggest
 
 **Order of execution:**
 1. Install `madrona_mjx` and verify vision env loads on our hardware
-2. Unify builders (`make_encoder` factory) — prerequisite for swappable encoders
+2. ~~Unify builders (`make_encoder` factory)~~ — DONE (2026-03-22)
 3. Add CNN encoder (`jax_rl/networks/encoders/cnn.py`)
 4. Add encoder configs (`CnnEncoderConfig`, `AugmentationConfig`)
-5. Modify one train script (train_sac.py) to support vision obs + CNN encoder
+5. Add `--vision` flag to `train_offpolicy.py` (consolidated script replaces train_sac.py/td3.py)
 6. Verify on CartpoleBalance from pixels (Playground colab baseline: 57s to solve on 4090)
 7. Add DrQ augmentation as optional toggle
 8. Benchmark CNN vs CNN+DrQ vs state-based on same task
