@@ -230,8 +230,17 @@ class PPO:
             value = critic.apply(critic_params, critic_obs)
             return mean, log_prob, value
 
+        @jax.jit
+        def _select_eval(actor_params, obs):
+            """Eval-only action selection — no critic, no value, no log_prob."""
+            mean, _log_std = actor.apply(actor_params, obs)
+            if squash:
+                return jnp.tanh(mean)
+            return mean
+
         self._select_stochastic = _select_stochastic
         self._select_deterministic = _select_deterministic
+        self._select_eval = _select_eval
 
     def init(self, key: jax.Array) -> TrainingState:
         actor_key, critic_key = jax.random.split(key, 2)
@@ -269,8 +278,26 @@ class PPO:
         deterministic: bool = False,
         critic_obs: jax.Array = None,
     ) -> tuple[jax.Array, jax.Array, jax.Array]:
+        """Training action selection — returns (action, log_prob, value).
+
+        For eval/recording, use select_action_eval() instead — it doesn't
+        require critic_obs or the full TrainingState.
+        """
         if critic_obs is None:
             critic_obs = obs
         if deterministic:
             return self._select_deterministic(state.actor_params, state.critic_params, obs, critic_obs)
         return self._select_stochastic(state.actor_params, state.critic_params, obs, critic_obs, key)
+
+    def select_action_eval(
+        self,
+        actor_params: Any,
+        obs: jax.Array,
+    ) -> jax.Array:
+        """Eval-only action selection — returns just the deterministic action.
+
+        No critic_obs needed, no value computation. Use this for evaluation,
+        video recording, and deployment. Avoids the dual-role problem where
+        select_action() requires critic_obs even when only the action is needed.
+        """
+        return self._select_eval(actor_params, obs)

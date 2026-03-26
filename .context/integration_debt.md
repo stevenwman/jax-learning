@@ -5,13 +5,9 @@ These are working but fragile — fix before adding more features.
 
 ---
 
-## 1. `select_action` dual role — training vs eval
+## 1. ~~`select_action` dual role~~ — DONE (2026-03-26)
 
-**Problem:** `PPO.select_action()` computes both action AND value. Eval only needs action but must pass `critic_obs` (privileged_state) to avoid shape mismatch. Current workaround: eval bypasses `select_action` and calls `actor.apply` directly.
-
-**Fix:** Split into `select_action_train(obs, critic_obs, key) → (action, log_prob, value)` and `select_action_eval(obs) → action`. Clean separation, no workaround needed.
-
-**Risk if not fixed:** Any new eval caller (record_video, diagnostic scripts) must know to bypass `select_action`. Easy to forget → shape error.
+Added `select_action_eval(actor_params, obs) → action` to PPO. No critic_obs needed, no value computation. `select_action()` still exists for training (returns action, log_prob, value). Eval callers use `select_action_eval()` instead.
 
 ---
 
@@ -39,11 +35,9 @@ All envs use `"state"` / `"privileged_state"` keys, matching Playground Go1. Con
 
 ---
 
-## 6. PPO tests don't cover asymmetric mode
+## 6. ~~PPO tests don't cover asymmetric mode~~ — DONE (2026-03-26)
 
-**Problem:** `test_ppo_setup.py` tests only symmetric PPO (same obs for actor and critic). The asymmetric path (different obs dims) is only tested indirectly via `test_go2_env.py` shape checks.
-
-**Fix:** Add a test that runs PPO init + update with `critic_obs_dim != obs_dim`.
+Added `test_asymmetric_ppo()` — tests PPO init, select_action, and select_action_eval with critic_obs_dim=116 (different from actor obs_dim=17).
 
 ---
 

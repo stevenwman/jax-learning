@@ -128,3 +128,44 @@ def test_buffer_and_gae():
     assert batch.advantages.shape == (NUM_STEPS, NUM_ENVS)
     assert batch.returns.shape == (NUM_STEPS, NUM_ENVS)
     assert not jnp.any(jnp.isnan(batch.advantages))
+
+
+def test_asymmetric_ppo():
+    """PPO with different actor/critic obs dims (asymmetric actor-critic).
+
+    The actor sees 'state' (e.g., 48 dims) and the critic sees
+    'privileged_state' (e.g., 116 dims with extra info like foot contacts).
+    This is the Go2 locomotion pattern.
+    """
+    CRITIC_OBS_DIM = 116  # privileged_state (larger than actor obs)
+
+    encoder_config = EncoderConfig(obs_dim=OBS_DIM, hidden_dim=(64, 64))
+    critic_encoder_config = EncoderConfig(obs_dim=CRITIC_OBS_DIM, hidden_dim=(64, 64))
+    policy_config = PolicyHeadConfig(action_dim=ACTION_DIM, squash=True)
+
+    config = PPOConfig(
+        encoder=encoder_config,
+        critic_encoder=critic_encoder_config,
+        policy_head=policy_config,
+        num_envs=NUM_ENVS,
+        num_steps=NUM_STEPS,
+    )
+
+    ppo = PPO(config, OBS_DIM, ACTION_DIM, optax.adam(3e-4), optax.adam(3e-4),
+              critic_obs_dim=CRITIC_OBS_DIM)
+    key = jax.random.PRNGKey(99)
+    state = ppo.init(key)
+
+    # Actor obs and critic obs have different dims
+    obs = jax.random.normal(key, (NUM_ENVS, OBS_DIM))
+    critic_obs = jax.random.normal(key, (NUM_ENVS, CRITIC_OBS_DIM))
+
+    # select_action (training) — needs critic_obs for value
+    action, log_prob, value = ppo.select_action(state, obs, key, critic_obs=critic_obs)
+    assert action.shape == (NUM_ENVS, ACTION_DIM)
+    assert value.shape == (NUM_ENVS,)
+
+    # select_action_eval — only needs actor obs, no critic
+    eval_action = ppo.select_action_eval(state.actor_params, obs)
+    assert eval_action.shape == (NUM_ENVS, ACTION_DIM)
+    assert not jnp.any(jnp.isnan(eval_action))
