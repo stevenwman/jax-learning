@@ -15,11 +15,9 @@ These are working but fragile — fix before adding more features.
 
 ---
 
-## 2. `record_video.py` doesn't support dict obs — IN PROGRESS
+## 2. ~~`record_video.py` dict obs support~~ — DONE (2026-03-25)
 
-**Problem:** `record_video.py` assumes flat obs. Will crash on Go2 checkpoints. Needs `_extract_obs()` and to read network dims from `meta.json["train_config"]["ppo"]`.
-
-**Fix:** Add dict obs handling to `record_video.py`. Also fix meta.json reading (policy_hidden_dim is under `train_config.ppo`, not `train_config`).
+Fixed. Also saves `_traj.npz` + command arrow overlay.
 
 ---
 
