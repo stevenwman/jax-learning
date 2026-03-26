@@ -4,12 +4,42 @@ import csv
 import dataclasses
 import json
 import os
+import shutil
 
 import jax
 import numpy as np
 import orbax.checkpoint as ocp
 
 from jax_rl.utils.normalization import NormalizationState
+
+
+class CheckpointManager:
+    """Wraps save_checkpoint with best-policy tracking.
+
+    Usage:
+        mgr = CheckpointManager(ckpt_dir)
+        mgr.save(training_state, norm_state, ..., eval_mean=15.2)
+        # Automatically saves to ckpt_dir/ (latest) and ckpt_dir/best/ (if new high)
+    """
+
+    def __init__(self, ckpt_dir: str):
+        self.ckpt_dir = ckpt_dir
+        self.best_eval = -float('inf')
+        self.best_dir = os.path.join(ckpt_dir, "best")
+
+    def save(self, training_state, norm_state, cfg, algo_cfg,
+             algo_name, obs_dim, action_dim, metrics_log, resume=None,
+             eval_mean: float | None = None) -> bool:
+        """Save latest checkpoint. Returns True if new best."""
+        save_checkpoint(self.ckpt_dir, training_state, norm_state, cfg, algo_cfg,
+                        algo_name, obs_dim, action_dim, metrics_log, resume)
+        is_best = False
+        if eval_mean is not None and eval_mean > self.best_eval:
+            self.best_eval = eval_mean
+            save_checkpoint(self.best_dir, training_state, norm_state, cfg, algo_cfg,
+                            algo_name, obs_dim, action_dim, metrics_log, resume)
+            is_best = True
+        return is_best
 
 
 def save_checkpoint(

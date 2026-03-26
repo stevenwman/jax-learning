@@ -29,7 +29,7 @@ from jax_rl.algos.ppo import PPO
 from jax_rl.buffers import RolloutBatch
 from jax_rl.configs import EncoderConfig, PolicyHeadConfig, TrainConfig, get_preset
 from jax_rl.training import make_envs, EpisodeTracker, load_checkpoint
-from jax_rl.training.checkpointing import save_checkpoint
+from jax_rl.training.checkpointing import save_checkpoint, CheckpointManager
 from jax_rl.utils.eval import evaluate
 from jax_rl.utils.normalization import (
     NormalizationState,
@@ -263,7 +263,7 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
 
     # ── Training loop ────────────────────────────────────────────────────
     running_ep_return = jnp.zeros(cfg.num_envs)
-    best_eval = -float('inf')
+    ckpt_mgr = CheckpointManager(ckpt_dir)
     import time as _time
     _t_start = _time.time()
     print(f"\nJIT-compiling first iteration (expect a delay)...")
@@ -371,15 +371,13 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
             )
             if metrics_log:
                 metrics_log[-1].update(eval_metrics)
-            save_checkpoint(ckpt_dir, training_state, norm_state, cfg, cfg.ppo,
-                            "ppo", obs_dim, action_dim, metrics_log, resume)
-            # Save best checkpoint separately
-            if eval_metrics['eval_mean'] > best_eval:
-                best_eval = eval_metrics['eval_mean']
-                best_dir = os.path.join(ckpt_dir, "best")
-                save_checkpoint(best_dir, training_state, norm_state, cfg, cfg.ppo,
-                                "ppo", obs_dim, action_dim, metrics_log, resume)
-                print(f"  New best! eval={best_eval:.1f} → {best_dir}")
+            is_best = ckpt_mgr.save(
+                training_state, norm_state, cfg, cfg.ppo,
+                "ppo", obs_dim, action_dim, metrics_log, resume,
+                eval_mean=eval_metrics['eval_mean'],
+            )
+            if is_best:
+                print(f"  New best! eval={ckpt_mgr.best_eval:.1f}")
             else:
                 print(f"  Checkpoint saved to {ckpt_dir}")
             last_eval_eps = n_eps_total
@@ -396,8 +394,9 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None):
         num_envs=cfg.num_envs,
         action_fn_kwargs={"norm_state": frozen_norm},
     )
-    save_checkpoint(ckpt_dir, training_state, norm_state, cfg, cfg.ppo,
-                    "ppo", obs_dim, action_dim, metrics_log, resume)
+    ckpt_mgr.save(training_state, norm_state, cfg, cfg.ppo,
+                   "ppo", obs_dim, action_dim, metrics_log, resume,
+                   eval_mean=eval_metrics['eval_mean'])
     print("=" * 80)
     print(f"Training complete.")
     if tracker.completed_returns:
