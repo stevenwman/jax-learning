@@ -1,105 +1,175 @@
-# JAX RL Framework
+# jax-learning
 
-A modular, JAX-native reinforcement learning library built on Flax Linen, designed to make **efficient robot learning accessible**.
+JAX-based reinforcement learning framework for robot learning research. Built for MuJoCo Playground environments, with a focus on locomotion and sim-to-real transfer.
 
-This framework is both a **learning vehicle** and a **lab tool** — every algorithm is implemented from fundamentals with clear mappings to the papers. A new lab member should be able to read a single algorithm file and understand what's happening without chasing abstractions across ten modules.
+## Quick Start
 
-## Design Philosophy
+```bash
+# Install dependencies
+uv sync
 
-- **Learnable**: Heavily commented, clear mappings to papers. No magic.
-- **Accessible**: Clean code the whole lab can read, modify, and extend
-- **Efficient**: JAX-native with FastTD3/SAC for training in minutes, not hours
-- **Robot-first**: Built for the sim-to-real pipeline
-- **Modular**: Encoder+head architecture — swap components without rewriting algorithms
+# Train SAC on CheetahRun (simplest benchmark, ~8 min)
+uv run python train_offpolicy.py --algo sac --env CheetahRun
+
+# Train PPO on CartpoleBalance (fastest sanity check, ~2 min)
+uv run python train_ppo_fast.py --env CartpoleBalance --total-timesteps 1000000
+
+# Record a video of a trained policy
+MUJOCO_GL=egl uv run python record_video.py --checkpoint checkpoints/<your_checkpoint>
+```
+
+## Algorithms
+
+| Algorithm | Type | Script | Best Use Case |
+|-----------|------|--------|---------------|
+| **PPO** | On-policy | `train_ppo_fast.py` | Locomotion (Go2), high-dim obs |
+| **SAC** | Off-policy | `train_offpolicy.py --algo sac` | General continuous control |
+| **TD3** | Off-policy | `train_offpolicy.py --algo td3` | Low-dim action spaces |
+| **FastTD3** | Off-policy | `train_offpolicy.py --algo fast_td3` | Large-scale (1024 envs), C51 distributional |
+| **FastSAC** | Off-policy | `train_offpolicy.py --algo fast_sac` | Large-scale, high-dim actions (humanoid) |
+
+`train_ppo_fast.py` uses `jax.lax.scan` for the collection phase and is ~3x faster than `train_ppo.py`. Use it for real training runs.
+
+## Examples
+
+### DM Control Suite benchmarks
+
+```bash
+# SAC on CheetahRun (expect ~771 eval @ 5M steps, ~8 min)
+uv run python train_offpolicy.py --algo sac --env CheetahRun
+
+# SAC on WalkerWalk (expect ~975 eval @ 5M steps)
+uv run python train_offpolicy.py --algo sac --env WalkerWalk
+
+# SAC on HumanoidRun (21-dim actions, expect ~426 eval @ 20M steps)
+uv run python train_offpolicy.py --algo sac --env HumanoidRun --obs-norm
+
+# FastSAC at scale (1024 envs, C51 distributional critic)
+uv run python train_offpolicy.py --algo fast_sac --env HumanoidRun --obs-norm
+
+# PPO on CheetahRun
+uv run python train_ppo_fast.py --env CheetahRun --total-timesteps 20000000
+```
+
+### Go2 quadruped locomotion
+
+```bash
+# PPO on Go2 joystick walking (flat terrain)
+uv run python train_ppo_fast.py --env Go2JoystickFlat --total-timesteps 50000000
+
+# Record a video of the trained walking policy
+MUJOCO_GL=egl uv run python record_video.py --checkpoint checkpoints/<go2_checkpoint>
+```
+
+### Recording and visualizing policies
+
+```bash
+# Record video from checkpoint (headless — works on servers without a display)
+MUJOCO_GL=egl uv run python record_video.py --checkpoint checkpoints/<checkpoint_dir>
+
+# Record with custom settings
+MUJOCO_GL=egl uv run python record_video.py \
+    --checkpoint checkpoints/<checkpoint_dir> \
+    --out my_video.mp4 \
+    --max-steps 1000
+
+# Live interactive viewer (requires display, Go2 joystick envs only)
+# Arrow keys control velocity commands, space resets
+uv run python live_viewer.py --checkpoint checkpoints/<go2_checkpoint>
+```
+
+### Common flags
+
+```bash
+# All training scripts support:
+--env NAME              # Environment name (e.g., CheetahRun, Go2JoystickFlat)
+--seed N                # Random seed (default: 0)
+--total-timesteps N     # Total environment steps
+--num-envs N            # Parallel environments (default: varies by env preset)
+--eval-every N          # Evaluate every N episodes
+--resume PATH           # Resume training from a checkpoint
+--obs-norm              # Enable sample-time observation normalization
+
+# Off-policy only (train_offpolicy.py):
+--algo NAME             # Algorithm: sac, td3, fast_td3, fast_sac
+--exploration-noise F   # TD3 exploration noise std (default: from config)
+```
 
 ## Project Structure
 
 ```
-jax_rl/
-├── configs/
-│   ├── networks_config.py   # EncoderConfig, PolicyHeadConfig, ValueHeadConfig
-│   └── ppo_config.py        # PPOConfig
+├── train_ppo_fast.py          # PPO training (lax.scan collect, fastest)
+├── train_ppo.py               # PPO training (Python loop, easier to read)
+├── train_offpolicy.py         # Unified off-policy: SAC, TD3, FastTD3, FastSAC
+├── record_video.py            # Record policy videos from checkpoints
+├── live_viewer.py             # Interactive policy viewer (Go2)
 │
-├── networks/
-│   ├── encoders/
-│   │   └── mlp.py           # MLPEncoder with optional LayerNorm
-│   ├── heads/
-│   │   ├── gaussian.py      # GaussianHead for stochastic policies
-│   │   └── value.py         # ValueHead for state values
-│   ├── builders.py          # Actor/Critic Linen modules
-│   └── distributions.py     # Gaussian sampling, log_prob, entropy
+├── jax_rl/
+│   ├── algos/                 # Algorithm implementations
+│   │   ├── ppo.py             #   Proximal Policy Optimization
+│   │   ├── sac.py             #   Soft Actor-Critic
+│   │   ├── td3.py             #   Twin Delayed DDPG
+│   │   ├── fast_td3.py        #   TD3 + C51 distributional critic
+│   │   └── fast_sac.py        #   SAC + C51 distributional critic
+│   │
+│   ├── networks/
+│   │   ├── builders.py        #   Composed modules (encoder + head, swappable)
+│   │   ├── activations.py     #   Activation function registry
+│   │   ├── distributions.py   #   Gaussian sampling, log_prob, entropy
+│   │   ├── encoders/
+│   │   │   └── mlp.py         #   MLP encoder (obs → features)
+│   │   └── heads/
+│   │       ├── gaussian.py    #   Stochastic policy head (PPO, SAC)
+│   │       ├── deterministic.py # Deterministic policy head (TD3)
+│   │       ├── value.py       #   V(s) head (PPO critic)
+│   │       ├── q_head.py      #   Scalar Q(s,a) head (SAC, TD3)
+│   │       └── q_distributional.py # C51 Q(s,a) head (FastTD3, FastSAC)
+│   │
+│   ├── configs/               # Hyperparameter dataclasses + env presets
+│   ├── training/              # Shared infrastructure (checkpointing, eval, logging)
+│   ├── envs/                  # Custom environments (Go2 locomotion)
+│   ├── buffers/               # Replay buffer (off-policy) + rollout buffer (PPO)
+│   └── utils/                 # Normalization, frame stacking, distributional math
 │
-├── algos/
-│   └── ppo.py               # PPO (Linen functional style)
-│
-├── buffers/
-│   └── rollout.py           # RolloutBuffer with GAE
-│
-└── [future]
-    ├── envs/                # MuJoCo Playground adapter, Gymnasium fallback
-    ├── training/            # Trainer, Wandb logger, Orbax checkpointing
-    └── utils/               # RNG helpers, pytree utils, metrics
+├── checkpoints/               # Saved model checkpoints
+├── tools/                     # Diagnostic scripts (kinematic sweep, Brax baselines)
+├── tests/                     # Test suite (pytest)
+└── .context/                  # Project docs, lessons, plans
 ```
 
-## Current Status
+## Benchmark Results
 
-### Phase 1 - Foundation (done)
-- [x] Config dataclasses
-- [x] MLPEncoder with LayerNorm
-- [x] GaussianHead and ValueHead
-- [x] Actor/Critic builders (Linen modules)
-- [x] Distribution utilities (sample_gaussian, log_prob, entropy)
-- [x] RolloutBuffer with GAE
+| Environment | PPO | SAC | TD3 | FastTD3 | FastSAC |
+|-------------|-----|-----|-----|---------|---------|
+| CheetahRun | 826 | **771** | 749 | **880** | 582 |
+| WalkerWalk | 833 | **975** | 955 | — | — |
+| HumanoidRun | ~10 | 426 | 4.3 | 665 | **892** |
+| Go2 Joystick | **233** | TBD | — | — | — |
 
-### Phase 2 - PPO (~90%)
-- [x] PPO algorithm class (Linen functional: TrainingState in, TrainingState out)
-- [x] Clipped surrogate objective
-- [x] Separate actor/critic optimizers
-- [x] Entropy bonus, gradient clipping, advantage normalization
-- [ ] Jitted training loop (collect + update via `jax.lax.scan`)
-- [ ] MuJoCo Playground env adapter
-- [ ] Wandb logger
-- [ ] Validate on CartpoleBalance / CheetahRun
+SAC dominates on general continuous control. FastSAC excels on high-dim action spaces (HumanoidRun). PPO works well for locomotion with Go2.
 
-## Quick Example
+## Key Design Decisions
 
-```python
-import jax
-import jax.numpy as jnp
-from jax_rl.configs import PPOConfig, EncoderConfig, PolicyHeadConfig
-from jax_rl.algos.ppo import PPO, TrainingState
+- **JAX-native**: Everything runs on GPU via JAX/Flax. No PyTorch dependency.
+- **MuJoCo Playground**: Uses MJX for GPU-parallelized physics (1024+ envs).
+- **Encoder-swappable**: All algos use `builders.py` — swap MLP for CNN by changing the builder, not the algo.
+- **Self-contained envs**: Each env handles its own obs, rewards, and action scaling. Training scripts are env-agnostic.
+- **NaN/Inf safe**: MJX physics can crash stochastically. All training automatically guards against this.
 
-# Configure
-config = PPOConfig(
-    encoder=EncoderConfig(obs_dim=17, hidden_dim=(256, 256)),
-    policy_head=PolicyHeadConfig(action_dim=6, squash=True),
-    num_envs=4096,
-    num_steps=32,
-)
+## For New Contributors
 
-# Initialize (Linen style: params are separate pytrees)
-ppo = PPO(config, obs_dim=17, action_dim=6)
-key = jax.random.PRNGKey(0)
-training_state = ppo.init(key)
+Start by reading:
+1. **This README** — overview and examples
+2. **`.context/LESSONS.md`** — debugging lessons and gotchas (save yourself hours)
+3. **`jax_rl/algos/sac.py`** — best-documented algo, explains the closure pattern all algos use
+4. **`jax_rl/networks/builders.py`** — how networks are composed (encoder + head)
 
-# Select actions
-obs = jnp.zeros((4096, 17))
-action, log_prob, value = ppo.select_action(training_state, obs, key)
+## Requirements
 
-# Update from rollout batch
-new_state, metrics = ppo.update(training_state, batch, key)
-```
-
-## Why Flax Linen?
-
-Linen's explicit functional pattern (`model.init(key, x)` -> params, `model.apply(params, x)`) maps cleanly onto RL's "params-in, metrics-out" training loop. Params are plain pytrees that flow through `jax.jit`, `jax.grad`, `jax.vmap` with zero Python overhead. This matches Brax, FastTD3, and CleanRL-JAX. See the [design doc](.context/rl_framework_plan.md) for the full rationale.
-
-## Dependencies
+- Python 3.10+
+- NVIDIA GPU with CUDA
+- [uv](https://docs.astral.sh/uv/) package manager
 
 ```bash
-pip install jax flax optax
+uv sync  # installs everything
 ```
-
-## Design Documentation
-
-See [.context/rl_framework_plan.md](.context/rl_framework_plan.md) for the full design document including architecture, implementation phases, benchmark targets, and reference implementations.
