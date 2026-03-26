@@ -4,72 +4,86 @@ Deploy trained JAX RL policies on the Unitree Go2 robot — in simulation (unitr
 
 ## Prerequisites
 
-- Python 3.10+ (managed by `uv` in this project)
-- cmake, gcc (for building CycloneDDS)
+- Python 3.12 (NOT 3.13 — CycloneDDS doesn't support it yet)
+- cmake, gcc (for building CycloneDDS C library)
+- `uv` package manager
 - A trained Go2 checkpoint with `actor_params.npy` in `checkpoints/<run>/best/`
+
+## Why a Separate Venv?
+
+The deploy package uses its own Python 3.12 venv (`deploy/.venv`), separate from the training venv (`.venv`, Python 3.13). Reasons:
+- CycloneDDS 0.10.x has a C extension incompatible with Python 3.13
+- Deploy code is pure numpy — no JAX dependency at runtime
+- Lab members deploying on robots don't need the full JAX/MJX training stack
+- Training venv stays untouched — zero risk of breaking it
 
 ## Setup
 
-### 1. Install CycloneDDS C library (one-time)
-
-The Unitree SDK requires CycloneDDS 0.10.x as a C library. Must be built from source.
+### Quick setup (recommended)
 
 ```bash
-# Clone and build
-git clone https://github.com/eclipse-cyclonedds/cyclonedds -b releases/0.10.x /tmp/cyclonedds
-cd /tmp/cyclonedds
-mkdir build install
-cd build
-cmake .. -DCMAKE_INSTALL_PREFIX=../install
-cmake --build . --target install
-
-# Set env var (add to ~/.bashrc for persistence)
-export CYCLONEDDS_HOME=/tmp/cyclonedds/install
+bash deploy/setup_deploy_deps.sh
 ```
 
-Verify: `ls $CYCLONEDDS_HOME/lib/libddsc*` should show shared libraries.
+This script handles everything below automatically. Run from the project root.
 
-### 2. Install unitree_sdk2_python
+### Manual setup
+
+#### 1. Build CycloneDDS C library (one-time)
 
 ```bash
-git clone https://github.com/unitreerobotics/unitree_sdk2_python.git /tmp/unitree_sdk2_python
-cd /tmp/unitree_sdk2_python
-uv pip install -e .
+git clone --depth 1 -b releases/0.10.x https://github.com/eclipse-cyclonedds/cyclonedds.git ~/.local/share/unitree/cyclonedds
+cd ~/.local/share/unitree/cyclonedds
+mkdir build install && cd build
+cmake .. -DCMAKE_INSTALL_PREFIX=../install -DCMAKE_BUILD_TYPE=Release
+cmake --build . --target install -j$(nproc)
+export CYCLONEDDS_HOME=~/.local/share/unitree/cyclonedds/install
 ```
 
-Verify:
+#### 2. Create deploy venv and install deps
+
 ```bash
-uv run python -c "from unitree_sdk2py.core.channel import ChannelFactoryInitialize; print('SDK OK')"
+cd deploy/
+uv venv --python 3.12
+uv sync --extra robot   # installs numpy + cyclonedds
 ```
 
-### 3. Install unitree_mujoco (for sim2sim)
+#### 3. Install unitree_sdk2_python
 
 ```bash
-git clone https://github.com/unitreerobotics/unitree_mujoco.git /tmp/unitree_mujoco
+git clone --depth 1 https://github.com/unitreerobotics/unitree_sdk2_python.git ~/.local/share/unitree/unitree_sdk2_python
+CYCLONEDDS_HOME=~/.local/share/unitree/cyclonedds/install uv pip install -e ~/.local/share/unitree/unitree_sdk2_python --no-deps
 ```
 
-No pip install needed — it's a standalone simulator you run directly.
+#### 4. Clone unitree_mujoco (for sim2sim)
 
-Verify:
 ```bash
-cd /tmp/unitree_mujoco/simulate_python
-python3 unitree_mujoco.py  # Should open MuJoCo viewer with Go2
+git clone --depth 1 https://github.com/unitreerobotics/unitree_mujoco.git ~/.local/share/unitree/unitree_mujoco
+```
+
+#### Verify
+
+```bash
+cd /path/to/jax-learning
+deploy/.venv/bin/python -c "from unitree_sdk2py.core.channel import ChannelFactoryInitialize; print('SDK OK')"
 ```
 
 ## Quick Start
+
+**Important:** Deploy scripts use `deploy/.venv/bin/python`, NOT `uv run python` (which uses the training venv).
 
 ### Sim2sim (unitree_mujoco)
 
 Terminal 1 — start the simulator:
 ```bash
-cd /tmp/unitree_mujoco/simulate_python
+cd ~/.local/share/unitree/unitree_mujoco/simulate_python
 python3 unitree_mujoco.py
 ```
 
 Terminal 2 — run your trained policy:
 ```bash
 cd /path/to/jax-learning
-uv run python deploy/deploy_go2.py \
+deploy/.venv/bin/python deploy/deploy_go2.py \
     --checkpoint checkpoints/<your_run>/best \
     --sim \
     --vx 0.5
@@ -78,7 +92,7 @@ uv run python deploy/deploy_go2.py \
 ### Sim2real (Go2 EDU)
 
 ```bash
-uv run python deploy/deploy_go2.py \
+deploy/.venv/bin/python deploy/deploy_go2.py \
     --checkpoint checkpoints/<your_run>/best \
     --interface enp2s0 \
     --vx 0.3 \

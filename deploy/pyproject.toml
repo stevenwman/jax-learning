@@ -1,0 +1,19 @@
+[project]
+name = "go2-deploy"
+version = "0.1.0"
+description = "Deploy JAX RL policies on Unitree Go2 (sim and real)"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+# Install with: uv sync --extra robot
+# Only needed for actual robot communication (sim2sim / sim2real)
+robot = [
+    "cyclonedds==0.10.5",
+]
+
+[tool.uv]
+# unitree_sdk2_python is installed from git (not on PyPI)
+# After uv sync: uv pip install -e /path/to/unitree_sdk2_python
