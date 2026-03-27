@@ -36,7 +36,7 @@ class TrainConfig:
     log_interval: int = 1
 
     # Evaluation + checkpointing
-    eval_every_n_episodes: int = 500
+    eval_every_n_episodes: int = 5000  # ~5M steps at 1024 envs
     num_eval_episodes: int = 10
 
     # PPO config (None for off-policy algos)
