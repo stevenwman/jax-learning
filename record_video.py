@@ -313,7 +313,7 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
         video_path = out if out != "rollout.mp4" else f"{timestamp}_rollout.mp4"
 
     print(f"Saving to {video_path}...")
-    imageio.mimsave(video_path, frames, fps=30)
+    imageio.mimsave(video_path, frames, fps=50)  # 50Hz policy = 50fps for real-time
     print(f"Done: {video_path}")
 
     # ── Save trajectory .npz for offline analysis ────────────────────────
