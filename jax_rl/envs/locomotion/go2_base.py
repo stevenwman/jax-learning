@@ -56,7 +56,11 @@ class Go2Env(mjx_env.MjxEnv):
         import numpy as _np
         self._mj_model.actuator_gainprm[:, 0] = 1.0   # gain=1 (ctrl = torque)
         self._mj_model.actuator_biasprm[:, :] = 0.0    # no bias (pure torque)
-        self._mj_model.dof_damping[6:] = 0.0            # no implicit damping (PD handles it)
+        # Override Menagerie's damping (2.0!) to match hardware/unitree_mujoco (0.1).
+        # Menagerie go2_mjx.xml uses damping=2 (tuned for MJX stability, not accuracy).
+        # Also set frictionloss to match unitree_mujoco (0.2). Menagerie has 0.0.
+        self._mj_model.dof_damping[6:] = 0.1     # unitree_mujoco / hardware value
+        self._mj_model.dof_frictionloss[6:] = 0.2  # unitree_mujoco value
 
         # Store PD gains for use in step()
         self._kp = config.Kp
