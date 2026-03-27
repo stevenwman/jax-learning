@@ -117,6 +117,18 @@ Although the PD math is the same, the integration timing differs: training PD is
 
 ---
 
+## MJX and CPU MuJoCo Diverge Over Time on the Same Model (2026-03-27)
+
+**What happened:** Policy trained on MJX walks for 3 seconds on CPU MuJoCo (same MJCF, same overrides via go2_cpu.py), then falls. Same policy in MJX runs indefinitely.
+
+**Root cause:** MJX (JAX/XLA GPU) and mj_step (C CPU) are numerically different implementations. Same algorithm, same model, but floating point accumulation diverges over ~150 policy steps. The policy isn't robust enough to handle the drift.
+
+**Not a bug — a robustness gap.** The policy works on CPU for 3 seconds. It's not a catastrophic mismatch (like the MJCF difference which caused instant failure). It's gradual drift that a more robust policy could ride out.
+
+**Fix path:** Wider domain randomization + random external forces (velocity kicks) during training. This is standard in SOTA quadruped pipelines (legged_gym, walk-these-ways) for exactly this reason — making policies robust to physics perturbations covers the MJX/CPU gap as a side effect.
+
+---
+
 ## Matching Gain Values Is Not Enough — Actuator Integration Timing Matters (2026-03-26)
 
 **What happened:** Matched Kp=35 and Kd=0.1 between training and deploy. Retrained PPO (eval 219). Sim2sim: robot stands up correctly, then explodes when policy takes over. Trajectory analysis: joint velocities hit ±95 rad/s (training sees ±5).

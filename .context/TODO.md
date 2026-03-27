@@ -40,9 +40,13 @@
 
 ## Active
 
-## Short-term — Go2 env maturity
+## Short-term — Go2 robustness (ACTIVE)
+- [x] Domain rand (Tier 1) — friction, mass, COM, armature, frictionloss. `go2_randomize.py` + `--domain-rand` flag.
+- [x] CPU sister env — `go2_cpu.py`, same MJCF + overrides, CPU mj_step. Policy walks 3s.
+- [ ] **Random external forces (velocity kicks)** — push robot every 10-15s during training. Standard in legged_gym/walk-these-ways. Goes in env step(), not DR wrapper. Key for bridging MJX→CPU drift.
+- [ ] **Wider DR ranges** — research SOTA quadruped pipelines for ranges. Current friction U(0.3,1.2) may need widening. Add Kp/Kd scaling, motor strength variation.
+- [ ] **Reward tuning for robustness** — research what reward terms help recovery (orientation penalty, base height tracking, energy penalty scaling). May need curriculum.
 - [ ] Wire frame stacking into Go2 env (currently no frame stack — just raw obs)
-- [ ] Domain rand wrapper (`jax_rl/envs/wrappers/domain_rand.py`) — robot-agnostic, vmap over MJX params
 - [x] Go2 SAC Phase B — FastSAC eval 226. Off-policy validated on Go2.
 
 ## Short-term — Cleanup
@@ -70,7 +74,8 @@
 - [x] Match hardware properties — Kd 0.5→0.1, rear thigh range, motor actuators + external PD (was general/affine)
 - [x] Retrain PPO with motor actuators — eval 244 @ 50M (seed 4000)
 - [x] Sim2sim pipeline — sim2sim_direct.py (no DDS, PD per physics step) + DDS version
-- [ ] **Sim2sim contact gap** — robot stands but falls when policy takes over. jvel 2.5x higher in deploy (std 13.6 vs 5.4). Remaining diffs: condim 3 vs 6, friction [0.6,0.005,0.0001] vs [0.4,0.02,0.01], pyramidal vs elliptic cone. Try matching contacts or domain rand.
+- [x] Sim2sim diagnosis complete — MJCF diff (collision geometry, solver) is the gap. MJX→CPU works (3s walking). MJX→unitree needs robustness. See `.context/go2/mjcf_comparison.md`.
+- [ ] **Sim2sim to unitree** — blocked on robustness (wider DR + velocity kicks). Once CPU env walks reliably, test unitree transfer again.
 - [ ] ONNX export utility (`jax_rl/utils/export.py`) — JAX weights → ONNX for Jetson (deferred — numpy inference at 50Hz is fine for now)
 - [ ] DC motor model (`jax_rl/envs/actuators.py`) — Tier 2, add if sim-to-real gap > threshold
 - [ ] Confirm Go2 EDU edition in lab (ask Steven)
