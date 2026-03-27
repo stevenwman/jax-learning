@@ -109,6 +109,10 @@ deploy/.venv/bin/python deploy/deploy_go2.py \
 uv run python train_ppo_fast.py --env Go2JoystickFlat --num-envs 1024 \
     --total-timesteps 50000000 --seed 42 --wandb
 
+# With domain randomization (friction, mass, COM, armature, frictionloss):
+uv run python train_ppo_fast.py --env Go2JoystickFlat --num-envs 1024 \
+    --total-timesteps 50000000 --seed 42 --wandb --domain-rand
+
 # Check progress
 grep "EVAL" /tmp/claude-*/tasks/*.output | tail -5
 ```

@@ -126,3 +126,15 @@ Although the PD math is the same, the integration timing differs: training PD is
 **Update:** PD rate was NOT the root cause. Implemented PD at physics rate (every mj_step) — jvel still hits ±65. The `general` vs `motor` actuator type produces fundamentally different dynamics even at the same rate with the same gains.
 
 **Lesson:** When transferring between MuJoCo models, the actuator TYPE matters more than the gains or PD rate. `general` with `biastype="affine"` and `motor` with external PD are NOT equivalent — they interact with MuJoCo's integrator differently. Every major Go2 RL pipeline (unitree_rl_gym, unitree_rl_lab, walk-these-ways) uses `motor` + external PD. If you want sim2sim or sim2real transfer, train with the same actuator model the deployment target uses.
+
+---
+
+## Domain Rand Covers Parameter Ranges, Not Model Structure (2026-03-26)
+
+**What happened:** Implemented Go2 domain randomization (Playground Go1 pattern): friction U(0.3,1.2), mass variation, COM jitter. Trained PPO with DR to eval 237. Sim2sim still failed.
+
+**Why DR didn't help:** DR randomizes friction coefficient VALUES but both training envs use `condim=3` (basic friction model). The unitree_mujoco model uses `condim=6` (full 3D friction with rolling + spinning). Same coefficient, completely different force computation. DR can't bridge structural model differences.
+
+**What we then tried:** Matched ALL physics at runtime in sim2sim_direct.py — condim, friction, cone, dt, solimp. Still failed. The two MJCFs (Menagerie go2_mjx.xml vs unitree_mujoco go2.xml) differ in body inertias, mesh geometry, and joint configurations that can't be overridden at runtime.
+
+**Lesson:** Domain randomization bridges parameter uncertainty (friction values, mass, COM position). It does NOT bridge structural differences between MuJoCo models (different meshes, different body trees, different inertias). If two models don't produce the same dynamics even with identical contact/actuator/solver params, the MJCF itself is different and you need to train on the target model directly.

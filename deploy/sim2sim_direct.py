@@ -103,9 +103,24 @@ def run_sim2sim(
     model = mujoco.MjModel.from_xml_path(scene_path)
     data = mujoco.MjData(model)
 
-    physics_dt = 0.005  # unitree_mujoco default
+    # Match training env contact model on foot geoms.
+    # Training: condim=3, friction=[0.6, 0.005, 0.0001], solimp=[0.9, 0.95, 0.023]
+    # unitree_mujoco: condim=6, friction=[0.4, 0.02, 0.01], solimp=default
+    for foot_name in ["FL", "FR", "RL", "RR"]:
+        gid = model.geom(foot_name).id
+        model.geom_condim[gid] = 3
+        model.geom_friction[gid] = [0.6, 0.005, 0.0001]
+        model.geom_solimp[gid, :3] = [0.9, 0.95, 0.023]
+
+    # Match friction cone (pyramidal, like training)
+    model.opt.cone = 0  # 0=pyramidal, 1=elliptic
+
+    # Match training env: sim_dt=0.004, 5 substeps per ctrl_dt=0.02
+    # (unitree_mujoco default is 0.005 with 4 substeps — same 20ms policy dt
+    #  but coarser integration which changes dynamics)
+    physics_dt = 0.004  # match training
     model.opt.timestep = physics_dt
-    decimation = 4  # policy every 4 physics steps = 50Hz
+    decimation = 5  # 5 * 0.004 = 0.02s = 50Hz policy
     policy_dt = physics_dt * decimation
 
     print(f"\nSimulator: {scene_path}")

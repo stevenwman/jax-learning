@@ -89,3 +89,4 @@ JAX/Flax fundamentals in `LEARNER_LESSONS.md`.
 - **Training MJCF != deployment MJCF** — Menagerie go2_mjx.xml vs unitree_mujoco go2.xml are different physics; policy doesn't transfer
 - **Actuator type mismatch is #1 sim2sim failure** — general (PD inside actuator) vs motor (raw torque); also 5x damping diff, condim 3 vs 6
 - **Matching PD gains is not enough** — `general` (affine) vs `motor` (external PD) are NOT equivalent even at same rate/gains; retrain with `motor` actuators for transfer
+- **DR covers parameter ranges, not model structure** — randomizing friction values doesn't help when condim/cone/mesh/inertias differ; train on the target MJCF directly
