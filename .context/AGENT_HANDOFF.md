@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-03-26
 **Branch:** `new_slate_linen`
-**Status:** Active development — Go2 Phase A (PPO 233) and Phase B (FastSAC 226) COMPLETE.
+**Status:** Active development — Go2 Phase A (PPO 244, motor actuators) and Phase B (FastSAC 226) COMPLETE. Sim2sim pipeline built, contact physics gap remaining.
 
 > **Context budget:** This doc is your overview — skim structure, read details on demand. Other `.context/` docs are reference material. Don't pre-load them. When you hit a topic (Go2 rewards, PPO debugging, vision RL), grep or read the specific file. Treat `.context/` as a wiki, not a textbook.
 
@@ -181,8 +181,9 @@ Every checkpoint contains: `meta.json` (full config), `metrics.csv` (training cu
 - **Dict obs**: `{"state": (48,), "privileged_state": (116-122,)}`
 - **PPO**: asymmetric AC — actor sees "state", critic sees "privileged_state"
 - **SAC/TD3**: both actor AND critic see "state" (48d) — no asymmetric
-- **Working PPO config**: tracking_lin_vel=10.0, tracking_ang_vel=5.0, height_termination=True, calf_torque=45.43Nm
-- **Seed 2100**: eval 233 @ 50M steps, robot walks at 0.31m base height
+- **Actuator model**: `motor` (direct torque) + external PD per substep. Matches unitree_mujoco and real robot. (Was `general` with built-in PD — switched 2026-03-26.)
+- **Working PPO config**: tracking_lin_vel=10.0, tracking_ang_vel=5.0, height_termination=True, Kp=35, Kd=0.1, calf_torque=45.43Nm
+- **Best PPO**: eval 244 @ 50M steps (seed 4000, motor actuators)
 
 ---
 
@@ -207,15 +208,17 @@ Every checkpoint contains: `meta.json` (full config), `metrics.csv` (training cu
 **Go2 Joystick** (12-dim actions):
 | Algo | Eval | Steps | Notes |
 |------|------|-------|-------|
-| Our PPO | **233** | 50M | Seed 2100, robot walks |
+| Our PPO (motor) | **244** | 50M | Seed 4000, motor actuators + external PD |
+| Our PPO (general) | 233 | 50M | Seed 2100, old general actuators (deprecated) |
+| FastSAC | 226 | 16M | Off-policy validated |
 | Brax PPO | 17.9 | 50M | A/B baseline |
 
-**Key takeaways:** Low-dim → FastTD3. High-dim → FastSAC. gamma=0.97 for locomotion. C51 helps at scale. Vanilla algos at 128 envs are competitive for sample efficiency.
+**Key takeaways:** Low-dim → FastTD3. High-dim → FastSAC. gamma=0.97 for locomotion. C51 helps at scale. Vanilla algos at 128 envs are competitive for sample efficiency. Use `motor` actuators for sim2sim/sim2real transfer.
 
 ### Roadmap
 See `TODO.md` for full prioritized list. Summary:
-- **Active:** Go2 SAC Phase B — can SAC match PPO eval=233? (prerequisite for DIAYN)
-- **Short-term:** Frame stacking, domain rand, W&B HP tuning agent
+- **Active:** Sim2sim transfer — contact physics gap remaining (condim, friction, cone)
+- **Short-term:** Domain rand, frame stacking, W&B HP tuning agent
 - **Mid-term:** Vision RL (Madrona MJX `vision=True`, CNN encoder, DrQ)
 - **Long-term:** DIAYN → METRA → USD (skill discovery on real Go2)
 

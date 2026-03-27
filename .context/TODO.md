@@ -67,9 +67,10 @@
 - [x] Deploy script (`deploy/deploy_go2.py`) — DDS loop, 50Hz, FSM, works for sim and real
 - [x] Headless sim2sim (`deploy/sim_headless.py`) — runs over SSH, records video
 - [x] Separate deploy venv (Python 3.12) — CycloneDDS + Unitree SDK, setup script
-- [x] Match hardware properties to unitree_mujoco — Kd 0.5→0.1, rear thigh range fixed. Retraining in progress (seed 3100).
-- [ ] Sim2sim transfer test — run new checkpoint in unitree_mujoco headless, verify walking
-- [ ] Remaining MJCF diffs (sim approximations, not hardware) — condim 3 vs 6, friction, cone. Defer unless sim2sim still fails after hardware matching.
+- [x] Match hardware properties — Kd 0.5→0.1, rear thigh range, motor actuators + external PD (was general/affine)
+- [x] Retrain PPO with motor actuators — eval 244 @ 50M (seed 4000)
+- [x] Sim2sim pipeline — sim2sim_direct.py (no DDS, PD per physics step) + DDS version
+- [ ] **Sim2sim contact gap** — robot stands but falls when policy takes over. jvel 2.5x higher in deploy (std 13.6 vs 5.4). Remaining diffs: condim 3 vs 6, friction [0.6,0.005,0.0001] vs [0.4,0.02,0.01], pyramidal vs elliptic cone. Try matching contacts or domain rand.
 - [ ] ONNX export utility (`jax_rl/utils/export.py`) — JAX weights → ONNX for Jetson (deferred — numpy inference at 50Hz is fine for now)
 - [ ] DC motor model (`jax_rl/envs/actuators.py`) — Tier 2, add if sim-to-real gap > threshold
 - [ ] Confirm Go2 EDU edition in lab (ask Steven)
