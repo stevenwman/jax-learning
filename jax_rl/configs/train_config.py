@@ -39,5 +39,8 @@ class TrainConfig:
     eval_every_n_episodes: int = 5000  # ~5M steps at 1024 envs
     num_eval_episodes: int = 10
 
+    # Domain randomization
+    domain_rand: bool = False
+
     # PPO config (None for off-policy algos)
     ppo: PPOConfig | None = field(default_factory=PPOConfig)

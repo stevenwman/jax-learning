@@ -90,7 +90,19 @@ def make_envs(cfg: TrainConfig, seed: int):
         action_dim: action dimensionality
     """
     env = pg_registry.load(cfg.env_name)
-    env = wrap_for_brax_training(env, episode_length=cfg.episode_length)
+
+    # Domain randomization (optional, Go2 only for now).
+    rand_fn = None
+    if getattr(cfg, 'domain_rand', False) and 'Go2' in cfg.env_name:
+        from jax_rl.envs.locomotion.go2_randomize import domain_randomize
+        key, rand_key = jax.random.split(jax.random.PRNGKey(seed))
+        rand_fn = functools.partial(
+            domain_randomize, rng=jax.random.split(rand_key, cfg.num_envs),
+        )
+
+    env = wrap_for_brax_training(
+        env, episode_length=cfg.episode_length, randomization_fn=rand_fn,
+    )
     env_step = _make_nan_safe_step(env.step)
 
     key = jax.random.PRNGKey(seed)

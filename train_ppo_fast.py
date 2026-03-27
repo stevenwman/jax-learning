@@ -454,6 +454,8 @@ if __name__ == "__main__":
                         help="Max steps per episode (default: from env preset)")
     parser.add_argument("--log-interval", type=int, default=None,
                         help="Print training stats every N iterations")
+    parser.add_argument("--domain-rand", action="store_true",
+                        help="Enable domain randomization (Go2 only)")
     parser.add_argument("--wandb", action="store_true",
                         help="Enable W&B experiment tracking")
     parser.add_argument("--wandb-project", type=str, default="jax-rl",
@@ -487,6 +489,8 @@ if __name__ == "__main__":
         ppo_overrides["entropy_coef"] = args.entropy_coef
     if args.eval_every is not None:
         cfg_overrides["eval_every_n_episodes"] = args.eval_every
+    if args.domain_rand:
+        cfg_overrides["domain_rand"] = True
     if ppo_overrides:
         cfg_overrides["ppo"] = dataclasses.replace(cfg.ppo, **ppo_overrides)
     if cfg_overrides:
