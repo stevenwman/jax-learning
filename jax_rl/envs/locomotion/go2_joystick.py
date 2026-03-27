@@ -208,13 +208,13 @@ class Joystick(go2_base.Go2Env):
     def step(self, state: mjx_env.State, action: jax.Array) -> mjx_env.State:
         motor_targets = self._default_pose + action * self._config.action_scale
 
-        # Random velocity kick every ~500 steps (~10s at 50Hz).
+        # Random velocity kick every ~250 steps (~5s at 50Hz).
         # Pushes the base with random xy velocity to train recovery.
-        # Standard in legged_gym / walk-these-ways for robustness.
+        # Stronger and more frequent than before for MJX→CPU robustness.
         step_count = state.info["step_count"]
-        push_interval = 500  # steps between pushes
+        push_interval = 250  # steps between pushes (~5s)
         rng, push_key = jax.random.split(state.info["rng"])
-        push_vel = jax.random.uniform(push_key, (2,), minval=-0.5, maxval=0.5)
+        push_vel = jax.random.uniform(push_key, (2,), minval=-1.0, maxval=1.0)
         do_push = (step_count > 0) & (step_count % push_interval == 0)
         data = state.data
         new_qvel = data.qvel.at[0:2].set(

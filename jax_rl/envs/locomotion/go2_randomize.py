@@ -1,83 +1,76 @@
 """Domain randomization for Go2 environment.
 
-Adapted from MuJoCo Playground's Go1 randomize.py. Uses the same
-BraxDomainRandomizationVmapWrapper pattern — each vmapped env gets
-its own randomized physics parameters.
-
-Covers the sim2sim gap: friction (0.3-1.2 covers both our 0.6 and
-unitree_mujoco's 0.4), mass variation, COM jitter, joint friction,
-and initial pose variation.
+Aggressive DR for MJX→CPU→real transfer robustness.
+Ranges informed by walk-these-ways Go2 fork, unitree_rl_lab, and Isaac Lab.
 """
 
 import jax
 from mujoco import mjx
 
 FLOOR_GEOM_ID = 0
-TORSO_BODY_ID = 1  # "base" in Go2 (was "trunk" in Go1)
+TORSO_BODY_ID = 1  # "base" in Go2
 
 
 def domain_randomize(model: mjx.Model, rng: jax.Array):
-  """Randomize physics parameters per-env for vmapped training.
-
-  Args:
-    model: MJX model (shared across envs before randomization).
-    rng: PRNG key array of shape (num_envs, 2).
-
-  Returns:
-    (model, in_axes): model with batched fields, in_axes for vmap.
-  """
+  """Randomize physics parameters per-env for vmapped training."""
 
   @jax.vmap
   def rand_dynamics(rng):
-    # Floor friction: =U(0.3, 1.2).
-    # Covers sim2sim gap: training 0.6, unitree_mujoco 0.4, real unknown.
+    # Floor friction: =U(0.05, 4.5) — very wide, from walk-these-ways Go2 fork.
     rng, key = jax.random.split(rng)
     geom_friction = model.geom_friction.at[FLOOR_GEOM_ID, 0].set(
-        jax.random.uniform(key, minval=0.3, maxval=1.2)
+        jax.random.uniform(key, minval=0.05, maxval=4.5)
     )
 
-    # Scale DOF friction loss: *U(0.9, 1.1).
+    # Scale DOF friction loss: *U(0.5, 2.0) — wider than before (was 0.9-1.1).
     rng, key = jax.random.split(rng)
     frictionloss = model.dof_frictionloss[6:] * jax.random.uniform(
-        key, shape=(12,), minval=0.9, maxval=1.1
+        key, shape=(12,), minval=0.5, maxval=2.0
     )
     dof_frictionloss = model.dof_frictionloss.at[6:].set(frictionloss)
 
-    # Scale armature: *U(1.0, 1.05).
+    # Scale armature: *U(0.9, 1.5) — wider (was 1.0-1.05).
     rng, key = jax.random.split(rng)
     armature = model.dof_armature[6:] * jax.random.uniform(
-        key, shape=(12,), minval=1.0, maxval=1.05
+        key, shape=(12,), minval=0.9, maxval=1.5
     )
     dof_armature = model.dof_armature.at[6:].set(armature)
 
-    # Jitter torso COM: +U(-0.05, 0.05).
+    # Scale DOF damping: *U(0.5, 3.0) — covers MJX/CPU dynamics gap.
+    # Training default: 0.1. Range: 0.05 to 0.3.
     rng, key = jax.random.split(rng)
-    dpos = jax.random.uniform(key, (3,), minval=-0.05, maxval=0.05)
+    damping = model.dof_damping[6:] * jax.random.uniform(
+        key, shape=(12,), minval=0.5, maxval=3.0
+    )
+    dof_damping = model.dof_damping.at[6:].set(damping)
+
+    # Jitter torso COM: +U(-0.1, 0.1) — wider (was ±0.05).
+    rng, key = jax.random.split(rng)
+    dpos = jax.random.uniform(key, (3,), minval=-0.1, maxval=0.1)
     body_ipos = model.body_ipos.at[TORSO_BODY_ID].set(
         model.body_ipos[TORSO_BODY_ID] + dpos
     )
 
-    # Scale all link masses: *U(0.9, 1.1).
+    # Scale all link masses: *U(0.8, 1.2) — wider (was 0.9-1.1).
     rng, key = jax.random.split(rng)
     dmass = jax.random.uniform(
-        key, shape=(model.nbody,), minval=0.9, maxval=1.1
+        key, shape=(model.nbody,), minval=0.8, maxval=1.2
     )
     body_mass = model.body_mass.at[:].set(model.body_mass * dmass)
 
     # Add payload mass to torso: +U(-1.0, 3.0) kg.
-    # Asymmetric range (unitree_rl_lab + walk-these-ways Go2 fork).
     rng, key = jax.random.split(rng)
     dmass = jax.random.uniform(key, minval=-1.0, maxval=3.0)
     body_mass = body_mass.at[TORSO_BODY_ID].set(
         body_mass[TORSO_BODY_ID] + dmass
     )
 
-    # Jitter initial joint positions: +U(-0.05, 0.05).
+    # Jitter initial joint positions: +U(-0.1, 0.1) — wider (was ±0.05).
     rng, key = jax.random.split(rng)
     qpos0 = model.qpos0
     qpos0 = qpos0.at[7:].set(
         qpos0[7:]
-        + jax.random.uniform(key, shape=(12,), minval=-0.05, maxval=0.05)
+        + jax.random.uniform(key, shape=(12,), minval=-0.1, maxval=0.1)
     )
 
     return (
@@ -87,6 +80,7 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
         qpos0,
         dof_frictionloss,
         dof_armature,
+        dof_damping,
     )
 
   (
@@ -96,6 +90,7 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
       qpos0,
       dof_frictionloss,
       dof_armature,
+      dof_damping,
   ) = rand_dynamics(rng)
 
   in_axes = jax.tree_util.tree_map(lambda x: None, model)
@@ -106,6 +101,7 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
       "qpos0": 0,
       "dof_frictionloss": 0,
       "dof_armature": 0,
+      "dof_damping": 0,
   })
 
   model = model.tree_replace({
@@ -115,6 +111,7 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
       "qpos0": qpos0,
       "dof_frictionloss": dof_frictionloss,
       "dof_armature": dof_armature,
+      "dof_damping": dof_damping,
   })
 
   return model, in_axes
