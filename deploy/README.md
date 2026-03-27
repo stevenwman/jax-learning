@@ -101,6 +101,44 @@ deploy/.venv/bin/python deploy/deploy_go2.py \
 
 **Safety:** Start with low velocity (`--vx 0.3`). Be ready to Ctrl+C. Have someone ready to catch the robot.
 
+## End-to-End Example: Train → Sim2Sim
+
+### 1. Train a policy (from project root, uses training venv)
+```bash
+# PPO on Go2, 50M steps, 1024 parallel envs
+uv run python train_ppo_fast.py --env Go2JoystickFlat --num-envs 1024 \
+    --total-timesteps 50000000 --seed 42 --wandb
+
+# Check progress
+grep "EVAL" /tmp/claude-*/tasks/*.output | tail -5
+```
+
+### 2. Record a video of the trained policy
+```bash
+MUJOCO_GL=egl uv run python record_video.py \
+    --checkpoint checkpoints/<your_run>/best
+```
+
+### 3. Test in unitree_mujoco (sim2sim, uses deploy venv)
+```bash
+# Direct sim2sim (no DDS, PD at physics rate — recommended for testing)
+deploy/.venv/bin/python deploy/sim2sim_direct.py \
+    --checkpoint checkpoints/<your_run>/best \
+    --vx 0.5 --duration 10 --record /tmp/sim2sim.mp4
+
+# Or via DDS bridge (closer to real robot deployment)
+# Terminal 1: start simulator
+cd ~/.local/share/unitree/unitree_mujoco/simulate_python && python3 unitree_mujoco.py
+# Terminal 2: run policy
+deploy/.venv/bin/python deploy/deploy_go2.py \
+    --checkpoint checkpoints/<your_run>/best --sim --vx 0.5
+```
+
+### Key concepts
+- **Training env** uses MJX (JAX-accelerated MuJoCo) with `motor` actuators and external PD control at physics rate. Policy outputs position targets, env computes torque via PD.
+- **Deploy env** uses standard MuJoCo (unitree_mujoco's Go2 model) with the same motor + PD setup. The deploy code loads the policy as pure numpy — no JAX needed.
+- **Two venvs**: training (`.venv/`, Python 3.13, JAX) and deploy (`deploy/.venv/`, Python 3.12, CycloneDDS). They don't share dependencies.
+
 ## Architecture
 
 ```
