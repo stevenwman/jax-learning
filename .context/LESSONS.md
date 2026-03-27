@@ -88,3 +88,4 @@ JAX/Flax fundamentals in `LEARNER_LESSONS.md`.
 - **Custom locomotion env integration** — subclass MjxEnv, scene XML adds missing sensors, Go2 vs Go1 naming
 - **Training MJCF != deployment MJCF** — Menagerie go2_mjx.xml vs unitree_mujoco go2.xml are different physics; policy doesn't transfer
 - **Actuator type mismatch is #1 sim2sim failure** — general (PD inside actuator) vs motor (raw torque); also 5x damping diff, condim 3 vs 6
+- **Matching PD gains is not enough** — integration timing matters: per-substep PD vs 50Hz external PD → jvel explodes to ±95 (training ±5)

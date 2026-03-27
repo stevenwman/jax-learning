@@ -142,6 +142,49 @@ Change go2_base.py runtime overrides to match unitree_mujoco:
 **Pro:** Policy trained on matching physics has best shot at transferring.
 **Con:** May need reward retuning (the Go2 reward balance saga again).
 
+**Status (2026-03-26):** Damping and rear thigh range matched. Retrained PPO, eval 219. Sim2sim still fails — trajectory analysis shows joint velocities exploding to ±95 rad/s (training distribution: ±5). Root cause: actuator type mismatch (PD integration timing).
+
+---
+
+## Sim2Sim Trajectory Analysis (2026-03-26)
+
+### The feedback loop
+
+1. First action is slightly off (different physics) → robot tips
+2. Joint velocities spike to ±50-90 rad/s (unitree_mujoco's torque motors accelerate freely between PD updates)
+3. Normalized jvel of 50 / std(5.4) = **9.2** — way outside training distribution (should be ±2)
+4. Policy sees out-of-distribution obs → garbage action → robot flails harder → feedback loop
+
+### Raw numbers from /tmp/sim2sim_traj.npz
+
+| Obs dim | Name | Deploy range | Training expected | Problem? |
+|---------|------|-------------|-------------------|----------|
+| 0-2 | linvel | 0 (zeroed) | ~±1 | Zeroed — policy may need it |
+| 3-5 | gyro | ±40 rad/s | ±3 | **YES — 13x too large** |
+| 6-8 | gravity | ±1 | ±1 | OK |
+| 9-20 | joint pos offset | ±2 | ±0.5 | Marginal — joints hitting limits |
+| 21-32 | joint vel | **±95 rad/s** | **±5** | **CRITICAL — 19x too large** |
+| 33-44 | last action | ±1 | ±1 | OK |
+| 45-47 | command | [0.5,0,0] | [0.5,0,0] | OK |
+
+### Root cause: actuator integration timing
+
+**Training (MJX):** `general` actuator with `biastype="affine"`. PD is computed INSIDE each physics substep (5 substeps per ctrl_dt=0.02s). The actuator continuously damps velocity at every 0.004s integration step.
+
+**Deploy (unitree_mujoco):** `motor` actuator (raw torque). Our deploy code computes PD externally at 50Hz (every 0.02s) and writes torque to `ctrl`. Between updates, the motor applies that constant torque for 4 substeps (0.005s each) with NO position/velocity feedback. Joints accelerate freely between PD updates.
+
+Result: same Kp/Kd values but completely different transient response. Training never sees velocities above ±10 rad/s. Deploy sees ±95 rad/s.
+
+### Fix options (prioritized)
+
+1. **Run PD at motor rate (500Hz), not policy rate (50Hz)** — the deploy DDS bridge already accepts commands at 500Hz. Keep the policy at 50Hz but send the same position target at 500Hz via a separate high-rate thread. This matches how the real robot works (policy at 50Hz, motor servo at 500Hz).
+
+2. **Clip obs joint velocities** — band-aid. Clip raw jvel to ±10 rad/s before building obs. Prevents the feedback loop but doesn't fix the underlying physics mismatch.
+
+3. **Change training env to torque actuators** — match unitree_mujoco's `motor` type. Most correct long-term but requires retraining and reward retuning.
+
+4. **Add velocity damping to deploy PD** — increase Kd in deploy to compensate for the missing per-substep damping. Empirical tuning required.
+
 ### Option B: Domain randomization over both
 Randomize damping [0.1, 0.5], friction [0.4, 0.6], condim {3, 6}, etc. during training.
 

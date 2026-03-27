@@ -52,14 +52,27 @@ def run_policy_loop(
     obs_builder: ObsBuilder,
     iface: Go2Interface,
     command: np.ndarray,
+    save_traj: str | None = None,
+    max_steps: int = 0,
 ):
-    """Run policy at 50Hz until Ctrl+C."""
+    """Run policy at 50Hz until Ctrl+C or max_steps."""
     print(f"  Policy running — cmd: vx={command[0]:.1f} vy={command[1]:.1f} yaw={command[2]:.1f}")
-    print("  Press Ctrl+C to stop")
+    if max_steps > 0:
+        print(f"  Running {max_steps} steps ({max_steps * POLICY_DT:.1f}s)")
+    else:
+        print("  Press Ctrl+C to stop")
+
+    # Trajectory buffers
+    traj_obs = []
+    traj_actions = []
+    traj_joint_pos = []
+    traj_joint_vel = []
+    traj_gyro = []
+    traj_quat = []
 
     step = 0
     try:
-        while True:
+        while max_steps <= 0 or step < max_steps:
             t_start = time.monotonic()
 
             state = iface.get_state()
@@ -79,11 +92,20 @@ def run_policy_loop(
             iface.send_action(action)
             obs_builder.update_last_action(action)
 
+            # Record trajectory
+            traj_obs.append(obs.copy())
+            traj_actions.append(action.copy())
+            traj_joint_pos.append(state["joint_pos_sdk"].copy())
+            traj_joint_vel.append(state["joint_vel_sdk"].copy())
+            traj_gyro.append(state["gyroscope"].copy())
+            traj_quat.append(state["quaternion"].copy())
+
             step += 1
             if step % 50 == 0:
                 q = state["joint_pos_sdk"]
                 print(f"  Step {step:5d} | action [{action.min():.2f}, {action.max():.2f}] | "
-                      f"q [{q.min():.2f}, {q.max():.2f}]")
+                      f"q [{q.min():.2f}, {q.max():.2f}] | "
+                      f"obs [{obs.min():.2f}, {obs.max():.2f}]")
 
             elapsed = time.monotonic() - t_start
             sleep_time = POLICY_DT - elapsed
@@ -92,6 +114,18 @@ def run_policy_loop(
 
     except KeyboardInterrupt:
         print("\n  Stopping policy loop")
+
+    # Save trajectory
+    if save_traj and traj_obs:
+        np.savez_compressed(save_traj,
+            obs=np.array(traj_obs),
+            actions=np.array(traj_actions),
+            joint_pos_sdk=np.array(traj_joint_pos),
+            joint_vel_sdk=np.array(traj_joint_vel),
+            gyroscope=np.array(traj_gyro),
+            quaternion=np.array(traj_quat),
+        )
+        print(f"  Trajectory saved: {save_traj} ({step} steps)")
 
 
 def main():
@@ -104,6 +138,8 @@ def main():
     parser.add_argument("--yaw", type=float, default=0.0, help="Yaw rate cmd (rad/s)")
     parser.add_argument("--stand-duration", type=float, default=2.0, help="Stand-up time (s)")
     parser.add_argument("--hold-duration", type=float, default=1.0, help="Hold standing time (s)")
+    parser.add_argument("--save-traj", type=str, default=None, help="Save trajectory .npz (obs, actions, joints)")
+    parser.add_argument("--max-steps", type=int, default=0, help="Max policy steps (0=run forever)")
     args = parser.parse_args()
 
     if not args.sim and args.interface is None:
@@ -155,7 +191,8 @@ def main():
         time.sleep(0.002)
 
     print(f"\n[4/4] Running policy")
-    run_policy_loop(runner, obs_builder, iface, command)
+    run_policy_loop(runner, obs_builder, iface, command,
+                    save_traj=args.save_traj, max_steps=args.max_steps)
 
     # Cleanup
     print("  Returning to stand...")

@@ -114,3 +114,13 @@ Although the PD math is the same, the integration timing differs: training PD is
 **Also:** Joint damping is 5x different (0.5 training vs 0.1 deploy), foot contact model differs (condim 3 vs 6, different friction), friction cone differs (pyramidal vs elliptic).
 
 **Lesson:** When building a sim2real pipeline, the deployment simulator's physics must be auditable against the training env. Don't assume "same robot model = same physics." Audit: actuator type, damping, contact params, solver settings, timestep. Full comparison template in `.context/go2/mjcf_comparison.md`.
+
+---
+
+## Matching Gain Values Is Not Enough — Actuator Integration Timing Matters (2026-03-26)
+
+**What happened:** Matched Kp=35 and Kd=0.1 between training and deploy. Retrained PPO (eval 219). Sim2sim: robot stands up correctly, then explodes when policy takes over. Trajectory analysis: joint velocities hit ±95 rad/s (training sees ±5).
+
+**Root cause:** Same PD gains, different integration timing. Training uses `general` actuators — MuJoCo applies PD at every physics substep (5× per ctrl_dt, every 0.004s). Deploy computes PD externally at 50Hz (every 0.02s) and writes constant torque. Between updates, joints accelerate freely for 4 substeps with no feedback. The velocity spike creates out-of-distribution obs (normalized jvel = 9.2 vs expected ±2), the policy outputs garbage, and the feedback loop escalates.
+
+**Lesson:** PD gain matching is necessary but not sufficient. The rate at which PD is applied matters as much as the gains themselves. A policy trained with per-substep PD won't transfer to a system that applies PD at 20× lower rate. Fix options: (1) run PD at motor rate (500Hz) not policy rate (50Hz), (2) clip obs velocities as band-aid, (3) retrain with torque actuators matching deploy model.
