@@ -316,6 +316,7 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
             )
             if metrics_log:
                 metrics_log[-1].update(eval_metrics)
+            wandb_log(eval_metrics, step=total_steps)
             is_best = ckpt_mgr.save(
                 training_state, norm_state, cfg, cfg.ppo,
                 "ppo", obs_dim, action_dim, metrics_log, resume,
