@@ -185,6 +185,29 @@ Result: same Kp/Kd values but completely different transient response. Training 
 
 4. **Add velocity damping to deploy PD** — increase Kd in deploy to compensate for the missing per-substep damping. Empirical tuning required.
 
+---
+
+## Sim2Sim Round 3: Direct PD Per Physics Step (2026-03-26)
+
+Bypassed DDS entirely. Wrote `sim2sim_direct.py` matching unitree_rl_gym's `deploy_mujoco.py` pattern: PD recomputed at physics rate (every `mj_step`), policy at 50Hz (every 4 steps).
+
+**Result: Still fails.** Robot stands briefly (z=0.268m at step 50), then falls. Joint velocities hit ±65 rad/s even with PD per physics step.
+
+**Key data from first 20 steps (before fall):**
+- Joint velocity std already 3-13 rad/s — borderline but not as extreme as DDS version (±95)
+- The very first policy action (step 1) creates jvel_max=14.8 — immediate overshoot
+- Obs range [-14.8, 7.8] at step 1 — already out of training distribution
+
+**Conclusion: The PD rate was NOT the root cause.** The `general` vs `motor` actuator type creates fundamentally different dynamics even with identical Kp/Kd applied at the same rate. The `general` actuator's `biastype="affine"` interacts with MuJoCo's integrator differently than external PD torque written to `ctrl` on a `motor` actuator.
+
+**The real fix:** Retrain with `motor` actuators and external PD in the training env. This is what every other Go2 RL pipeline does (unitree_rl_gym, unitree_rl_lab, walk-these-ways — all use `motor` + external PD, none use `general`).
+
+### Updated fix priority
+
+1. **Switch training env to `motor` actuators with external PD** — match what everyone else does and what the real robot is. Requires changes to go2_base.py actuator setup and how `step()` applies actions. Then retrain.
+2. **Empirical Kp/Kd tuning** — try lower Kp (20?) in sim2sim_direct.py to see if the dynamics get closer. Quick test, might help.
+3. **Obs clipping** — band-aid for velocity dims. Won't fix the dynamics but might prevent the feedback loop.
+
 ### Option B: Domain randomization over both
 Randomize damping [0.1, 0.5], friction [0.4, 0.6], condim {3, 6}, etc. during training.
 
