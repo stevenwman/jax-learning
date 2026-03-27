@@ -266,7 +266,7 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
     metrics_log: list[dict] = []
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     env_short = cfg.env_name.lower().replace(" ", "_")
-    ckpt_dir = os.path.join("checkpoints", f"{timestamp}_{env_short}_seed{seed}")
+    ckpt_dir = os.path.join("checkpoints", f"{timestamp}_ppo_{env_short}_seed{seed}")
     last_eval_eps = 0
 
     # Create eval action fn ONCE (no recompilation per eval call).
