@@ -43,7 +43,7 @@
 ## Short-term — Go2 env maturity
 - [ ] Wire frame stacking into Go2 env (currently no frame stack — just raw obs)
 - [ ] Domain rand wrapper (`jax_rl/envs/wrappers/domain_rand.py`) — robot-agnostic, vmap over MJX params
-- [ ] Go2 SAC Phase B — off-policy validation now that PPO confirms env works. Research Q: can SAC match PPO eval=233 on Go2? Required for DIAYN north star.
+- [x] Go2 SAC Phase B — FastSAC eval 226. Off-policy validated on Go2.
 
 ## Short-term — Cleanup
 - [x] Consolidate off-policy train scripts → `train_offpolicy.py --algo sac|td3|fast_td3|fast_sac` (commit 14a17df)
@@ -67,7 +67,9 @@
 - [x] Deploy script (`deploy/deploy_go2.py`) — DDS loop, 50Hz, FSM, works for sim and real
 - [x] Headless sim2sim (`deploy/sim_headless.py`) — runs over SSH, records video
 - [x] Separate deploy venv (Python 3.12) — CycloneDDS + Unitree SDK, setup script
-- [ ] **Unify training and deployment MJCF** — our MJX env uses Menagerie `go2_mjx.xml` (with custom overrides), unitree_mujoco uses its own `go2.xml`. Different actuators, contacts, damping. Policy trained in one doesn't transfer to the other. Options: (a) train directly on unitree_mujoco's model, (b) make our MjxEnv load unitree_mujoco's MJCF, (c) domain rand to cover both. This is the real sim2sim gap.
+- [x] Match hardware properties to unitree_mujoco — Kd 0.5→0.1, rear thigh range fixed. Retraining in progress (seed 3100).
+- [ ] Sim2sim transfer test — run new checkpoint in unitree_mujoco headless, verify walking
+- [ ] Remaining MJCF diffs (sim approximations, not hardware) — condim 3 vs 6, friction, cone. Defer unless sim2sim still fails after hardware matching.
 - [ ] ONNX export utility (`jax_rl/utils/export.py`) — JAX weights → ONNX for Jetson (deferred — numpy inference at 50Hz is fine for now)
 - [ ] DC motor model (`jax_rl/envs/actuators.py`) — Tier 2, add if sim-to-real gap > threshold
 - [ ] Confirm Go2 EDU edition in lab (ask Steven)
