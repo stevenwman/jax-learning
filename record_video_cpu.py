@@ -59,6 +59,40 @@ def main():
             cam.azimuth = 135
             cam.elevation = -20
             renderer.update_scene(env.data, camera=cam)
+
+            # Command arrow overlay (green arrow showing velocity direction)
+            vx, vy = float(command[0]), float(command[1])
+            speed = np.sqrt(vx**2 + vy**2)
+            if speed > 0.05:
+                quat = env.data.qpos[3:7]
+                w, x, y, z = quat
+                fwd_x = 1 - 2*(y*y + z*z)
+                fwd_y = 2*(x*y + w*z)
+                right_x = 2*(x*y - w*z)
+                right_y = 1 - 2*(x*x + z*z)
+                world_vx = vx * fwd_x + vy * right_x
+                world_vy = vx * fwd_y + vy * right_y
+
+                base_pos = env.data.qpos[:3].copy()
+                base_pos[2] = 0.4
+                end_pos = base_pos.copy()
+                end_pos[0] += world_vx * 0.3
+                end_pos[1] += world_vy * 0.3
+                mujoco.mjv_initGeom(
+                    renderer.scene.geoms[renderer.scene.ngeom],
+                    mujoco.mjtGeom.mjGEOM_ARROW,
+                    np.zeros(3), np.zeros(3), np.zeros(9), np.zeros(4),
+                )
+                mujoco.mjv_connector(
+                    renderer.scene.geoms[renderer.scene.ngeom],
+                    mujoco.mjtGeom.mjGEOM_ARROW,
+                    0.015,
+                    base_pos.astype(np.float64),
+                    end_pos.astype(np.float64),
+                )
+                renderer.scene.geoms[renderer.scene.ngeom].rgba = np.array([0, 1, 0, 0.8], dtype=np.float32)
+                renderer.scene.ngeom += 1
+
             frames.append(renderer.render().copy())
 
         if step % 50 == 0:
