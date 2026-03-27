@@ -16,37 +16,36 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
 
   @jax.vmap
   def rand_dynamics(rng):
-    # Floor friction: =U(0.05, 4.5) — very wide, from walk-these-ways Go2 fork.
+    # Floor friction: =U(0.2, 2.0) — moderate (too wide kills learning).
     rng, key = jax.random.split(rng)
     geom_friction = model.geom_friction.at[FLOOR_GEOM_ID, 0].set(
-        jax.random.uniform(key, minval=0.05, maxval=4.5)
+        jax.random.uniform(key, minval=0.2, maxval=2.0)
     )
 
-    # Scale DOF friction loss: *U(0.5, 2.0) — wider than before (was 0.9-1.1).
+    # Scale DOF friction loss: *U(0.7, 1.5).
     rng, key = jax.random.split(rng)
     frictionloss = model.dof_frictionloss[6:] * jax.random.uniform(
-        key, shape=(12,), minval=0.5, maxval=2.0
+        key, shape=(12,), minval=0.7, maxval=1.5
     )
     dof_frictionloss = model.dof_frictionloss.at[6:].set(frictionloss)
 
-    # Scale armature: *U(0.9, 1.5) — wider (was 1.0-1.05).
+    # Scale armature: *U(0.9, 1.3).
     rng, key = jax.random.split(rng)
     armature = model.dof_armature[6:] * jax.random.uniform(
-        key, shape=(12,), minval=0.9, maxval=1.5
+        key, shape=(12,), minval=0.9, maxval=1.3
     )
     dof_armature = model.dof_armature.at[6:].set(armature)
 
-    # Scale DOF damping: *U(0.5, 3.0) — covers MJX/CPU dynamics gap.
-    # Training default: 0.1. Range: 0.05 to 0.3.
+    # Scale DOF damping: *U(0.7, 2.0) — covers MJX/CPU gap without being too extreme.
     rng, key = jax.random.split(rng)
     damping = model.dof_damping[6:] * jax.random.uniform(
-        key, shape=(12,), minval=0.5, maxval=3.0
+        key, shape=(12,), minval=0.7, maxval=2.0
     )
     dof_damping = model.dof_damping.at[6:].set(damping)
 
-    # Jitter torso COM: +U(-0.1, 0.1) — wider (was ±0.05).
+    # Jitter torso COM: +U(-0.08, 0.08).
     rng, key = jax.random.split(rng)
-    dpos = jax.random.uniform(key, (3,), minval=-0.1, maxval=0.1)
+    dpos = jax.random.uniform(key, (3,), minval=-0.08, maxval=0.08)
     body_ipos = model.body_ipos.at[TORSO_BODY_ID].set(
         model.body_ipos[TORSO_BODY_ID] + dpos
     )

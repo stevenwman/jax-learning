@@ -212,9 +212,9 @@ class Joystick(go2_base.Go2Env):
         # Pushes the base with random xy velocity to train recovery.
         # Stronger and more frequent than before for MJX→CPU robustness.
         step_count = state.info["step_count"]
-        push_interval = 250  # steps between pushes (~5s)
+        push_interval = 350  # steps between pushes (~7s)
         rng, push_key = jax.random.split(state.info["rng"])
-        push_vel = jax.random.uniform(push_key, (2,), minval=-1.0, maxval=1.0)
+        push_vel = jax.random.uniform(push_key, (2,), minval=-0.75, maxval=0.75)
         do_push = (step_count > 0) & (step_count % push_interval == 0)
         data = state.data
         new_qvel = data.qvel.at[0:2].set(
