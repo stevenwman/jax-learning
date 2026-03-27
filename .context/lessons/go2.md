@@ -137,7 +137,7 @@ Although the PD math is the same, the integration timing differs: training PD is
 
 **What we then tried:** Matched ALL physics at runtime in sim2sim_direct.py — condim, friction, cone, dt, solimp. Still failed. The two MJCFs (Menagerie go2_mjx.xml vs unitree_mujoco go2.xml) differ in body inertias, mesh geometry, and joint configurations that can't be overridden at runtime.
 
-**Lesson:** Domain randomization bridges parameter uncertainty (friction values, mass, COM position). It does NOT bridge structural differences between MuJoCo models (different meshes, different body trees, different inertias). But before concluding "models are structurally different" — READ THE XML and compare by name. Our "structural difference" turned out to be a single default parameter (damping=2.0 vs 0.1).
+**Lesson:** Domain randomization bridges parameter uncertainty (friction values, mass, COM position). When sim2sim fails, compare the actual MJCFs — solver settings, collision geometry, and default parameters like damping matter more than you think. But also: the MJCF model itself must match between training and deployment. Running the training MJCF on CPU mj_step produced walking; running the unitree MJCF with matched parameters did not.
 
 ---
 
