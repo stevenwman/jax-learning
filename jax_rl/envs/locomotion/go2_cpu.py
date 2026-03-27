@@ -71,9 +71,11 @@ class Go2CpuEnv:
         self.action_scale = 0.5
         self.imu_site_id = self.model.site('imu').id
 
-        # Gyro sensor
+        # Sensors
         gyro_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SENSOR, 'gyro')
         self.gyro_adr = self.model.sensor_adr[gyro_id]
+        linvel_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SENSOR, 'local_linvel')
+        self.linvel_adr = self.model.sensor_adr[linvel_id]
 
         # State
         self.last_action = np.zeros(12, dtype=np.float32)
@@ -124,8 +126,12 @@ class Go2CpuEnv:
             dtype=np.float32,
         )
 
+        linvel = np.array(
+            self.data.sensordata[self.linvel_adr:self.linvel_adr + 3],
+            dtype=np.float32,
+        )
         return np.concatenate([
-            np.zeros(3, dtype=np.float32),                          # linvel (zeroed)
+            linvel,                                                  # [0:3] local linvel
             gyro,                                                    # [3:6]
             gravity,                                                 # [6:9]
             (self.data.qpos[7:] - self.default_pose).astype(np.float32),  # [9:21]
