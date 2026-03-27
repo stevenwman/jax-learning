@@ -345,6 +345,8 @@ if __name__ == "__main__":
                         help="Evaluate every N episodes (default: every 512 episodes)")
     parser.add_argument("--obs-norm", action="store_true",
                         help="Enable sample-time obs normalization (recommended for humanoid tasks)")
+    parser.add_argument("--domain-rand", action="store_true",
+                        help="Enable domain randomization (Go2 only: friction, mass, damping, etc.)")
     parser.add_argument("--wandb", action="store_true",
                         help="Enable W&B experiment tracking (requires wandb installed)")
     parser.add_argument("--wandb-project", type=str, default="jax-rl",
@@ -369,6 +371,7 @@ if __name__ == "__main__":
     if args.buffer_size is not None: algo_overrides["buffer_size"] = args.buffer_size
     if args.exploration_noise is not None: algo_overrides["exploration_noise_std"] = args.exploration_noise
     if args.obs_norm: algo_overrides["obs_normalization"] = True
+    if args.domain_rand: cfg_overrides["domain_rand"] = True
 
     if cfg_overrides: cfg = dataclasses.replace(cfg, **cfg_overrides)
     if algo_overrides: algo_cfg = dataclasses.replace(algo_cfg, **algo_overrides)

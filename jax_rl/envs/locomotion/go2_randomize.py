@@ -16,11 +16,12 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
 
   @jax.vmap
   def rand_dynamics(rng):
-    # Floor friction: =U(0.2, 2.0) — moderate (too wide kills learning).
+    # Friction: randomize ALL geoms (MuJoCo uses max-combine, so floor-only
+    # doesn't work if foot friction caps it). Range from WTW: [0.05, 4.5].
     rng, key = jax.random.split(rng)
-    geom_friction = model.geom_friction.at[FLOOR_GEOM_ID, 0].set(
-        jax.random.uniform(key, minval=0.2, maxval=2.0)
-    )
+    fric_val = jax.random.uniform(key, minval=0.05, maxval=4.5)
+    # Set tangential friction on all geoms uniformly
+    geom_friction = model.geom_friction.at[:, 0].set(fric_val)
 
     # Scale DOF friction loss: *U(0.7, 1.5).
     rng, key = jax.random.split(rng)
@@ -64,6 +65,16 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
         body_mass[TORSO_BODY_ID] + dmass
     )
 
+    # Motor strength: *U(0.9, 1.1) — models battery sag / motor variation.
+    rng, key = jax.random.split(rng)
+    motor_strength = jax.random.uniform(
+        key, shape=(12,), minval=0.9, maxval=1.1
+    )
+    # Apply as actuator gain scaling (gainprm[0] is the torque multiplier)
+    actuator_gainprm = model.actuator_gainprm.at[:, 0].set(
+        model.actuator_gainprm[:, 0] * motor_strength
+    )
+
     # Jitter initial joint positions: +U(-0.1, 0.1) — wider (was ±0.05).
     rng, key = jax.random.split(rng)
     qpos0 = model.qpos0
@@ -80,6 +91,7 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
         dof_frictionloss,
         dof_armature,
         dof_damping,
+        actuator_gainprm,
     )
 
   (
@@ -90,6 +102,7 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
       dof_frictionloss,
       dof_armature,
       dof_damping,
+      actuator_gainprm,
   ) = rand_dynamics(rng)
 
   in_axes = jax.tree_util.tree_map(lambda x: None, model)
@@ -101,6 +114,7 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
       "dof_frictionloss": 0,
       "dof_armature": 0,
       "dof_damping": 0,
+      "actuator_gainprm": 0,
   })
 
   model = model.tree_replace({
@@ -111,6 +125,7 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
       "dof_frictionloss": dof_frictionloss,
       "dof_armature": dof_armature,
       "dof_damping": dof_damping,
+      "actuator_gainprm": actuator_gainprm,
   })
 
   return model, in_axes
