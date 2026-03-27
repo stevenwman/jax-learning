@@ -37,9 +37,8 @@ class TestGo2Loads:
 
     def test_default_config_values(self):
         cfg = default_config()
-        # Matched to Playground Go1 for training parity
         assert cfg.Kp == 35.0
-        assert cfg.Kd == 0.5
+        assert cfg.Kd == 0.1  # Go2 hardware value (was 0.5 from Go1 PG)
         assert cfg.action_scale == 0.5
         assert cfg.ctrl_dt == 0.02
         assert cfg.sim_dt == 0.004

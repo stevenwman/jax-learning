@@ -23,9 +23,9 @@ ACTION_SCALE = 0.5
 
 # PD gains for deployment
 KP_SIM = 35.0    # Match training env (MJX Playground)
-KD_SIM = 0.5
+KD_SIM = 0.1     # Match training env (was 0.5, now matches Go2 hardware)
 KP_REAL = 20.0   # Unitree official for Go2 RL deployment
-KD_REAL = 0.5
+KD_REAL = 0.1     # Go2 hardware value
 
 NUM_JOINTS = 12
 POLICY_DT = 0.02  # 50 Hz policy

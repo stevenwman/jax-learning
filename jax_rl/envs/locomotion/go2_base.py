@@ -64,6 +64,12 @@ class Go2Env(mjx_env.MjxEnv):
             if 'calf' in name.lower():
                 self._mj_model.actuator_forcerange[i] = _np.array([-45.43, 45.43])
 
+        # Fix rear thigh joint range: Menagerie uses front range for all legs,
+        # but real Go2 rear hips have different range [-0.5236, 4.5379].
+        for jname in ["RL_thigh_joint", "RR_thigh_joint"]:
+            jid = self._mj_model.joint(jname).id
+            self._mj_model.jnt_range[jid] = _np.array([-0.5236, 4.5379])
+
         # Override Menagerie's soft foot contacts with Go1-style firm contacts.
         # Menagerie: solimp=0.015 1 0.031, condim=6 (marshmallow-soft, full friction)
         # Go1 (PG): solimp=0.9 0.95 0.023, condim=3 (firm, basic friction)

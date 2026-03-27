@@ -32,7 +32,7 @@ def default_config() -> config_dict.ConfigDict:
         # PD gains — Kp=35 from Playground Go1. action_scale=0.5 to match Go1
         # (0.3 was too restrictive — only 15% thigh range, 34% calf range).
         Kp=35.0,
-        Kd=0.5,
+        Kd=0.1,  # Go2 hardware value (unitree_mujoco). Was 0.5 from Go1 Playground.
         action_repeat=1,
         action_scale=0.5,
         soft_joint_pos_limit_factor=0.95,

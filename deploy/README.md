@@ -109,7 +109,8 @@ deploy/
 ├── policy_runner.py      # Loads JAX checkpoint, runs MLP inference with pure numpy
 ├── obs_builder.py        # Robot sensors → 48d observation vector
 ├── robot_interface.py    # CycloneDDS pub/sub (rt/lowstate, rt/lowcmd)
-└── deploy_go2.py         # Main script: FSM (idle→stand→policy), 50Hz loop
+├── deploy_go2.py         # Main script: FSM (idle→stand→policy), 50Hz loop
+└── sim_headless.py       # Headless simulator for SSH testing + video recording
 ```
 
 The deploy package has **zero JAX dependency** at runtime. Policy weights are loaded as numpy arrays and inference is plain matrix multiplication.

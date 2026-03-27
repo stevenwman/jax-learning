@@ -86,11 +86,16 @@ WebFetch gets blocked by many sites. Workarounds:
 | Doc | What goes in it | When to update |
 |---|---|---|
 | `.context/journals/YYYY-MM-DD.md` | What happened today | After every significant event |
-| `.context/LESSONS.md` → `lessons/*.md` | Reusable debugging lessons | When you learn something future sessions need |
+| `.context/LESSONS.md` → `.context/lessons/*.md` | Reusable debugging lessons | When you learn something future sessions need |
 | `.context/TODO.md` | Prioritized task list | When tasks complete or priorities shift |
+| `deploy/README.md` | Deploy setup, usage, troubleshooting | When deploy code, deps, or PD gains change |
+| `.context/go2/sac_phase_b.md` | SAC experiment plan + research | When SAC config or findings change |
+| `.context/go2/mjcf_comparison.md` | Training vs deploy physics diff | When env physics overrides change |
+
+**Don't forget non-.context docs.** `deploy/README.md` and `deploy/go2_constants.py` must stay in sync with training env changes (PD gains, default pose, action scale). If you change `go2_joystick.py` or `go2_base.py`, check whether deploy constants need updating too.
 
 ### The refactor philosophy
-Brax-style shared utilities. No Trainer base class, no BaseAlgorithm ABC. Envs are self-contained black boxes, algos own their math, training scripts mediate. See `refactor_idea.md` for the full reasoning.
+Brax-style shared utilities. No Trainer base class, no BaseAlgorithm ABC. Envs are self-contained black boxes, algos own their math, training scripts mediate. See `.context/archive/refactor_idea.md` for the full reasoning.
 
 ---
 
@@ -106,13 +111,13 @@ The lessons system is your search engine for "has this been solved before?" Read
 
 | Topic file | When to read it |
 |------------|----------------|
-| `lessons/ppo.md` | Debugging PPO (entropy, GAE, VLoss, tanh squashing, Brax parity) |
-| `lessons/offpolicy.md` | SAC/TD3 (obs norm, replay ratio, exploration, target entropy) |
-| `lessons/distributional.md` | C51/FastTD3/FastSAC/FastDSAC (V_min/V_max, paper-vs-code) |
-| `lessons/jax_performance.md` | Slow training or JIT issues (lax.scan, recompilation, carry cost) |
-| `lessons/infrastructure.md` | Checkpoint/eval/recording bugs (orbax, preprocessing mismatch) |
-| `lessons/mjx.md` | NaN/Inf crashes, GPU OOM, MJX recompilation |
-| `lessons/go2.md` | Go2 env (reward balance, actuator limits, contact physics) |
+| `.context/lessons/ppo.md` | Debugging PPO (entropy, GAE, VLoss, tanh squashing, Brax parity) |
+| `.context/lessons/offpolicy.md` | SAC/TD3 (obs norm, replay ratio, exploration, target entropy) |
+| `.context/lessons/distributional.md` | C51/FastTD3/FastSAC/FastDSAC (V_min/V_max, paper-vs-code) |
+| `.context/lessons/jax_performance.md` | Slow training or JIT issues (lax.scan, recompilation, carry cost) |
+| `.context/lessons/infrastructure.md` | Checkpoint/eval/recording bugs (orbax, preprocessing mismatch) |
+| `.context/lessons/mjx.md` | NaN/Inf crashes, GPU OOM, MJX recompilation |
+| `.context/lessons/go2.md` | Go2 env (reward balance, actuator limits, contact physics) |
 
 **Step 3: Don't read what you don't need.** The index tells you exactly which file has what.
 
