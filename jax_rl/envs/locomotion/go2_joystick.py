@@ -191,6 +191,7 @@ class Joystick(go2_base.Go2Env):
             "feet_air_time": jp.zeros(4),
             "last_contact": jp.zeros(4, dtype=bool),
             "swing_peak": jp.zeros(4),
+            "step_count": jp.int32(0),
             "reward_components": {
                 k: jp.zeros(()) for k in self._config.reward_config.scales.keys()
             },
@@ -207,6 +208,20 @@ class Joystick(go2_base.Go2Env):
     def step(self, state: mjx_env.State, action: jax.Array) -> mjx_env.State:
         motor_targets = self._default_pose + action * self._config.action_scale
 
+        # Random velocity kick every ~500 steps (~10s at 50Hz).
+        # Pushes the base with random xy velocity to train recovery.
+        # Standard in legged_gym / walk-these-ways for robustness.
+        step_count = state.info["step_count"]
+        push_interval = 500  # steps between pushes
+        rng, push_key = jax.random.split(state.info["rng"])
+        push_vel = jax.random.uniform(push_key, (2,), minval=-0.5, maxval=0.5)
+        do_push = (step_count > 0) & (step_count % push_interval == 0)
+        data = state.data
+        new_qvel = data.qvel.at[0:2].set(
+            jp.where(do_push, data.qvel[0:2] + push_vel, data.qvel[0:2])
+        )
+        data = data.replace(qvel=new_qvel)
+
         # External PD at physics rate: recompute torque each substep from fresh
         # joint state. Matches unitree_mujoco / real robot motor model.
         kp, kd = self._kp, self._kd
@@ -219,7 +234,7 @@ class Joystick(go2_base.Go2Env):
             data = data.replace(ctrl=tau)
             return mjx.step(model, data), None
 
-        data = jax.lax.scan(substep, state.data, (), self.n_substeps)[0]
+        data = jax.lax.scan(substep, data, (), self.n_substeps)[0]
 
         # Foot contact detection.
         contact = jp.array([
@@ -252,10 +267,9 @@ class Joystick(go2_base.Go2Env):
         # Update info.
         state.info["last_last_act"] = state.info["last_act"]
         state.info["last_act"] = action
+        state.info["step_count"] = step_count + 1
         state.info["steps_until_next_cmd"] -= 1
-        state.info["rng"], key1, key2 = jax.random.split(
-            state.info["rng"], 3
-        )
+        state.info["rng"], key1, key2 = jax.random.split(rng, 3)
         state.info["command"] = jp.where(
             state.info["steps_until_next_cmd"] <= 0,
             self.sample_command(key1, state.info["command"]),
