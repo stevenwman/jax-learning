@@ -142,7 +142,15 @@ Change go2_base.py runtime overrides to match unitree_mujoco:
 **Pro:** Policy trained on matching physics has best shot at transferring.
 **Con:** May need reward retuning (the Go2 reward balance saga again).
 
-**Status (2026-03-26):** Damping and rear thigh range matched. Retrained PPO, eval 219. Sim2sim still fails — trajectory analysis shows joint velocities exploding to ±95 rad/s (training distribution: ±5). Root cause: actuator type mismatch (PD integration timing).
+**Status (2026-03-26):** Full XML audit complete. Root cause chain:
+1. **Damping 2.0 vs 0.1 (20x!)** — Menagerie go2_mjx.xml hardcodes damping=2, unitree_mujoco has 0.1. This was THE dominant factor causing all velocity explosions.
+2. **Actuator type** — `general` (built-in PD) vs `motor` (external PD). Fixed: training now uses motor + external PD.
+3. **Frictionloss 0 vs 0.2** — Fixed: training now sets frictionloss=0.2.
+4. **Sensors** — Verified correct. Different ordering (FL,RL,FR,RR vs FR,FL,RR,RL) handled by SDK_TO_POLICY remapping. Same physical joints, same IMU site position. ✅
+5. **Body chain** — Identical positions, identical meshes. unitree_mujoco has extra zero-mass `*_foot` bodies, no physics impact.
+6. **Contact model** — condim 3 vs 6, friction values differ. Left as sim2sim gap for DR to cover.
+
+Retraining in progress with damping=0.1 + frictionloss=0.2 + motor actuators + DR (seed 6000).
 
 ---
 

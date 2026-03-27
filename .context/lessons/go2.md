@@ -137,4 +137,20 @@ Although the PD math is the same, the integration timing differs: training PD is
 
 **What we then tried:** Matched ALL physics at runtime in sim2sim_direct.py — condim, friction, cone, dt, solimp. Still failed. The two MJCFs (Menagerie go2_mjx.xml vs unitree_mujoco go2.xml) differ in body inertias, mesh geometry, and joint configurations that can't be overridden at runtime.
 
-**Lesson:** Domain randomization bridges parameter uncertainty (friction values, mass, COM position). It does NOT bridge structural differences between MuJoCo models (different meshes, different body trees, different inertias). If two models don't produce the same dynamics even with identical contact/actuator/solver params, the MJCF itself is different and you need to train on the target model directly.
+**Lesson:** Domain randomization bridges parameter uncertainty (friction values, mass, COM position). It does NOT bridge structural differences between MuJoCo models (different meshes, different body trees, different inertias). But before concluding "models are structurally different" — READ THE XML and compare by name. Our "structural difference" turned out to be a single default parameter (damping=2.0 vs 0.1).
+
+---
+
+## Read the XML Before Running Numerical Tests (2026-03-26)
+
+**What happened:** Spent hours running sim2sim tests, matching parameters one at a time, concluding the models were "fundamentally different." Could have found the root cause in 5 minutes by grepping the XML for `damping`.
+
+**Root cause found by XML audit:**
+- Menagerie `go2_mjx.xml`: `<joint damping="2" armature="0.01"/>` (default class)
+- unitree_mujoco `go2.xml`: `<joint damping="0.1" armature="0.01" frictionloss="0.2"/>` (default class)
+
+20x damping difference in a single XML attribute. Everything else (body positions, meshes, IMU site, joint names) is identical between the two models.
+
+**Sensors verified correct:** Different sensor ordering and names, but both read the same physical joints. Our SDK_TO_POLICY remapping handles it. Confirmed by comparing `jointpos joint="FL_hip_joint"` in both XMLs — same joint, different sensordata index.
+
+**Lesson:** When two MuJoCo models produce different dynamics, grep the default class definitions FIRST. That's where global parameters like damping, armature, and frictionloss are set. Don't run sim2sim experiments before reading the 5 lines of XML that define the physics.
