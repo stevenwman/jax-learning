@@ -59,6 +59,12 @@
 - [x] W&B integration — `--wandb` flag on all 3 train scripts, logs step + eval metrics. Tested: SAC (CheetahRun 200k), PPO (CartpoleBalance 500k), no-flag passthrough. All working.
 - [ ] W&B HP tuning agent — Claude reads wandb curves via API, diagnoses stagnation/divergence, proposes HP changes (lr, entropy_coef, UTD ratio, reward weights). Could be a hook or a scheduled agent.
 
+## Mid-term (MuJoCo Warp migration)
+- [ ] Install mujoco-warp==3.6.0, verify Go2 MJCF loads and steps
+- [ ] Abstract physics backend (MJX vs Warp) so envs work on either — same MJCF, same overrides, swap `impl`
+- [ ] Benchmark Warp vs MJX sps on Go2 (reported 152x faster on locomotion)
+- [ ] Port Go2 env to Warp if benchmark confirms speedup — future envs built on Warp from start
+
 ## Mid-term (Vision RL)
 - [ ] Install `madrona_mjx`, verify Playground `vision=True` on RTX 5080
 - [ ] CNN encoder (`jax_rl/networks/encoders/cnn.py`) + `CnnEncoderConfig`
