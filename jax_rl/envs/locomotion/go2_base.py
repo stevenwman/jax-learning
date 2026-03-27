@@ -49,20 +49,29 @@ class Go2Env(mjx_env.MjxEnv):
         self._mj_model.opt.timestep = self._config.sim_dt
         self._mj_model.opt.ccd_iterations = 20  # Match Go1 (default 4 is too few)
 
-        # Set PD gains (overrides Menagerie defaults).
-        # Menagerie Go2 uses general actuators with biastype="affine":
-        #   force = Kp * ctrl + (-Kp * qpos) + (-Kd * qvel)
-        # This is a PD controller when ctrl = q_target.
+        # Convert actuators from general (built-in PD) to motor (direct torque).
+        # Every other Go2 RL pipeline uses motor + external PD. The general
+        # actuator's biastype="affine" interacts with MuJoCo's integrator
+        # differently than external PD, breaking sim2sim/sim2real transfer.
         import numpy as _np
-        self._mj_model.dof_damping[6:] = config.Kd
-        self._mj_model.actuator_gainprm[:, 0] = config.Kp
-        self._mj_model.actuator_biasprm[:, 1] = -config.Kp
+        self._mj_model.actuator_gainprm[:, 0] = 1.0   # gain=1 (ctrl = torque)
+        self._mj_model.actuator_biasprm[:, :] = 0.0    # no bias (pure torque)
+        self._mj_model.dof_damping[6:] = 0.0            # no implicit damping (PD handles it)
 
-        # Fix go2_mjx.xml bug: calf forcerange is [-24, 24] but real is [-45.43, 45.43].
+        # Store PD gains for use in step()
+        self._kp = config.Kp
+        self._kd = config.Kd
+
+        # Set actuator ctrl/force ranges to torque limits (now ctrl=torque, not position).
+        # Hip/abduction: ±23.7 Nm, Knee: ±45.43 Nm (matching unitree_mujoco go2.xml)
         for i in range(self._mj_model.nu):
             name = mujoco.mj_id2name(self._mj_model, mujoco.mjtObj.mjOBJ_ACTUATOR, i)
             if 'calf' in name.lower():
+                self._mj_model.actuator_ctrlrange[i] = _np.array([-45.43, 45.43])
                 self._mj_model.actuator_forcerange[i] = _np.array([-45.43, 45.43])
+            else:
+                self._mj_model.actuator_ctrlrange[i] = _np.array([-23.7, 23.7])
+                self._mj_model.actuator_forcerange[i] = _np.array([-23.7, 23.7])
 
         # Fix rear thigh joint range: Menagerie uses front range for all legs,
         # but real Go2 rear hips have different range [-0.5236, 4.5379].

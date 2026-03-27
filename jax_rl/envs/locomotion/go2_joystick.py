@@ -206,9 +206,20 @@ class Joystick(go2_base.Go2Env):
 
     def step(self, state: mjx_env.State, action: jax.Array) -> mjx_env.State:
         motor_targets = self._default_pose + action * self._config.action_scale
-        data = mjx_env.step(
-            self.mjx_model, state.data, motor_targets, self.n_substeps
-        )
+
+        # External PD at physics rate: recompute torque each substep from fresh
+        # joint state. Matches unitree_mujoco / real robot motor model.
+        kp, kd = self._kp, self._kd
+        model = self.mjx_model
+
+        def substep(data, _):
+            current_q = data.qpos[7:]   # joint positions (skip freejoint)
+            current_dq = data.qvel[6:]  # joint velocities (skip freejoint)
+            tau = kp * (motor_targets - current_q) + kd * (0.0 - current_dq)
+            data = data.replace(ctrl=tau)
+            return mjx.step(model, data), None
+
+        data = jax.lax.scan(substep, state.data, (), self.n_substeps)[0]
 
         # Foot contact detection.
         contact = jp.array([
