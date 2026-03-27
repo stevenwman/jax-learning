@@ -23,9 +23,33 @@ if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
 from deploy.policy_runner import PolicyRunner
-from deploy.obs_builder import ObsBuilder
+from deploy.obs_builder import ObsBuilder, _quat_rotate_inverse
 from deploy.robot_interface import Go2Interface
 from deploy.go2_constants import POLICY_DT, DEFAULT_POSE_SDK, NUM_JOINTS
+
+
+class VelocityEstimator:
+    """Estimate local linear velocity from IMU accelerometer + leaky integration.
+
+    Integrates body-frame acceleration (minus gravity) at policy rate.
+    Leaky factor prevents drift: v = alpha * (v + a*dt).
+    """
+    def __init__(self, dt: float = 0.02, alpha: float = 0.95):
+        self.dt = dt
+        self.alpha = alpha
+        self.velocity = np.zeros(3, dtype=np.float32)
+        self.gravity_world = np.array([0.0, 0.0, 9.81], dtype=np.float32)
+
+    def update(self, accelerometer: np.ndarray, quaternion: np.ndarray) -> np.ndarray:
+        """Update velocity estimate. Returns local (body-frame) linear velocity."""
+        # Accelerometer reads specific force (accel - gravity) in body frame.
+        # MuJoCo's accelerometer sensor already subtracts gravity, so raw accel
+        # is body-frame linear acceleration.
+        self.velocity = self.alpha * (self.velocity + accelerometer * self.dt)
+        return self.velocity.copy()
+
+    def reset(self):
+        self.velocity = np.zeros(3, dtype=np.float32)
 
 
 def interpolate_to_stand(iface: Go2Interface, duration: float = 2.0, dt: float = 0.002):
@@ -80,12 +104,16 @@ def run_policy_loop(
                 time.sleep(POLICY_DT)
                 continue
 
+            # Estimate local velocity from IMU accelerometer
+            local_linvel = vel_estimator.update(state["accelerometer"], state["quaternion"])
+
             obs = obs_builder.build(
                 joint_pos_sdk=state["joint_pos_sdk"],
                 joint_vel_sdk=state["joint_vel_sdk"],
                 gyroscope=state["gyroscope"],
                 quaternion=state["quaternion"],
                 command=command,
+                linvel=local_linvel,
             )
 
             action = runner.get_action(obs)
@@ -158,6 +186,7 @@ def main():
     print(f"  obs_norm={'yes' if runner.use_obs_norm else 'no'} (n={runner.norm_count})")
 
     obs_builder = ObsBuilder()
+    vel_estimator = VelocityEstimator(dt=POLICY_DT)
     command = np.array([args.vx, args.vy, args.yaw], dtype=np.float32)
 
     # Connect

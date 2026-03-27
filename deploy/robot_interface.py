@@ -70,11 +70,14 @@ class Go2Interface:
         gyro = np.array(state.imu_state.gyroscope, dtype=np.float32)
         quat = np.array(state.imu_state.quaternion, dtype=np.float32)
 
+        accel = np.array(state.imu_state.accelerometer, dtype=np.float32)
+
         return {
             "joint_pos_sdk": joint_pos,
             "joint_vel_sdk": joint_vel,
             "gyroscope": gyro,
             "quaternion": quat,
+            "accelerometer": accel,
         }
 
     def send_action(self, action_policy_order: np.ndarray):

@@ -69,12 +69,24 @@ def build_obs_from_mj(
     quat = np.array(data.sensordata[offset:offset+4], dtype=np.float32)      # [w,x,y,z]
     gyro = np.array(data.sensordata[offset+4:offset+7], dtype=np.float32)    # [wx,wy,wz]
 
+    # Local linear velocity from frame_vel (global) rotated to body frame.
+    # unitree model has frame_vel (global framelinvel at IMU site) at adr=49.
+    # Training uses a velocimeter (local_linvel) which gives body-frame velocity.
+    frame_vel_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SENSOR, 'frame_vel')
+    if frame_vel_id >= 0:
+        fv_adr = model.sensor_adr[frame_vel_id]
+        global_linvel = np.array(data.sensordata[fv_adr:fv_adr+3], dtype=np.float32)
+        local_linvel = _quat_rotate_inverse(quat, global_linvel)
+    else:
+        local_linvel = None
+
     return obs_builder.build(
         joint_pos_sdk=joint_pos_sdk,
         joint_vel_sdk=joint_vel_sdk,
         gyroscope=gyro,
         quaternion=quat,
         command=command,
+        linvel=local_linvel,
     )
 
 
@@ -103,15 +115,34 @@ def run_sim2sim(
     model = mujoco.MjModel.from_xml_path(scene_path)
     data = mujoco.MjData(model)
 
-    # No overrides — training env now uses damping=0.1, frictionloss=0.2
-    # (matching unitree_mujoco and real hardware).
+    # Match training env physics (go2_base.py overrides).
+    # Contact: unitree defaults condim=6, friction=[0.4,0.02,0.01], solimp=Menagerie.
+    for foot_name in ["FL", "FR", "RL", "RR"]:
+        gid = model.geom(foot_name).id
+        model.geom_solimp[gid, :3] = [0.9, 0.95, 0.023]
+        model.geom_condim[gid] = 3
+        model.geom_friction[gid] = [0.6, 0.005, 0.0001]
+    # Match what we CAN without breaking unitree's solver stability.
+    # Contact properties and CCD match training. Solver stays at unitree defaults
+    # (elliptic cone, 100 iterations) because their collision mesh requires it.
+    model.opt.ccd_iterations = 20
+    model.geom_friction[model.geom('floor').id] = [0.6, 0.005, 0.0001]
+    # Force limits: unitree has forcerange=[0,0] (unlimited). Match training.
+    import mujoco as _mj
+    for i in range(model.nu):
+        name = _mj.mj_id2name(model, _mj.mjtObj.mjOBJ_ACTUATOR, i)
+        if 'calf' in name.lower():
+            model.actuator_forcerange[i] = [-45.43, 45.43]
+        else:
+            model.actuator_forcerange[i] = [-23.7, 23.7]
 
-    # Match training env: sim_dt=0.004, 5 substeps per ctrl_dt=0.02
-    # (unitree_mujoco default is 0.005 with 4 substeps — same 20ms policy dt
-    #  but coarser integration which changes dynamics)
-    physics_dt = 0.004  # match training
+    # Match training env: sim_dt=0.004, 5 substeps per ctrl_dt=0.02.
+    # unitree_mujoco XML default is 0.002 but we override to match training.
+    # Native dt (0.002 × 10) was tested — worse transfer due to amplified contact mismatch.
+    physics_dt = 0.004
     model.opt.timestep = physics_dt
     decimation = 5  # 5 * 0.004 = 0.02s = 50Hz policy
+    policy_dt = physics_dt * decimation
     policy_dt = physics_dt * decimation
 
     print(f"\nSimulator: {scene_path}")
@@ -182,7 +213,13 @@ def run_sim2sim(
 
         # Capture frame
         if renderer and phys_step % int(1.0 / fps / physics_dt) == 0:
-            renderer.update_scene(data)
+            cam = mujoco.MjvCamera()
+            cam.type = mujoco.mjtCamera.mjCAMERA_TRACKING
+            cam.trackbodyid = model.body('base_link').id
+            cam.distance = 2.0
+            cam.azimuth = 135
+            cam.elevation = -20
+            renderer.update_scene(data, camera=cam)
             frames.append(renderer.render().copy())
 
     # Final stats
