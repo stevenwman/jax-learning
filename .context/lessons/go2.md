@@ -125,6 +125,8 @@ Although the PD math is the same, the integration timing differs: training PD is
 
 **Not a bug — a robustness gap.** The policy works on CPU for 3 seconds. It's not a catastrophic mismatch (like the MJCF difference which caused instant failure). It's gradual drift that a more robust policy could ride out.
 
+**Deeper investigation:** Not float32 vs float64 (tested — truncating to f32 made zero difference). Not solver settings (all match). The divergence is bursty, not smooth — step 2 shows obs_diff=19.8 while step 8 is only 3.5. This correlates with contact state changes (making/breaking foot contacts). The MJX and CPU contact solvers produce slightly different forces at the boundary, and those differences compound through the policy feedback loop.
+
 **Fix path:** Wider domain randomization + random external forces (velocity kicks) during training. This is standard in SOTA quadruped pipelines (legged_gym, walk-these-ways) for exactly this reason — making policies robust to physics perturbations covers the MJX/CPU gap as a side effect.
 
 ---

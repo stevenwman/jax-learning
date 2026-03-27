@@ -91,4 +91,4 @@ JAX/Flax fundamentals in `LEARNER_LESSONS.md`.
 - **Matching PD gains is not enough** — `general` (affine) vs `motor` (external PD) are NOT equivalent even at same rate/gains; retrain with `motor` actuators for transfer
 - **DR covers parameter ranges, not model structure** — but "structural difference" was actually just damping=2 vs 0.1. Read the XML first.
 - **Read the XML before numerical tests** — 20x damping diff found in 5 lines of XML, after hours of sim2sim experiments
-- **MJX and CPU MuJoCo diverge over time** — same model, same params, policy walks 3s on CPU then falls. Robustness gap, not physics bug.
+- **MJX and CPU MuJoCo diverge over time** — not f32/f64 (tested), not settings. Bursty contact solver divergence at foot contact boundaries. DR + kicks for robustness.
