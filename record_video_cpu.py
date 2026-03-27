@@ -24,9 +24,9 @@ from deploy.policy_runner import PolicyRunner
 def main():
     parser = argparse.ArgumentParser(description="Record CPU env video")
     parser.add_argument("--checkpoint", required=True)
-    parser.add_argument("--vx", type=float, default=0.5)
-    parser.add_argument("--vy", type=float, default=0.0)
-    parser.add_argument("--yaw", type=float, default=0.0)
+    parser.add_argument("--vx", type=float, default=None, help="Fixed vx (default: random resampling)")
+    parser.add_argument("--vy", type=float, default=None)
+    parser.add_argument("--yaw", type=float, default=None)
     parser.add_argument("--duration", type=float, default=10.0)
     parser.add_argument("--out", type=str, default=None)
     parser.add_argument("--fps", type=int, default=25)
@@ -34,10 +34,14 @@ def main():
 
     env = Go2CpuEnv()
     runner = PolicyRunner(args.checkpoint)
-    command = np.array([args.vx, args.vy, args.yaw], dtype=np.float32)
+    fixed_cmd = args.vx is not None or args.vy is not None or args.yaw is not None
+    if fixed_cmd:
+        command = np.array([args.vx or 0.0, args.vy or 0.0, args.yaw or 0.0], dtype=np.float32)
+    else:
+        command = np.zeros(3, dtype=np.float32)
 
     print(f"Policy: {runner.algo}, obs={runner.obs_dim}d, act={runner.action_dim}d")
-    print(f"Command: vx={args.vx}, vy={args.vy}, yaw={args.yaw}")
+    print(f"Command: {'fixed ' + str(command) if fixed_cmd else 'random resampling (like training)'}")
 
     obs = env.reset()
     renderer = mujoco.Renderer(env.model, width=1280, height=720)
@@ -46,8 +50,20 @@ def main():
     total_steps = int(args.duration / 0.02)  # 50Hz policy
     frame_skip = max(1, int(1.0 / args.fps / 0.02))
 
+    # Command resampling (same as training env: resample every ~5s)
+    rng = np.random.default_rng(42)
+    cmd_max = np.array([1.5, 0.8, 1.2])  # from default_config command_config.a
+    steps_until_resample = 0 if not fixed_cmd else total_steps + 1
+
     print(f"Running {total_steps} steps ({args.duration}s)...")
     for step in range(total_steps):
+        if not fixed_cmd and steps_until_resample <= 0:
+            command = rng.uniform(-cmd_max, cmd_max).astype(np.float32)
+            steps_until_resample = int(rng.exponential(5.0) / 0.02)
+            print(f"  New cmd: vx={command[0]:.2f} vy={command[1]:.2f} yaw={command[2]:.2f} "
+                  f"(next in {steps_until_resample} steps)")
+        steps_until_resample -= 1
+
         action = runner.get_action(obs)
         obs, base_z = env.step(action, command)
 
@@ -100,10 +116,14 @@ def main():
 
     renderer.close()
 
-    out = args.out or os.path.join(
-        os.path.dirname(args.checkpoint),
-        f"cpu_rollout_{int(args.vx*10):+d}vx_{int(args.yaw*10):+d}yaw.mp4"
-    )
+    if args.out:
+        out = args.out
+    elif fixed_cmd:
+        vx_s = int((args.vx or 0) * 10)
+        yaw_s = int((args.yaw or 0) * 10)
+        out = os.path.join(os.path.dirname(args.checkpoint), f"cpu_rollout_{vx_s:+d}vx_{yaw_s:+d}yaw.mp4")
+    else:
+        out = os.path.join(os.path.dirname(args.checkpoint), "cpu_rollout_random_cmd.mp4")
     imageio.mimwrite(out, frames, fps=args.fps)
     print(f"Done: {out} ({len(frames)} frames)")
 
