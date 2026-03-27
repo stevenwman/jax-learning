@@ -34,11 +34,11 @@ The PD math is the same, but the integration timing differs (training PD is insi
 
 | Property | Training | Deployment | Ratio |
 |----------|----------|------------|-------|
-| **dof_damping** | 0.5 (overridden in go2_base.py) | 0.1 (XML default) | **5x** |
+| **dof_damping** | ~~0.5~~ → **0.1** (fixed 2026-03-26) | 0.1 (XML default) | **NOW MATCHED** |
 | **armature** | 0.01 | 0.01 | 1x |
 | **frictionloss** | 0.2 | 0.2 | 1x |
 
-**Joint damping is 5x different.** This changes how the robot feels — higher damping means more velocity resistance, slower response, more stability. A policy trained with 0.5 damping will overshoot in a 0.1 damping environment.
+**Joint damping was 5x different — NOW FIXED.** Changed training Kd from 0.5 to 0.1 to match hardware/unitree_mujoco.
 
 ---
 
@@ -132,12 +132,12 @@ Sensor ordering within joint groups follows actuator ordering — different betw
 
 ### Option A: Match training to unitree_mujoco (recommended for sim2real)
 Change go2_base.py runtime overrides to match unitree_mujoco:
-1. `dof_damping[6:] = 0.1` (from 0.5)
-2. Foot condim = 6 (from 3)
-3. Foot friction = [0.4, 0.02, 0.01] (from [0.6, 0.005, 0.0001])
-4. Friction cone = elliptic (from pyramidal)
-5. Rear thigh range = [-0.5236, 4.5379]
-6. Retrain PPO/SAC with these physics
+1. ~~`dof_damping[6:] = 0.1` (from 0.5)~~ — **DONE** (2026-03-26)
+2. Foot condim = 6 (from 3) — DEFERRED (sim approximation, not hardware property)
+3. Foot friction = [0.4, 0.02, 0.01] — DEFERRED (sim approximation)
+4. Friction cone = elliptic (from pyramidal) — DEFERRED (sim approximation)
+5. ~~Rear thigh range = [-0.5236, 4.5379]~~ — **DONE** (2026-03-26)
+6. Retrain PPO/SAC with these physics — **IN PROGRESS** (seed 3100, 50M steps)
 
 **Pro:** Policy trained on matching physics has best shot at transferring.
 **Con:** May need reward retuning (the Go2 reward balance saga again).
