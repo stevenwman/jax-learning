@@ -79,6 +79,7 @@ JAX/Flax fundamentals in `LEARNER_LESSONS.md`.
 - **MJX→CPU transfer: every obs dimension must match** — zeroed linvel in CPU env killed transfer. Diff obs side-by-side.
 - **MuJoCo friction is max-combine** — randomize foot geoms not just floor. PhysX DR ranges don't port to MuJoCo.
 - **Sim2sim between different MJCFs is nearly as hard as sim2real** — same robot, different model files = different dynamics from step 1.
+- **MJX can't load all MJCFs** — cylinder-box collisions not implemented. Unitree's Go2 uses cylinders, Menagerie uses capsules. Check `mjx.put_model()` before planning to train on third-party XMLs.
 
 ## [Go2 Locomotion](lessons/go2.md) — 7 lessons
 

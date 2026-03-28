@@ -103,3 +103,20 @@ Zero-torque test showed 2-3x joint velocity divergence after a single physics st
 **What worked:** Domain randomization during training (friction, mass, damping, motor strength) + velocity kicks. Policy eval dropped from 233 → 200 but transfers to CPU env cleanly. Still fails on unitree_mujoco though — the MJCF gap is too large for parameter-level DR.
 
 **Lesson:** Sim2sim between your own MJX and CPU envs is easy (same MJCF). Sim2sim between different MJCFs of the "same" robot is nearly as hard as sim2real. If you need to deploy on a different simulator's model (unitree_mujoco, Isaac), either train on THEIR model directly or accept the gap and use aggressive DR + real-world fine-tuning.
+
+---
+
+## MJX Has Unsupported Collision Primitives — Can't Load All MJCFs (2026-03-28)
+
+**What happened:** Tried loading unitree_mujoco's Go2 MJCF into MJX to train directly on their model and eliminate the sim2sim gap. MJX threw `NotImplementedError: (mjtGeom.mjGEOM_CYLINDER, mjtGeom.mjGEOM_BOX) collisions not implemented.`
+
+**Root cause:** Unitree's MJCF uses **cylinder** geoms (type=5) for calf collision bodies. Our Menagerie MJCF uses **capsules** (type=2) for the same parts. MJX only supports a subset of MuJoCo's collision primitives — cylinder-box is not one of them.
+
+**This is a hard MJX limitation**, not a solver or iteration issue. No amount of parameter matching can fix it.
+
+**Options:**
+1. Replace cylinders with capsules in a modified unitree XML — makes it MJX-compatible but changes collision dynamics
+2. Use MuJoCo Warp instead — likely supports full collision primitive set (closer to CPU MuJoCo)
+3. Stay on Menagerie MJCF + DR — which already works for MJX→CPU transfer
+
+**Lesson:** Before attempting to load a third-party MJCF into MJX, check which geom types are used. Run `mjx.put_model()` as a smoke test — it will immediately tell you if unsupported collision pairs exist. MJX's supported collisions as of 2026: sphere, capsule, ellipsoid, box, and plane (not all pairs). Cylinder is NOT supported.
