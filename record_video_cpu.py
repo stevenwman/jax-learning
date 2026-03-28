@@ -27,9 +27,9 @@ def main():
     parser.add_argument("--vx", type=float, default=None, help="Fixed vx (default: random resampling)")
     parser.add_argument("--vy", type=float, default=None)
     parser.add_argument("--yaw", type=float, default=None)
-    parser.add_argument("--duration", type=float, default=10.0)
+    parser.add_argument("--duration", type=float, default=20.0)  # match MJX episode length
     parser.add_argument("--out", type=str, default=None)
-    parser.add_argument("--fps", type=int, default=25)
+    parser.add_argument("--fps", type=int, default=50)  # 50Hz policy = 50fps for real-time
     args = parser.parse_args()
 
     env = Go2CpuEnv()
@@ -47,24 +47,41 @@ def main():
     renderer = mujoco.Renderer(env.model, width=1280, height=720)
     frames = []
 
+    # Trajectory buffers
+    traj_qpos = []
+    traj_qvel = []
+    traj_actions = []
+    traj_commands = []
+
     total_steps = int(args.duration / 0.02)  # 50Hz policy
     frame_skip = max(1, int(1.0 / args.fps / 0.02))
 
-    # Command resampling (same as training env: resample every ~5s)
+    # Command resampling (matches training env: resample every ~5s)
+    # Probability of non-zero per axis: [0.9, 0.25, 0.5] from default_config.command_config.b
     rng = np.random.default_rng(42)
     cmd_max = np.array([1.5, 0.8, 1.2])  # from default_config command_config.a
+    cmd_prob = np.array([0.9, 0.25, 0.5])  # probability of non-zero per axis
     steps_until_resample = 0 if not fixed_cmd else total_steps + 1
 
     print(f"Running {total_steps} steps ({args.duration}s)...")
     for step in range(total_steps):
         if not fixed_cmd and steps_until_resample <= 0:
-            command = rng.uniform(-cmd_max, cmd_max).astype(np.float32)
+            # Sample command with per-axis zero probability (matches training)
+            raw = rng.uniform(-cmd_max, cmd_max).astype(np.float32)
+            mask = (rng.random(3) < cmd_prob).astype(np.float32)
+            command = raw * mask
             steps_until_resample = int(rng.exponential(5.0) / 0.02)
             print(f"  New cmd: vx={command[0]:.2f} vy={command[1]:.2f} yaw={command[2]:.2f} "
                   f"(next in {steps_until_resample} steps)")
         steps_until_resample -= 1
 
         action = runner.get_action(obs)
+
+        traj_qpos.append(env.data.qpos.copy())
+        traj_qvel.append(env.data.qvel.copy())
+        traj_actions.append(action.copy())
+        traj_commands.append(command.copy())
+
         obs, base_z = env.step(action, command)
 
         if step % frame_skip == 0:
@@ -109,6 +126,46 @@ def main():
                 renderer.scene.geoms[renderer.scene.ngeom].rgba = np.array([0, 1, 0, 0.8], dtype=np.float32)
                 renderer.scene.ngeom += 1
 
+            # Yaw command indicator (yellow arc arrow)
+            yaw_cmd = float(command[2])
+            if abs(yaw_cmd) > 0.05:
+                base_pos = env.data.qpos[:3].copy()
+                base_pos[2] = 0.45
+                quat = env.data.qpos[3:7]
+                w, x, y, z = quat
+                # Robot forward direction
+                fwd_x = 1 - 2*(y*y + z*z)
+                fwd_y = 2*(x*y + w*z)
+                # Draw arc: start from front of robot, curve left (positive yaw) or right
+                radius = 0.2
+                sign = 1.0 if yaw_cmd > 0 else -1.0
+                # Perpendicular to forward (left = positive yaw)
+                perp_x = -fwd_y * sign
+                perp_y = fwd_x * sign
+                # Arc start: slightly ahead
+                arc_start = base_pos.copy()
+                arc_start[0] += fwd_x * radius
+                arc_start[1] += fwd_y * radius
+                # Arc end: rotated by yaw magnitude (clamped)
+                arc_angle = min(abs(yaw_cmd) * 0.5, 0.8)
+                arc_end = base_pos.copy()
+                arc_end[0] += (fwd_x * np.cos(arc_angle * sign) - fwd_y * np.sin(arc_angle * sign)) * radius
+                arc_end[1] += (fwd_x * np.sin(arc_angle * sign) + fwd_y * np.cos(arc_angle * sign)) * radius
+                mujoco.mjv_initGeom(
+                    renderer.scene.geoms[renderer.scene.ngeom],
+                    mujoco.mjtGeom.mjGEOM_ARROW,
+                    np.zeros(3), np.zeros(3), np.zeros(9), np.zeros(4),
+                )
+                mujoco.mjv_connector(
+                    renderer.scene.geoms[renderer.scene.ngeom],
+                    mujoco.mjtGeom.mjGEOM_ARROW,
+                    0.01,
+                    arc_start.astype(np.float64),
+                    arc_end.astype(np.float64),
+                )
+                renderer.scene.geoms[renderer.scene.ngeom].rgba = np.array([1, 1, 0, 0.8], dtype=np.float32)
+                renderer.scene.ngeom += 1
+
             frames.append(renderer.render().copy())
 
         if step % 50 == 0:
@@ -126,6 +183,16 @@ def main():
         out = os.path.join(os.path.dirname(args.checkpoint), "cpu_rollout_random_cmd.mp4")
     imageio.mimwrite(out, frames, fps=args.fps)
     print(f"Done: {out} ({len(frames)} frames)")
+
+    # Save trajectory
+    traj_path = out.replace(".mp4", "_traj.npz")
+    np.savez_compressed(traj_path,
+        qpos=np.array(traj_qpos),
+        qvel=np.array(traj_qvel),
+        actions=np.array(traj_actions),
+        commands=np.array(traj_commands),
+    )
+    print(f"Trajectory: {traj_path}")
 
 
 if __name__ == "__main__":
