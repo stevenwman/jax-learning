@@ -178,9 +178,9 @@ def main():
     elif fixed_cmd:
         vx_s = int((args.vx or 0) * 10)
         yaw_s = int((args.yaw or 0) * 10)
-        out = os.path.join(os.path.dirname(args.checkpoint), f"cpu_rollout_{vx_s:+d}vx_{yaw_s:+d}yaw.mp4")
+        out = os.path.join(args.checkpoint, f"cpu_rollout_{vx_s:+d}vx_{yaw_s:+d}yaw.mp4")
     else:
-        out = os.path.join(os.path.dirname(args.checkpoint), "cpu_rollout_random_cmd.mp4")
+        out = os.path.join(args.checkpoint, "cpu_rollout_random_cmd.mp4")
     imageio.mimwrite(out, frames, fps=args.fps)
     print(f"Done: {out} ({len(frames)} frames)")
 
