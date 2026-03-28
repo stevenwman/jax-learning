@@ -217,8 +217,10 @@ Every checkpoint contains: `meta.json` (full config), `metrics.csv` (training cu
 
 ### Roadmap
 See `TODO.md` for full prioritized list. Summary:
-- **Active:** Sim2sim transfer — contact physics gap remaining (condim, friction, cone)
-- **Short-term:** Domain rand, frame stacking, W&B HP tuning agent
+- **Done:** MJX→CPU transfer works (go2_cpu.py walks 20s+). Linvel fix, obs norm fix.
+- **Done:** Domain rand v1 — friction (all geoms, [0.3,1.5]), motor strength [0.9,1.1], mass/damping/COM. PPO+DR eval 200, FastSAC+DR eval 191.
+- **Blocked:** unitree_mujoco transfer — different MJCF = different dynamics from step 1. Irreducible model gap, needs training on their model or real-world fine-tuning.
+- **Short-term:** DIAYN, frame stacking, W&B HP tuning agent, MuJoCo Warp migration
 - **Mid-term:** Vision RL (Madrona MJX `vision=True`, CNN encoder, DrQ)
 - **Long-term:** DIAYN → METRA → USD (skill discovery on real Go2)
 
