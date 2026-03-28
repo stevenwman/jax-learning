@@ -71,7 +71,7 @@ wheels = [
 
 [[package]]
 name = "brax"
-version = "0.14.1"
+version = "0.14.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "absl-py" },
@@ -95,9 +95,9 @@ dependencies = [
     { name = "trimesh" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/39/8f/480ec7af5570dd8e8f03e226eea3f26e11c1053d3fdc319c4d5fbd6af248/brax-0.14.1.tar.gz", hash = "sha256:e2641b2a0ac151da4bb2bae69443a8e8080a0a85907431ec49b42ce72e3097df", size = 206577, upload-time = "2026-02-12T23:21:51.164Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/0f/64/c9edc16f856641a4ae5e21372cb5c56344971f5665f0b2dfbd2dbc8e0dfc/brax-0.14.2.tar.gz", hash = "sha256:fd5240fb30ea0d7b0a9da162eb4a460c3ad415c049453936118e2e05089222c2", size = 211557, upload-time = "2026-03-15T22:31:59.648Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f4/8f/ff354be75b3b0142e3a890cb8312b46fc5853b85e87432a146803f654935/brax-0.14.1-py3-none-any.whl", hash = "sha256:2cd82259a9857f3280d422c1c5103725429904295d22685b4f60c27996933ca9", size = 351008, upload-time = "2026-02-12T23:21:49.99Z" },
+    { url = "https://files.pythonhosted.org/packages/2c/34/c12809ec36063ffab41880b37f2305f8d502345dbf6b5a6471133231c687/brax-0.14.2-py3-none-any.whl", hash = "sha256:d33b7b222ba5d85fd0fc4d4c59aa46feb978684107ad3f79de6bfef97ab06693", size = 356878, upload-time = "2026-03-15T22:31:58.55Z" },
 ]
 
 [[package]]
@@ -732,6 +732,7 @@ dependencies = [
     { name = "imageio", extra = ["ffmpeg"] },
     { name = "jax", extra = ["cuda13"] },
     { name = "playground" },
+    { name = "warp-lang" },
 ]
 
 [package.dev-dependencies]
@@ -747,7 +748,8 @@ requires-dist = [
     { name = "flax", git = "https://github.com/google/flax.git" },
     { name = "imageio", extras = ["ffmpeg"], specifier = ">=2.37.3" },
     { name = "jax", extras = ["cuda13"], specifier = ">=0.9.0" },
-    { name = "playground", specifier = ">=0.1.0" },
+    { name = "playground", specifier = ">=0.2.0" },
+    { name = "warp-lang", specifier = ">=1.12.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -1636,7 +1638,7 @@ wheels = [
 
 [[package]]
 name = "playground"
-version = "0.1.0"
+version = "0.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "absl-py" },
@@ -1653,9 +1655,9 @@ dependencies = [
     { name = "tqdm" },
     { name = "warp-lang" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/67/48/7ef4a08d57c431e7bea8a54c7853726de6cfcc50584442377acb6be615a6/playground-0.1.0.tar.gz", hash = "sha256:30d31d59528005e13f938cbcd5ce40c831553313aa7f861bfa3c9640115f46cf", size = 9894110, upload-time = "2026-01-08T22:18:36.578Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/12/c6/b4f35c67cf5cc500b22098c77d443cd404dc5bc52dd69509e99802a4d97d/playground-0.2.0.tar.gz", hash = "sha256:0f377cbd2f9891f583d3ba8fa66a34c6f8aa4de65dd1d0e388f310a5c6171775", size = 7812417, upload-time = "2026-03-16T18:53:04.083Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/bf/c9/59e9cd044c234b7eb0f9f5480ddec55ffcef79327f78b2004aa7ec80fd76/playground-0.1.0-py3-none-any.whl", hash = "sha256:06e8fd567bab346adfdd31bd13042d0dd121af9cdce28a4155b30d79cf99a91e", size = 10044265, upload-time = "2026-01-08T22:18:34.116Z" },
+    { url = "https://files.pythonhosted.org/packages/6f/56/1e0e378aec16d5a4b422b1b97d73ee8b961f4ee2f4ed04862d954f5c329d/playground-0.2.0-py3-none-any.whl", hash = "sha256:c0f2df426186bd681d8f536cead80d43460ea6431db09ced32251910d4eef850", size = 7964958, upload-time = "2026-03-16T18:53:02.044Z" },
 ]
 
 [[package]]
