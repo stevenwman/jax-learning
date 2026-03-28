@@ -19,7 +19,7 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
     # Friction: randomize ALL geoms (MuJoCo uses max-combine, so floor-only
     # doesn't work if foot friction caps it). Range from WTW: [0.05, 4.5].
     rng, key = jax.random.split(rng)
-    fric_val = jax.random.uniform(key, minval=0.05, maxval=4.5)
+    fric_val = jax.random.uniform(key, minval=0.3, maxval=1.5)
     # Set tangential friction on all geoms uniformly
     geom_friction = model.geom_friction.at[:, 0].set(fric_val)
 
