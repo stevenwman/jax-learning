@@ -173,14 +173,16 @@ def main():
 
     renderer.close()
 
+    from datetime import datetime
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     if args.out:
         out = args.out
     elif fixed_cmd:
         vx_s = int((args.vx or 0) * 10)
         yaw_s = int((args.yaw or 0) * 10)
-        out = os.path.join(args.checkpoint, f"cpu_rollout_{vx_s:+d}vx_{yaw_s:+d}yaw.mp4")
+        out = os.path.join(args.checkpoint, f"{ts}_cpu_{vx_s:+d}vx_{yaw_s:+d}yaw.mp4")
     else:
-        out = os.path.join(args.checkpoint, "cpu_rollout_random_cmd.mp4")
+        out = os.path.join(args.checkpoint, f"{ts}_cpu_random_cmd.mp4")
     imageio.mimwrite(out, frames, fps=args.fps)
     print(f"Done: {out} ({len(frames)} frames)")
 
