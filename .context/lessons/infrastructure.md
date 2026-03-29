@@ -106,3 +106,15 @@ Setup: `bash deploy/setup_deploy_deps.sh`
 Spent hours debugging Go2 PPO at eval ~17. Playground paper shows Go1 reaching ~25 at 100M steps. Our 50M runs were simply undertrained.
 
 **Lesson:** Check what the reference achieves at the same training budget before debugging.
+
+---
+
+## `--eval-every` Is Episodes, Not Steps (2026-03-29)
+
+**What happened:** Ran `--eval-every 5000000` expecting eval every 5M steps. Got zero evals in a 50M step run. Eval output was "missing" — thought it was buried in Warp warning spam.
+
+**Root cause:** `train_ppo_fast.py` line 367: `if n_eps_total >= last_eval_eps + cfg.eval_every_n_episodes`. The `--eval-every` CLI flag maps to `eval_every_n_episodes`, NOT steps. 5M episodes is never reached in a 50M step run (~500k episodes total).
+
+**Fix:** Use episode-scale values: `--eval-every 50000` for ~10 evals in a typical Go2 run. Or `--eval-every 100000` for ~5 evals.
+
+**Lesson:** Read the argparse help text AND trace the flag through to where it's used. `--eval-every` is ambiguous — it could mean steps, episodes, or wall-clock seconds. The flag name doesn't tell you.

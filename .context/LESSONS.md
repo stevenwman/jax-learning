@@ -58,7 +58,7 @@ JAX/Flax fundamentals in `LEARNER_LESSONS.md`.
 - **lax.scan carry cost** — 4M-entry buffer in carry = 30% slower than Python loop
 - **Faster component ≠ faster training** — 4.8x buffer speedup = 1.5% end-to-end improvement
 
-## [Infrastructure](lessons/infrastructure.md) — 9 lessons
+## [Infrastructure](lessons/infrastructure.md) — 10 lessons
 
 - **Orbax checkpointing** — must call `wait_until_finished()`, save meta.json alongside
 - **Orbax restore needs exact pytree match** — separate inference artifacts (numpy) from training (orbax)
@@ -70,8 +70,9 @@ JAX/Flax fundamentals in `LEARNER_LESSONS.md`.
 - **CycloneDDS requires Python <3.13** — separate deploy venv (3.12) from training venv (3.13)
 - **Integer division truncation** — `200000 // 128 * 128 = 199936`, final eval never fired
 - **Verify training budget before debugging** — eval ~17 at 50M steps was on-curve, not broken
+- **`--eval-every` is episodes, not steps** — `--eval-every 5000000` = 5M episodes, never triggers. Use ~50000 for Go2.
 
-## [MJX Physics](lessons/mjx.md) — 7 lessons
+## [MJX Physics](lessons/mjx.md) — 9 lessons
 
 - **MJX physics NaN at scale** — stochastic contact solver failure, guard with NaN+Inf checks on env boundary
 - **GPU OOM is usually not a leak** — RTX 5080 starts at 95% capacity, XLA command buffers accumulate
@@ -80,7 +81,9 @@ JAX/Flax fundamentals in `LEARNER_LESSONS.md`.
 - **MuJoCo friction is max-combine** — randomize foot geoms not just floor. PhysX DR ranges don't port to MuJoCo.
 - **Sim2sim between different MJCFs is nearly as hard as sim2real** — same robot, different model files = different dynamics from step 1.
 - **MJX can't load all MJCFs** — cylinder-box collisions not implemented. Unitree's Go2 uses cylinders, Menagerie uses capsules. Check `mjx.put_model()` before planning to train on third-party XMLs.
-- **Warp CCD overflow — size naccdmax for complex geometry** — unitree's cylinder+box collisions at 1024 envs caused 8.6M overflow warnings and 30% sps loss. Set `naccdmax=2000` in config. Playground 0.2.0 also renamed `nconmax` → `naconmax`.
+- **Warp CCD overflow — size naccdmax for complex geometry** — unitree's cylinder+box collisions at 1024 envs caused 8.6M overflow warnings and 30% sps loss. Set `naccdmax=4000` in config. Playground 0.2.0 also renamed `nconmax` → `naconmax`.
+- **Warp forcerange=[0,0] = unlimited** — unitree XML sets ctrlrange but not forcerange. PD torques were unclamped → joints contorted → eval 2.2. Set forcerange = ctrlrange → eval 14.1.
+- **Warp inherits XML solver settings** — unitree's iterations=100, elliptic cone, eulerdamp=on vs MJX's iterations=1, pyramidal, eulerdamp=off. Must audit `<option>` block when porting envs.
 
 ## [Go2 Locomotion](lessons/go2.md) — 7 lessons
 
