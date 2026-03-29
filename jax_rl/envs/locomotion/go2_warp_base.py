@@ -48,7 +48,7 @@ class Go2WarpEnv(mjx_env.MjxEnv):
 
         # --- Always-applied overrides ---
         self._mj_model.opt.timestep = self._config.sim_dt
-        self._mj_model.opt.ccd_iterations = 20
+        self._mj_model.opt.ccd_iterations = 50  # Warp needs more for cylinder+box geometry
 
         # --- contact_mode overrides ---
         # "training": firm foot contacts for crisp push-off (matches Go1 PG).

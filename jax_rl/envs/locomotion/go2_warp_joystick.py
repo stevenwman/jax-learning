@@ -69,7 +69,7 @@ def default_config() -> config_dict.ConfigDict:
         impl="warp",
         contact_mode="training",
         naconmax=4 * 8192,
-        naccdmax=2000,
+        naccdmax=4000,
         njmax=80,
     )
 
