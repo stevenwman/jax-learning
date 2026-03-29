@@ -70,7 +70,7 @@ def default_config() -> config_dict.ConfigDict:
         contact_mode="training",
         naconmax=4 * 8192,
         naccdmax=4000,
-        njmax=80,
+        njmax=100,
     )
 
 
