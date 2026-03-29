@@ -61,6 +61,12 @@ class Go2WarpEnv(mjx_env.MjxEnv):
                 self._mj_model.geom_condim[gid] = 3
                 self._mj_model.geom_friction[gid] = _np.array([0.6, 0.005, 0.0001])
 
+        # Set actuator force limits (unitree XML has forcerange=[0,0] = unlimited).
+        # Must match ctrlrange so PD torques are clamped to motor limits.
+        import numpy as _np
+        for i in range(self._mj_model.nu):
+            self._mj_model.actuator_forcerange[i] = self._mj_model.actuator_ctrlrange[i]
+
         # PD gains for external PD in step().
         self._kp = config.Kp
         self._kd = config.Kd
