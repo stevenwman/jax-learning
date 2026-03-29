@@ -69,6 +69,7 @@ def default_config() -> config_dict.ConfigDict:
         impl="warp",
         contact_mode="training",
         naconmax=4 * 8192,
+        naccdmax=2000,
         njmax=80,
     )
 
@@ -153,6 +154,7 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
             ctrl=jp.zeros(self.mjx_model.nu),
             impl=self.mjx_model.impl.value,
             naconmax=self._config.naconmax,
+            naccdmax=self._config.naccdmax,
             njmax=self._config.njmax,
         )
         data = mjx.forward(self.mjx_model, data)
