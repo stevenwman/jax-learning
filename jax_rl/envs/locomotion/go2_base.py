@@ -17,6 +17,7 @@ from mujoco import mjx
 
 from mujoco_playground._src import mjx_env
 from jax_rl.envs.locomotion import go2_constants as consts
+from jax_rl.envs.locomotion import go2_sensors
 
 
 def get_assets() -> Dict[str, bytes]:
@@ -111,41 +112,29 @@ class Go2Env(mjx_env.MjxEnv):
     # ── Sensor readings ─────────────────────────────────────────────────
 
     def get_upvector(self, data: mjx.Data) -> jax.Array:
-        return mjx_env.get_sensor_data(
-            self.mj_model, data, consts.UPVECTOR_SENSOR
-        )
+        return go2_sensors.get_sensor_by_name(self.mj_model, data, consts.UPVECTOR_SENSOR)
 
     def get_gravity(self, data: mjx.Data) -> jax.Array:
-        return data.site_xmat[self._imu_site_id].T @ jp.array([0, 0, -1])
+        return go2_sensors.get_gravity(data, self._imu_site_id)
 
     def get_global_linvel(self, data: mjx.Data) -> jax.Array:
-        return mjx_env.get_sensor_data(
-            self.mj_model, data, consts.GLOBAL_LINVEL_SENSOR
-        )
+        return go2_sensors.get_sensor_by_name(self.mj_model, data, consts.GLOBAL_LINVEL_SENSOR)
 
     def get_global_angvel(self, data: mjx.Data) -> jax.Array:
-        return mjx_env.get_sensor_data(
-            self.mj_model, data, consts.GLOBAL_ANGVEL_SENSOR
-        )
+        return go2_sensors.get_sensor_by_name(self.mj_model, data, consts.GLOBAL_ANGVEL_SENSOR)
 
     def get_local_linvel(self, data: mjx.Data) -> jax.Array:
-        return mjx_env.get_sensor_data(
-            self.mj_model, data, consts.LOCAL_LINVEL_SENSOR
-        )
+        return go2_sensors.get_sensor_by_name(self.mj_model, data, consts.LOCAL_LINVEL_SENSOR)
 
     def get_accelerometer(self, data: mjx.Data) -> jax.Array:
-        return mjx_env.get_sensor_data(
-            self.mj_model, data, consts.ACCELEROMETER_SENSOR
-        )
+        return go2_sensors.get_sensor_by_name(self.mj_model, data, consts.ACCELEROMETER_SENSOR)
 
     def get_gyro(self, data: mjx.Data) -> jax.Array:
-        return mjx_env.get_sensor_data(
-            self.mj_model, data, consts.GYRO_SENSOR
-        )
+        return go2_sensors.get_sensor_by_name(self.mj_model, data, consts.GYRO_SENSOR)
 
     def get_feet_pos(self, data: mjx.Data) -> jax.Array:
         return jp.vstack([
-            mjx_env.get_sensor_data(self.mj_model, data, name)
+            go2_sensors.get_sensor_by_name(self.mj_model, data, name)
             for name in consts.FEET_POS_SENSOR
         ])
 
