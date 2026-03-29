@@ -60,11 +60,16 @@
 - [ ] W&B HP tuning agent — Claude reads wandb curves via API, diagnoses stagnation/divergence, proposes HP changes (lr, entropy_coef, UTD ratio, reward weights). Could be a hook or a scheduled agent.
 
 ## Short-term (MuJoCo Warp migration — HIGH PRIORITY)
-- [ ] Install mujoco-warp==3.6.0, verify unitree Go2 MJCF loads and steps (MJX can't — cylinder-box collisions unsupported)
-- [ ] Train on unitree's MJCF via Warp — eliminates sim2sim gap entirely (the #1 transfer blocker)
-- [ ] Abstract physics backend (MJX vs Warp) so envs work on either — same overrides, swap `impl`
-- [ ] Benchmark Warp vs MJX sps on Go2 (reported 152x faster on locomotion)
-- [ ] Brainstorm full spec: how Warp integrates with our env code, training loop changes (Warp uses CUDA not JAX), data bridge
+- [x] Brainstorm full spec — design doc at `docs/superpowers/specs/2026-03-28-warp-go2-env-design.md`
+- [x] Install `warp-lang>=1.12` + `playground>=0.2.0`, verify unitree Go2 MJCF loads with `impl="warp"`
+- [x] Vendor unitree_mujoco go2.xml + meshes, patch foot sites, create Warp scene XML
+- [x] Implement `Go2WarpEnv` base + `WarpJoystick` env with `contact_mode` flag (training/deploy)
+- [x] Extract shared sensor helpers (`go2_sensors.py`), parameterize DR body ID
+- [x] Register `Go2WarpJoystickFlat`, smoke test PPO training (500k steps, 8.5k sps, no NaN/crash)
+- [ ] Train PPO on unitree MJCF via Warp — full 50M run to get eval score
+
+## Short-term — Asymmetric off-policy critic
+- [ ] Add privileged critic support to SAC/TD3 training scripts (`train_offpolicy.py`). Actor sees `obs["state"]` (48d), critic sees `obs["privileged_state"]` (122d). Theoretically justified: Pinto 2017 (DDPG, the original asymmetric AC paper), Lambrechts ICML 2025 (unbiased policy gradients, algorithm-agnostic). No published system combines SAC + privileged critic + legged locomotion — this would be novel.
 
 ## Mid-term (Vision RL)
 - [ ] Install `madrona_mjx`, verify Playground `vision=True` on RTX 5080

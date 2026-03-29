@@ -163,7 +163,7 @@ jax-learning/
 ├── train_offpolicy.py        # SAC/TD3/FastTD3/FastSAC via --algo flag
 ├── record_video.py           # Loads any checkpoint, renders rollout + _traj.npz
 ├── jax_rl/algos/             # ppo.py, sac.py, td3.py, fast_td3.py, fast_sac.py
-├── jax_rl/envs/locomotion/   # go2_base.py, go2_joystick.py, go2_constants.py
+├── jax_rl/envs/locomotion/   # go2_base.py, go2_joystick.py, go2_warp_base.py, go2_warp_joystick.py
 ├── jax_rl/configs/           # train_config.py, *_config.py, env_presets.py
 ├── jax_rl/training/          # checkpointing, eval_runner, env_setup, metrics_logger
 ├── jax_rl/buffers/           # jax_replay_buffer.py, rollout_buffer.py
@@ -184,6 +184,7 @@ Every checkpoint contains: `meta.json` (full config), `metrics.csv` (training cu
 - **Actuator model**: `motor` (direct torque) + external PD per substep. Matches unitree_mujoco and real robot. (Was `general` with built-in PD — switched 2026-03-26.)
 - **Working PPO config**: tracking_lin_vel=10.0, tracking_ang_vel=5.0, height_termination=True, Kp=35, Kd=0.1, calf_torque=45.43Nm
 - **Best PPO**: eval 244 @ 50M steps (seed 4000, motor actuators)
+- **Warp env**: `Go2WarpJoystickFlat` — uses unitree_mujoco's go2.xml (full cylinder collision geometry) via MuJoCo Warp backend. Eliminates sim2sim gap. `contact_mode` flag: `"training"` (firm contacts) / `"deploy"` (unitree-native physics). Train with: `uv run python train_ppo_fast.py --env Go2WarpJoystickFlat`
 
 ---
 
@@ -232,6 +233,7 @@ See `TODO.md` for full prioritized list. Summary:
 ```bash
 # Training
 uv run python train_ppo_fast.py --env Go2JoystickFlat --num-envs 1024 --total-timesteps 200000000
+uv run python train_ppo_fast.py --env Go2WarpJoystickFlat --num-envs 1024 --total-timesteps 200000000  # Warp backend (unitree MJCF)
 uv run python train_offpolicy.py --algo sac --env Go2JoystickFlat --obs-norm
 
 # Monitoring
