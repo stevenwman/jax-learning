@@ -41,6 +41,7 @@ ENV_DEFAULTS = {
     "HumanoidWalk":     ((256, 256), "side"),
     "HumanoidStand":    ((256, 256), "side"),
     "Go2JoystickFlat":  ((480, 480), "track"),
+    "Go2WarpJoystickFlat": ((480, 480), None),  # no named camera — use free cam
 }
 
 
@@ -259,7 +260,17 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
         mj_data.qpos[:] = np.array(state_i.data.qpos)
         mj_data.qvel[:] = np.array(state_i.data.qvel)
         mujoco.mj_forward(env.mj_model, mj_data)
-        renderer.update_scene(mj_data, camera=camera)
+        if camera is not None:
+            renderer.update_scene(mj_data, camera=camera)
+        else:
+            # Free camera with body tracking
+            cam = mujoco.MjvCamera()
+            cam.type = mujoco.mjtCamera.mjCAMERA_TRACKING
+            cam.trackbodyid = 1  # base/base_link (body ID 1 in both models)
+            cam.distance = 2.0
+            cam.azimuth = 135
+            cam.elevation = -20
+            renderer.update_scene(mj_data, camera=cam)
 
         # Add command arrow in robot's local frame
         if has_commands and idx > 0 and idx <= len(trajectory.info['command']):
