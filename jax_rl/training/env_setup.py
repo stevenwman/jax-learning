@@ -22,6 +22,14 @@ def _register_custom_envs():
             functools.partial(Joystick, task="flat_terrain"),
             default_config,
         )
+    from jax_rl.envs.locomotion.go2_warp_joystick import WarpJoystick
+    from jax_rl.envs.locomotion.go2_warp_joystick import default_config as warp_default_config
+    if "Go2WarpJoystickFlat" not in pg_locomotion._envs:
+        pg_locomotion.register_environment(
+            "Go2WarpJoystickFlat",
+            functools.partial(WarpJoystick, task="flat_terrain"),
+            warp_default_config,
+        )
 
 _register_custom_envs()
 

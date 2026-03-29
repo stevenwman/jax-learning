@@ -91,3 +91,38 @@ class TestWarpContactModes:
         env = WarpJoystick(task="flat_terrain", config=cfg)
         gid = env.mj_model.geom("FL").id
         assert env.mj_model.geom_condim[gid] == 6
+
+
+class TestWarpBatched:
+    def test_make_envs_integration(self):
+        """Test Warp Go2 through the full make_envs pipeline."""
+        from jax_rl.training.env_setup import make_envs
+        from jax_rl.configs.train_config import TrainConfig
+
+        cfg = TrainConfig(
+            env_name="Go2WarpJoystickFlat",
+            num_envs=4,
+            total_timesteps=1000,
+        )
+        env, env_step, env_state, eval_env, obs_dim, action_dim, key = make_envs(
+            cfg, seed=0
+        )
+        assert obs_dim == 48
+        assert action_dim == 12
+        assert isinstance(env_state.obs, dict)
+        assert env_state.obs["state"].shape == (4, 48)
+
+        # Test batched step
+        action = jnp.zeros((4, 12))
+        next_state = env_step(env_state, action)
+        assert isinstance(next_state.obs, dict)
+        assert not jnp.any(jnp.isnan(next_state.obs["state"]))
+
+    def test_existing_envs_still_work(self):
+        """Regression: MJX Go2 still loads after registry change."""
+        from jax_rl.training.env_setup import make_envs
+        from jax_rl.configs.train_config import TrainConfig
+
+        cfg = TrainConfig(env_name="Go2JoystickFlat", num_envs=2, total_timesteps=1000)
+        _, _, env_state, _, obs_dim, _, _ = make_envs(cfg, seed=0)
+        assert obs_dim == 48
