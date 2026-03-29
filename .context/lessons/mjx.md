@@ -120,3 +120,19 @@ Zero-torque test showed 2-3x joint velocity divergence after a single physics st
 3. Stay on Menagerie MJCF + DR — which already works for MJX→CPU transfer
 
 **Lesson:** Before attempting to load a third-party MJCF into MJX, check which geom types are used. Run `mjx.put_model()` as a smoke test — it will immediately tell you if unsupported collision pairs exist. MJX's supported collisions as of 2026: sphere, capsule, ellipsoid, box, and plane (not all pairs). Cylinder is NOT supported.
+
+---
+
+## MuJoCo Warp CCD Overflow — naccdmax Sizing for Complex Geometry (2026-03-29)
+
+**What happened:** Training Go2WarpJoystickFlat at 1024 envs produced 8.6 million lines of `CCD overflow - please increase naccdmax to N` warnings. Training ran at 65k sps instead of ~91k, and contacts were silently being dropped each step.
+
+**Root cause:** Unitree's go2.xml has full collision geometry (cylinders + boxes on every leg) — many more geom pairs than Menagerie's sphere-only go2_mjx.xml. Warp's CCD (continuous collision detection) broadphase buffer was too small at the default size. The max overflow value hit 1251, meaning that many collision candidates were truncated per step.
+
+**Fix:** Set `naccdmax=2000` in `default_config()` and pass it through `make_data()`. Overflow count dropped from 8.6M to ~1430 (occasional spikes). sps went from 65k → 91k at 1024 envs.
+
+**The `ccd_iterations` warning** (`opt.ccd_iterations, currently set to 20, needs to be increased`) also appears but doesn't produce per-step spam. This is a Warp-specific advisory that the CCD solver wants more iterations for complex geometry. Monitor for contact artifacts — if feet clip through floor, increase it.
+
+**Playground 0.2.0 API change:** The parameter was renamed from `nconmax` to `naconmax`, and `naccdmax` is new (didn't exist in the MJX-only API). When upgrading Playground, check `make_data()` signature for renamed/new parameters.
+
+**Lesson:** When using Warp with complex collision geometry at high env counts, you MUST size `naccdmax` appropriately. Start with 2x the max overflow value you see. The performance impact of overflow is significant (~30% sps loss) because Warp retries/logs per overflow per env per substep. The warnings are not just noise — they indicate dropped contacts that affect physics fidelity.

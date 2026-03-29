@@ -71,7 +71,7 @@ JAX/Flax fundamentals in `LEARNER_LESSONS.md`.
 - **Integer division truncation** — `200000 // 128 * 128 = 199936`, final eval never fired
 - **Verify training budget before debugging** — eval ~17 at 50M steps was on-curve, not broken
 
-## [MJX Physics](lessons/mjx.md) — 6 lessons
+## [MJX Physics](lessons/mjx.md) — 7 lessons
 
 - **MJX physics NaN at scale** — stochastic contact solver failure, guard with NaN+Inf checks on env boundary
 - **GPU OOM is usually not a leak** — RTX 5080 starts at 95% capacity, XLA command buffers accumulate
@@ -80,6 +80,7 @@ JAX/Flax fundamentals in `LEARNER_LESSONS.md`.
 - **MuJoCo friction is max-combine** — randomize foot geoms not just floor. PhysX DR ranges don't port to MuJoCo.
 - **Sim2sim between different MJCFs is nearly as hard as sim2real** — same robot, different model files = different dynamics from step 1.
 - **MJX can't load all MJCFs** — cylinder-box collisions not implemented. Unitree's Go2 uses cylinders, Menagerie uses capsules. Check `mjx.put_model()` before planning to train on third-party XMLs.
+- **Warp CCD overflow — size naccdmax for complex geometry** — unitree's cylinder+box collisions at 1024 envs caused 8.6M overflow warnings and 30% sps loss. Set `naccdmax=2000` in config. Playground 0.2.0 also renamed `nconmax` → `naconmax`.
 
 ## [Go2 Locomotion](lessons/go2.md) — 7 lessons
 
