@@ -96,8 +96,10 @@ def make_envs(cfg: TrainConfig, seed: int):
     if getattr(cfg, 'domain_rand', False) and 'Go2' in cfg.env_name:
         from jax_rl.envs.locomotion.go2_randomize import domain_randomize
         key, rand_key = jax.random.split(jax.random.PRNGKey(seed))
+        torso_body_id = getattr(env, '_torso_body_id', 1)
         rand_fn = functools.partial(
             domain_randomize, rng=jax.random.split(rand_key, cfg.num_envs),
+            torso_body_id=torso_body_id,
         )
 
     env = wrap_for_brax_training(

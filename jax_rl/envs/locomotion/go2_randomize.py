@@ -7,11 +7,7 @@ Ranges informed by walk-these-ways Go2 fork, unitree_rl_lab, and Isaac Lab.
 import jax
 from mujoco import mjx
 
-FLOOR_GEOM_ID = 0
-TORSO_BODY_ID = 1  # "base" in Go2
-
-
-def domain_randomize(model: mjx.Model, rng: jax.Array):
+def domain_randomize(model: mjx.Model, rng: jax.Array, torso_body_id: int = 1):
   """Randomize physics parameters per-env for vmapped training."""
 
   @jax.vmap
@@ -47,8 +43,8 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
     # Jitter torso COM: +U(-0.08, 0.08).
     rng, key = jax.random.split(rng)
     dpos = jax.random.uniform(key, (3,), minval=-0.08, maxval=0.08)
-    body_ipos = model.body_ipos.at[TORSO_BODY_ID].set(
-        model.body_ipos[TORSO_BODY_ID] + dpos
+    body_ipos = model.body_ipos.at[torso_body_id].set(
+        model.body_ipos[torso_body_id] + dpos
     )
 
     # Scale all link masses: *U(0.8, 1.2) — wider (was 0.9-1.1).
@@ -61,8 +57,8 @@ def domain_randomize(model: mjx.Model, rng: jax.Array):
     # Add payload mass to torso: +U(-1.0, 3.0) kg.
     rng, key = jax.random.split(rng)
     dmass = jax.random.uniform(key, minval=-1.0, maxval=3.0)
-    body_mass = body_mass.at[TORSO_BODY_ID].set(
-        body_mass[TORSO_BODY_ID] + dmass
+    body_mass = body_mass.at[torso_body_id].set(
+        body_mass[torso_body_id] + dmass
     )
 
     # Motor strength: *U(0.9, 1.1) — models battery sag / motor variation.
