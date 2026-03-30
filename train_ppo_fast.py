@@ -360,7 +360,8 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
                 "sps": sps,
                 "iter_time": iter_time,
             })
-            wandb_log(metrics_log[-1], step=total_steps)
+            if iteration > 0:  # skip iter 0 — VLoss is garbage before first real update
+                wandb_log(metrics_log[-1], step=total_steps)
 
         # ── Eval + checkpoint ─────────────────────────────────────────────
         n_eps_total = tracker.n_episodes
