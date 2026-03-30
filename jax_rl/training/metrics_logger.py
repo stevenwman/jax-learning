@@ -126,6 +126,8 @@ def make_metrics_row(
         "max_return": stats["max"],
         "q1_mean": float(last_metrics.get("q1_mean", float("nan"))),
         "q2_mean": float(last_metrics.get("q2_mean", float("nan"))),
+        "q1_loss": float(last_metrics.get("q1_loss", float("nan"))),
+        "q2_loss": float(last_metrics.get("q2_loss", float("nan"))),
         "actor_loss": float(last_metrics.get("actor_loss", float("nan"))),
         "grad_steps": grad_steps,
         "sps": sps,
