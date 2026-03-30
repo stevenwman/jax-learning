@@ -58,6 +58,7 @@ def default_config() -> config_dict.ConfigDict:
                 termination=-1.0,
                 stand_still=-1.0,
                 pose=0.5,
+                base_height=-5.0,
             ),
             tracking_sigma=0.25,
             max_foot_height=0.1,
@@ -416,6 +417,7 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
             "termination": self._cost_termination(done),
             "stand_still": self._cost_stand_still(info["command"], data.qpos[7:]),
             "pose": self._reward_pose(data.qpos[7:]),
+            "base_height": self._cost_base_height(data),
         }
 
     # ── Tracking rewards ────────────────────────────────────────────────
@@ -521,6 +523,11 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
     def _reward_pose(self, qpos: jax.Array) -> jax.Array:
         weight = jp.array([1.0, 1.0, 0.1] * 4)
         return jp.exp(-jp.sum(jp.square(qpos - self._default_pose) * weight))
+
+    def _cost_base_height(self, data: mjx.Data) -> jax.Array:
+        """Penalize deviation from target standing height (0.27m)."""
+        base_z = data.subtree_com[self._torso_body_id][2]
+        return jp.square(base_z - 0.27)
 
     # ── Command sampling ────────────────────────────────────────────────
 
