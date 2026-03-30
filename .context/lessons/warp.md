@@ -62,3 +62,22 @@ for i in range(self._mj_model.nu):
 These create fundamentally different contact dynamics. The reward weights (tracking_lin_vel=10, orientation=-5, etc.) were tuned on MJX's soft 1-iteration pyramidal solver. The 100-iteration elliptic solver is much stiffer — the robot's foot contacts behave differently, making the same reward landscape much harder to optimize.
 
 **Lesson:** When porting an env to a new MJCF, don't just check actuators and geometry — audit `<option>` solver settings. `iterations`, `ls_iterations`, `cone`, and `eulerdamp` can make the same robot feel like a completely different physical system. These are NOT overridden by `go2_base.py`-style runtime patches because our MJX env inherits them from `go2_mjx.xml` which was already tuned for MJX.
+
+---
+
+## PD Gains Must Match Solver Stiffness — Kp/Kd From One Solver Don't Transfer (2026-03-29)
+
+**What happened:** Warp Go2 with Kp=35, Kd=0.1 (copied from MJX env, originally from Playground Go1) couldn't stand. PD hold test showed calves losing against gravity — pos_error grew monotonically from 0 → 0.36 rad over 28 steps, then oscillation spiked to 10+ rad/s at step 51 and robot collapsed.
+
+**Root cause:** Two interacting issues:
+1. **Kd=0.1 is too low** for 100-iteration solver. At 10 rad/s velocity, damping = 0.1 × 10 = 1 Nm — negligible. Oscillation built unchecked.
+2. **Kp=35 wasn't enough** for stiff contacts. With 100 solver iterations (vs MJX's 1), contacts are rigid and full robot weight bears directly on joints. Kp=35 × 0.36 rad error = 12.6 Nm — insufficient to fight gravity through the knee.
+
+**Fix:** Use unitree_rl_gym's PD gains: **Kp=20, Kd=0.5**. These were designed for this exact solver configuration (100 iterations, elliptic cone). Lower Kp (softer position tracking) but 5x higher Kd (kills oscillation). Robot holds at 0.203m for 10+ seconds — stable.
+
+**Diagnostic method:** `tools/pd_hold_test.py` — JIT'd zero-action PD hold with per-step pos_error, velocity, and torque printout. Key signals:
+- Monotonically growing pos_error = PD losing against load
+- Velocity spikes = oscillation from underdamping
+- Torque near limits = Kp too low for the error magnitude
+
+**Lesson:** PD gains are tightly coupled to solver settings. Kp/Kd tuned on a 1-iteration pyramidal solver (MJX) cannot be reused on a 100-iteration elliptic solver (Warp/unitree). Always use PD gains from the same physics configuration. For Go2: Kp=35/Kd=0.1 for MJX, Kp=20/Kd=0.5 for Warp/unitree.

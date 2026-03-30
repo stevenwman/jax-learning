@@ -83,12 +83,13 @@ JAX/Flax fundamentals in `LEARNER_LESSONS.md`.
 - **MJX can't load all MJCFs** — cylinder-box collisions not implemented. Unitree's Go2 uses cylinders, Menagerie uses capsules. Check `mjx.put_model()` before planning to train on third-party XMLs.
 - **MJX can't load all MJCFs** — cylinder-box collisions not implemented. Use MuJoCo Warp instead.
 
-## [MuJoCo Warp](lessons/warp.md) — 4 lessons
+## [MuJoCo Warp](lessons/warp.md) — 5 lessons
 
 - **CCD overflow — size naccdmax for complex geometry** — 8.6M overflow warnings at 1024 envs, 30% sps loss. Set `naccdmax=4000`, `ccd_iterations=100`, `njmax=100`.
 - **OOMs in Python loops — must JIT physics steps** — Warp allocates collision buffers per `mjx.step()` call. Python loop = OOM. `lax.scan` = instant. Always JIT.
 - **forcerange=[0,0] = unlimited** — unitree XML sets ctrlrange but not forcerange. PD torques unclamped → joints contorted → eval 2.2. Set forcerange = ctrlrange.
 - **Inherits XML solver settings** — unitree's iterations=100, elliptic cone, eulerdamp=on vs MJX's 1/pyramidal/off. Audit `<option>` block when porting envs.
+- **PD gains must match solver stiffness** — Kp=35/Kd=0.1 (MJX, 1-iter) collapsed on Warp (100-iter). Use Kp=20/Kd=0.5 (unitree_rl_gym). PD gains are coupled to solver config.
 
 ## [Go2 Locomotion](lessons/go2.md) — 7 lessons
 
