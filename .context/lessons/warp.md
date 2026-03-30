@@ -65,6 +65,38 @@ These create fundamentally different contact dynamics. The reward weights (track
 
 ---
 
+## Joint Order ≠ Actuator Order — THE Root Cause of Warp Go2 Failure (2026-03-29)
+
+**What happened:** Warp Go2 env couldn't stand, couldn't recover from kicks, joints slammed to limits instantly. Spent hours debugging PD gains (Kp=20 vs 35), solver settings (iterations 1 vs 100), entropy tuning — none of it mattered. Best eval was 211 with the robot squatting motionless.
+
+**Root cause:** In unitree's go2.xml, `qpos[7:]` is in body-tree order (**FL**, FR, RL, RR) but `ctrl` is in actuator order (**FR**, FL, RR, RL). The PD controller read position from `data.qpos[7:]` and wrote torque to `data.ctrl` — sending FL_hip's torque to FR_hip's actuator and vice versa. Every correction the PD made was applied to the wrong leg. The robot was fighting itself.
+
+**Why it didn't affect MJX:** Menagerie's go2_mjx.xml has actuators in the SAME order as body tree (both FL-first). Joint order = actuator order = no mismatch.
+
+**Why it was so hard to find:**
+- The robot DID partially learn (eval 211) because PPO is robust enough to find a static strategy even with cross-wired legs
+- PD-hold tests showed "working" behavior for the first 10 steps because the initial error is near zero and the cross-wired torques are also near zero
+- The collapse happened gradually (exponential divergence from small perturbation), looking like a physics/solver issue rather than a wiring bug
+- We went down rabbit holes: solver iterations (1 vs 100), PD gains (Kp 20 vs 35), entropy coefficient, reward weights — all red herrings
+
+**Fix:**
+```python
+# Build mapping: act_to_joint[actuator_idx] = joint_idx
+for i in range(nu):
+    act_to_joint[i] = model.actuator_trnid[i, 0] - 1
+
+# In PD substep: remap before writing to ctrl
+tau_joint = kp * (target - qpos[7:]) + kd * (0 - qvel[6:])
+tau_act = tau_joint[act_to_joint]  # ctrl[a] = tau_joint[act_to_joint[a]]
+data = data.replace(ctrl=tau_act)
+```
+
+**After fix:** Robot stands at 0.212m, survives velocity kicks, recovers from being airborne. PD-hold test runs 500 steps (10 seconds) with alternating horizontal and upward kicks — stable throughout.
+
+**Lesson:** When using a third-party MJCF, NEVER assume joint order equals actuator order. MuJoCo's body tree defines qpos/qvel order (by XML body hierarchy), but actuator order is defined by the `<actuator>` block (arbitrary). ALWAYS verify by printing both orderings. If they differ, every operation that reads qpos and writes ctrl needs an explicit remapping. This is the single most impactful bug of the entire Warp migration — everything else was noise.
+
+---
+
 ## PD Gains Must Match Solver Stiffness — Kp/Kd From One Solver Don't Transfer (2026-03-29)
 
 **What happened:** Warp Go2 with Kp=35, Kd=0.1 (copied from MJX env, originally from Playground Go1) couldn't stand. PD hold test showed calves losing against gravity — pos_error grew monotonically from 0 → 0.36 rad over 28 steps, then oscillation spiked to 10+ rad/s at step 51 and robot collapsed.
