@@ -42,8 +42,8 @@ def default_config() -> config_dict.ConfigDict:
         ),
         reward_config=config_dict.create(
             scales=config_dict.create(
-                tracking_lin_vel=20.0,
-                tracking_ang_vel=10.0,
+                tracking_lin_vel=10.0,
+                tracking_ang_vel=5.0,
                 lin_vel_z=-0.5,
                 ang_vel_xy=-0.05,
                 orientation=-5.0,
