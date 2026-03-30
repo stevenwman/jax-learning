@@ -30,6 +30,8 @@ from jax_rl.training.checkpointing import load_actor_for_inference
 # Register custom envs (Go2 etc.) with Playground's registry.
 import jax_rl.training.env_setup  # noqa: F401 — side effect: registers custom envs
 from jax_rl.utils.normalization import normalize as norm_normalize
+from jax_rl.utils.rollout import build_ppo_rollout_step, build_offpolicy_rollout_step
+from jax_rl.envs.locomotion.go2_rendering import apply_kicks, render_command_overlays
 
 
 ENV_DEFAULTS = {
@@ -184,66 +186,17 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
         from jax_rl.utils.normalization import init as norm_init
         norm_state = norm_init(obs_dim)
 
-    # ── Kicks mode: zero command + random velocity perturbations ────────────
-    kick_interval = 75   # every 1.5s at 50Hz
-    kick_strength = 1.5  # m/s
-
-    def _apply_kicks(env_state, step_idx, key):
-        """Zero command and apply velocity kicks every kick_interval steps."""
-        # Zero out velocity command — robot should just stand
-        info = env_state.info
-        info = {**info, "command": jnp.zeros(3)}
-        # Rebuild obs with zeroed command
-        env_state = env_state.replace(info=info)
-
-        # Apply velocity kick
-        kick_key, key = jax.random.split(key)
-        kick_vel = jax.random.uniform(kick_key, (3,), minval=-kick_strength, maxval=kick_strength)
-        do_kick = (step_idx > 0) & (step_idx % kick_interval == 0)
-        new_qvel = env_state.data.qvel.at[0:3].set(
-            jnp.where(do_kick, env_state.data.qvel[0:3] + kick_vel, env_state.data.qvel[0:3])
-        )
-        new_data = env_state.data.replace(qvel=new_qvel)
-        env_state = env_state.replace(data=new_data)
-        return env_state, key
-
     # ── Build rollout step function ───────────────────────────────────────
+    kicks_fn = apply_kicks if kicks else None
+
     if algo_type == "ppo":
-        frozen_norm = norm_state
-        frozen_state = training_state
-        from jax_rl.utils.normalization import update as norm_update
-        def rollout_step(carry, step_idx):
-            env_state, ns, key = carry
-            if kicks:
-                env_state, key = _apply_kicks(env_state, step_idx, key)
-            raw = env_state.obs
-            obs = (raw["state"] if isinstance(raw, dict) else raw)[None]
-            ns = norm_update(ns, obs)
-            normed_obs = norm_normalize(ns, obs)
-            key, action_key = jax.random.split(key)
-            action, _, _ = algo.select_action(frozen_state, normed_obs, action_key, deterministic=True)
-            clipped_action = jnp.clip(action, -1.0, 1.0).squeeze(0)
-            env_state = env_step(env_state, clipped_action)
-            return (env_state, ns, key), (env_state, clipped_action)
+        rollout_step, _ = build_ppo_rollout_step(
+            algo, training_state, norm_state, env_step, kicks_fn=kicks_fn)
         init_carry = (env_state, norm_state, key)
     else:
-        frozen_params = training_state.actor_params
-        frozen_norm = norm_state
-        def rollout_step(carry, step_idx):
-            env_state, key = carry
-            if kicks:
-                env_state, key = _apply_kicks(env_state, step_idx, key)
-            obs = env_state.obs
-            if isinstance(obs, dict):
-                obs = obs["state"]
-            obs = obs[None]  # add batch dim
-            if use_obs_norm:
-                obs = norm_normalize(frozen_norm, obs)
-            key, action_key = jax.random.split(key)
-            action = algo.select_action(frozen_params, obs, action_key, deterministic=True)
-            clipped_action = action.squeeze(0)
-            env_state = env_step(env_state, clipped_action)
-            return (env_state, key), (env_state, clipped_action)
+        rollout_step, _ = build_offpolicy_rollout_step(
+            algo, training_state.actor_params, norm_state, env_step,
+            use_obs_norm, kicks_fn=kicks_fn)
         init_carry = (env_state, key)
 
     # ── Phase 1: JIT-scan rollout on GPU ──────────────────────────────────
@@ -300,66 +253,10 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
             cam.elevation = -20
             renderer.update_scene(mj_data, camera=cam)
 
-        # Add command arrow in robot's local frame
+        # Add command arrow overlays (Go2-specific)
         if has_commands and idx > 0 and idx <= len(trajectory.info['command']):
             cmd = np.array(trajectory.info['command'][idx - 1])
-            vx, vy = float(cmd[0]), float(cmd[1])
-            speed = np.sqrt(vx**2 + vy**2)
-            if speed > 0.05:
-                # Rotate command from local to world frame using robot's yaw
-                quat = mj_data.qpos[3:7]
-                # Extract yaw from quaternion: rotation matrix row 0/1
-                w, x, y, z = quat
-                fwd_x = 1 - 2*(y*y + z*z)
-                fwd_y = 2*(x*y + w*z)
-                right_x = 2*(x*y - w*z)
-                right_y = 1 - 2*(x*x + z*z)
-                # Local to world: world_v = vx * forward + vy * right
-                world_vx = vx * fwd_x + vy * right_x
-                world_vy = vx * fwd_y + vy * right_y
-
-                base_pos = mj_data.qpos[:3].copy()
-                base_pos[2] = 0.4
-                end_pos = base_pos.copy()
-                end_pos[0] += world_vx * 0.3
-                end_pos[1] += world_vy * 0.3
-                mujoco.mjv_initGeom(
-                    renderer.scene.geoms[renderer.scene.ngeom],
-                    mujoco.mjtGeom.mjGEOM_ARROW,
-                    np.zeros(3), np.zeros(3), np.zeros(9), np.zeros(4),
-                )
-                mujoco.mjv_connector(
-                    renderer.scene.geoms[renderer.scene.ngeom],
-                    mujoco.mjtGeom.mjGEOM_ARROW,
-                    0.015,
-                    base_pos.astype(np.float64),
-                    end_pos.astype(np.float64),
-                )
-                renderer.scene.geoms[renderer.scene.ngeom].rgba = np.array([0, 1, 0, 0.8], dtype=np.float32)
-                renderer.scene.ngeom += 1
-
-            # Yaw rate arrow — yellow vertical arrow, height = yaw magnitude
-            yaw_rate = float(cmd[2])
-            if abs(yaw_rate) > 0.05:
-                base_pos = mj_data.qpos[:3].copy()
-                base_pos[2] = 0.45
-                yaw_end = base_pos.copy()
-                # Positive yaw = arrow up, negative = arrow down (right-hand rule around z)
-                yaw_end[2] += yaw_rate * 0.2
-                mujoco.mjv_initGeom(
-                    renderer.scene.geoms[renderer.scene.ngeom],
-                    mujoco.mjtGeom.mjGEOM_ARROW,
-                    np.zeros(3), np.zeros(3), np.zeros(9), np.zeros(4),
-                )
-                mujoco.mjv_connector(
-                    renderer.scene.geoms[renderer.scene.ngeom],
-                    mujoco.mjtGeom.mjGEOM_ARROW,
-                    0.012,
-                    base_pos.astype(np.float64),
-                    yaw_end.astype(np.float64),
-                )
-                renderer.scene.geoms[renderer.scene.ngeom].rgba = np.array([1, 0.9, 0, 0.8], dtype=np.float32)
-                renderer.scene.ngeom += 1
+            render_command_overlays(renderer, mj_data, cmd, idx)
 
         frames.append(renderer.render())
     renderer.close()
