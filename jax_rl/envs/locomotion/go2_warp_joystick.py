@@ -170,6 +170,12 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
             key2, shape=(3,), minval=-self._cmd_a, maxval=self._cmd_a
         )
 
+        # Per-env PD gain randomization (for domain rand robustness).
+        # Kp: ×U(0.8, 1.3), Kd: ×U(0.5, 1.5) — ranges from walk-these-ways.
+        rng, kp_key, kd_key = jax.random.split(rng, 3)
+        kp_scale = jax.random.uniform(kp_key, (), minval=0.8, maxval=1.3)
+        kd_scale = jax.random.uniform(kd_key, (), minval=0.5, maxval=1.5)
+
         info = {
             "rng": rng,
             "command": cmd,
@@ -180,6 +186,8 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
             "last_contact": jp.zeros(4, dtype=bool),
             "swing_peak": jp.zeros(4),
             "step_count": jp.int32(0),
+            "kp_scale": kp_scale,
+            "kd_scale": kd_scale,
             "reward_components": {
                 k: jp.zeros(()) for k in self._config.reward_config.scales.keys()
             },
@@ -211,7 +219,8 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
         # External PD at physics rate.
         # qpos[7:] is in joint order (FL,FR,RL,RR) but ctrl is in actuator
         # order (FR,FL,RR,RL). Remap torques before writing to ctrl.
-        kp, kd = self._kp, self._kd
+        kp = self._kp * state.info["kp_scale"]
+        kd = self._kd * state.info["kd_scale"]
         model = self.mjx_model
         a2j = self._act_to_joint
 
