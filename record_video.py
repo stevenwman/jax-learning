@@ -127,7 +127,8 @@ def _build_select_action(meta, obs_dim, action_dim):
 
 def record(env_name: str | None = None, checkpoint: str | None = None,
            out: str = "rollout.mp4", max_steps: int = 1000,
-           camera: str | None = None, video_seed: int = 0):
+           camera: str | None = None, video_seed: int = 0,
+           kicks: bool = False):
 
     # ── Load checkpoint ───────────────────────────────────────────────────
     algo_type = "ppo"  # default
@@ -183,13 +184,38 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
         from jax_rl.utils.normalization import init as norm_init
         norm_state = norm_init(obs_dim)
 
+    # ── Kicks mode: zero command + random velocity perturbations ────────────
+    kick_interval = 75   # every 1.5s at 50Hz
+    kick_strength = 1.5  # m/s
+
+    def _apply_kicks(env_state, step_idx, key):
+        """Zero command and apply velocity kicks every kick_interval steps."""
+        # Zero out velocity command — robot should just stand
+        info = env_state.info
+        info = {**info, "command": jnp.zeros(3)}
+        # Rebuild obs with zeroed command
+        env_state = env_state.replace(info=info)
+
+        # Apply velocity kick
+        kick_key, key = jax.random.split(key)
+        kick_vel = jax.random.uniform(kick_key, (3,), minval=-kick_strength, maxval=kick_strength)
+        do_kick = (step_idx > 0) & (step_idx % kick_interval == 0)
+        new_qvel = env_state.data.qvel.at[0:3].set(
+            jnp.where(do_kick, env_state.data.qvel[0:3] + kick_vel, env_state.data.qvel[0:3])
+        )
+        new_data = env_state.data.replace(qvel=new_qvel)
+        env_state = env_state.replace(data=new_data)
+        return env_state, key
+
     # ── Build rollout step function ───────────────────────────────────────
     if algo_type == "ppo":
         frozen_norm = norm_state
         frozen_state = training_state
         from jax_rl.utils.normalization import update as norm_update
-        def rollout_step(carry, _):
+        def rollout_step(carry, step_idx):
             env_state, ns, key = carry
+            if kicks:
+                env_state, key = _apply_kicks(env_state, step_idx, key)
             raw = env_state.obs
             obs = (raw["state"] if isinstance(raw, dict) else raw)[None]
             ns = norm_update(ns, obs)
@@ -203,8 +229,10 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
     else:
         frozen_params = training_state.actor_params
         frozen_norm = norm_state
-        def rollout_step(carry, _):
+        def rollout_step(carry, step_idx):
             env_state, key = carry
+            if kicks:
+                env_state, key = _apply_kicks(env_state, step_idx, key)
             obs = env_state.obs
             if isinstance(obs, dict):
                 obs = obs["state"]
@@ -221,7 +249,7 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
     # ── Phase 1: JIT-scan rollout on GPU ──────────────────────────────────
     print("JIT-compiling rollout scan...")
     t0 = time.time()
-    _, (trajectory, actions) = jax.lax.scan(rollout_step, init_carry, None, length=max_steps)
+    _, (trajectory, actions) = jax.lax.scan(rollout_step, init_carry, jnp.arange(max_steps), length=max_steps)
     jax.block_until_ready(trajectory.obs)
     t_rollout = time.time() - t0
     print(f"Rollout done: {max_steps} steps in {t_rollout:.2f}s (includes JIT compilation)")
@@ -378,9 +406,12 @@ if __name__ == "__main__":
     parser.add_argument("--max-steps", type=int, default=1000)
     parser.add_argument("--camera", type=str, default=None)
     parser.add_argument("--seed", type=int, default=0, help="Random seed for env reset")
+    parser.add_argument("--kicks", action="store_true",
+                        help="Zero velocity command + random velocity kicks every 1.5s")
     args = parser.parse_args()
     record(
         env_name=args.env, checkpoint=args.checkpoint, out=args.out,
         max_steps=args.max_steps,
         camera=args.camera, video_seed=args.seed,
+        kicks=args.kicks,
     )
