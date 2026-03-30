@@ -98,5 +98,5 @@
 ## Long-term (Phase 6 — North Star)
 - [ ] DIAYN (skill discovery wrapping SAC)
 - [ ] METRA (contrastive + metric-aware skills)
-- [ ] Goal-conditioned RL (encoder `context_dim` + `context_fusion`)
+- [ ] Goal-conditioned RL architecture — encoder `context_dim` + `context_fusion` (concat/film/cross_attn). Go2 already does goal-conditioning via velocity command concatenated to obs (48d = 45d state + 3d command). The architecture upgrade adds a separate context input to the encoder with richer fusion modes: FiLM (goal modulates hidden features) or cross-attention (handles variable/structured goals). Matters for DIAYN (skill vector z as context) and USD (learned latent goals). Scaffolding exists in `EncoderConfig.context_dim` and `MlpEncoder.__call__(obs, context)` — just unused.
 - [ ] USD (Unified Skill Discovery)
