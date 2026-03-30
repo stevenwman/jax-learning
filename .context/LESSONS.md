@@ -72,7 +72,7 @@ JAX/Flax fundamentals in `LEARNER_LESSONS.md`.
 - **Verify training budget before debugging** — eval ~17 at 50M steps was on-curve, not broken
 - **`--eval-every` is episodes, not steps** — `--eval-every 5000000` = 5M episodes, never triggers. Use ~50000 for Go2.
 
-## [MJX Physics](lessons/mjx.md) — 9 lessons
+## [MJX Physics](lessons/mjx.md) — 6 lessons
 
 - **MJX physics NaN at scale** — stochastic contact solver failure, guard with NaN+Inf checks on env boundary
 - **GPU OOM is usually not a leak** — RTX 5080 starts at 95% capacity, XLA command buffers accumulate
@@ -81,9 +81,14 @@ JAX/Flax fundamentals in `LEARNER_LESSONS.md`.
 - **MuJoCo friction is max-combine** — randomize foot geoms not just floor. PhysX DR ranges don't port to MuJoCo.
 - **Sim2sim between different MJCFs is nearly as hard as sim2real** — same robot, different model files = different dynamics from step 1.
 - **MJX can't load all MJCFs** — cylinder-box collisions not implemented. Unitree's Go2 uses cylinders, Menagerie uses capsules. Check `mjx.put_model()` before planning to train on third-party XMLs.
-- **Warp CCD overflow — size naccdmax for complex geometry** — unitree's cylinder+box collisions at 1024 envs caused 8.6M overflow warnings and 30% sps loss. Set `naccdmax=4000` in config. Playground 0.2.0 also renamed `nconmax` → `naconmax`.
-- **Warp forcerange=[0,0] = unlimited** — unitree XML sets ctrlrange but not forcerange. PD torques were unclamped → joints contorted → eval 2.2. Set forcerange = ctrlrange → eval 14.1.
-- **Warp inherits XML solver settings** — unitree's iterations=100, elliptic cone, eulerdamp=on vs MJX's iterations=1, pyramidal, eulerdamp=off. Must audit `<option>` block when porting envs.
+- **MJX can't load all MJCFs** — cylinder-box collisions not implemented. Use MuJoCo Warp instead.
+
+## [MuJoCo Warp](lessons/warp.md) — 4 lessons
+
+- **CCD overflow — size naccdmax for complex geometry** — 8.6M overflow warnings at 1024 envs, 30% sps loss. Set `naccdmax=4000`, `ccd_iterations=100`, `njmax=100`.
+- **OOMs in Python loops — must JIT physics steps** — Warp allocates collision buffers per `mjx.step()` call. Python loop = OOM. `lax.scan` = instant. Always JIT.
+- **forcerange=[0,0] = unlimited** — unitree XML sets ctrlrange but not forcerange. PD torques unclamped → joints contorted → eval 2.2. Set forcerange = ctrlrange.
+- **Inherits XML solver settings** — unitree's iterations=100, elliptic cone, eulerdamp=on vs MJX's 1/pyramidal/off. Audit `<option>` block when porting envs.
 
 ## [Go2 Locomotion](lessons/go2.md) — 7 lessons
 
