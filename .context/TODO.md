@@ -75,7 +75,8 @@
 - [ ] Add privileged critic support to SAC/TD3 training scripts (`train_offpolicy.py`). Actor sees `obs["state"]` (48d), critic sees `obs["privileged_state"]` (122d). Theoretically justified: Pinto 2017 (DDPG, the original asymmetric AC paper), Lambrechts ICML 2025 (unbiased policy gradients, algorithm-agnostic). No published system combines SAC + privileged critic + legged locomotion — this would be novel.
 
 ## Mid-term (Vision RL)
-- [ ] Install `madrona_mjx`, verify Playground `vision=True` on RTX 5080
+- [ ] Verify MJWarp GPU renderer on RTX 5080 (`mjx.create_render_context` + `mjx.render`). Madrona MJX is gone — replaced by built-in Warp ray-tracer in mujoco>=3.6.0.
+- [ ] Add render context to Go2WarpJoystick env (follow Playground CartpoleBalance vision pattern)
 - [ ] CNN encoder (`jax_rl/networks/encoders/cnn.py`) + `CnnEncoderConfig`
 - [ ] DrQ augmentation (`jax_rl/utils/augmentation.py`)
 - [ ] `--vision` flag on train scripts

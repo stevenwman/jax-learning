@@ -2,6 +2,7 @@
 
 **Status:** In progress (brainstorming phase)
 **Date:** 2026-03-20
+**Updated 2026-03-30:** Madrona MJX replaced by MJWarp GPU renderer built into `mujoco>=3.6.0`
 
 ## Goal
 
@@ -108,25 +109,35 @@ New file: `jax_rl/networks/encoders/cnn.py`
 
 ### Image Preprocessing / Pixel Wrapper — Playground can handle it (NOT YET INTEGRATED)
 
-**Discovery (2026-03-20):** MuJoCo Playground has vision support via Madrona MJX. This is a research finding — **not yet integrated into our training scripts.** No CNN encoder, no `--vision` flag, no `madrona_mjx` install exists yet. The API below is from Playground's docs, not our code.
+**Discovery (2026-03-20, updated 2026-03-30):** MuJoCo Playground has vision support via the MJWarp GPU renderer built into `mujoco>=3.6.0`. **Madrona MJX is no longer used or required.** This is a research finding — **not yet integrated into our training scripts.** No CNN encoder, no `--vision` flag exists yet.
+
+**Rendering API (MJWarp, `impl="warp"` required):**
 
 ```python
-config_overrides = {
-    "vision": True,
-    "vision_config.render_batch_size": num_envs,
-}
-env = dm_control_suite.load(env_name, config_overrides=config_overrides)
-env = wrapper.wrap_for_brax_training(env, vision=True, num_vision_envs=num_envs, ...)
+# Create render context — nworld fixed at creation, must match training batch size
+rc = mjx.create_render_context(mjm=model, nworld=N, cam_res=(84, 84), render_rgb=[True])
+
+# Update BVH for current geometry (call before render each step)
+rc = mjx.refit_bvh(model, data, rc)
+
+# GPU ray-trace render — returns (rgb, depth), all GPU-resident, no CPU round-trip
+rgb, depth = mjx.render(model, data, rc)
+
+# Extract per-camera RGB (packed uint32 RGBA → unpack to uint8)
+pixels = mjx.get_rgb(rc, cam_idx=0, pixels=pixels_buf)
+# Unpack: pixels.view(jnp.uint8).reshape(nworld, H, W, 4)[:, :, :, :3]
 ```
 
+- **`mjx.render()` only works with `impl="warp"`** — pure-JAX MJX cannot render. Vision requires Warp backend.
+- Only **CartpoleBalance** and **FrankaPickCubeCartesian** have vision implemented in Playground. Locomotion envs (Go1, Go2) don't have it yet — we need to add the render context to `Go2WarpJoystick`.
+- `wrap_for_brax_training()` does **NOT** have a `vision=True` parameter. Vision is handled inside the env class itself (see Playground's CartpoleBalance vision env). The wrapper just wraps the env normally.
 - Obs come out as `state.obs` with pixel keys like `pixels/view_0`
 - Frame stacking (grayscale, sequential frames) is handled by the env
-- Rendering at 290k transitions/sec on RTX 4090 (1024 envs, 64x64)
-- **Requires `madrona_mjx` package** installed locally
-- Recommends 24GB+ VRAM (RTX 4090). Our 16GB RTX 5080 may need fewer envs (256-512)
-- `XLA_PYTHON_CLIENT_MEM_FRACTION=0.6` recommended to leave room for Madrona
+- **No `madrona_mjx` dependency** — only `mujoco>=3.6.0` and `warp-lang>=1.11`
+- Memory cost: MJWarp BVH + render buffers (smaller footprint than the old Madrona batch renderer)
 
 **What we still need to build:**
+- Render context added to `Go2WarpJoystick` env (follow Playground's CartpoleBalance vision env pattern)
 - CNN encoder to process the pixel obs → feature vector
 - Integration into our off-policy training scripts (SAC/TD3)
 - Brax already has `networks_vision.make_ppo_networks_vision` for PPO — we can reference this
@@ -134,10 +145,10 @@ env = wrapper.wrap_for_brax_training(env, vision=True, num_vision_envs=num_envs,
 **What we do NOT need to build:**
 - No pixel wrapper
 - No frame stacking logic
-- No rendering pipeline
+- No separate rendering pipeline
 - No camera configuration (handled by env config)
 
-Source: `learning/notebooks/training_vision_1.ipynb` in Playground package
+Source: `learning/notebooks/vision.ipynb` in Playground package (`learning/notebooks/training_vision_1.ipynb` was the old Madrona-based colab)
 
 ### DrQ Data Augmentation
 
@@ -168,19 +179,19 @@ When vision is enabled:
 
 ### Memory Budget — Test Empirically
 
-Pixel replay buffers are much larger than state buffers. Rough estimates suggest 1M entries at 84×84×9 won't fit on 16GB. Likely need smaller buffer (50k-100k entries) and/or lower resolution (64×64). Pin this for empirical testing once the pipeline works.
+Pixel replay buffers are much larger than state buffers. Rough estimates suggest 1M entries at 84×84×9 won't fit on 16GB. Likely need smaller buffer (50k-100k entries) and/or lower resolution (64×64). Pin this for empirical testing once the pipeline works. Note: MJWarp BVH + render buffers are expected to be a smaller fixed overhead than the old Madrona batch renderer was.
 
 ### Builders Unification (prerequisite)
 
 **DONE (2026-03-22):** All algos now use `Actor`/`DeterministicActor`/`VCritic` from `builders.py`. Encoder is swappable — adding CNN means changing builders, zero algo changes. See `.context/archive/builders_unification_plan.md` for the original plan.
 
 **Order of execution:**
-1. Install `madrona_mjx` and verify vision env loads on our hardware
+1. Add render context to `Go2WarpJoystick` env and verify `mjx.render()` pipeline on our hardware (RTX 5080). Use CartpoleBalance vision env as reference. Requires `impl="warp"`.
 2. ~~Unify builders (`make_encoder` factory)~~ — DONE (2026-03-22)
 3. Add CNN encoder (`jax_rl/networks/encoders/cnn.py`)
 4. Add encoder configs (`CnnEncoderConfig`, `AugmentationConfig`)
 5. Add `--vision` flag to `train_offpolicy.py` (consolidated script replaces train_sac.py/td3.py)
-6. Verify on CartpoleBalance from pixels (Playground colab baseline: 57s to solve on 4090)
+6. Verify on CartpoleBalance from pixels (Playground vision.ipynb as reference)
 7. Add DrQ augmentation as optional toggle
 8. Benchmark CNN vs CNN+DrQ vs state-based on same task
 9. ManiSkill integration (Phase B — Gymnasium adapter + DLPack bridge)
@@ -189,14 +200,15 @@ Pixel replay buffers are much larger than state buffers. Rough estimates suggest
 
 ### Resolved
 - [x] MJWarp batched render pipeline — **VERIFIED WORKING** (2026-03-20). 4 worlds × 84×84 RGB, real pixels.
-- [x] Pixel wrapper needed? — **NO**. Playground has built-in `vision=True` config with Madrona MJX rendering + frame stacking.
+- [x] Pixel wrapper needed? — **NO**. Playground handles rendering + frame stacking inside env class. Vision is integrated via `mjx.create_render_context` / `mjx.render`, not a separate wrapper.
 - [x] Separate vision train scripts? — **NO**. One script per algo with `--vision` flag.
+- [x] Madrona MJX dependency? — **GONE** (2026-03-30). MJWarp renderer is built into `mujoco>=3.6.0`. Only `warp-lang>=1.11` required.
+- [x] `vision=True` on `wrap_for_brax_training()`? — **NO such parameter**. Vision logic lives inside the env class. Wrapper is unaware of vision.
 
 ### Pinned for empirical testing
 - [ ] GPU memory budget — pixel replay buffer sizing on 16GB. Test with different buffer sizes / resolutions.
-- [ ] MJWarp rendering speed at 1024 envs — benchmark FPS on RTX 5080.
-- [ ] Warp physics vs MJX physics — Playground's `vision=True` mode uses Madrona MJX (separate from raw MJWarp `Impl.WARP`). Need to verify which physics backend Madrona uses and if it's compatible with our existing env setup.
-- [ ] `madrona_mjx` installation — requires local build, CUDA compatibility. Need to verify on our setup.
+- [ ] MJWarp rendering speed at 1024 envs — benchmark FPS on RTX 5080 once render context added to Go2WarpJoystick.
+- [ ] Memory overhead of BVH + render buffers at various `nworld` sizes — expected smaller than old Madrona footprint.
 
 ### Deferred
 - [ ] ViT encoder — config structure supports it, implement when needed
@@ -224,4 +236,4 @@ Same `make_encoder()` factory, same `(batch, feature_dim)` output. The config st
 - Nature CNN: Mnih et al., "Human-level control through deep RL" (2015)
 - MuJoCo Playground vision colab: `learning/notebooks/vision.ipynb`
 - ManiSkill 3: `maniskill.readthedocs.io`
-- MJWarp: Part of MuJoCo 3.6 (`pip install mujoco-warp`)
+- MJWarp: Built into MuJoCo 3.6+ (`pip install mujoco>=3.6.0 warp-lang>=1.11`). No separate install.
