@@ -225,12 +225,13 @@ Every checkpoint contains: `meta.json` (full config), `metrics.csv` (training cu
 
 ### Roadmap
 See `TODO.md` for full prioritized list. Summary:
-- **Done:** MJX→CPU transfer works (go2_cpu.py walks 20s+). Linvel fix, obs norm fix.
-- **Done:** Domain rand v1 — friction (all geoms, [0.3,1.5]), motor strength [0.9,1.1], mass/damping/COM. PPO+DR eval 200, FastSAC+DR eval 191.
-- **Blocked:** unitree_mujoco transfer — different MJCF = different dynamics from step 1. Irreducible model gap, needs training on their model or real-world fine-tuning.
-- **Short-term:** DIAYN, frame stacking, W&B HP tuning agent, MuJoCo Warp migration
-- **Mid-term:** Vision RL (Madrona MJX `vision=True`, CNN encoder, DrQ)
+- **Done:** Warp env (FastSAC 276.5), MJX→CPU transfer, DR v1, sim2sim validated.
+- **Short-term:** DIAYN (north star), Kp/Kd DR, W&B HP tuning agent
+- **Mid-term:** Vision RL (CNN encoder, DrQ), real robot deployment
 - **Long-term:** DIAYN → METRA → USD (skill discovery on real Go2)
+
+### Strategic note: Warp over MJX
+**Prioritize the Warp env (`Go2WarpJoystickFlat`) for all new Go2 work.** MJX is likely being phased out in favor of MuJoCo Warp (DeepMind/NVIDIA joint effort). Warp supports full collision primitives (cylinders, which MJX can't handle), trains on the exact unitree MJCF (zero sim2sim gap), and is reportedly 152x faster on locomotion. The MJX env (`Go2JoystickFlat`) still works but is the legacy path — don't invest further in it. New envs should be built on Warp from the start.
 
 ---
 
