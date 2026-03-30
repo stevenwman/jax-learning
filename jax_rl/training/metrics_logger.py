@@ -21,11 +21,13 @@ _WANDB_PREFIX = {
     # critic — value estimation health
     "q1_mean": "critic/q1_mean",
     "q2_mean": "critic/q2_mean",
-    "q_bias": "critic/q_bias",
-    "q_rmse": "critic/q_rmse",
-    "q_corr": "critic/q_corr",
-    "q_mean": "critic/q_mean",
-    "mc_mean": "critic/mc_mean",
+    "q1_loss": "critic/q1_loss",
+    "q2_loss": "critic/q2_loss",
+    "q_bias": "eval/q_bias",
+    "q_rmse": "eval/q_rmse",
+    "q_corr": "eval/q_corr",
+    "q_mean": "eval/q_mean",
+    "mc_mean": "eval/mc_mean",
     # actor — policy optimization (superset of PPO + off-policy)
     "actor_loss": "actor/actor_loss",
     "policy_loss": "actor/policy_loss",
