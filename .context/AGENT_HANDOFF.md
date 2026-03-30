@@ -230,8 +230,8 @@ See `TODO.md` for full prioritized list. Summary:
 - **Mid-term:** Vision RL (CNN encoder, DrQ), real robot deployment
 - **Long-term:** DIAYN → METRA → USD (skill discovery on real Go2)
 
-### Strategic note: Warp over MJX for Go2
-**Prioritize the Warp env (`Go2WarpJoystickFlat`) for all new Go2 work.** MJX and Warp are complementary backends (Warp will eventually integrate into MJX via `impl="warp"`). For Go2 specifically, Warp is strictly better: supports cylinder collisions (MJX can't), trains on the exact unitree MJCF (zero sim2sim gap), and is faster on complex collision scenes. The MJX env (`Go2JoystickFlat`) still works for simpler envs or non-NVIDIA hardware. New locomotion envs with complex meshes should use Warp from the start.
+### Strategic note: Warp is the primary backend
+**All new Go2 features go in the Warp env only.** Warp is strictly better for our use case: supports cylinder collisions (MJX can't), trains on the exact unitree MJCF (zero sim2sim gap), faster on complex scenes, and we only use NVIDIA GPUs. The MJX env (`Go2JoystickFlat`) is frozen — no new features, no bug fixes unless critical. New envs (other robots, terrains) should be built on Warp from the start. DIAYN, Kp/Kd DR, frame stacking — all Warp-only.
 
 ---
 
