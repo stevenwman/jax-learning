@@ -208,14 +208,18 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
         data = data.replace(qvel=new_qvel)
 
         # External PD at physics rate.
+        # qpos[7:] is in joint order (FL,FR,RL,RR) but ctrl is in actuator
+        # order (FR,FL,RR,RL). Remap torques before writing to ctrl.
         kp, kd = self._kp, self._kd
         model = self.mjx_model
+        a2j = self._act_to_joint
 
         def substep(data, _):
-            current_q = data.qpos[7:]
-            current_dq = data.qvel[6:]
-            tau = kp * (motor_targets - current_q) + kd * (0.0 - current_dq)
-            data = data.replace(ctrl=tau)
+            current_q = data.qpos[7:]   # joint order (FL,FR,RL,RR)
+            current_dq = data.qvel[6:]  # joint order
+            tau_joint = kp * (motor_targets - current_q) + kd * (0.0 - current_dq)
+            tau_act = tau_joint[a2j]     # ctrl[a] = tau_joint[act_to_joint[a]]
+            data = data.replace(ctrl=tau_act)
             return mjx.step(model, data), None
 
         data = jax.lax.scan(substep, data, (), self.n_substeps)[0]

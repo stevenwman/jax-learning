@@ -71,6 +71,17 @@ class Go2WarpEnv(mjx_env.MjxEnv):
         self._kp = config.Kp
         self._kd = config.Kd
 
+        # Actuator-to-joint remapping. In unitree's XML, qpos[7:] is in body-tree
+        # order (FL,FR,RL,RR) but ctrl is in actuator order (FR,FL,RR,RL).
+        # Build act_to_joint: for each actuator index, which joint index it drives.
+        # Then ctrl[a] = tau_joint[act_to_joint[a]].
+        import numpy as _np
+        act_to_joint = _np.zeros(self._mj_model.nu, dtype=int)
+        for i in range(self._mj_model.nu):
+            jnt_id = self._mj_model.actuator_trnid[i, 0]
+            act_to_joint[i] = jnt_id - 1  # joint index in qpos[7:]
+        self._act_to_joint = jp.array(act_to_joint)
+
         # Rendering.
         self._mj_model.vis.global_.offwidth = 3840
         self._mj_model.vis.global_.offheight = 2160
