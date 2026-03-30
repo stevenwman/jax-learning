@@ -72,15 +72,17 @@ JAX/Flax fundamentals in `LEARNER_LESSONS.md`.
 - **Verify training budget before debugging** — eval ~17 at 50M steps was on-curve, not broken
 - **`--eval-every` is episodes, not steps** — `--eval-every 5000000` = 5M episodes, never triggers. Use ~50000 for Go2.
 
-## [MJX Physics](lessons/mjx.md) — 6 lessons
+## [MuJoCo Engine](lessons/mujoco.md) — 2 lessons
+
+- **Friction uses max-combine** — randomize foot geoms not just floor. PhysX DR ranges don't port to MuJoCo.
+- **Sim2sim between different MJCFs is nearly as hard as sim2real** — train on the target model directly when possible.
+
+## [MJX Physics](lessons/mjx.md) — 5 lessons
 
 - **MJX physics NaN at scale** — stochastic contact solver failure, guard with NaN+Inf checks on env boundary
 - **GPU OOM is usually not a leak** — RTX 5080 starts at 95% capacity, XLA command buffers accumulate
 - **MJX eval recompilation** — upstream issue, ~2 recompiles per eval call, mitigate with MEM_FRACTION=0.7
 - **MJX→CPU transfer: every obs dimension must match** — zeroed linvel in CPU env killed transfer. Diff obs side-by-side.
-- **MuJoCo friction is max-combine** — randomize foot geoms not just floor. PhysX DR ranges don't port to MuJoCo.
-- **Sim2sim between different MJCFs is nearly as hard as sim2real** — same robot, different model files = different dynamics from step 1.
-- **MJX can't load all MJCFs** — cylinder-box collisions not implemented. Unitree's Go2 uses cylinders, Menagerie uses capsules. Check `mjx.put_model()` before planning to train on third-party XMLs.
 - **MJX can't load all MJCFs** — cylinder-box collisions not implemented. Use MuJoCo Warp instead.
 
 ## [MuJoCo Warp](lessons/warp.md) — 6 lessons
