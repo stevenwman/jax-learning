@@ -5,3 +5,5 @@ deploy/.venv/
 checkpoints/
 wandb/
 *.mp4
+
+MUJOCO_LOG.TXT
