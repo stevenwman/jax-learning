@@ -43,9 +43,10 @@
 ## Short-term — Go2 robustness (ACTIVE)
 - [x] Domain rand (Tier 1) — friction, mass, COM, armature, frictionloss. `go2_randomize.py` + `--domain-rand` flag.
 - [x] CPU sister env — `go2_cpu.py`, same MJCF + overrides, CPU mj_step. Policy walks 3s.
-- [ ] **Random external forces (velocity kicks)** — push robot every 10-15s during training. Standard in legged_gym/walk-these-ways. Goes in env step(), not DR wrapper. Key for bridging MJX→CPU drift.
-- [ ] **Wider DR ranges** — research SOTA quadruped pipelines for ranges. Current friction U(0.3,1.2) may need widening. Add Kp/Kd scaling, motor strength variation.
-- [ ] **Reward tuning for robustness** — research what reward terms help recovery (orientation penalty, base height tracking, energy penalty scaling). May need curriculum.
+- [x] Velocity kicks — ±0.75 m/s every 350 steps, already in go2_joystick.py step()
+- [x] Motor strength DR — ×U(0.9, 1.1) via actuator_gainprm scaling
+- [x] Friction DR fix — randomize ALL geoms (MuJoCo max-combine), range [0.3, 1.5]
+- [ ] **Wider DR ranges** — Kp/Kd scaling, action delay (120ms FIFO from WTW). May need curriculum.
 - [ ] Wire frame stacking into Go2 env (currently no frame stack — just raw obs)
 - [x] Go2 SAC Phase B — FastSAC eval 226. Off-policy validated on Go2.
 
@@ -66,7 +67,9 @@
 - [x] Implement `Go2WarpEnv` base + `WarpJoystick` env with `contact_mode` flag (training/deploy)
 - [x] Extract shared sensor helpers (`go2_sensors.py`), parameterize DR body ID
 - [x] Register `Go2WarpJoystickFlat`, smoke test PPO training (500k steps, 8.5k sps, no NaN/crash)
-- [ ] Train PPO on unitree MJCF via Warp — full 50M run to get eval score
+- [x] Joint→actuator ordering fix — root cause of Warp Go2 failure. `_act_to_joint` remap in go2_warp_base.py
+- [x] FastSAC on Warp — **eval 276.5 @ 18M steps**. Surpasses MJX PPO 244. Sim2sim to CPU validated (walks 20s+).
+- [ ] Train PPO on unitree MJCF via Warp — full 50M run (PPO hit 132, entropy collapsed)
 
 ## Short-term — Asymmetric off-policy critic
 - [ ] Add privileged critic support to SAC/TD3 training scripts (`train_offpolicy.py`). Actor sees `obs["state"]` (48d), critic sees `obs["privileged_state"]` (122d). Theoretically justified: Pinto 2017 (DDPG, the original asymmetric AC paper), Lambrechts ICML 2025 (unbiased policy gradients, algorithm-agnostic). No published system combines SAC + privileged critic + legged locomotion — this would be novel.
@@ -87,7 +90,7 @@
 - [x] Retrain PPO with motor actuators — eval 244 @ 50M (seed 4000)
 - [x] Sim2sim pipeline — sim2sim_direct.py (no DDS, PD per physics step) + DDS version
 - [x] Sim2sim diagnosis complete — MJCF diff (collision geometry, solver) is the gap. MJX→CPU works (3s walking). MJX→unitree needs robustness. See `.context/go2/mjcf_comparison.md`.
-- [ ] **Sim2sim to unitree** — blocked on robustness (wider DR + velocity kicks). Once CPU env walks reliably, test unitree transfer again.
+- [x] **Sim2sim to unitree** — SOLVED by training on Warp (unitree MJCF directly). FastSAC 276.5 walks 20s+ on CPU. MJX→unitree gap was irreducible MJCF difference.
 - [ ] ONNX export utility (`jax_rl/utils/export.py`) — JAX weights → ONNX for Jetson (deferred — numpy inference at 50Hz is fine for now)
 - [ ] DC motor model (`jax_rl/envs/actuators.py`) — Tier 2, add if sim-to-real gap > threshold
 - [ ] Confirm Go2 EDU edition in lab (ask Steven)

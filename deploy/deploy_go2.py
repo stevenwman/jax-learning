@@ -40,11 +40,10 @@ class VelocityEstimator:
         self.velocity = np.zeros(3, dtype=np.float32)
         self.gravity_world = np.array([0.0, 0.0, 9.81], dtype=np.float32)
 
-    def update(self, accelerometer: np.ndarray, quaternion: np.ndarray) -> np.ndarray:
+    def update(self, accelerometer: np.ndarray) -> np.ndarray:
         """Update velocity estimate. Returns local (body-frame) linear velocity."""
-        # Accelerometer reads specific force (accel - gravity) in body frame.
-        # MuJoCo's accelerometer sensor already subtracts gravity, so raw accel
-        # is body-frame linear acceleration.
+        # MuJoCo's accelerometer sensor reads specific force (accel - gravity)
+        # in body frame, so raw accel is body-frame linear acceleration.
         self.velocity = self.alpha * (self.velocity + accelerometer * self.dt)
         return self.velocity.copy()
 
@@ -75,6 +74,7 @@ def run_policy_loop(
     runner: PolicyRunner,
     obs_builder: ObsBuilder,
     iface: Go2Interface,
+    vel_estimator: 'VelocityEstimator',
     command: np.ndarray,
     save_traj: str | None = None,
     max_steps: int = 0,
@@ -105,7 +105,7 @@ def run_policy_loop(
                 continue
 
             # Estimate local velocity from IMU accelerometer
-            local_linvel = vel_estimator.update(state["accelerometer"], state["quaternion"])
+            local_linvel = vel_estimator.update(state["accelerometer"])
 
             obs = obs_builder.build(
                 joint_pos_sdk=state["joint_pos_sdk"],
@@ -220,7 +220,7 @@ def main():
         time.sleep(0.002)
 
     print(f"\n[4/4] Running policy")
-    run_policy_loop(runner, obs_builder, iface, command,
+    run_policy_loop(runner, obs_builder, iface, vel_estimator, command,
                     save_traj=args.save_traj, max_steps=args.max_steps)
 
     # Cleanup
