@@ -25,8 +25,8 @@ def default_config() -> config_dict.ConfigDict:
         ctrl_dt=0.02,
         sim_dt=0.004,
         episode_length=1000,
-        Kp=35.0,
-        Kd=0.1,
+        Kp=20.0,   # unitree_rl_gym value (was 35 from Playground Go1)
+        Kd=0.5,    # unitree_rl_gym value (was 0.1 — too low for 100-iter solver)
         action_repeat=1,
         action_scale=0.5,
         soft_joint_pos_limit_factor=0.95,
