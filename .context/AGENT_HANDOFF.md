@@ -184,7 +184,8 @@ Every checkpoint contains: `meta.json` (full config), `metrics.csv` (training cu
 - **Actuator model**: `motor` (direct torque) + external PD per substep. Matches unitree_mujoco and real robot. (Was `general` with built-in PD — switched 2026-03-26.)
 - **Working PPO config**: tracking_lin_vel=10.0, tracking_ang_vel=5.0, height_termination=True, Kp=35, Kd=0.1, calf_torque=45.43Nm
 - **Best PPO**: eval 244 @ 50M steps (seed 4000, motor actuators)
-- **Warp env**: `Go2WarpJoystickFlat` — uses unitree_mujoco's go2.xml (full cylinder collision geometry) via MuJoCo Warp backend. Eliminates sim2sim gap. `contact_mode` flag: `"training"` (firm contacts) / `"deploy"` (unitree-native physics). Train with: `uv run python train_ppo_fast.py --env Go2WarpJoystickFlat`
+- **Warp env**: `Go2WarpJoystickFlat` — uses unitree_mujoco's go2.xml (full cylinder collision geometry) via MuJoCo Warp backend. Eliminates sim2sim gap. `contact_mode` flag: `"training"` (firm contacts) / `"deploy"` (unitree-native physics). Kp=20, Kd=0.5 (unitree RL gains). Best result: **FastSAC eval 276.5 @ 18M steps** — surpasses MJX PPO 244. Sim2sim to CPU MuJoCo validated (walks 20s+ with random commands).
+- **CRITICAL:** Warp env has joint→actuator remapping (`_act_to_joint`). Unitree XML has different qpos vs ctrl ordering. Without remap, PD applies torques to wrong legs.
 
 ---
 
@@ -206,7 +207,7 @@ Every checkpoint contains: `meta.json` (full config), `metrics.csv` (training cu
 | Vanilla SAC | 426 | 20M | 128 envs |
 | **FastSAC** | **892** | 100M | 1024 envs, SOTA |
 
-**Go2 Joystick** (12-dim actions):
+**Go2 Joystick — MJX** (Menagerie go2_mjx.xml, 12-dim actions):
 | Algo | Eval | Steps | Notes |
 |------|------|-------|-------|
 | Our PPO (motor) | **244** | 50M | Seed 4000, motor actuators + external PD |
@@ -214,7 +215,13 @@ Every checkpoint contains: `meta.json` (full config), `metrics.csv` (training cu
 | FastSAC | 226 | 16M | Off-policy validated |
 | Brax PPO | 17.9 | 50M | A/B baseline |
 
-**Key takeaways:** Low-dim → FastTD3. High-dim → FastSAC. gamma=0.97 for locomotion. C51 helps at scale. Vanilla algos at 128 envs are competitive for sample efficiency. Use `motor` actuators for sim2sim/sim2real transfer.
+**Go2 Joystick — Warp** (unitree go2.xml, full collision geometry):
+| Algo | Eval | Steps | Notes |
+|------|------|-------|-------|
+| **FastSAC** | **276.5** | 18M | Kp=20/Kd=0.5, sim2sim to CPU validated |
+| PPO | 132 | 50M | Kp=20/Kd=0.5, entropy collapsed to squat |
+
+**Key takeaways:** Low-dim → FastTD3. High-dim → FastSAC. gamma=0.97 for locomotion. C51 helps at scale. Vanilla algos at 128 envs are competitive for sample efficiency. Use `motor` actuators for sim2sim/sim2real transfer. **Warp + unitree MJCF eliminates sim2sim gap** — FastSAC on Warp surpasses MJX PPO.
 
 ### Roadmap
 See `TODO.md` for full prioritized list. Summary:
@@ -233,7 +240,8 @@ See `TODO.md` for full prioritized list. Summary:
 ```bash
 # Training
 uv run python train_ppo_fast.py --env Go2JoystickFlat --num-envs 1024 --total-timesteps 200000000
-uv run python train_ppo_fast.py --env Go2WarpJoystickFlat --num-envs 1024 --total-timesteps 200000000  # Warp backend (unitree MJCF)
+uv run python train_ppo_fast.py --env Go2WarpJoystickFlat --num-envs 1024 --total-timesteps 50000000  # Warp backend (unitree MJCF)
+uv run python train_offpolicy.py --algo fast_sac --env Go2WarpJoystickFlat --num-envs 1024 --total-timesteps 20000000 --domain-rand  # FastSAC + DR on Warp
 uv run python train_offpolicy.py --algo sac --env Go2JoystickFlat --obs-norm
 
 # Monitoring
@@ -242,6 +250,9 @@ grep "EVAL" /tmp/claude-*/tasks/*.output     # Eval scores
 
 # Recording
 MUJOCO_GL=egl uv run python record_video.py --checkpoint checkpoints/<dir>
+
+# Sim2sim validation (CPU MuJoCo, same unitree MJCF as Warp training)
+MUJOCO_GL=egl uv run python deploy/sim2sim_direct.py --checkpoint checkpoints/<dir> --vx 0.5 --record /tmp/sim2sim.mp4
 
 # Testing
 uv run python -m pytest tests/ -v
