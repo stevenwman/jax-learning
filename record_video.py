@@ -310,6 +310,29 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
                 renderer.scene.geoms[renderer.scene.ngeom].rgba = np.array([0, 1, 0, 0.8], dtype=np.float32)
                 renderer.scene.ngeom += 1
 
+            # Yaw rate arrow — yellow vertical arrow, height = yaw magnitude
+            yaw_rate = float(cmd[2])
+            if abs(yaw_rate) > 0.05:
+                base_pos = mj_data.qpos[:3].copy()
+                base_pos[2] = 0.45
+                yaw_end = base_pos.copy()
+                # Positive yaw = arrow up, negative = arrow down (right-hand rule around z)
+                yaw_end[2] += yaw_rate * 0.2
+                mujoco.mjv_initGeom(
+                    renderer.scene.geoms[renderer.scene.ngeom],
+                    mujoco.mjtGeom.mjGEOM_ARROW,
+                    np.zeros(3), np.zeros(3), np.zeros(9), np.zeros(4),
+                )
+                mujoco.mjv_connector(
+                    renderer.scene.geoms[renderer.scene.ngeom],
+                    mujoco.mjtGeom.mjGEOM_ARROW,
+                    0.012,
+                    base_pos.astype(np.float64),
+                    yaw_end.astype(np.float64),
+                )
+                renderer.scene.geoms[renderer.scene.ngeom].rgba = np.array([1, 0.9, 0, 0.8], dtype=np.float32)
+                renderer.scene.ngeom += 1
+
         frames.append(renderer.render())
     renderer.close()
     t_render = time.time() - t0
