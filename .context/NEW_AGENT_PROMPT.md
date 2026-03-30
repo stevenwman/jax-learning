@@ -17,8 +17,9 @@ AGENT_HANDOFF.md          ← START HERE (project overview, codebase map)
       ├→ ppo_debugging.md ← 19-hypothesis debugging trail
       ├→ sim_to_real_plan.md
       └→ sac_phase_b.md
+  └→ lessons/warp.md      ← MuJoCo Warp lessons (joint ordering, PD gains, CCD)
   └→ vision_rl_design.md  ← Read only when working on vision
-  └→ integration_debt.md  ← Tech debt tracker
+  └→ gpu_management.md    ← Nuclio docker fix, memory budget
 ```
 
 **Rule:** Don't pre-load docs into context. When you encounter a topic (e.g., "why does Go2 use 10x tracking?"), grep `.context/` or read the specific file. Treat docs like a reference manual, not a textbook.
@@ -28,9 +29,11 @@ AGENT_HANDOFF.md          ← START HERE (project overview, codebase map)
 ## Quick facts (always true)
 - `uv run python` (not python3)
 - No Co-Authored-By in commits
-- Go2 dict obs: {"state": 48d, "privileged_state": 122d}
+- Go2 dict obs: {"state": 48d, "privileged_state": 116-122d}
 - PPO: asymmetric (critic sees privileged_state). SAC/TD3: both see state.
 - 5 root scripts: train_ppo_fast.py, train_ppo.py, train_offpolicy.py, record_video.py, live_viewer.py
+- **Two Go2 envs:** `Go2JoystickFlat` (MJX, Menagerie MJCF, Kp=35/Kd=0.1) and `Go2WarpJoystickFlat` (Warp, unitree MJCF, Kp=20/Kd=0.5). Warp is preferred — eliminates sim2sim gap, FastSAC eval 276.5.
+- **CRITICAL:** Warp env has joint→actuator ordering mismatch. `_act_to_joint` remap is essential. See `lessons/warp.md`.
 
 Say "Ready" and wait for instructions.
 
