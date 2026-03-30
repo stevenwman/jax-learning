@@ -30,3 +30,21 @@ Zero-torque test showed 2-3x joint velocity divergence after a single physics st
 **What worked:** Training on the target MJCF directly (via MuJoCo Warp, which supports cylinders unlike MJX). FastSAC on Warp: eval 276.5, walks 20s+ on CPU with the same MJCF.
 
 **Lesson:** Sim2sim between your own envs (same MJCF, different backends) is easy. Sim2sim between different MJCFs of the "same" robot is nearly as hard as sim2real. Train on the target model directly when possible.
+
+---
+
+## Three Python APIs — Know Which One You're Using
+
+MuJoCo has three distinct Python interfaces. They share the same physics engine but have different APIs:
+
+| API | Import | Model type | Parallelism | Use case |
+|---|---|---|---|---|
+| **CPU MuJoCo** | `import mujoco` | `MjModel` / `MjData` (mutable) | Multiprocessing | Deploy, sim2sim, viewers |
+| **MJX** (`impl="jax"` or `"warp"`) | `from mujoco import mjx` | `mjx.Model` / `mjx.Data` (immutable JAX pytrees) | `jax.vmap` / `jax.jit` | RL training (what we use) |
+| **Standalone Warp** | `import mujoco_warp as mjw` | Warp-native model | `wp.launch` kernels | Pure simulation, no JAX |
+
+**Our setup:** Playground envs → `mjx.put_model(m, impl="warp")` → Warp physics through the JAX API. Policy networks, vmap, jit, autodiff all stay in JAX. The `impl="warp"` flag swaps only the physics backend.
+
+**The `mujoco_warp` tutorial notebook** (`mjw.put_model`) uses the standalone Warp API — same physics, different interface. You'd need manual data bridging (Warp→JAX) for RL training. Not what we want.
+
+**Rule:** For RL training, always use `mjx` with `impl="warp"`. For standalone simulation/benchmarking without JAX, the `mjw` API is fine.

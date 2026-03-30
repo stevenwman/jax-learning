@@ -72,10 +72,11 @@ JAX/Flax fundamentals in `LEARNER_LESSONS.md`.
 - **Verify training budget before debugging** — eval ~17 at 50M steps was on-curve, not broken
 - **`--eval-every` is episodes, not steps** — `--eval-every 5000000` = 5M episodes, never triggers. Use ~50000 for Go2.
 
-## [MuJoCo Engine](lessons/mujoco.md) — 2 lessons
+## [MuJoCo Engine](lessons/mujoco.md) — 3 lessons
 
 - **Friction uses max-combine** — randomize foot geoms not just floor. PhysX DR ranges don't port to MuJoCo.
 - **Sim2sim between different MJCFs is nearly as hard as sim2real** — train on the target model directly when possible.
+- **Three Python APIs** — CPU (`mujoco`), MJX (`mjx` with `impl="jax"/"warp"`), standalone Warp (`mujoco_warp`). For RL: always MJX. Standalone Warp is a different interface to the same physics.
 
 ## [MJX Physics](lessons/mjx.md) — 5 lessons
 
