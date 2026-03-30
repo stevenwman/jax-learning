@@ -54,12 +54,27 @@ uv run python train_ppo_fast.py --env CheetahRun --total-timesteps 20000000
 ### Go2 quadruped locomotion
 
 ```bash
-# PPO on Go2 joystick walking (flat terrain)
+# PPO on Go2 joystick walking (MJX backend, Menagerie MJCF)
 uv run python train_ppo_fast.py --env Go2JoystickFlat --total-timesteps 50000000
+
+# FastSAC on Go2 (Warp backend, unitree MJCF — best for sim2sim/sim2real)
+uv run python train_offpolicy.py --algo fast_sac --env Go2WarpJoystickFlat --num-envs 1024
+
+# FastSAC + domain randomization (recommended for transfer)
+uv run python train_offpolicy.py --algo fast_sac --env Go2WarpJoystickFlat --num-envs 1024 --domain-rand
 
 # Record a video of the trained walking policy
 MUJOCO_GL=egl uv run python record_video.py --checkpoint checkpoints/<go2_checkpoint>
+
+# Sim2sim validation on CPU MuJoCo (same unitree MJCF as Warp training)
+MUJOCO_GL=egl uv run python deploy/sim2sim_direct.py \
+    --checkpoint checkpoints/<warp_go2_checkpoint> \
+    --vx 0.5 --duration 10 --record /tmp/sim2sim.mp4
 ```
+
+**Two Go2 backends:**
+- `Go2JoystickFlat` — MJX (JAX) backend, Menagerie go2_mjx.xml (simplified collision geometry). Fast, proven.
+- `Go2WarpJoystickFlat` — MuJoCo Warp backend, unitree go2.xml (full cylinder collision geometry). Eliminates sim2sim gap. Use for deployment.
 
 ### Recording and visualizing policies
 
@@ -127,7 +142,7 @@ uv run python live_viewer.py --checkpoint checkpoints/<go2_checkpoint>
 │   │
 │   ├── configs/               # Hyperparameter dataclasses + env presets
 │   ├── training/              # Shared infrastructure (checkpointing, eval, logging)
-│   ├── envs/                  # Custom environments (Go2 locomotion)
+│   ├── envs/                  # Custom environments (Go2 MJX + Warp backends)
 │   ├── buffers/               # Replay buffer (off-policy) + rollout buffer (PPO)
 │   └── utils/                 # Normalization, frame stacking, distributional math
 │
@@ -144,14 +159,15 @@ uv run python live_viewer.py --checkpoint checkpoints/<go2_checkpoint>
 | CheetahRun | 826 | **771** | 749 | **880** | 582 |
 | WalkerWalk | 833 | **975** | 955 | — | — |
 | HumanoidRun | ~10 | 426 | 4.3 | 665 | **892** |
-| Go2 Joystick | **233** | TBD | — | — | — |
+| Go2 Joystick (MJX) | **244** | — | — | — | 226 |
+| Go2 Joystick (Warp) | 132 | — | — | — | **276** |
 
-SAC dominates on general continuous control. FastSAC excels on high-dim action spaces (HumanoidRun). PPO works well for locomotion with Go2.
+SAC dominates on general continuous control. FastSAC excels on high-dim action spaces (HumanoidRun). PPO works well for locomotion with Go2 on MJX. **FastSAC on Warp achieves highest Go2 eval (276)** by training on unitree's exact MJCF.
 
 ## Key Design Decisions
 
 - **JAX-native**: Everything runs on GPU via JAX/Flax. No PyTorch dependency.
-- **MuJoCo Playground**: Uses MJX for GPU-parallelized physics (1024+ envs).
+- **MuJoCo Playground**: Uses MJX or Warp for GPU-parallelized physics (1024+ envs).
 - **Encoder-swappable**: All algos use `builders.py` — swap MLP for CNN by changing the builder, not the algo.
 - **Self-contained envs**: Each env handles its own obs, rewards, and action scaling. Training scripts are env-agnostic.
 - **NaN/Inf safe**: MJX physics can crash stochastically. All training automatically guards against this.
