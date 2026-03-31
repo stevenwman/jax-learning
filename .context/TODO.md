@@ -38,6 +38,10 @@
 - [x] Best-policy checkpointing — CheckpointManager saves to ckpt_dir/best/ on new eval high
 - [x] Sync train_ppo.py with train_ppo_fast.py — frozen obs norm, CheckpointManager, eval fix, --eval-every, .3g format
 
+## Completed (2026-03-30)
+- [x] PandaPickCube SAC — **reward 1386, cube lifted 22cm** @ 10M steps. Preset added to env_presets.py.
+- [x] Manipulation benchmark survey — MuJoCo Playground already has 10 tasks (PandaPickCube, LeapCubeReorient, AlohaSinglePegInsertion, etc.)
+
 ## Active
 
 ## Short-term — Go2 robustness (ACTIVE)

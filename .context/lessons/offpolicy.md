@@ -101,3 +101,15 @@ PPO shouldn't own optimizer construction. Optimizers are external concerns.
 **After:** PPO takes `actor_optimizer` and `critic_optimizer` as constructor args. Train script builds them.
 
 **Lesson:** Algorithms define *what* they optimize, not *how*. Makes swapping optimizers trivial.
+
+---
+
+## Staged Rewards Need Longer Training Budgets
+
+**Problem:** SAC on PandaPickCube at 2M steps learned approach (reward ~604) but never lifted the cube. Box z stayed at 0.03 (table surface).
+
+**Root cause:** PandaPickCube uses a gated reward — `box_target` reward (lift to target) only activates after `reached_box` flag (gripper within 1.2cm of box). At 2M steps the policy learned to reach the box (gripper_box reward) but hadn't explored the grasp-lift sequence enough to discover the gated reward.
+
+**Fix:** 10M steps. Cube lifted to z=0.25, reward ~1386.
+
+**Lesson:** When rewards are staged/gated (reward B only available after achieving condition A), training budget must be long enough to discover the full sequence. The first plateau is not convergence — it's the policy stalling at the first reward stage.

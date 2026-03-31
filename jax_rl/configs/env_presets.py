@@ -108,6 +108,11 @@ SAC_PRESETS: dict[str, tuple[TrainConfig, SACConfig]] = {
         dataclasses.replace(_SAC_BASE_CFG, env_name="CheetahRun"),
         _SAC_BASE_ALGO,
     ),
+    "PandaPickCube": (
+        dataclasses.replace(_SAC_BASE_CFG, env_name="PandaPickCube",
+                            episode_length=150, total_timesteps=10_000_000),
+        _SAC_BASE_ALGO,
+    ),
 }
 
 

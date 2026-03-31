@@ -25,7 +25,7 @@ JAX/Flax fundamentals in `LEARNER_LESSONS.md`.
 - **PPO validation summary** — CartpoleBalance PASS, CheetahRun PASS (826), HumanoidRun PASS (matches Brax ~8-10)
 - **Remaining performance gap (RESOLVED)** — fixed by 0.25x value loss scaling + full-batch advantage norm
 
-## [Off-Policy (SAC / TD3)](lessons/offpolicy.md) — 8 lessons
+## [Off-Policy (SAC / TD3)](lessons/offpolicy.md) — 9 lessons
 
 - **Obs normalization: NEVER before buffer storage** — normalize at sample time with `--obs-norm` (Go2: 139 vs 97)
 - **SAC validation results** — WalkerWalk 975, HumanoidRun 426 (vanilla) / 892 (FastSAC)
@@ -35,6 +35,7 @@ JAX/Flax fundamentals in `LEARNER_LESSONS.md`.
 - **Target entropy = 0 for SAC at scale** — classic `-dim(A)` causes alpha collapse at 1024 envs / 100M steps
 - **AdamW requires `params` in optimizer.update()** — weight decay needs the params themselves
 - **Optimizer decoupling** — algorithms define what to optimize, not how (DI pattern)
+- **Staged rewards need longer budgets** — gated rewards (box_target after reached_box) require 10M+ steps to discover full sequence; 2M plateau is stage 1, not convergence
 
 ## [Distributional RL (C51 / FastTD3 / FastSAC / FastDSAC)](lessons/distributional.md) — 8 lessons
 
