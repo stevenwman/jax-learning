@@ -110,6 +110,11 @@ def make_envs(cfg: TrainConfig, seed: int):
             torso_body_id=torso_body_id,
         )
 
+    # Frame stacking (optional, universal wrapper).
+    if cfg.n_frame_stack > 1:
+        from jax_rl.envs.wrappers import FrameStackWrapper
+        env = FrameStackWrapper(env, n_frames=cfg.n_frame_stack)
+
     env = wrap_for_brax_training(
         env, episode_length=cfg.episode_length, randomization_fn=rand_fn,
     )
@@ -120,6 +125,9 @@ def make_envs(cfg: TrainConfig, seed: int):
     env_state = env.reset(jax.random.split(reset_key, cfg.num_envs))
 
     eval_env = pg_registry.load(cfg.env_name)
+    if cfg.n_frame_stack > 1:
+        from jax_rl.envs.wrappers import FrameStackWrapper
+        eval_env = FrameStackWrapper(eval_env, n_frames=cfg.n_frame_stack)
     eval_env = wrap_for_brax_training(eval_env, episode_length=cfg.episode_length)
 
     # Dict obs → obs_dim is the policy obs ("state" key).

@@ -42,5 +42,8 @@ class TrainConfig:
     # Domain randomization
     domain_rand: bool = False
 
+    # Observation preprocessing
+    n_frame_stack: int = 1  # 1 = no stacking, 3 = standard for locomotion
+
     # PPO config (None for off-policy algos)
     ppo: PPOConfig | None = field(default_factory=PPOConfig)
