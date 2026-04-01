@@ -13,7 +13,7 @@ starts clean without stale frames from the previous episode.
 import jax
 import jax.numpy as jp
 from mujoco_playground._src import mjx_env
-from mujoco_playground._src.wrapper import Wrapper
+from jax_rl.envs.wrappers.training import Wrapper
 
 
 class FrameStackWrapper(Wrapper):

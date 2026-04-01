@@ -10,7 +10,7 @@ import numpy as np
 import optax
 
 from mujoco_playground import dm_control_suite
-from mujoco_playground._src.wrapper import wrap_for_brax_training
+from jax_rl.envs.wrappers import wrap_for_training
 
 from jax_rl.algos.ppo import PPO
 from jax_rl.buffers import RolloutBuffer
@@ -34,7 +34,7 @@ def test_env_determinism():
     results = []
     for run in range(3):
         env = dm_control_suite.load("CartpoleBalance")
-        env = wrap_for_brax_training(env, episode_length=1000)
+        env = wrap_for_training(env, episode_length=1000)
         env_step = jax.jit(env.step)
 
         key = jax.random.PRNGKey(0)
@@ -82,7 +82,7 @@ def test_env_determinism():
 def run_full_training(seed=0, num_iters=50):
     """Exact copy of train.py logic — not a simplified version."""
     env = dm_control_suite.load("CartpoleBalance")
-    env = wrap_for_brax_training(env, episode_length=1000)
+    env = wrap_for_training(env, episode_length=1000)
     env_step = jax.jit(env.step)
 
     num_envs = 64

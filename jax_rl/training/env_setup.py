@@ -7,7 +7,7 @@ import jax.numpy as jnp
 
 from mujoco_playground import registry as pg_registry
 from mujoco_playground._src import locomotion as pg_locomotion
-from mujoco_playground._src.wrapper import wrap_for_brax_training
+from jax_rl.envs.wrappers import wrap_for_training
 
 from jax_rl.configs.train_config import TrainConfig
 from jax_rl.utils.normalization import NormalizationState
@@ -115,7 +115,7 @@ def make_envs(cfg: TrainConfig, seed: int):
         from jax_rl.envs.wrappers import FrameStackWrapper
         env = FrameStackWrapper(env, n_frames=cfg.n_frame_stack)
 
-    env = wrap_for_brax_training(
+    env = wrap_for_training(
         env, episode_length=cfg.episode_length, randomization_fn=rand_fn,
     )
     env_step = _make_nan_safe_step(env.step)
@@ -128,7 +128,7 @@ def make_envs(cfg: TrainConfig, seed: int):
     if cfg.n_frame_stack > 1:
         from jax_rl.envs.wrappers import FrameStackWrapper
         eval_env = FrameStackWrapper(eval_env, n_frames=cfg.n_frame_stack)
-    eval_env = wrap_for_brax_training(eval_env, episode_length=cfg.episode_length)
+    eval_env = wrap_for_training(eval_env, episode_length=cfg.episode_length)
 
     # Dict obs → obs_dim is the policy obs ("state" key).
     if isinstance(env_state.obs, dict):
