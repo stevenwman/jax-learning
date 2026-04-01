@@ -1,0 +1,62 @@
+<!-- Bongo board: 30" x 8" board on a stepped roller.
+     Main roller: 4.5" diam x 3" wide (ground contact).
+     Extensions: 4" diam x 8" wide (full width).
+     Roller is captive to the board via slide + hinge joints.
+     No-slip rolling enforced by equality constraint: slide = -r * spin.
+     Roller can travel ±9" along the board's long axis. -->
+<mujoco model="bongo_board">
+  <worldbody>
+    <body name="board" pos="0 0 0.1318">
+      <!-- roller_radius=0.05842m (2.3"), board_half_thickness=0.015m -->
+      <!-- board center z = 2*radius + half_thickness = 0.11684 + 0.015 -->
+      <freejoint name="board_joint"/>
+      <geom name="board_top" type="box" size="0.381 0.1016 0.015"
+            mass="2.0" friction="0.8 0.005 0.001"
+            rgba="0.6 0.3 0.1 1"/>
+
+      <!-- Roller: child of board, slides along X (board long axis), spins around Y -->
+      <body name="roller" pos="0 0 -0.07342">
+        <!-- pos = -(board_half_thickness + roller_radius) = -(0.015 + 0.05842) -->
+        <!-- Roller center is one radius below board bottom -->
+        <joint name="roller_slide" type="slide" axis="1 0 0"
+               range="-0.2286 0.2286" damping="0.1"/>
+        <joint name="roller_spin" type="hinge" axis="0 1 0" damping="0.01"/>
+
+        <!-- Main roller: 4.6" diam x 3" wide (contacts ground) -->
+        <geom name="roller_main" type="cylinder"
+              size="0.05842 0.0381"
+              mass="0.7" friction="0.8 0.005 0.001"
+              rgba="0.3 0.3 0.3 1"
+              quat="0.7071 0.7071 0 0"/>
+        <!-- size: radius=0.05842 (2.3"), half-length=0.0381 (1.5") -->
+
+        <!-- Extensions: 3.9" diam x 8" wide (full width) -->
+        <geom name="roller_ext" type="cylinder"
+              size="0.04953 0.1016"
+              mass="0.3" friction="0.8 0.005 0.001"
+              rgba="0.4 0.4 0.4 1"
+              quat="0.7071 0.7071 0 0"/>
+        <!-- size: radius=0.04953 (1.95"), half-length=0.1016 (4") -->
+
+        <!-- Visual-only tracker balls on extension faces at rim -->
+        <geom name="roller_tracker_L" type="sphere" size="0.012"
+              pos="0 0.105 0.04953"
+              rgba="1 0 0 1"
+              contype="0" conaffinity="0" group="2"/>
+        <geom name="roller_tracker_R" type="sphere" size="0.012"
+              pos="0 -0.105 0.04953"
+              rgba="1 0 0 1"
+              contype="0" conaffinity="0" group="2"/>
+        <!-- pos: on extension faces (y=±half_length), at extension rim (z=0.0508) -->
+      </body>
+    </body>
+  </worldbody>
+
+  <equality>
+    <!-- No-slip rolling: slide_pos = -radius * spin_angle -->
+    <!-- Uses main roller radius (0.05842) for ground contact -->
+    <joint joint1="roller_slide" joint2="roller_spin"
+           polycoef="0 -0.05842 0 0 0"
+           solref="0.001 1" solimp="0.99 0.999 0.001"/>
+  </equality>
+</mujoco>
