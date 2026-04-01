@@ -461,6 +461,8 @@ if __name__ == "__main__":
                         help="Enable W&B experiment tracking")
     parser.add_argument("--wandb-project", type=str, default="jax-rl",
                         help="W&B project name (default: jax-rl)")
+    parser.add_argument("--frame-stack", type=int, default=None,
+                        help="Number of stacked observation frames (default: 1, use 3 for locomotion)")
     args = parser.parse_args()
 
     cfg = get_preset(args.env)
@@ -492,6 +494,8 @@ if __name__ == "__main__":
         cfg_overrides["eval_every_n_episodes"] = args.eval_every
     if args.domain_rand:
         cfg_overrides["domain_rand"] = True
+    if args.frame_stack is not None:
+        cfg_overrides["n_frame_stack"] = args.frame_stack
     if ppo_overrides:
         cfg_overrides["ppo"] = dataclasses.replace(cfg.ppo, **ppo_overrides)
     if cfg_overrides:

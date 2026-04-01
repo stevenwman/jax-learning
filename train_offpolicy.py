@@ -350,6 +350,8 @@ if __name__ == "__main__":
                         help="Enable W&B experiment tracking (requires wandb installed)")
     parser.add_argument("--wandb-project", type=str, default="jax-rl",
                         help="W&B project name (default: jax-rl)")
+    parser.add_argument("--frame-stack", type=int, default=None,
+                        help="Number of stacked observation frames (default: 1, use 3 for locomotion)")
     args = parser.parse_args()
 
     # Load preset
@@ -371,6 +373,7 @@ if __name__ == "__main__":
     if args.exploration_noise is not None: algo_overrides["exploration_noise_std"] = args.exploration_noise
     if args.obs_norm: algo_overrides["obs_normalization"] = True
     if args.domain_rand: cfg_overrides["domain_rand"] = True
+    if args.frame_stack is not None: cfg_overrides["n_frame_stack"] = args.frame_stack
 
     if cfg_overrides: cfg = dataclasses.replace(cfg, **cfg_overrides)
     if algo_overrides: algo_cfg = dataclasses.replace(algo_cfg, **algo_overrides)
