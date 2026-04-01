@@ -39,3 +39,4 @@ GYRO_SENSOR = "gyro"
 WARP_ROOT_BODY = "base_link"  # unitree go2.xml (vs "base" in Menagerie)
 
 WARP_SCENE_FLAT_XML = ROOT_PATH / "go2_warp_scene_flat.xml"
+BONGO_SCENE_XML = ROOT_PATH / "go2_bongo_scene.xml"
