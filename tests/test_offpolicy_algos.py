@@ -36,13 +36,17 @@ KEY = jax.random.PRNGKey(42)
 def _make_batch(key):
     """Create a fake replay batch for testing."""
     k1, k2, k3, k4 = jax.random.split(key, 4)
+    obs = jax.random.normal(k1, (BATCH_SIZE, OBS_DIM), dtype=jnp.float32)
+    next_obs = jax.random.normal(k4, (BATCH_SIZE, OBS_DIM), dtype=jnp.float32)
     return {
-        "obs": jax.random.normal(k1, (BATCH_SIZE, OBS_DIM), dtype=jnp.float32),
+        "obs": obs,
         "action": jax.random.uniform(k2, (BATCH_SIZE, ACTION_DIM), minval=-1, maxval=1, dtype=jnp.float32),
         "reward": jnp.zeros((BATCH_SIZE, 1), dtype=jnp.float32),
-        "next_obs": jax.random.normal(k4, (BATCH_SIZE, OBS_DIM), dtype=jnp.float32),
+        "next_obs": next_obs,
         "done": jnp.zeros((BATCH_SIZE, 1), dtype=jnp.float32),
         "truncation": jnp.zeros((BATCH_SIZE, 1), dtype=jnp.float32),
+        "critic_obs": obs,           # same as obs for non-asymmetric tests
+        "critic_next_obs": next_obs,
     }
 
 

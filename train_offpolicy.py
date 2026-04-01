@@ -264,7 +264,7 @@ def train(cfg: TrainConfig, algo_cfg, algo_name: str, seed: int = 0, resume: str
         extra_kwargs = {}
         if has_privileged:
             extra_kwargs["critic_obs"] = critic_raw_obs
-            extra_kwargs["next_critic_obs"] = _get_critic_obs(env_state.obs)
+            extra_kwargs["critic_next_obs"] = _get_critic_obs(env_state.obs)
         buffer.add_batch(obs=raw_obs, action=action,
                          reward=env_state.reward * cfg.reward_scaling,
                          next_obs=next_raw_obs, done=env_state.done,

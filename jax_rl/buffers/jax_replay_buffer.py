@@ -71,8 +71,12 @@ class JaxReplayBuffer:
         self._extra_obs_dims = extra_obs_dims or {}
         self._extra_bufs: dict[str, jax.Array] = {}
         for name, dim in self._extra_obs_dims.items():
+            # Convention: "critic_obs" → also allocates "critic_next_obs"
+            next_name = name.replace("_obs", "_next_obs") if "_obs" in name else f"next_{name}"
             self._extra_bufs[name] = jnp.zeros((max_size, dim), dtype=jnp.float32)
-            self._extra_bufs[f"next_{name}"] = jnp.zeros((max_size, dim), dtype=jnp.float32)
+            self._extra_bufs[next_name] = jnp.zeros((max_size, dim), dtype=jnp.float32)
+            self._extra_next_keys = {n: n.replace("_obs", "_next_obs") if "_obs" in n else f"next_{n}"
+                                     for n in self._extra_obs_dims}
 
     def add_batch(
         self,
@@ -141,7 +145,7 @@ class JaxReplayBuffer:
                 if name in extra:
                     val = jnp.asarray(extra[name])
                     self._extra_bufs[name] = self._extra_bufs[name].at[indices].set(val)
-                next_key = f"next_{name}"
+                next_key = self._extra_next_keys[name]
                 if next_key in extra:
                     val = jnp.asarray(extra[next_key])
                     self._extra_bufs[next_key] = self._extra_bufs[next_key].at[indices].set(val)
@@ -191,8 +195,9 @@ class JaxReplayBuffer:
     def _gather_extra(self, batch: dict, idx: jax.Array) -> dict:
         """Add extra obs fields to batch dict using pre-computed indices."""
         for name in self._extra_obs_dims:
+            next_key = self._extra_next_keys[name]
             batch[name] = self._extra_bufs[name][idx]
-            batch[f"next_{name}"] = self._extra_bufs[f"next_{name}"][idx]
+            batch[next_key] = self._extra_bufs[next_key][idx]
         return batch
 
     def sample(self, batch_size: int, key: jax.Array | None = None) -> dict[str, jax.Array]:

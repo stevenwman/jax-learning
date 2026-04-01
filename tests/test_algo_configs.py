@@ -36,13 +36,17 @@ KEY = jax.random.PRNGKey(42)
 
 def _make_batch(obs_dim, action_dim, batch_size=64):
     """Create a fake batch for testing."""
+    obs = jnp.ones((batch_size, obs_dim))
+    next_obs = jnp.ones((batch_size, obs_dim))
     return {
-        "obs": jnp.ones((batch_size, obs_dim)),
+        "obs": obs,
         "action": jnp.zeros((batch_size, action_dim)),
         "reward": jnp.ones((batch_size, 1)),
-        "next_obs": jnp.ones((batch_size, obs_dim)),
+        "next_obs": next_obs,
         "done": jnp.zeros((batch_size, 1)),
         "truncation": jnp.zeros((batch_size, 1)),
+        "critic_obs": obs,
+        "critic_next_obs": next_obs,
     }
 
 

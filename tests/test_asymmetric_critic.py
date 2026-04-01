@@ -322,14 +322,14 @@ class TestBufferExtraObs:
             next_obs=jnp.ones((10, 48)),
             done=jnp.zeros(10),
             critic_obs=jnp.ones((10, 122)) * 2.0,
-            next_critic_obs=jnp.ones((10, 122)) * 3.0,
+            critic_next_obs=jnp.ones((10, 122)) * 3.0,
         )
         batch = buf.sample(8, key=jax.random.PRNGKey(0))
         assert "critic_obs" in batch
-        assert "next_critic_obs" in batch
+        assert "critic_next_obs" in batch
         assert batch["critic_obs"].shape == (8, 122)
         assert jnp.allclose(batch["critic_obs"], 2.0)
-        assert jnp.allclose(batch["next_critic_obs"], 3.0)
+        assert jnp.allclose(batch["critic_next_obs"], 3.0)
 
     def test_no_extra_obs_unchanged(self):
         from jax_rl.buffers.jax_replay_buffer import JaxReplayBuffer
@@ -357,7 +357,7 @@ class TestBufferExtraObs:
             next_obs=jnp.ones((10, 48)),
             done=jnp.zeros(10),
             critic_obs=jnp.ones((10, 122)) * 5.0,
-            next_critic_obs=jnp.ones((10, 122)) * 6.0,
+            critic_next_obs=jnp.ones((10, 122)) * 6.0,
         )
         batch = buf.sample(8)  # key=None
         assert "critic_obs" in batch
@@ -377,7 +377,7 @@ class TestBufferExtraObs:
                 next_obs=jnp.ones((5, 4)) * float(i),
                 done=jnp.zeros(5),
                 critic_obs=jnp.ones((5, 8)) * float(i + 10),
-                next_critic_obs=jnp.ones((5, 8)) * float(i + 20),
+                critic_next_obs=jnp.ones((5, 8)) * float(i + 20),
             )
         assert len(buf) == 10  # capped at max_size
         batch = buf.sample(5, key=jax.random.PRNGKey(42))
