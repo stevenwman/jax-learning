@@ -57,3 +57,7 @@ Manager-based API where each env aspect is a separate composable module:
 - Before adding terrain environments
 - Before DIAYN (skill discovery needs composable command/obs managers)
 - When adding ManiSkill/HumanoidBench (need env factory abstraction anyway)
+
+## Deep Audit
+
+Full gap analysis with concrete recommendations: [mjlab_audit.md](mjlab_audit.md)

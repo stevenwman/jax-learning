@@ -116,6 +116,20 @@ PPO shouldn't own optimizer construction. Optimizers are external concerns.
 
 ---
 
+## Frame Stacking Doesn't Help Locomotion with Proprioceptive Obs (2026-04-01)
+
+**Experiment:** A/B on Go2WarpJoystickFlat with FastSAC, 1024 envs, 20M steps. Baseline (48d) vs 3-frame stack (144d). Same config, different seeds.
+
+**Result:** 276.5 (baseline) vs 271.3 (stacked). No measurable difference.
+
+**Why:** The 48d obs already contains `last_action` (12d) which provides sufficient temporal context for the policy. Stacking adds 96d of redundant frame history that the policy can't use better than what `last_action` already provides. Locomotion temporal context comes from GRU/learned estimators, not raw stacking.
+
+**When frame stacking DOES help:** Vision RL (pixel obs where consecutive frames encode motion — DrQ-v2, CURL), and envs without `last_action` in obs.
+
+**Infrastructure still valuable:** The `FrameStackWrapper`, sample-time buffer reconstruction, and `--frame-stack` CLI flag are needed for future vision RL work.
+
+---
+
 ## Staged Rewards Need Longer Training Budgets
 
 **Problem:** SAC on PandaPickCube at 2M steps learned approach (reward ~604) but never lifted the cube. Box z stayed at 0.03 (table surface).

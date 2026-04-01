@@ -15,11 +15,10 @@ Reference doc for A/B testing frame stacking. Each item is a concern to verify �
 - **Fix:** `FrameStackWrapper.step()` uses `jp.where(state.done, tiled_stack, shifted_stack)` — on done, re-tiles the stack from current obs so next episode starts clean. JIT-safe (no Python branch). Commit `334dec6`.
 - **Lesson:** Any per-env state stored in `state.info` that should reset at episode boundaries must be explicitly handled — Brax auto-reset won't do it for you. Use `jp.where(done, ...)` pattern.
 
-### 3. Replay buffer memory — MEASURED, OK with reduced buffer
-- **Numbers:** Raw (48d) buffer at 4M entries = **1.86 GB**. Stacked (144d) = **5.08 GB** (2.7x).
-- **Full budget:** 5.08 GB (buffer) + ~2.3 GB (baseline GPU) + ~2-3 GB (JIT/model/envs) ≈ 10-11 GB. Fits on 16GB GPU but tight.
-- **Mitigation:** Use `--buffer-size 2097152` (2M) for A/B testing. Halves buffer to ~2.5 GB.
-- **Future option:** Store raw 48d in buffer, reconstruct stacks at sample time (DrQ-v2 pattern). 3x cheaper but more complex. Only worth it if 2M buffer hurts learning.
+### 3. Replay buffer memory — FIXED (sample-time reconstruction)
+- **Before:** Naive stacked buffer stored 144d obs + 144d next_obs = **5.08 GB** at 4M entries.
+- **After:** Sample-time reconstruction stores raw 48d obs only (no next_obs). Buffer = **0.77 GB** (83% reduction). 4M buffer fits easily on 16GB GPU.
+- **How:** `FrameStackConfig` on `JaxReplayBuffer`. Stores newest 48d frame, reconstructs 3-frame stack at sample time by looking back `k * num_envs` indices. Episode boundaries handled via `jp.where(done, tile, actual)`. `next_obs` derived from `buffer[i + num_envs]`.
 
 ## Edge Cases — Deferred (low priority)
 
@@ -36,12 +35,12 @@ Reference doc for A/B testing frame stacking. Each item is a concern to verify �
 **Env:** Go2WarpJoystickFlat, 1024 envs, FastSAC
 **Budget:** 18M steps (matches previous best of 276.5 eval)
 **Seeds:** 2 per condition minimum
-**Buffer:** 2M (to fit in VRAM alongside other GPU users)
+**Buffer:** 4M (sample-time reconstruction keeps buffer at 0.77 GB regardless of stacking)
 
 | Run | Config | Purpose |
 |-----|--------|---------|
-| A (baseline) | `--algo fast_sac --env Go2WarpJoystickFlat --buffer-size 2097152` | No stacking (48d) |
-| B (stacked) | `--algo fast_sac --env Go2WarpJoystickFlat --frame-stack 3 --buffer-size 2097152` | 3-frame (144d) |
+| A (baseline) | Previous run: seed 6001, eval 276.5 @ 17.3M steps | No stacking (48d) — already done |
+| B (stacked) | `--algo fast_sac --env Go2WarpJoystickFlat --frame-stack 3 --seed 8000` | 3-frame (144d) |
 
 **Metrics to compare:**
 - Eval return curve (sample efficiency)
@@ -52,3 +51,25 @@ Reference doc for A/B testing frame stacking. Each item is a concern to verify �
 **Hypothesis:** Frame stacking should help the policy infer velocity/dynamics from observation history, potentially allowing removal of privileged velocity info from actor obs in the future. But the 3x obs dim increases network input, which could hurt sample efficiency on the current 18M budget.
 
 **Key question:** Does the temporal info in stacked frames provide signal the policy can't already get from `last_action` (12d, already in obs)?
+
+## A/B Results (2026-04-01)
+
+| Steps | Baseline (seed 6001, no stack) | Frame-stacked (seed 8001, 3x) |
+|-------|-------------------------------|-------------------------------|
+| ~1M | 175.8 | 138.3 |
+| ~5M | 215.8 | 268.2 |
+| ~9M | 273.8 | 267.8 |
+| ~14M | 274.8 | 280.1 |
+| ~17-19M | 276.5 | 265.2 |
+| Final eval | **276.5** (best @ 17M) | **271.3** ± 8.3 (@ 20M) |
+
+Also ran seed 8000 (no mid-training evals): final eval 274.6 ± 6.0.
+
+**Conclusion:** Frame stacking has no measurable effect on Go2 FastSAC. The policy already has `last_action` (12d) in the 48d obs, which provides sufficient temporal context. The extra 96d of stacked history doesn't add useful signal for locomotion.
+
+**This matches the literature:** locomotion benefits from GRU/RNN temporal context (ANYmal, DeFM) or learned terrain estimators (DreamWaQ, WTW), not raw frame stacking. Frame stacking helps vision/manipulation (DrQ-v2, CURL) where consecutive pixel frames encode motion.
+
+**Frame stacking infrastructure is still valuable for:**
+- Vision RL (CNN on stacked pixel frames — future)
+- Environments without `last_action` in obs
+- Benchmarking against DrQ-v2 style methods
