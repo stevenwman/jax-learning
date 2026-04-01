@@ -174,6 +174,14 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
 
     # ── Create env (unwrapped — single env, no auto-reset) ────────────────
     env = pg_registry.load(env_name)
+
+    # Apply frame stacking if checkpoint was trained with it.
+    n_frame_stack = meta.get("train_config", {}).get("n_frame_stack", 1)
+    if n_frame_stack > 1:
+        from jax_rl.envs.wrappers import FrameStackWrapper
+        env = FrameStackWrapper(env, n_frames=n_frame_stack)
+        print(f"  Frame stacking: {n_frame_stack} frames")
+
     env_step = jax.jit(env.step)
 
     key = jax.random.PRNGKey(video_seed)

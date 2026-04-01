@@ -5,11 +5,9 @@ Newest frame at index [0:obs_dim], oldest at the end.
 
 Works with both flat obs (array) and dict obs (stacks the "state" key only).
 
-Note: Brax auto-reset replays the cached initial state rather than re-calling
-reset(). This means state.info["frame_stack"] goes stale for N-1 steps after
-auto-reset (frames 1..N-1 contain data from the previous episode). For 3-frame
-stacking with 1000-step episodes, this affects 0.2% of steps — acceptable for
-locomotion training.
+Handles Brax auto-reset: when done=1, the frame stack is re-tiled from the
+current obs (all frames identical) instead of shifting, so the next episode
+starts clean without stale frames from the previous episode.
 """
 
 import jax
@@ -53,7 +51,11 @@ class FrameStackWrapper(Wrapper):
             raw = obs
         raw_dim = raw.shape[-1]
         old_stack = state.info["frame_stack"]
-        new_stack = jp.concatenate([raw, old_stack[:-raw_dim]])
+        # Normal case: push new obs to front, shift old frames right.
+        shifted_stack = jp.concatenate([raw, old_stack[:-raw_dim]])
+        # On done: re-tile so next episode starts with clean frames.
+        tiled_stack = jp.tile(raw, self._n_frames)
+        new_stack = jp.where(state.done, tiled_stack, shifted_stack)
         state.info["frame_stack"] = new_stack
         if isinstance(obs, dict):
             obs = {**obs, "state": new_stack}
