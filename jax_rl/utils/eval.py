@@ -90,7 +90,7 @@ def evaluate(
 
         # Record Q prediction before stepping
         if q_fn is not None:
-            q_pred = np.asarray(q_fn(obs, action)).squeeze()
+            q_pred = np.asarray(q_fn(env_state.obs, action)).squeeze()
             step_q_preds.append(q_pred)
             step_active.append(~episode_done.copy())
 
