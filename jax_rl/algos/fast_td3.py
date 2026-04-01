@@ -57,9 +57,11 @@ class FastTD3:
         critic_optimizer: optax.GradientTransformation,
         gamma: float = 0.99,
         handle_truncation: bool = True,
+        critic_obs_dim: int | None = None,
     ) -> None:
         self.config = config
         self.obs_dim = obs_dim
+        self.critic_obs_dim = critic_obs_dim or obs_dim
         self.action_dim = action_dim
         self.gamma = gamma
         self.handle_truncation = handle_truncation
@@ -105,14 +107,15 @@ class FastTD3:
         def _critic_loss(q_params, target_actor_params, target_q1_params,
                          target_q2_params, batch, key):
             q1_params_, q2_params_ = q_params
-            obs = batch["obs"]
+            critic_obs = batch["critic_obs"]
             action = batch["action"]
             reward = batch["reward"].squeeze(-1)
+            critic_next_obs = batch["critic_next_obs"]
             next_obs = batch["next_obs"]
             done = batch["done"].squeeze(-1)
             truncation = batch["truncation"].squeeze(-1)
 
-            # Target policy smoothing
+            # Target policy smoothing (actor sees 48d obs)
             next_action = _actor_forward(target_actor_params, next_obs)
             noise = jnp.clip(
                 jax.random.normal(key, next_action.shape) * target_noise_std,
@@ -120,9 +123,9 @@ class FastTD3:
             )
             next_action = jnp.clip(next_action + noise, -1.0, 1.0)
 
-            # Target Q distributions
-            tq1_logits = q1.apply(target_q1_params, next_obs, next_action)
-            tq2_logits = q2.apply(target_q2_params, next_obs, next_action)
+            # Target Q distributions (critic sees privileged obs)
+            tq1_logits = q1.apply(target_q1_params, critic_next_obs, next_action)
+            tq2_logits = q2.apply(target_q2_params, critic_next_obs, next_action)
             tq1_probs = jax.nn.softmax(tq1_logits, axis=-1)
             tq2_probs = jax.nn.softmax(tq2_logits, axis=-1)
 
@@ -144,9 +147,9 @@ class FastTD3:
                 project_distribution(target_probs, reward, effective_done, self.gamma, support)
             )
 
-            # Online Q logits
-            q1_logits = q1.apply(q1_params_, obs, action)
-            q2_logits = q2.apply(q2_params_, obs, action)
+            # Online Q logits (critic sees privileged obs)
+            q1_logits = q1.apply(q1_params_, critic_obs, action)
+            q2_logits = q2.apply(q2_params_, critic_obs, action)
 
             # Cross-entropy loss for C51: -sum(target_probs * log(predicted_probs))
             # CRITICAL: log_softmax produces -inf for zero-probability atoms.
@@ -172,10 +175,10 @@ class FastTD3:
             return q1_loss + q2_loss, metrics
 
         # ── Actor loss (uses expected Q from distribution) ───────────────
-        def _actor_loss_fn(actor_params, q1_params_, q2_params_, obs):
+        def _actor_loss_fn(actor_params, q1_params_, q2_params_, obs, critic_obs):
             action = _actor_forward(actor_params, obs)
-            q1_logits = q1.apply(q1_params_, obs, action)
-            q2_logits = q2.apply(q2_params_, obs, action)
+            q1_logits = q1.apply(q1_params_, critic_obs, action)
+            q2_logits = q2.apply(q2_params_, critic_obs, action)
             q1_val = logits_to_q(q1_logits, support)
             q2_val = logits_to_q(q2_logits, support)
 
@@ -212,9 +215,10 @@ class FastTD3:
             def _do_actor_update(args):
                 actor_params, actor_opt_state, q1_p, q2_p, nq1, nq2, ta, tq1, tq2 = args
                 obs = batch["obs"]
+                critic_obs = batch["critic_obs"]
                 (_, actor_metrics), actor_grads = jax.value_and_grad(
                     _actor_loss_fn, argnums=0, has_aux=True
-                )(actor_params, q1_p, q2_p, obs)
+                )(actor_params, q1_p, q2_p, obs, critic_obs)
                 actor_updates, new_actor_opt_state = actor_optimizer.update(
                     actor_grads, actor_opt_state, params=actor_params
                 )
@@ -277,21 +281,24 @@ class FastTD3:
         self.select_action = select_action
         self._actor_forward = _actor_forward
 
-    def get_q_value(self, state, obs: jax.Array, action: jax.Array) -> jax.Array:
+    def get_q_value(self, state, obs: jax.Array, action: jax.Array,
+                    critic_obs: jax.Array | None = None) -> jax.Array:
         """Return scalar Q1 value (expected value from C51 logits)."""
-        logits = self.q1.apply(state.q1_params, obs, action)
+        q_obs = critic_obs if critic_obs is not None else obs
+        logits = self.q1.apply(state.q1_params, q_obs, action)
         return logits_to_q(logits, self._support)
 
     def init(self, key: jax.Array) -> TrainingState:
         key, k1, k3, k4 = jax.random.split(key, 4)
 
         dummy_obs = jnp.zeros((1, self.obs_dim))
+        dummy_critic_obs = jnp.zeros((1, self.critic_obs_dim))
         dummy_action = jnp.zeros((1, self.action_dim))
 
         actor_params = self.actor.init(k1, dummy_obs)
 
-        q1_params = self.q1.init(k3, dummy_obs, dummy_action)
-        q2_params = self.q2.init(k4, dummy_obs, dummy_action)
+        q1_params = self.q1.init(k3, dummy_critic_obs, dummy_action)
+        q2_params = self.q2.init(k4, dummy_critic_obs, dummy_action)
 
         actor_opt_state = self.actor_optimizer.init(actor_params)
         q_params = (q1_params, q2_params)
