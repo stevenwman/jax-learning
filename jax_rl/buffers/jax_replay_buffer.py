@@ -8,10 +8,19 @@ Same interface as the numpy ReplayBuffer for drop-in replacement.
 """
 
 import functools
+from dataclasses import dataclass
 
 import jax
 import jax.numpy as jnp
 import numpy as np
+
+
+@dataclass
+class FrameStackConfig:
+    """Config for sample-time frame stack reconstruction."""
+    n_frames: int    # e.g., 3
+    raw_dim: int     # e.g., 48 (single-frame obs dim)
+    num_envs: int    # e.g., 1024 (stride for same-env lookback)
 
 
 class JaxReplayBuffer:
@@ -21,23 +30,37 @@ class JaxReplayBuffer:
         obs_dim: Observation dimensionality.
         action_dim: Action dimensionality.
         max_size: Maximum number of transitions to store.
+        frame_stack_config: When set, stores only raw (single-frame) obs and
+            reconstructs stacked obs/next_obs at sample time.
+            When None, behavior is identical to the original buffer.
     """
 
-    def __init__(self, obs_dim: int, action_dim: int, max_size: int = 1_000_000):
+    def __init__(self, obs_dim: int, action_dim: int, max_size: int = 1_000_000,
+                 frame_stack_config: FrameStackConfig | None = None):
         self.max_size = max_size
-        self.obs_dim = obs_dim
         self.action_dim = action_dim
         self.ptr = 0
         self.size = 0
         self._jit_cache: dict = {}  # batch_size → compiled sample fn
+        self._fsc = frame_stack_config
+
+        if frame_stack_config is not None:
+            self.obs_dim = frame_stack_config.raw_dim
+            self._stacked_dim = frame_stack_config.raw_dim * frame_stack_config.n_frames
+        else:
+            self.obs_dim = obs_dim
+            self._stacked_dim = obs_dim
 
         # Pre-allocate on GPU
-        self.obs         = jnp.zeros((max_size, obs_dim),    dtype=jnp.float32)
-        self.next_obs    = jnp.zeros((max_size, obs_dim),    dtype=jnp.float32)
-        self.actions     = jnp.zeros((max_size, action_dim), dtype=jnp.float32)
-        self.rewards     = jnp.zeros((max_size, 1),          dtype=jnp.float32)
-        self.dones       = jnp.zeros((max_size, 1),          dtype=jnp.float32)
-        self.truncations = jnp.zeros((max_size, 1),          dtype=jnp.float32)
+        self.obs         = jnp.zeros((max_size, self.obs_dim), dtype=jnp.float32)
+        self.actions     = jnp.zeros((max_size, action_dim),   dtype=jnp.float32)
+        self.rewards     = jnp.zeros((max_size, 1),            dtype=jnp.float32)
+        self.dones       = jnp.zeros((max_size, 1),            dtype=jnp.float32)
+        self.truncations = jnp.zeros((max_size, 1),            dtype=jnp.float32)
+
+        if frame_stack_config is None:
+            self.next_obs = jnp.zeros((max_size, self.obs_dim), dtype=jnp.float32)
+        # When frame stacking, next_obs is derived at sample time — no allocation
 
     def add_batch(
         self,
@@ -61,25 +84,39 @@ class JaxReplayBuffer:
         obs = jnp.asarray(obs)
         action = jnp.asarray(action)
         reward = jnp.asarray(reward).reshape(-1, 1)
-        next_obs = jnp.asarray(next_obs)
         done = jnp.asarray(done).reshape(-1, 1)
         if truncation is None:
             truncation = jnp.zeros_like(done)
         else:
             truncation = jnp.asarray(truncation).reshape(-1, 1)
 
+        # Frame stack mode: extract raw (newest) frame from stacked obs
+        if self._fsc is not None:
+            obs = obs[:, :self.obs_dim]
+            # next_obs not stored — derived at sample time
+        else:
+            next_obs = jnp.asarray(next_obs)
+
         n = obs.shape[0]
         ptr = jnp.array(self.ptr)
 
-        # Single JIT'd scatter for all 6 arrays — compiles once, reuses every step.
-        # Without JIT, each .at[].set() is a separate XLA dispatch that accumulates
-        # command buffers and eventually OOMs on long runs.
-        (self.obs, self.next_obs, self.actions,
-         self.rewards, self.dones, self.truncations) = self._jit_add(
-            self.obs, self.next_obs, self.actions,
-            self.rewards, self.dones, self.truncations,
-            obs, next_obs, action, reward, done, truncation, ptr,
-        )
+        if self._fsc is not None:
+            (self.obs, self.actions, self.rewards,
+             self.dones, self.truncations) = self._jit_add_fs(
+                self.obs, self.actions, self.rewards,
+                self.dones, self.truncations,
+                obs, action, reward, done, truncation, ptr,
+            )
+        else:
+            # Single JIT'd scatter for all 6 arrays — compiles once, reuses every step.
+            # Without JIT, each .at[].set() is a separate XLA dispatch that accumulates
+            # command buffers and eventually OOMs on long runs.
+            (self.obs, self.next_obs, self.actions,
+             self.rewards, self.dones, self.truncations) = self._jit_add(
+                self.obs, self.next_obs, self.actions,
+                self.rewards, self.dones, self.truncations,
+                obs, next_obs, action, reward, done, truncation, ptr,
+            )
 
         self.ptr  = (self.ptr + n) % self.max_size
         self.size = min(self.size + n, self.max_size)
@@ -104,6 +141,25 @@ class JaxReplayBuffer:
             )
         return _add
 
+    @functools.cached_property
+    def _jit_add_fs(self):
+        """JIT'd scatter for frame-stack mode (no next_obs)."""
+        max_size = self.max_size
+
+        @jax.jit
+        def _add(buf_obs, buf_act, buf_rew, buf_done, buf_trunc,
+                 new_obs, new_act, new_rew, new_done, new_trunc, ptr):
+            n = new_obs.shape[0]
+            indices = (jnp.arange(n) + ptr) % max_size
+            return (
+                buf_obs.at[indices].set(new_obs),
+                buf_act.at[indices].set(new_act),
+                buf_rew.at[indices].set(new_rew),
+                buf_done.at[indices].set(new_done),
+                buf_trunc.at[indices].set(new_trunc),
+            )
+        return _add
+
     def sample(self, batch_size: int, key: jax.Array | None = None) -> dict[str, jax.Array]:
         """Sample a random minibatch. Returns dict of jax.Array (already on GPU).
 
@@ -112,7 +168,17 @@ class JaxReplayBuffer:
             key: PRNG key for sampling (required for JIT'd fast path).
         """
         if key is None:
+            # Non-JIT path (rarely used)
             idx = jnp.array(np.random.randint(0, self.size, size=batch_size))
+            if self._fsc is not None:
+                return {
+                    "obs":        self._reconstruct(self.obs, self.dones, idx),
+                    "action":     self.actions[idx],
+                    "reward":     self.rewards[idx],
+                    "next_obs":   self._reconstruct(self.obs, self.dones, (idx + self._fsc.num_envs) % self.max_size),
+                    "done":       self.dones[idx],
+                    "truncation": self.truncations[idx],
+                }
             return {
                 "obs":        self.obs[idx],
                 "action":     self.actions[idx],
@@ -121,9 +187,20 @@ class JaxReplayBuffer:
                 "done":       self.dones[idx],
                 "truncation": self.truncations[idx],
             }
+
         # JIT'd fast path: compile gather per batch_size (reuses across calls)
         if batch_size not in self._jit_cache:
-            self._jit_cache[batch_size] = self._make_jit_sample(batch_size)
+            if self._fsc is not None:
+                self._jit_cache[batch_size] = self._make_jit_sample_fs(batch_size)
+            else:
+                self._jit_cache[batch_size] = self._make_jit_sample(batch_size)
+
+        if self._fsc is not None:
+            return self._jit_cache[batch_size](
+                self.obs, self.actions, self.rewards,
+                self.dones, self.truncations,
+                self.size, key,
+            )
         return self._jit_cache[batch_size](
             self.obs, self.actions, self.rewards,
             self.next_obs, self.dones, self.truncations,
@@ -140,6 +217,69 @@ class JaxReplayBuffer:
                 "action":     actions[idx],
                 "reward":     rewards[idx],
                 "next_obs":   next_obs[idx],
+                "done":       dones[idx],
+                "truncation": truncations[idx],
+            }
+        return _sample
+
+    def _reconstruct(self, obs_buf, dones_buf, indices):
+        """Reconstruct stacked obs from raw frames at given indices."""
+        fsc = self._fsc
+        frames = [obs_buf[indices]]
+        prev_idx = indices
+        valid = jnp.ones(indices.shape[0], dtype=jnp.bool_)
+
+        for k in range(1, fsc.n_frames):
+            cand_idx = (prev_idx - fsc.num_envs) % self.max_size
+            boundary = dones_buf[cand_idx].squeeze(-1) > 0.5
+            valid = valid & ~boundary
+            frame = jnp.where(valid[:, None], obs_buf[cand_idx], frames[-1])
+            frames.append(frame)
+            prev_idx = cand_idx
+
+        return jnp.concatenate(frames, axis=-1)
+
+    def _make_jit_sample_fs(self, batch_size: int):
+        """Create JIT'd sample function for frame-stack mode."""
+        n_frames = self._fsc.n_frames
+        num_envs = self._fsc.num_envs
+        max_size = self.max_size
+
+        @jax.jit
+        def _sample(obs, actions, rewards, dones, truncations, size, key):
+            # Sample valid indices (exclude first (n_frames-1)*num_envs entries
+            # which lack history, and last num_envs which lack next_obs)
+            min_idx = (n_frames - 1) * num_envs
+            max_idx = size - num_envs
+            # Clamp: if buffer is too small, sample from what's available
+            max_idx = jnp.maximum(max_idx, min_idx + 1)
+
+            raw_idx = jax.random.randint(key, (batch_size,), 0, max_idx - min_idx)
+            idx = raw_idx + min_idx
+
+            # Reconstruct obs stack
+            def reconstruct(indices):
+                frames = [obs[indices]]
+                prev = indices
+                valid = jnp.ones(batch_size, dtype=jnp.bool_)
+                for kk in range(1, n_frames):
+                    cand = (prev - num_envs) % max_size
+                    boundary = dones[cand].squeeze(-1) > 0.5
+                    valid = valid & ~boundary
+                    frame = jnp.where(valid[:, None], obs[cand], frames[-1])
+                    frames.append(frame)
+                    prev = cand
+                return jnp.concatenate(frames, axis=-1)
+
+            stacked_obs = reconstruct(idx)
+            next_idx = (idx + num_envs) % max_size
+            stacked_next_obs = reconstruct(next_idx)
+
+            return {
+                "obs":        stacked_obs,
+                "action":     actions[idx],
+                "reward":     rewards[idx],
+                "next_obs":   stacked_next_obs,
                 "done":       dones[idx],
                 "truncation": truncations[idx],
             }
