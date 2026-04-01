@@ -160,7 +160,13 @@ def train(cfg: TrainConfig, algo_cfg, algo_name: str, seed: int = 0, resume: str
     use_obs_norm = algo_cfg.obs_normalization
     obs_norm_eps = getattr(algo_cfg, 'obs_norm_eps', 1e-8)
     norm_state = norm_init(obs_dim) if use_obs_norm else make_identity_norm_state(obs_dim)
-    buffer = JaxReplayBuffer(obs_dim, action_dim, max_size=algo_cfg.buffer_size)
+    if cfg.n_frame_stack > 1:
+        from jax_rl.buffers.jax_replay_buffer import FrameStackConfig
+        raw_dim = obs_dim // cfg.n_frame_stack
+        fsc = FrameStackConfig(n_frames=cfg.n_frame_stack, raw_dim=raw_dim, num_envs=cfg.num_envs)
+        buffer = JaxReplayBuffer(raw_dim, action_dim, max_size=algo_cfg.buffer_size, frame_stack_config=fsc)
+    else:
+        buffer = JaxReplayBuffer(obs_dim, action_dim, max_size=algo_cfg.buffer_size)
 
     # ── Exploration closures (family-specific) ─────────────────────────────
     if family == "sac":
