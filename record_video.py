@@ -83,20 +83,32 @@ def _build_select_action(meta, obs_dim, action_dim):
         return ppo, "ppo"
 
     elif algo in ("sac", "fast_sac"):
-        from jax_rl.algos.sac import SAC
-        from jax_rl.configs.sac_config import SACConfig
         algo_cfg_key = "sac_config" if "sac_config" in meta else "fast_sac_config"
         sc = meta.get(algo_cfg_key, {})
-        sac_cfg = SACConfig(
-            hidden_dim=tuple(sc.get("hidden_dim", (256, 256))),
-            activation=sc.get("activation", "relu"),
-            q_layer_norm=sc.get("q_layer_norm", True),
-            target_entropy_scale=sc.get("target_entropy_scale", 0.5),
-        )
         if algo == "fast_sac":
             from jax_rl.algos.fast_sac import FastSAC
-            sac = FastSAC(sac_cfg, obs_dim, action_dim, dummy_opt, dummy_opt, gamma=0.99)
+            from jax_rl.configs.fast_sac_config import FastSACConfig
+            fast_sac_cfg = FastSACConfig(
+                hidden_dim=tuple(sc.get("hidden_dim", (512, 256, 128))),
+                activation=sc.get("activation", "swish"),
+                q_layer_norm=sc.get("q_layer_norm", True),
+                target_entropy_scale=sc.get("target_entropy_scale", 0.0),
+                num_atoms=sc.get("num_atoms", 101),
+                v_min=sc.get("v_min", -20.0),
+                v_max=sc.get("v_max", 20.0),
+                q_aggregation=sc.get("q_aggregation", "avg"),
+                critic_hidden_dim=tuple(sc["critic_hidden_dim"]) if sc.get("critic_hidden_dim") else None,
+            )
+            sac = FastSAC(fast_sac_cfg, obs_dim, action_dim, dummy_opt, dummy_opt, gamma=0.99)
         else:
+            from jax_rl.algos.sac import SAC
+            from jax_rl.configs.sac_config import SACConfig
+            sac_cfg = SACConfig(
+                hidden_dim=tuple(sc.get("hidden_dim", (256, 256))),
+                activation=sc.get("activation", "relu"),
+                q_layer_norm=sc.get("q_layer_norm", True),
+                target_entropy_scale=sc.get("target_entropy_scale", 0.5),
+            )
             sac = SAC(sac_cfg, obs_dim, action_dim, dummy_opt, dummy_opt, gamma=0.99)
         return sac, "offpolicy"
 

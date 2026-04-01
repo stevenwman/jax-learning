@@ -16,7 +16,7 @@ import jax
 import jax.numpy as jnp
 import optax
 
-from jax_rl.configs.sac_config import SACConfig
+from jax_rl.configs.fast_sac_config import FastSACConfig
 from jax_rl.configs.networks_config import EncoderConfig, PolicyHeadConfig
 from jax_rl.networks.builders import Actor
 from jax_rl.networks.heads.q_distributional import DistributionalQHead
@@ -48,18 +48,13 @@ class FastSAC:
 
     def __init__(
         self,
-        config: SACConfig,
+        config: FastSACConfig,
         obs_dim: int,
         action_dim: int,
         optimizer: optax.GradientTransformation,
         alpha_optimizer: optax.GradientTransformation,
         gamma: float = 0.99,
         handle_truncation: bool = True,
-        # C51 params (not in SACConfig to avoid breaking vanilla SAC)
-        num_atoms: int = 51,
-        v_min: float = -10.0,
-        v_max: float = 10.0,
-        q_aggregation: str = "avg",
     ) -> None:
         self.config = config
         self.obs_dim = obs_dim
@@ -86,17 +81,17 @@ class FastSAC:
         self.actor = Actor(enc_cfg, pol_cfg)
         critic_dim = config.critic_hidden_dim or config.hidden_dim
         self.q1 = DistributionalQHead(
-            critic_dim, num_atoms, config.activation, config.q_layer_norm,
+            critic_dim, config.num_atoms, config.activation, config.q_layer_norm,
         )
         self.q2 = DistributionalQHead(
-            critic_dim, num_atoms, config.activation, config.q_layer_norm,
+            critic_dim, config.num_atoms, config.activation, config.q_layer_norm,
         )
 
         self.optimizer = optimizer
         self.alpha_optimizer = alpha_optimizer
 
         # C51 support
-        support = make_support(v_min, v_max, num_atoms)
+        support = make_support(config.v_min, config.v_max, config.num_atoms)
         self._support = support
 
         # Freeze refs
@@ -105,7 +100,7 @@ class FastSAC:
         q2 = self.q2
         tau = config.tau
         target_entropy = self.target_entropy
-        use_avg = q_aggregation == "avg"
+        use_avg = config.q_aggregation == "avg"
 
         # ── Actor forward ────────────────────────────────────────────────
         def _actor_forward(actor_params, obs, key):

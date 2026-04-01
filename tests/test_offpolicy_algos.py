@@ -19,6 +19,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from jax_rl.configs.sac_config import SACConfig
+from jax_rl.configs.fast_sac_config import FastSACConfig
 from jax_rl.configs.td3_config import TD3Config
 from jax_rl.configs.fast_td3_config import FastTD3Config
 from jax_rl.algos.sac import SAC
@@ -227,13 +228,13 @@ def test_fast_td3_get_q_value():
 # ── FastSAC ─────────────────────────────────────────────────────────────────
 
 def _make_fast_sac():
-    cfg = SACConfig(hidden_dim=(64, 64), batch_size=BATCH_SIZE)
+    cfg = FastSACConfig(hidden_dim=(64, 64), batch_size=BATCH_SIZE,
+                        num_atoms=11, v_min=-10.0, v_max=10.0)
     opt = optax.adamw(3e-4, b1=0.9, b2=0.95, weight_decay=0.001)
     alpha_opt = optax.adamw(3e-4, b1=0.9, b2=0.95, weight_decay=0.001)
     return FastSAC(
         cfg, OBS_DIM, ACTION_DIM, opt, alpha_opt,
         gamma=0.97, handle_truncation=True,
-        num_atoms=11, v_min=-10.0, v_max=10.0,
     )
 
 

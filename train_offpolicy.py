@@ -81,8 +81,7 @@ def _make_algo(algo_name, algo_cfg, obs_dim, action_dim, cfg):
         warmup_steps = algo_cfg.min_buffer_size // cfg.num_envs
         train_iters = (cfg.total_timesteps // cfg.num_envs) - warmup_steps
         total_grad_est = train_iters * algo_cfg.grad_updates_per_step
-        lr_end = getattr(algo_cfg, 'lr_end', 3e-5)
-        lr_schedule = optax.cosine_decay_schedule(cfg.lr, total_grad_est, alpha=lr_end / cfg.lr) if lr_end < cfg.lr else cfg.lr
+        lr_schedule = optax.cosine_decay_schedule(cfg.lr, total_grad_est, alpha=algo_cfg.lr_end / cfg.lr) if algo_cfg.lr_end < cfg.lr else cfg.lr
         optimizer = optax.adamw(lr_schedule, b2=0.95, weight_decay=0.001)
         alpha_optimizer = optax.adam(algo_cfg.alpha_lr)
         return FastSAC(config=algo_cfg, obs_dim=obs_dim, action_dim=action_dim,

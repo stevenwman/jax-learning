@@ -24,6 +24,7 @@ from jax_rl.algos.td3 import TD3
 from jax_rl.algos.fast_td3 import FastTD3
 from jax_rl.algos.fast_sac import FastSAC
 from jax_rl.configs.sac_config import SACConfig
+from jax_rl.configs.fast_sac_config import FastSACConfig
 from jax_rl.configs.td3_config import TD3Config
 from jax_rl.configs.fast_td3_config import FastTD3Config
 
@@ -102,12 +103,12 @@ def test_fast_td3_optimizer_compat(opt_fn):
 ])
 def test_fast_sac_optimizer_compat(opt_fn):
     """FastSAC should work with any optax optimizer."""
-    cfg = SACConfig(hidden_dim=(32, 16), critic_hidden_dim=(48, 24),
-                    batch_size=64, min_buffer_size=1, policy_delay=1)
+    cfg = FastSACConfig(hidden_dim=(32, 16), critic_hidden_dim=(48, 24),
+                        batch_size=64, min_buffer_size=1, policy_delay=1,
+                        num_atoms=11, v_min=-5.0, v_max=5.0)
     opt = opt_fn(1e-3)
     alpha_opt = opt_fn(1e-3)
-    sac = FastSAC(cfg, OBS_DIM, ACTION_DIM, opt, alpha_opt, gamma=0.99,
-                  num_atoms=11, v_min=-5, v_max=5)
+    sac = FastSAC(cfg, OBS_DIM, ACTION_DIM, opt, alpha_opt, gamma=0.99)
     state = sac.init(KEY)
     batch = _make_batch(OBS_DIM, ACTION_DIM)
     new_state, metrics = sac.update(state, batch)
@@ -158,11 +159,11 @@ def test_td3_critic_hidden_dim():
 
 def test_fast_sac_policy_delay():
     """FastSAC with policy_delay=4 should only update actor every 4th step."""
-    cfg = SACConfig(hidden_dim=(32, 16), critic_hidden_dim=(48, 24),
-                    batch_size=64, min_buffer_size=1, policy_delay=4)
+    cfg = FastSACConfig(hidden_dim=(32, 16), critic_hidden_dim=(48, 24),
+                        batch_size=64, min_buffer_size=1, policy_delay=4,
+                        num_atoms=11, v_min=-5.0, v_max=5.0)
     opt = optax.adam(1e-3)
-    sac = FastSAC(cfg, OBS_DIM, ACTION_DIM, opt, opt, gamma=0.99,
-                  num_atoms=11, v_min=-5, v_max=5)
+    sac = FastSAC(cfg, OBS_DIM, ACTION_DIM, opt, opt, gamma=0.99)
     state = sac.init(KEY)
     batch = _make_batch(OBS_DIM, ACTION_DIM)
 
@@ -181,11 +182,11 @@ def test_fast_sac_policy_delay():
 
 def test_fast_sac_no_policy_delay():
     """FastSAC with policy_delay=1 should update actor every step."""
-    cfg = SACConfig(hidden_dim=(32, 16), batch_size=64,
-                    min_buffer_size=1, policy_delay=1)
+    cfg = FastSACConfig(hidden_dim=(32, 16), batch_size=64,
+                        min_buffer_size=1, policy_delay=1,
+                        num_atoms=11, v_min=-5.0, v_max=5.0)
     opt = optax.adam(1e-3)
-    sac = FastSAC(cfg, OBS_DIM, ACTION_DIM, opt, opt, gamma=0.99,
-                  num_atoms=11, v_min=-5, v_max=5)
+    sac = FastSAC(cfg, OBS_DIM, ACTION_DIM, opt, opt, gamma=0.99)
     state = sac.init(KEY)
     batch = _make_batch(OBS_DIM, ACTION_DIM)
 
@@ -218,10 +219,10 @@ def test_sac_alpha_init_custom():
 
 def test_fast_sac_alpha_init():
     """FastSAC respects alpha_init from config."""
-    cfg = SACConfig(hidden_dim=(32, 16), alpha_init=0.01, batch_size=64)
+    cfg = FastSACConfig(hidden_dim=(32, 16), alpha_init=0.01, batch_size=64,
+                        num_atoms=11, v_min=-5.0, v_max=5.0)
     opt = optax.adam(1e-3)
-    sac = FastSAC(cfg, OBS_DIM, ACTION_DIM, opt, opt, gamma=0.99,
-                  num_atoms=11, v_min=-5, v_max=5)
+    sac = FastSAC(cfg, OBS_DIM, ACTION_DIM, opt, opt, gamma=0.99)
     state = sac.init(KEY)
     alpha = float(jnp.exp(state.log_alpha))
     assert abs(alpha - 0.01) < 1e-4, f"Alpha should be 0.01, got {alpha}"
@@ -260,7 +261,7 @@ from jax_rl.training.env_setup import make_identity_norm_state
 
 def test_obs_normalization_config_exists():
     """All off-policy configs have obs_normalization field, default False."""
-    for cfg_cls in [SACConfig, TD3Config, FastTD3Config]:
+    for cfg_cls in [SACConfig, FastSACConfig, TD3Config, FastTD3Config]:
         cfg = cfg_cls()
         assert hasattr(cfg, "obs_normalization"), f"{cfg_cls.__name__} missing obs_normalization"
         assert cfg.obs_normalization is False, f"{cfg_cls.__name__} should default to False"
