@@ -56,8 +56,8 @@ _register("fast_sac", get_fast_sac_preset, "sac")
 _register("fast_td3", get_fast_td3_preset, "td3")
 
 
-def _make_algo(algo_name, algo_cfg, obs_dim, action_dim, cfg):
-    """Instantiate algo + optimizer. Returns (algo, training_state, key)."""
+def _make_algo(algo_name, algo_cfg, obs_dim, action_dim, cfg, critic_obs_dim=None):
+    """Instantiate algo + optimizer. Returns algo instance."""
     if algo_name == "sac":
         from jax_rl.algos.sac import SAC
         if algo_cfg.grad_clip_norm is not None:
@@ -67,14 +67,16 @@ def _make_algo(algo_name, algo_cfg, obs_dim, action_dim, cfg):
         alpha_optimizer = optax.adam(algo_cfg.alpha_lr)
         return SAC(config=algo_cfg, obs_dim=obs_dim, action_dim=action_dim,
                     optimizer=optimizer, alpha_optimizer=alpha_optimizer,
-                    gamma=cfg.gamma, handle_truncation=cfg.handle_truncation)
+                    gamma=cfg.gamma, handle_truncation=cfg.handle_truncation,
+                    critic_obs_dim=critic_obs_dim)
 
     elif algo_name == "td3":
         from jax_rl.algos.td3 import TD3
         optimizer = optax.adam(cfg.lr)
         return TD3(config=algo_cfg, obs_dim=obs_dim, action_dim=action_dim,
                     actor_optimizer=optimizer, critic_optimizer=optax.adam(cfg.lr),
-                    gamma=cfg.gamma, handle_truncation=cfg.handle_truncation)
+                    gamma=cfg.gamma, handle_truncation=cfg.handle_truncation,
+                    critic_obs_dim=critic_obs_dim)
 
     elif algo_name == "fast_sac":
         from jax_rl.algos.fast_sac import FastSAC
@@ -86,7 +88,8 @@ def _make_algo(algo_name, algo_cfg, obs_dim, action_dim, cfg):
         alpha_optimizer = optax.adam(algo_cfg.alpha_lr)
         return FastSAC(config=algo_cfg, obs_dim=obs_dim, action_dim=action_dim,
                         optimizer=optimizer, alpha_optimizer=alpha_optimizer,
-                        gamma=cfg.gamma, handle_truncation=cfg.handle_truncation)
+                        gamma=cfg.gamma, handle_truncation=cfg.handle_truncation,
+                        critic_obs_dim=critic_obs_dim)
 
     elif algo_name == "fast_td3":
         from jax_rl.algos.fast_td3 import FastTD3
@@ -98,7 +101,8 @@ def _make_algo(algo_name, algo_cfg, obs_dim, action_dim, cfg):
         critic_optimizer = optax.adamw(lr_schedule, b2=0.95, weight_decay=0.001)
         return FastTD3(config=algo_cfg, obs_dim=obs_dim, action_dim=action_dim,
                         actor_optimizer=actor_optimizer, critic_optimizer=critic_optimizer,
-                        gamma=cfg.gamma, handle_truncation=cfg.handle_truncation)
+                        gamma=cfg.gamma, handle_truncation=cfg.handle_truncation,
+                        critic_obs_dim=critic_obs_dim)
 
     raise ValueError(f"Unknown algo: {algo_name}")
 
@@ -112,12 +116,18 @@ def train(cfg: TrainConfig, algo_cfg, algo_name: str, seed: int = 0, resume: str
     # ── Environment ────────────────────────────────────────────────────────
     env, env_step, env_state, eval_env, obs_dim, action_dim, key = make_envs(cfg, seed)
 
-    # Dict obs support
+    # Dict obs support (with optional privileged obs for asymmetric critic)
     dict_obs = isinstance(env_state.obs, dict)
+    has_privileged = False
+    critic_obs_dim = None
     if dict_obs:
-        # Off-policy: actor and critic both see "state" (no asymmetric for Q-networks)
         obs_dim = env_state.obs["state"].shape[-1]
-        print(f"  Dict obs detected: using 'state' key ({obs_dim}d) for off-policy")
+        has_privileged = "privileged_state" in env_state.obs
+        if has_privileged:
+            critic_obs_dim = env_state.obs["privileged_state"].shape[-1]
+            print(f"  Dict obs detected: actor={obs_dim}d, critic={critic_obs_dim}d (asymmetric)")
+        else:
+            print(f"  Dict obs detected: using 'state' key ({obs_dim}d) for off-policy")
 
     total_env_steps = cfg.total_timesteps
 
@@ -148,7 +158,8 @@ def train(cfg: TrainConfig, algo_cfg, algo_name: str, seed: int = 0, resume: str
         wandb_setup_metrics()
 
     # ── Algo setup ─────────────────────────────────────────────────────────
-    algo = _make_algo(algo_name, algo_cfg, obs_dim, action_dim, cfg)
+    algo = _make_algo(algo_name, algo_cfg, obs_dim, action_dim, cfg,
+                      critic_obs_dim=critic_obs_dim)
 
     key, init_key = jax.random.split(key)
     training_state = algo.init(init_key)
@@ -160,13 +171,16 @@ def train(cfg: TrainConfig, algo_cfg, algo_name: str, seed: int = 0, resume: str
     use_obs_norm = algo_cfg.obs_normalization
     obs_norm_eps = getattr(algo_cfg, 'obs_norm_eps', 1e-8)
     norm_state = norm_init(obs_dim) if use_obs_norm else make_identity_norm_state(obs_dim)
+    extra_obs_dims = {"critic_obs": critic_obs_dim} if has_privileged else None
     if cfg.n_frame_stack > 1:
         from jax_rl.buffers.jax_replay_buffer import FrameStackConfig
         raw_dim = obs_dim // cfg.n_frame_stack
         fsc = FrameStackConfig(n_frames=cfg.n_frame_stack, raw_dim=raw_dim, num_envs=cfg.num_envs)
-        buffer = JaxReplayBuffer(raw_dim, action_dim, max_size=algo_cfg.buffer_size, frame_stack_config=fsc)
+        buffer = JaxReplayBuffer(raw_dim, action_dim, max_size=algo_cfg.buffer_size,
+                                 frame_stack_config=fsc, extra_obs_dims=extra_obs_dims)
     else:
-        buffer = JaxReplayBuffer(obs_dim, action_dim, max_size=algo_cfg.buffer_size)
+        buffer = JaxReplayBuffer(obs_dim, action_dim, max_size=algo_cfg.buffer_size,
+                                 extra_obs_dims=extra_obs_dims)
 
     # ── Exploration closures (family-specific) ─────────────────────────────
     if family == "sac":
@@ -218,9 +232,14 @@ def train(cfg: TrainConfig, algo_cfg, algo_name: str, seed: int = 0, resume: str
         """Extract flat obs from dict or flat."""
         return obs["state"] if dict_obs else obs
 
+    def _get_critic_obs(obs):
+        """Extract privileged obs for critic (falls back to actor obs)."""
+        return obs["privileged_state"] if has_privileged else _get_obs(obs)
+
     for outer_step in range(start_step // cfg.num_envs, total_env_steps // cfg.num_envs):
         total_steps = (outer_step + 1) * cfg.num_envs
         raw_obs = _get_obs(env_state.obs)
+        critic_raw_obs = _get_critic_obs(env_state.obs) if has_privileged else None
 
         # ── Obs normalization ──────────────────────────────────────────
         if use_obs_norm:
@@ -242,10 +261,14 @@ def train(cfg: TrainConfig, algo_cfg, algo_name: str, seed: int = 0, resume: str
 
         # ── Buffer ─────────────────────────────────────────────────────
         next_raw_obs = _get_obs(env_state.obs)
+        extra_kwargs = {}
+        if has_privileged:
+            extra_kwargs["critic_obs"] = critic_raw_obs
+            extra_kwargs["next_critic_obs"] = _get_critic_obs(env_state.obs)
         buffer.add_batch(obs=raw_obs, action=action,
                          reward=env_state.reward * cfg.reward_scaling,
                          next_obs=next_raw_obs, done=env_state.done,
-                         truncation=truncation)
+                         truncation=truncation, **extra_kwargs)
 
         tracker.step(np.asarray(env_state.reward), np.asarray(env_state.done))
 
@@ -257,6 +280,11 @@ def train(cfg: TrainConfig, algo_cfg, algo_name: str, seed: int = 0, resume: str
                 if use_obs_norm:
                     jax_batch["obs"] = norm_normalize(norm_state, jax_batch["obs"], eps=obs_norm_eps)
                     jax_batch["next_obs"] = norm_normalize(norm_state, jax_batch["next_obs"], eps=obs_norm_eps)
+                # Algos always read batch["critic_obs"]. For non-privileged envs,
+                # critic sees the same obs as actor.
+                if not has_privileged:
+                    jax_batch["critic_obs"] = jax_batch["obs"]
+                    jax_batch["critic_next_obs"] = jax_batch["next_obs"]
                 training_state, step_metrics = algo.update(training_state, jax_batch)
                 total_gradient_steps += 1
 
