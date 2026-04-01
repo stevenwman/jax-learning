@@ -78,7 +78,7 @@
 - [ ] Train PPO on unitree MJCF via Warp — full 50M run (PPO hit 132, entropy collapsed)
 
 ## Short-term — Asymmetric off-policy critic
-- [ ] Add privileged critic support to SAC/TD3 training scripts (`train_offpolicy.py`). Actor sees `obs["state"]` (48d), critic sees `obs["privileged_state"]` (122d). Theoretically justified: Pinto 2017 (DDPG, the original asymmetric AC paper), Lambrechts ICML 2025 (unbiased policy gradients, algorithm-agnostic). No published system combines SAC + privileged critic + legged locomotion — this would be novel.
+- [x] Asymmetric critic for all off-policy algos — actor sees 48d state, critic sees 122d privileged_state. `critic_obs_dim` param on all algos, buffer stores extra obs, training loop auto-detects dict obs. 197/197 tests pass. Smoke tested on Go2Warp.
 
 ## Mid-term (Vision RL)
 - [ ] Verify MJWarp GPU renderer on RTX 5080 (`mjx.create_render_context` + `mjx.render`). Madrona MJX is gone — replaced by built-in Warp ray-tracer in mujoco>=3.6.0.
