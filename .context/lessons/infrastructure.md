@@ -118,3 +118,25 @@ Spent hours debugging Go2 PPO at eval ~17. Playground paper shows Go1 reaching ~
 **Fix:** Use episode-scale values: `--eval-every 50000` for ~10 evals in a typical Go2 run. Or `--eval-every 100000` for ~5 evals.
 
 **Lesson:** Read the argparse help text AND trace the flag through to where it's used. `--eval-every` is ambiguous — it could mean steps, episodes, or wall-clock seconds. The flag name doesn't tell you.
+
+---
+
+## Env Wrappers Must Be Applied In All Consumers (2026-04-01)
+
+**Context:** `FrameStackWrapper` is applied in `env_setup.py` (used by training scripts). But `record_video.py` loads the env directly via `pg_registry.load()` and does NOT go through `env_setup.py`. A frame-stacked checkpoint (obs_dim=144) will fail at inference because record_video feeds raw 48d obs to a 144d network.
+
+**Pattern:** Any env transformation (wrappers, obs preprocessing) applied during training must also be applied during inference/eval/recording. Every consumer of the env must apply the same wrapping chain, or the checkpoint is incompatible.
+
+**Fixed:** `record_video.py` now reads `n_frame_stack` from `meta.json` and applies `FrameStackWrapper` before rollout.
+
+---
+
+## Brax Auto-Reset Does NOT Reset state.info (2026-04-01)
+
+**What happened:** `FrameStackWrapper` stored the frame stack in `state.info["frame_stack"]`. After episode termination, Brax's `AutoResetWrapper` replaced `pipeline_state` and `obs` with cached initial values, but left `state.info` untouched. The frame stack retained frames from the dead episode. The first N-1 policy inputs of every new episode were contaminated.
+
+**Root cause:** `AutoResetWrapper.step()` (Brax source) only does `jp.where(done, first_obs, obs)` and `jp.where(done, first_pipeline_state, pipeline_state)`. No other fields are reset.
+
+**Fix:** Any per-env state in `state.info` that should reset at episode boundaries must handle it explicitly. Pattern: `jp.where(state.done, reset_value, normal_value)` inside the wrapper's `step()`. This is JIT-safe and adds negligible overhead.
+
+**Applies to:** Frame stacking, action delay buffers, any FIFO/history stored in `state.info`.

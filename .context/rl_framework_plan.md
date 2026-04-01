@@ -142,7 +142,7 @@ FastTD3 + SimbaV2 (hyperspherical normalization) is recommended for best results
 ### Stack
 - **JAX** for autodiff, jit, vmap, scan
 - **Flax Linen** for neural networks (not NNX — see rationale below)
-- **Optax** for optimizers
+- **Optax** for optimizers (including `optax.contrib.muon` for future Muon/matrix-whitening experiments — already in optax 0.2.6, drop-in compatible with our decoupled optimizer pattern)
 - **Orbax** for checkpointing
 - **Wandb** for logging
 

@@ -51,7 +51,7 @@
 - [x] Motor strength DR — ×U(0.9, 1.1) via actuator_gainprm scaling
 - [x] Friction DR fix — randomize ALL geoms (MuJoCo max-combine), range [0.3, 1.5]
 - [ ] **Wider DR ranges** — Kp/Kd scaling, action delay (120ms FIFO from WTW). May need curriculum.
-- [ ] Wire frame stacking into Go2 env (currently no frame stack — just raw obs)
+- [x] Frame stacking — universal `FrameStackWrapper` wraps any env, `--frame-stack 3` CLI flag, deploy ObsBuilder mirrors. 125/125 tests pass.
 - [x] Go2 SAC Phase B — FastSAC eval 226. Off-policy validated on Go2.
 
 ## Short-term — Cleanup
@@ -59,6 +59,7 @@
 - [x] Integration debt — 7/7 resolved (select_action_eval, asymmetric PPO test, etc.)
 - [x] `lax.scan` for gradient loops — benchmarked: 1.03x (no speedup)
 - [x] MJX recompilation — root cause found, upstream issue, MEM_FRACTION=0.7 mitigates
+- [x] Vendor training wrappers — Vmap, Episode, AutoReset, DR in `jax_rl/envs/wrappers/training.py`. Removed Brax training wrapper dependency. Parity-tested. 137/137 tests pass.
 
 ## Short-term — Experiment tracking
 - [x] W&B integration — `--wandb` flag on all 3 train scripts, logs step + eval metrics. Tested: SAC (CheetahRun 200k), PPO (CartpoleBalance 500k), no-flag passthrough. All working.
@@ -84,7 +85,7 @@
 - [ ] CNN encoder (`jax_rl/networks/encoders/cnn.py`) + `CnnEncoderConfig`
 - [ ] DrQ augmentation (`jax_rl/utils/augmentation.py`)
 - [ ] `--vision` flag on train scripts
-- [ ] ManiSkill integration (Gymnasium adapter + DLPack bridge)
+- [ ] ManiSkill / HumanoidBench integration — requires env factory abstraction in `env_setup.py` (currently only coupling point to Playground). Gymnasium adapter + DLPack bridge.
 - [ ] Memory budget testing — pixel replay buffer on 16GB
 
 ## Mid-term (Go2 Deployment)
@@ -99,6 +100,10 @@
 - [ ] ONNX export utility (`jax_rl/utils/export.py`) — JAX weights → ONNX for Jetson (deferred — numpy inference at 50Hz is fine for now)
 - [ ] DC motor model (`jax_rl/envs/actuators.py`) — Tier 2, add if sim-to-real gap > threshold
 - [ ] Confirm Go2 EDU edition in lab (ask Steven)
+
+## Mid-term — Optimizer experiments
+- [ ] Muon optimizer (`optax.contrib.muon`) — matrix-whitening via Newton-Schulz orthogonalization. Already in optax 0.2.6, drop-in `GradientTransformation`. Auto-routes 2D weights → Muon, biases/norms → AdamW internally. **RL caveat:** zero published RL benchmarks, untested on non-stationary targets + small MLPs. Start with actor-only Muon, keep critic on AdamW. First/last layer should stay Adam per author guidance.
+- [ ] Shampoo / other second-order optimizers — evaluate if Muon shows promise on RL
 
 ## Long-term (Phase 6 — North Star)
 - [ ] DIAYN (skill discovery wrapping SAC)

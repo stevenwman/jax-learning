@@ -59,7 +59,7 @@ JAX/Flax fundamentals in `LEARNER_LESSONS.md`.
 - **lax.scan carry cost** — 4M-entry buffer in carry = 30% slower than Python loop
 - **Faster component ≠ faster training** — 4.8x buffer speedup = 1.5% end-to-end improvement
 
-## [Infrastructure](lessons/infrastructure.md) — 10 lessons
+## [Infrastructure](lessons/infrastructure.md) — 12 lessons
 
 - **Orbax checkpointing** — must call `wait_until_finished()`, save meta.json alongside
 - **Orbax restore needs exact pytree match** — separate inference artifacts (numpy) from training (orbax)
@@ -72,6 +72,8 @@ JAX/Flax fundamentals in `LEARNER_LESSONS.md`.
 - **Integer division truncation** — `200000 // 128 * 128 = 199936`, final eval never fired
 - **Verify training budget before debugging** — eval ~17 at 50M steps was on-curve, not broken
 - **`--eval-every` is episodes, not steps** — `--eval-every 5000000` = 5M episodes, never triggers. Use ~50000 for Go2.
+- **Env wrappers must be applied in all consumers** — FrameStackWrapper in training but not record_video = checkpoint incompatible at inference
+- **Brax auto-reset does NOT reset state.info** — only pipeline_state and obs are reset. Any FIFO/history in state.info must use `jp.where(done, ...)` to self-reset
 
 ## [MuJoCo Engine](lessons/mujoco.md) — 3 lessons
 
@@ -86,6 +88,13 @@ JAX/Flax fundamentals in `LEARNER_LESSONS.md`.
 - **MJX eval recompilation** — upstream issue, ~2 recompiles per eval call, mitigate with MEM_FRACTION=0.7
 - **MJX→CPU transfer: every obs dimension must match** — zeroed linvel in CPU env killed transfer. Diff obs side-by-side.
 - **MJX can't load all MJCFs** — cylinder-box collisions not implemented. Use MuJoCo Warp instead.
+
+## [Vision RL](lessons/vision.md) — 4 lessons
+
+- **Frame stacking: locomotion ≠ DMC** — DMC/manipulation stacks raw frames (DrQ-v2); locomotion uses CNN + GRU (ANYmal, DeFM). DreamWaQ/WTW are NOT pixel methods.
+- **Asymmetric critic simplifies vision** — privileged critic skips images entirely. No shared encoder stop-grad, no frame stacking on critic. Actor CNN trains from policy gradients only.
+- **Pixel replay buffer: uint8 is non-negotiable** — 100K entries at 84×84×9: 6.3GB (uint8) vs 25GB (float32). Assemble stacks at sample time.
+- **MJWarp renderer: Warp-only, fixed nworld** — `mjx.render()` requires `impl="warp"`. nworld frozen at `create_render_context()` time.
 
 ## [MuJoCo Warp](lessons/warp.md) — 6 lessons
 

@@ -104,6 +104,18 @@ PPO shouldn't own optimizer construction. Optimizers are external concerns.
 
 ---
 
+## Don't Use Config Inheritance When Variants Share Names but Not Defaults
+
+**Problem:** `FastSACConfig(SACConfig)` inherited SAC defaults for 9/14 fields. Bare `FastSACConfig()` silently produced tau=0.005 (SAC's default), not 0.125 (FastSAC paper). This was the exact bug that caused NaN divergence on HumanoidRun.
+
+**Root cause:** Inheritance implies "same defaults with a few additions." But FastSAC and SAC differ on tau (25x), batch_size (16x), alpha_init (1000x), activation, network dims, policy_delay — nearly everything. The inheritance was a lie.
+
+**Lesson:** Use flat, standalone config dataclasses per algorithm. Field name overlap doesn't justify inheritance — only shared *defaults* would. Accept the duplication; it's the honest representation. Each algo's defaults should be correct out of the box.
+
+**Applies to:** Any algo variant pair (SAC/FastSAC, TD3/FastTD3). Also applies to hypothetical `OffPolicyConfig` base — tau's default would be wrong for half the children.
+
+---
+
 ## Staged Rewards Need Longer Training Budgets
 
 **Problem:** SAC on PandaPickCube at 2M steps learned approach (reward ~604) but never lifted the cube. Box z stayed at 0.03 (table surface).

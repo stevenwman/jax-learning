@@ -132,7 +132,7 @@ for _ in range(num_updates_per_batch):  # 16 cycles
 
 **Problem:** VLoss alternated between ~0.35 and ~61.5 every other iteration.
 
-**Root cause:** `wrap_for_brax_training` resets all envs at the same timestep (episode_length=1000). The value function sees completely different return distributions on boundary vs mid-episode iterations.
+**Root cause:** The training wrappers reset all envs at the same timestep (episode_length=1000). The value function sees completely different return distributions on boundary vs mid-episode iterations.
 
 **Why entropy goes negative:** With tanh-squash + single-sample entropy estimate: if a large gradient update briefly collapses std, the sample falls near the mode where log_prob is very high. Negative entropy is the artifact, not real divergence.
 
@@ -144,7 +144,7 @@ for _ in range(num_updates_per_batch):  # 16 cycles
 
 **Problem:** HumanoidRun returns stuck at ~7.6 at 60M steps. Turned out to be a GAE correctness bug, not HPs.
 
-**Root cause:** `wrap_for_brax_training` auto-resets on timeout. After reset, `env_state.obs` is the **reset observation**, not the terminal observation. Our GAE used `V(reset_obs)` as bootstrap for truncated transitions → systematic negative bias.
+**Root cause:** `AutoResetWrapper` auto-resets on timeout. After reset, `env_state.obs` is the **reset observation**, not the terminal observation. Our GAE used `V(reset_obs)` as bootstrap for truncated transitions → systematic negative bias.
 
 **Final fix (matching Brax's `compute_gae`):**
 ```python
