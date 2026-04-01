@@ -33,10 +33,15 @@ class JaxReplayBuffer:
         frame_stack_config: When set, stores only raw (single-frame) obs and
             reconstructs stacked obs/next_obs at sample time.
             When None, behavior is identical to the original buffer.
+        extra_obs_dims: Optional dict mapping name -> dim for extra observation
+            fields (e.g. {"critic_obs": 122} for asymmetric critic). Allocates
+            both `name` and `next_{name}` buffers. Stored/sampled alongside
+            the main obs/action/reward arrays.
     """
 
     def __init__(self, obs_dim: int, action_dim: int, max_size: int = 1_000_000,
-                 frame_stack_config: FrameStackConfig | None = None):
+                 frame_stack_config: FrameStackConfig | None = None,
+                 extra_obs_dims: dict[str, int] | None = None):
         self.max_size = max_size
         self.action_dim = action_dim
         self.ptr = 0
@@ -62,6 +67,13 @@ class JaxReplayBuffer:
             self.next_obs = jnp.zeros((max_size, self.obs_dim), dtype=jnp.float32)
         # When frame stacking, next_obs is derived at sample time — no allocation
 
+        # Extra obs buffers (e.g., critic_obs for asymmetric critic)
+        self._extra_obs_dims = extra_obs_dims or {}
+        self._extra_bufs: dict[str, jax.Array] = {}
+        for name, dim in self._extra_obs_dims.items():
+            self._extra_bufs[name] = jnp.zeros((max_size, dim), dtype=jnp.float32)
+            self._extra_bufs[f"next_{name}"] = jnp.zeros((max_size, dim), dtype=jnp.float32)
+
     def add_batch(
         self,
         obs,
@@ -70,6 +82,7 @@ class JaxReplayBuffer:
         next_obs,
         done,
         truncation=None,
+        **extra,
     ) -> None:
         """Add a batch of transitions. Accepts jax.Array or numpy (auto-converts).
 
@@ -80,6 +93,8 @@ class JaxReplayBuffer:
             next_obs: (batch, obs_dim)
             done: (batch,) or (batch, 1)
             truncation: (batch,) or (batch, 1), optional
+            **extra: Extra obs fields matching extra_obs_dims keys
+                (e.g., critic_obs, next_critic_obs).
         """
         obs = jnp.asarray(obs)
         action = jnp.asarray(action)
@@ -117,6 +132,19 @@ class JaxReplayBuffer:
                 self.rewards, self.dones, self.truncations,
                 obs, next_obs, action, reward, done, truncation, ptr,
             )
+
+        # Store extra obs (e.g., critic_obs, next_critic_obs) via non-JIT scatter.
+        # Overhead is tiny (<0.1ms per extra field) — not worth a separate JIT path.
+        if self._extra_obs_dims and extra:
+            indices = (jnp.arange(n) + ptr) % self.max_size
+            for name in self._extra_obs_dims:
+                if name in extra:
+                    val = jnp.asarray(extra[name])
+                    self._extra_bufs[name] = self._extra_bufs[name].at[indices].set(val)
+                next_key = f"next_{name}"
+                if next_key in extra:
+                    val = jnp.asarray(extra[next_key])
+                    self._extra_bufs[next_key] = self._extra_bufs[next_key].at[indices].set(val)
 
         self.ptr  = (self.ptr + n) % self.max_size
         self.size = min(self.size + n, self.max_size)
@@ -160,6 +188,13 @@ class JaxReplayBuffer:
             )
         return _add
 
+    def _gather_extra(self, batch: dict, idx: jax.Array) -> dict:
+        """Add extra obs fields to batch dict using pre-computed indices."""
+        for name in self._extra_obs_dims:
+            batch[name] = self._extra_bufs[name][idx]
+            batch[f"next_{name}"] = self._extra_bufs[f"next_{name}"][idx]
+        return batch
+
     def sample(self, batch_size: int, key: jax.Array | None = None) -> dict[str, jax.Array]:
         """Sample a random minibatch. Returns dict of jax.Array (already on GPU).
 
@@ -167,11 +202,13 @@ class JaxReplayBuffer:
             batch_size: Number of transitions to sample.
             key: PRNG key for sampling (required for JIT'd fast path).
         """
+        has_extra = bool(self._extra_obs_dims)
+
         if key is None:
             # Non-JIT path (rarely used)
             idx = jnp.array(np.random.randint(0, self.size, size=batch_size))
             if self._fsc is not None:
-                return {
+                batch = {
                     "obs":        self._reconstruct(self.obs, self.dones, idx),
                     "action":     self.actions[idx],
                     "reward":     self.rewards[idx],
@@ -179,28 +216,43 @@ class JaxReplayBuffer:
                     "done":       self.dones[idx],
                     "truncation": self.truncations[idx],
                 }
-            return {
-                "obs":        self.obs[idx],
-                "action":     self.actions[idx],
-                "reward":     self.rewards[idx],
-                "next_obs":   self.next_obs[idx],
-                "done":       self.dones[idx],
-                "truncation": self.truncations[idx],
-            }
+            else:
+                batch = {
+                    "obs":        self.obs[idx],
+                    "action":     self.actions[idx],
+                    "reward":     self.rewards[idx],
+                    "next_obs":   self.next_obs[idx],
+                    "done":       self.dones[idx],
+                    "truncation": self.truncations[idx],
+                }
+            return self._gather_extra(batch, idx) if has_extra else batch
 
         # JIT'd fast path: compile gather per batch_size (reuses across calls)
         if batch_size not in self._jit_cache:
             if self._fsc is not None:
                 self._jit_cache[batch_size] = self._make_jit_sample_fs(batch_size)
+            elif has_extra:
+                self._jit_cache[batch_size] = self._make_jit_sample_with_idx(batch_size)
             else:
                 self._jit_cache[batch_size] = self._make_jit_sample(batch_size)
 
         if self._fsc is not None:
-            return self._jit_cache[batch_size](
+            batch = self._jit_cache[batch_size](
                 self.obs, self.actions, self.rewards,
                 self.dones, self.truncations,
                 self.size, key,
             )
+            # Frame-stack JIT returns a dict with indices baked in — no idx available.
+            # For now, extra obs with frame-stack is not supported (would need
+            # the JIT fn to also return idx). No current use case requires both.
+            return batch
+        if has_extra:
+            batch, idx = self._jit_cache[batch_size](
+                self.obs, self.actions, self.rewards,
+                self.next_obs, self.dones, self.truncations,
+                self.size, key,
+            )
+            return self._gather_extra(batch, idx)
         return self._jit_cache[batch_size](
             self.obs, self.actions, self.rewards,
             self.next_obs, self.dones, self.truncations,
@@ -220,6 +272,22 @@ class JaxReplayBuffer:
                 "done":       dones[idx],
                 "truncation": truncations[idx],
             }
+        return _sample
+
+    def _make_jit_sample_with_idx(self, batch_size: int):
+        """Create a JIT'd sample that also returns indices (for extra obs gather)."""
+        @jax.jit
+        def _sample(obs, actions, rewards, next_obs, dones, truncations, size, key):
+            idx = jax.random.randint(key, (batch_size,), 0, size)
+            batch = {
+                "obs":        obs[idx],
+                "action":     actions[idx],
+                "reward":     rewards[idx],
+                "next_obs":   next_obs[idx],
+                "done":       dones[idx],
+                "truncation": truncations[idx],
+            }
+            return batch, idx
         return _sample
 
     def _reconstruct(self, obs_buf, dones_buf, indices):
