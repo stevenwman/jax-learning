@@ -30,6 +30,14 @@ def _register_custom_envs():
             functools.partial(WarpJoystick, task="flat_terrain"),
             warp_default_config,
         )
+    from jax_rl.envs.locomotion.go2_bongo_handstand import BongoHandstand
+    from jax_rl.envs.locomotion.go2_bongo_handstand import default_config as bongo_default_config
+    if "Go2BongoHandstand" not in pg_locomotion._envs:
+        pg_locomotion.register_environment(
+            "Go2BongoHandstand",
+            functools.partial(BongoHandstand, task="bongo_handstand"),
+            bongo_default_config,
+        )
 
 _register_custom_envs()
 
