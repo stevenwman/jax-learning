@@ -246,7 +246,11 @@ if self._config.contact_mode == 'training':
 ### Reset
 
 1. Load `handstand` keyframe qpos (covers both robot and board initial state)
-2. Small random perturbations: joint angles (±0.05 rad), board tilt (±2°), base position (±2cm)
+2. Small random perturbations:
+   - Joint angles (±0.05 rad)
+   - Robot base xy offset from board center (±2cm)
+   - Robot yaw (±5°) — not perfectly aligned with board axes
+   - Board tilt (±2°)
 3. `mjx.forward()` to initialize derived quantities
 
 ### Initial Handstand Pose
