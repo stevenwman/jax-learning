@@ -3,8 +3,6 @@
 from jax_rl.configs.networks_config import (
     EncoderConfig,
     PolicyHeadConfig,
-    ValueHeadConfig,
-    QHeadConfig,
 )
 from jax_rl.configs.ppo_config import PPOConfig
 from jax_rl.configs.sac_config import SACConfig
@@ -20,8 +18,6 @@ from jax_rl.configs.env_presets import (
 __all__ = [
     "EncoderConfig",
     "PolicyHeadConfig",
-    "ValueHeadConfig",
-    "QHeadConfig",
     "PPOConfig",
     "SACConfig",
     "TD3Config",

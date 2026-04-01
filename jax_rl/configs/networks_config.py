@@ -39,22 +39,3 @@ class PolicyHeadConfig:
     dem: bool = False  # When True, output includes dem_logits
 
 
-@dataclass
-class ValueHeadConfig:
-    """Configuration for value heads V(s)."""
-
-    # Currently simple, but can add options later
-    # (e.g., multiple output heads for ensemble)
-    pass
-
-
-@dataclass
-class QHeadConfig:
-    """Configuration for Q-value heads."""
-
-    # Standard vs distributional
-    distributional: bool = False
-    # For distributional (C51)
-    num_atoms: int = 51
-    v_min: float = -10.0
-    v_max: float = 10.0

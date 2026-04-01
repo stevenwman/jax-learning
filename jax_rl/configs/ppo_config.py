@@ -1,7 +1,7 @@
 """PPO algorithm configuration."""
 
 from dataclasses import dataclass, field
-from jax_rl.configs.networks_config import EncoderConfig, PolicyHeadConfig, ValueHeadConfig
+from jax_rl.configs.networks_config import EncoderConfig, PolicyHeadConfig
 
 
 @dataclass
@@ -45,7 +45,6 @@ class PPOConfig:
     encoder: EncoderConfig | None = None
     critic_encoder: EncoderConfig | None = None
     policy_head: PolicyHeadConfig | None = None
-    value_head: ValueHeadConfig = field(default_factory=ValueHeadConfig)
 
     # Advanced
     normalize_advantage: bool = True

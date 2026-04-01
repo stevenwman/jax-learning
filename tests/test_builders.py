@@ -13,7 +13,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from jax_rl.configs.networks_config import EncoderConfig, PolicyHeadConfig, ValueHeadConfig
+from jax_rl.configs.networks_config import EncoderConfig, PolicyHeadConfig
 from jax_rl.networks.builders import Actor, DeterministicActor, VCritic
 
 OBS_DIM = 17
@@ -67,8 +67,7 @@ def test_deterministic_actor_output_shape():
 def test_vcritic_output_shape():
     """VCritic should output scalar values with shape (batch,)."""
     enc = EncoderConfig(obs_dim=OBS_DIM, hidden_dim=(64, 64))
-    head = ValueHeadConfig()
-    critic = VCritic(enc, head)
+    critic = VCritic(enc)
 
     params = critic.init(KEY, jnp.zeros((1, OBS_DIM)))
     obs = jax.random.normal(KEY, (BATCH, OBS_DIM))
