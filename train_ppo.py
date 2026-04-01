@@ -393,6 +393,11 @@ if __name__ == "__main__":
                         help="W&B project name (default: jax-rl)")
     parser.add_argument("--frame-stack", type=int, default=None,
                         help="Number of stacked observation frames (default: 1, use 3 for locomotion)")
+    parser.add_argument("--action-delay-ms", type=int, default=None,
+                        help="Fixed action delay in ms (e.g., 120 for Go2 sim2real)")
+    parser.add_argument("--action-delay-range-ms", type=int, nargs=2, default=None,
+                        metavar=("MIN", "MAX"),
+                        help="Randomized action delay range in ms (e.g., 40 120)")
     args = parser.parse_args()
 
     cfg = get_preset(args.env)
@@ -425,6 +430,10 @@ if __name__ == "__main__":
         ppo_overrides["entropy_coef"] = args.entropy_coef
     if args.frame_stack is not None:
         cfg_overrides["n_frame_stack"] = args.frame_stack
+    if args.action_delay_ms is not None:
+        cfg_overrides["action_delay_ms"] = args.action_delay_ms
+    if args.action_delay_range_ms is not None:
+        cfg_overrides["action_delay_range_ms"] = tuple(args.action_delay_range_ms)
     if ppo_overrides:
         cfg_overrides["ppo"] = dataclasses.replace(cfg.ppo, **ppo_overrides)
     if cfg_overrides:

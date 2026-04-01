@@ -34,6 +34,9 @@ KD_WARP = 0.5    # Warp training env
 KP_REAL = 20.0   # Unitree official for Go2 RL deployment
 KD_REAL = 0.5    # Go2 hardware value
 
+# Action delay — expected real-robot latency (communication + motor response).
+ACTION_DELAY_MS = 120  # WTW default for Unitree robots
+
 NUM_JOINTS = 12
 POLICY_DT = 0.02  # 50 Hz policy
 CONTROL_DT = 0.002  # 500 Hz motor commands
