@@ -28,7 +28,9 @@ def _quat_rotate_inverse(quat: np.ndarray, vec: np.ndarray) -> np.ndarray:
 
 
 class ObsBuilder:
-    """Builds 48d observation vector from robot sensor readings.
+    """Builds observation vector from robot sensor readings.
+
+    With n_frame_stack > 1, returns stacked obs (n_frame_stack * 48d). Newest frame at front, oldest at back.
 
     Obs layout (matching go2_joystick.py _get_obs):
         [0:3]   local_linvel (zeroed for deployment — not available on hardware)
@@ -40,10 +42,14 @@ class ObsBuilder:
         [45:48] command (vx, vy, yaw_rate)
     """
 
-    def __init__(self):
+    def __init__(self, n_frame_stack: int = 1):
         self.last_action = np.zeros(NUM_JOINTS, dtype=np.float32)
         self.gravity_world = np.array([0.0, 0.0, -1.0], dtype=np.float32)
         self._quat_checked = False
+        self._n_frames = n_frame_stack
+        self._raw_dim = 48
+        self._frame_stack = np.zeros(self._n_frames * self._raw_dim, dtype=np.float32)
+        self._initialized = False
 
     def build(
         self,
@@ -92,6 +98,16 @@ class ObsBuilder:
             self.last_action,                                          # [33:45]
             command.astype(np.float32),                                # [45:48]
         ])
+        # Update frame stack: push new obs to front, shift old frames right.
+        if self._n_frames > 1:
+            if not self._initialized:
+                # First call: fill all frames with initial obs.
+                self._frame_stack = np.tile(obs, self._n_frames)
+                self._initialized = True
+            else:
+                self._frame_stack[self._raw_dim:] = self._frame_stack[:-self._raw_dim]
+                self._frame_stack[:self._raw_dim] = obs
+            return self._frame_stack.copy()
         return obs
 
     def update_last_action(self, action: np.ndarray):

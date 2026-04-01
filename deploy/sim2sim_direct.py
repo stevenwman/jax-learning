@@ -57,7 +57,7 @@ def build_obs_from_mj(
     obs_builder: ObsBuilder,
     command: np.ndarray,
 ) -> np.ndarray:
-    """Build 48d obs from mj_data. Sensors are in SDK order (FR,FL,RR,RL)."""
+    """Build obs from mj_data. Sensors are in SDK order (FR,FL,RR,RL)."""
     num_motor = model.nu  # 12
 
     # Joint pos/vel from sensordata (SDK order)
@@ -104,7 +104,13 @@ def run_sim2sim(
     print(f"  hidden={runner.hidden_dim}, activation={runner.activation}")
     print(f"  obs_norm={'yes' if runner.use_obs_norm else 'no'} (n={runner.norm_count})")
 
-    obs_builder = ObsBuilder()
+    # Infer frame stacking from checkpoint obs_dim.
+    raw_state_dim = 48  # Go2 raw state dim
+    n_frame_stack = runner.obs_dim // raw_state_dim
+    if runner.obs_dim % raw_state_dim != 0:
+        print(f"WARNING: obs_dim={runner.obs_dim} not divisible by {raw_state_dim}, assuming no frame stack")
+        n_frame_stack = 1
+    obs_builder = ObsBuilder(n_frame_stack=n_frame_stack)
 
     # Load unitree_mujoco Go2 model
     scene_path = os.path.join(UNITREE_MUJOCO, "unitree_robots", "go2", "scene.xml")
