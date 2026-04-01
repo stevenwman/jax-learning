@@ -68,7 +68,6 @@ def default_config() -> config_dict.ConfigDict:
             b=[0.9, 0.25, 0.5],
         ),
         impl="warp",
-        n_frame_stack=3,
         contact_mode="training",
         naconmax=4 * 8192,
         naccdmax=4000,
@@ -126,9 +125,6 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
 
         self._cmd_a = jp.array(self._config.command_config.a)
         self._cmd_b = jp.array(self._config.command_config.b)
-
-        self._n_frames = self._config.n_frame_stack
-        self._raw_state_dim = 48  # linvel(3) + gyro(3) + grav(3) + jpos(12) + jvel(12) + act(12) + cmd(3)
 
     # ── Core env methods ────────────────────────────────────────────────
 
@@ -203,11 +199,6 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
 
         obs = self._get_obs(data, info)
 
-        # Frame stack: fill all frames with initial obs.
-        raw_state = obs["state"]
-        info["frame_stack"] = jp.tile(raw_state, self._n_frames)
-        obs = {**obs, "state": info["frame_stack"]}
-
         reward, done = jp.zeros(2)
         return mjx_env.State(data, obs, reward, done, metrics, info)
 
@@ -257,12 +248,6 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
         state.info["swing_peak"] = jp.maximum(state.info["swing_peak"], p_fz)
 
         obs = self._get_obs(data, state.info)
-
-        # Frame stack: push new state to front, shift old frames right.
-        raw_state = obs["state"]
-        old_stack = state.info["frame_stack"]
-        state.info["frame_stack"] = jp.concatenate([raw_state, old_stack[:-self._raw_state_dim]])
-        obs = {**obs, "state": state.info["frame_stack"]}
 
         done = self._get_termination(data)
 

@@ -29,8 +29,7 @@ class TestWarpGo2Loads:
         assert "privileged_state" in state.obs
 
     def test_obs_dims(self, state):
-        n_frames = default_config().n_frame_stack  # 3
-        assert state.obs["state"].shape == (48 * n_frames,)  # 144
+        assert state.obs["state"].shape == (48,)
         assert state.obs["privileged_state"].shape == (122,)
 
     def test_reset_shapes(self, state):
@@ -52,8 +51,7 @@ class TestWarpGo2Steps:
         action = jnp.zeros(12)
         next_state = env.step(state, action)
         assert isinstance(next_state.obs, dict)
-        n_frames = default_config().n_frame_stack
-        assert next_state.obs["state"].shape == (48 * n_frames,)
+        assert next_state.obs["state"].shape == (48,)
         assert not jnp.any(jnp.isnan(next_state.obs["state"]))
         assert not jnp.any(jnp.isnan(next_state.reward))
 
@@ -61,8 +59,7 @@ class TestWarpGo2Steps:
         key = jax.random.PRNGKey(42)
         action = jax.random.uniform(key, (12,), minval=-1.0, maxval=1.0)
         next_state = env.step(state, action)
-        n_frames = default_config().n_frame_stack
-        assert next_state.obs["state"].shape == (48 * n_frames,)
+        assert next_state.obs["state"].shape == (48,)
 
     def test_reward_nonzero_after_steps(self, env, state):
         action = jnp.zeros(12)
@@ -110,11 +107,10 @@ class TestWarpBatched:
         env, env_step, env_state, eval_env, obs_dim, action_dim, key = make_envs(
             cfg, seed=0
         )
-        n_frames = default_config().n_frame_stack
-        assert obs_dim == 48 * n_frames
+        assert obs_dim == 48
         assert action_dim == 12
         assert isinstance(env_state.obs, dict)
-        assert env_state.obs["state"].shape == (4, 48 * n_frames)
+        assert env_state.obs["state"].shape == (4, 48)
 
         # Test batched step
         action = jnp.zeros((4, 12))
@@ -130,33 +126,3 @@ class TestWarpBatched:
         cfg = TrainConfig(env_name="Go2JoystickFlat", num_envs=2, total_timesteps=1000)
         _, _, env_state, _, obs_dim, _, _ = make_envs(cfg, seed=0)
         assert obs_dim == 48
-
-
-class TestWarpFrameStack:
-    def test_frame_stack_content(self, env, state):
-        """Frame stack should have newest obs at front, zeros shifted out."""
-        n_frames = default_config().n_frame_stack
-        raw_dim = 48
-
-        # After reset, all frames should be identical (tiled initial obs).
-        stacked = state.obs["state"]
-        for i in range(n_frames):
-            frame_i = stacked[i * raw_dim : (i + 1) * raw_dim]
-            assert jnp.allclose(frame_i, stacked[:raw_dim]), f"Frame {i} should match frame 0 after reset"
-
-        # After one step, frame 0 should differ (new obs), frame 1 should match old frame 0.
-        action = jnp.zeros(12)
-        next_state = env.step(state, action)
-        old_frame_0 = stacked[:raw_dim]
-        new_stacked = next_state.obs["state"]
-        new_frame_1 = new_stacked[raw_dim : 2 * raw_dim]
-        assert jnp.allclose(new_frame_1, old_frame_0), "Frame 1 after step should be previous frame 0"
-
-
-class TestWarpNoFrameStack:
-    def test_n_frame_stack_1_gives_raw_obs(self):
-        cfg = default_config()
-        cfg.n_frame_stack = 1
-        env = WarpJoystick(task="flat_terrain", config=cfg)
-        state = env.reset(jax.random.PRNGKey(0))
-        assert state.obs["state"].shape == (48,)
