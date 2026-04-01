@@ -110,10 +110,9 @@ def make_envs(cfg: TrainConfig, seed: int):
             torso_body_id=torso_body_id,
         )
 
-    # Frame stacking (optional, universal wrapper).
-    if cfg.n_frame_stack > 1:
-        from jax_rl.envs.wrappers import FrameStackWrapper
-        env = FrameStackWrapper(env, n_frames=cfg.n_frame_stack)
+    # Apply wrapper pipeline (action delay, frame stacking, etc.)
+    from jax_rl.envs.wrappers import apply_wrapper_pipeline
+    env = apply_wrapper_pipeline(env, cfg)
 
     env = wrap_for_training(
         env, episode_length=cfg.episode_length, randomization_fn=rand_fn,
@@ -125,9 +124,12 @@ def make_envs(cfg: TrainConfig, seed: int):
     env_state = env.reset(jax.random.split(reset_key, cfg.num_envs))
 
     eval_env = pg_registry.load(cfg.env_name)
-    if cfg.n_frame_stack > 1:
-        from jax_rl.envs.wrappers import FrameStackWrapper
-        eval_env = FrameStackWrapper(eval_env, n_frames=cfg.n_frame_stack)
+    # Eval env: same pipeline, but action delay uses fixed max (not randomized).
+    import dataclasses
+    eval_cfg = cfg
+    if cfg.action_delay_range_ms is not None:
+        eval_cfg = dataclasses.replace(cfg, action_delay_ms=cfg.action_delay_range_ms[1], action_delay_range_ms=None)
+    eval_env = apply_wrapper_pipeline(eval_env, eval_cfg)
     eval_env = wrap_for_training(eval_env, episode_length=cfg.episode_length)
 
     # Dict obs → obs_dim is the policy obs ("state" key).

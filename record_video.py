@@ -175,12 +175,16 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
     # ── Create env (unwrapped — single env, no auto-reset) ────────────────
     env = pg_registry.load(env_name)
 
-    # Apply frame stacking if checkpoint was trained with it.
-    n_frame_stack = meta.get("train_config", {}).get("n_frame_stack", 1)
-    if n_frame_stack > 1:
-        from jax_rl.envs.wrappers import FrameStackWrapper
-        env = FrameStackWrapper(env, n_frames=n_frame_stack)
-        print(f"  Frame stacking: {n_frame_stack} frames")
+    # Apply wrapper pipeline from checkpoint config (action delay, frame stacking, etc.)
+    train_cfg = meta.get("train_config", {})
+    # For recording, use fixed delay (max of range if randomized)
+    if train_cfg.get("action_delay_range_ms"):
+        train_cfg = {**train_cfg, "action_delay_ms": train_cfg["action_delay_range_ms"][1], "action_delay_range_ms": None}
+    from jax_rl.envs.wrappers import apply_wrapper_pipeline, build_wrapper_pipeline
+    pipeline = build_wrapper_pipeline(train_cfg)
+    if pipeline:
+        env = apply_wrapper_pipeline(env, train_cfg)
+        print(f"  Wrappers: {[name for name, _, _ in pipeline]}")
 
     env_step = jax.jit(env.step)
 

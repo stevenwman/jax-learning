@@ -45,5 +45,9 @@ class TrainConfig:
     # Observation preprocessing
     n_frame_stack: int = 1  # 1 = no stacking, 3 = standard for locomotion
 
+    # Action delay (sim2real latency simulation)
+    action_delay_ms: int = 0          # 0 = no delay, 120 = WTW default for Go2
+    action_delay_range_ms: tuple[int, int] | None = None  # randomized per-episode
+
     # PPO config (None for off-policy algos)
     ppo: PPOConfig | None = field(default_factory=PPOConfig)
