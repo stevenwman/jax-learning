@@ -121,6 +121,10 @@ With the privileged critic (Pinto et al. 2018 pattern), the critic never touches
 - Store frames as **uint8** in replay buffer (4× savings vs float32)
 - 100K buffer at 84×84×9 (3 RGB frames) ≈ 6.3GB — tight but feasible on 16GB
 - Assemble stacks at sample time, not storage time (DrQ-v2 pattern)
+- **Already built:** `JaxReplayBuffer` has `FrameStackConfig` for sample-time reconstruction — stores raw single frames, reconstructs stacks at sample time with episode boundary handling. Extend to uint8 pixel obs for vision.
+
+**Obs normalization with stacked frames:**
+- Normalize per-frame, not per-stacked-obs. Each frame position has a different temporal distribution. Compute running stats on raw single-frame obs (same distribution regardless of frame position), apply to each slice of the stack independently. This prevents blending statistics across time offsets.
 
 ### CNN Encoder (Nature CNN + optional MLP)
 

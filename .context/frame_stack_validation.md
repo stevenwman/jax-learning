@@ -23,8 +23,9 @@ Reference doc for A/B testing frame stacking. Each item is a concern to verify �
 ## Edge Cases — Deferred (low priority)
 
 ### 4. Obs normalization interaction
-- **Concern:** `--obs-norm` computes running statistics over 144d stacked obs. Frames 0-2 have different temporal distributions. Stats would blend them.
-- **Why deferred:** Off-policy Go2 doesn't use `--obs-norm`. Only relevant if we enable it for frame-stacked training.
+- **Concern:** `--obs-norm` computes running statistics over 144d stacked obs. Frames 0-2 have different temporal distributions (frame 0 = current, frame 2 = 2 steps old). Joint velocities especially drift over 2 steps. Normalizing the full 144d blends these distributions, biasing the statistics.
+- **Correct approach:** Normalize per-frame — apply norm to each 48d slice independently using the same running stats. The stats are computed on raw 48d obs (same distribution regardless of frame position), then applied to each slice of the stack separately.
+- **Why deferred:** Off-policy Go2 doesn't use `--obs-norm`. Only relevant for vision RL with `--obs-norm`.
 
 ### 5. sim2sim with frame stacking
 - **Concern:** Deploy `ObsBuilder` mirrors frame stacking in numpy. Need to verify FIFO matches JAX wrapper.
