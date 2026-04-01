@@ -50,7 +50,8 @@
 - [x] Velocity kicks — ±0.75 m/s every 350 steps, already in go2_joystick.py step()
 - [x] Motor strength DR — ×U(0.9, 1.1) via actuator_gainprm scaling
 - [x] Friction DR fix — randomize ALL geoms (MuJoCo max-combine), range [0.3, 1.5]
-- [ ] **Wider DR ranges** — Kp/Kd scaling, action delay (120ms FIFO from WTW). May need curriculum.
+- [x] Action delay — `ActionDelayWrapper` (120ms FIFO), `--action-delay-ms` / `--action-delay-range-ms` CLI flags. Config-driven wrapper pipeline.
+- [ ] **Wider DR ranges** — Kp/Kd scaling. May need curriculum.
 - [x] Frame stacking — universal `FrameStackWrapper` wraps any env, `--frame-stack 3` CLI flag, deploy ObsBuilder mirrors. 125/125 tests pass.
 - [x] Go2 SAC Phase B — FastSAC eval 226. Off-policy validated on Go2.
 
