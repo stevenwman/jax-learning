@@ -68,6 +68,20 @@
     <contact name="board_floor_found" geom1="board_top" geom2="floor"
       reduce="mindist" num="1" data="found"/>
 
+    <!-- Torso-floor and torso-board contacts (head touching anything = fail) -->
+    <contact name="torso_box_floor" geom1="torso_box" geom2="floor"
+      reduce="mindist" num="1" data="found"/>
+    <contact name="torso_cyl_floor" geom1="torso_cyl" geom2="floor"
+      reduce="mindist" num="1" data="found"/>
+    <contact name="torso_nose_floor" geom1="torso_nose" geom2="floor"
+      reduce="mindist" num="1" data="found"/>
+    <contact name="torso_box_board" geom1="torso_box" geom2="board_top"
+      reduce="mindist" num="1" data="found"/>
+    <contact name="torso_cyl_board" geom1="torso_cyl" geom2="board_top"
+      reduce="mindist" num="1" data="found"/>
+    <contact name="torso_nose_board" geom1="torso_nose" geom2="board_top"
+      reduce="mindist" num="1" data="found"/>
+
     <!-- Front foot contact with BOARD (not floor) -->
     <contact name="FL_board_found" geom1="FL" geom2="board_top"
       reduce="mindist" num="1" data="found"/>

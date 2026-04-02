@@ -122,14 +122,15 @@ class BongoHandstand(go2_warp_base.Go2WarpEnv):
             self._mj_model.sensor("board_floor_found").id
         ]
 
-        # Torso collision geom IDs (for head-contact termination).
-        self._torso_geom_ids = []
-        for i in range(self._mj_model.ngeom):
-            if (self._mj_model.geom_bodyid[i] == self._torso_body_id
-                    and self._mj_model.geom_group[i] == 3):
-                self._torso_geom_ids.append(i)
-        self._floor_geom_id = self._mj_model.geom("floor").id
-        self._board_geom_id = self._mj_model.geom("board_top").id
+        # Torso contact sensors (head/body touching floor or board = fail).
+        torso_contact_names = [
+            "torso_box_floor", "torso_cyl_floor", "torso_nose_floor",
+            "torso_box_board", "torso_cyl_board", "torso_nose_board",
+        ]
+        self._torso_contact_sensor_adr = [
+            self._mj_model.sensor_adr[self._mj_model.sensor(n).id]
+            for n in torso_contact_names
+        ]
 
         # Foot-floor contact sensors (ANY foot on floor = termination).
         self._feet_floor_sensors = [
@@ -418,34 +419,25 @@ class BongoHandstand(go2_warp_base.Go2WarpEnv):
         # Terminate if gravity_body[0] < 0.3 (tipped too far from handstand).
         not_handstand = gravity[0] < 0.3
 
-        board_tilt = self._get_board_tilt(data)
-        board_too_tilted = jp.sum(board_tilt ** 2) > 0.25  # ~30 deg
-
         base_z = data.subtree_com[self._torso_body_id][2]
         too_low = base_z < 0.15
 
-        roller_pos = data.qpos[self._roller_slide_qposadr]
-        roller_at_limit = jp.abs(roller_pos) > 0.22
-
-        # Any foot touching the floor = game over. Must stay on the board.
+        # Contact-based termination (all via sensors — no position heuristics).
+        # Any foot on floor.
         feet_on_floor = jp.any(jp.array([
             data.sensordata[adr] > 0
             for adr in self._feet_floor_sensor_adr
         ]))
-
-        # Board edge touching floor = game over.
+        # Board edge on floor.
         board_on_floor = data.sensordata[self._board_floor_sensor_adr] > 0
+        # Head/torso on floor or board.
+        head_contact = jp.any(jp.array([
+            data.sensordata[adr] > 0
+            for adr in self._torso_contact_sensor_adr
+        ]))
 
-        # Head/torso touching floor or board = game over.
-        # Check min z of torso collision geoms.
-        torso_geom_z = jp.array([
-            data.geom_xpos[gid][2] for gid in self._torso_geom_ids
-        ])
-        head_on_ground = jp.min(torso_geom_z) < 0.03  # within 3cm of floor
-
-        return (not_handstand | board_too_tilted | too_low
-                | roller_at_limit | feet_on_floor | board_on_floor
-                | head_on_ground)
+        return (not_handstand | too_low
+                | feet_on_floor | board_on_floor | head_contact)
 
     # ── Rewards ────────────────────────────────────────────────────
 
