@@ -116,8 +116,13 @@
 - [ ] Muon optimizer (`optax.contrib.muon`) — matrix-whitening via Newton-Schulz orthogonalization. Already in optax 0.2.6, drop-in `GradientTransformation`. Auto-routes 2D weights → Muon, biases/norms → AdamW internally. **RL caveat:** zero published RL benchmarks, untested on non-stationary targets + small MLPs. Start with actor-only Muon, keep critic on AdamW. First/last layer should stay Adam per author guidance.
 - [ ] Shampoo / other second-order optimizers — evaluate if Muon shows promise on RL
 
+## Mid-term — Env composability (from MJLab audit, prereq for DIAYN)
+- [ ] **RewardSpec** — extract `_get_reward()` into composable `(name, weight, fn)` tuples. DIAYN swaps reward = discriminator output by replacing the spec, not forking the env. ~2 hrs, ~80 lines.
+- [ ] **Curriculum callback** — `curriculum_fn(env_ids, episode_returns) → dr_range_multipliers` in reset. Unblocks wider Kp/Kd DR ranges. ~1 hr, ~50 lines.
+- [ ] **ObsSpec** — extract `_get_obs()` into config-driven `(name, fn, noise_cfg)` groups. Adding vision or DIAYN skill vector z = config change, not env surgery. ~2 hrs, ~100 lines.
+
 ## Long-term (Phase 6 — North Star)
-- [ ] DIAYN (skill discovery wrapping SAC)
+- [ ] DIAYN (skill discovery wrapping SAC) — requires RewardSpec + ObsSpec from above
 - [ ] METRA (contrastive + metric-aware skills)
 - [ ] Goal-conditioned RL architecture — encoder `context_dim` + `context_fusion` (concat/film/cross_attn). Go2 already does goal-conditioning via velocity command concatenated to obs (48d = 45d state + 3d command). The architecture upgrade adds a separate context input to the encoder with richer fusion modes: FiLM (goal modulates hidden features) or cross-attention (handles variable/structured goals). Matters for DIAYN (skill vector z as context) and USD (learned latent goals). Scaffolding exists in `EncoderConfig.context_dim` and `MlpEncoder.__call__(obs, context)` — just unused.
 - [ ] USD (Unified Skill Discovery)
