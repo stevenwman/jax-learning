@@ -18,6 +18,7 @@ import numpy as np
 from mujoco_playground._src import mjx_env
 from jax_rl.envs.locomotion import go2_warp_base
 from jax_rl.envs.locomotion import go2_constants as consts
+from jax_rl.envs.obs_spec import ObsTerm, IncludeGroup, compute_obs
 from jax_rl.envs.reward_spec import RewardTerm, compute_rewards
 
 
@@ -126,6 +127,39 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
 
         self._cmd_a = jp.array(self._config.command_config.a)
         self._cmd_b = jp.array(self._config.command_config.b)
+
+        noise = self._config.noise_config.scales
+        self._obs_groups = {
+            "state": [
+                ObsTerm("linvel", lambda data, **kw: self.get_local_linvel(data),
+                        noise_scale=noise.linvel),
+                ObsTerm("gyro", lambda data, **kw: self.get_gyro(data),
+                        noise_scale=noise.gyro),
+                ObsTerm("gravity", lambda data, **kw: self.get_gravity(data),
+                        noise_scale=noise.gravity),
+                ObsTerm("joint_pos_offset", lambda data, **kw: data.qpos[7:] - self._default_pose,
+                        noise_scale=noise.joint_pos),
+                ObsTerm("joint_vel", lambda data, **kw: data.qvel[6:],
+                        noise_scale=noise.joint_vel),
+                ObsTerm("last_act", lambda info, **kw: info["last_act"]),
+                ObsTerm("command", lambda info, **kw: info["command"]),
+            ],
+            "privileged_state": [
+                IncludeGroup("state"),
+                ObsTerm("gyro_clean", lambda data, **kw: self.get_gyro(data)),
+                ObsTerm("accelerometer", lambda data, **kw: self.get_accelerometer(data)),
+                ObsTerm("gravity_clean", lambda data, **kw: self.get_gravity(data)),
+                ObsTerm("linvel_clean", lambda data, **kw: self.get_local_linvel(data)),
+                ObsTerm("angvel", lambda data, **kw: self.get_global_angvel(data)),
+                ObsTerm("joint_pos_clean", lambda data, **kw: data.qpos[7:] - self._default_pose),
+                ObsTerm("joint_vel_clean", lambda data, **kw: data.qvel[6:]),
+                ObsTerm("actuator_force", lambda data, **kw: data.actuator_force),
+                ObsTerm("last_contact", lambda info, **kw: info["last_contact"].astype(jp.float32)),
+                ObsTerm("feet_vel", lambda data, **kw: data.sensordata[self._foot_linvel_sensor_adr].ravel()),
+                ObsTerm("feet_air_time", lambda info, **kw: info["feet_air_time"]),
+                ObsTerm("xfrc_applied", lambda data, **kw: data.xfrc_applied[self._torso_body_id, :3]),
+            ],
+        }
 
         self._reward_spec = [
             RewardTerm("tracking_lin_vel", lambda data, info, **kw:
@@ -335,88 +369,13 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
     def _get_obs(
         self, data: mjx.Data, info: dict[str, Any]
     ) -> Dict[str, jax.Array]:
-        gyro = self.get_gyro(data)
-        gravity = self.get_gravity(data)
-        joint_angles = data.qpos[7:]
-        joint_vel = data.qvel[6:]
-        linvel = self.get_local_linvel(data)
-
-        # Apply noise.
-        noise_level = self._config.noise_config.level
-        info["rng"], *noise_rngs = jax.random.split(info["rng"], 6)
-
-        noisy_linvel = (
-            linvel
-            + (2 * jax.random.uniform(noise_rngs[0], shape=linvel.shape) - 1)
-            * noise_level
-            * self._config.noise_config.scales.linvel
+        obs, info["rng"] = compute_obs(
+            self._obs_groups,
+            noise_level=self._config.noise_config.level,
+            rng=info["rng"],
+            data=data, info=info,
         )
-
-        noisy_gyro = (
-            gyro
-            + (2 * jax.random.uniform(noise_rngs[1], shape=gyro.shape) - 1)
-            * noise_level
-            * self._config.noise_config.scales.gyro
-        )
-
-        noisy_gravity = (
-            gravity
-            + (2 * jax.random.uniform(noise_rngs[2], shape=gravity.shape) - 1)
-            * noise_level
-            * self._config.noise_config.scales.gravity
-        )
-
-        noisy_joint_angles = (
-            joint_angles
-            + (2 * jax.random.uniform(noise_rngs[3], shape=joint_angles.shape) - 1)
-            * noise_level
-            * self._config.noise_config.scales.joint_pos
-        )
-
-        noisy_joint_vel = (
-            joint_vel
-            + (2 * jax.random.uniform(noise_rngs[4], shape=joint_vel.shape) - 1)
-            * noise_level
-            * self._config.noise_config.scales.joint_vel
-        )
-
-        # Policy obs (48d).
-        state = jp.hstack([
-            noisy_linvel,                             # 3
-            noisy_gyro,                               # 3
-            noisy_gravity,                            # 3
-            noisy_joint_angles - self._default_pose,  # 12
-            noisy_joint_vel,                          # 12
-            info["last_act"],                         # 12
-            info["command"],                          # 3
-        ])  # Total: 48
-
-        # Privileged obs for critic.
-        angvel = self.get_global_angvel(data)
-        feet_vel = data.sensordata[self._foot_linvel_sensor_adr].ravel()
-
-        accelerometer = self.get_accelerometer(data)
-
-        privileged_state = jp.hstack([
-            state,                                    # 48
-            gyro,                                     # 3  (unnoised)
-            accelerometer,                            # 3
-            gravity,                                  # 3  (unnoised)
-            linvel,                                   # 3  (unnoised)
-            angvel,                                   # 3
-            joint_angles - self._default_pose,        # 12 (unnoised)
-            joint_vel,                                # 12 (unnoised)
-            data.actuator_force,                      # 12
-            info["last_contact"].astype(jp.float32),  # 4
-            feet_vel,                                 # 12 (4 feet x 3)
-            info["feet_air_time"],                    # 4
-            data.xfrc_applied[self._torso_body_id, :3],  # 3
-        ])  # Total: 122
-
-        return {
-            "state": state,
-            "privileged_state": privileged_state,
-        }
+        return obs
 
     # ── Termination ─────────────────────────────────────────────────────
 
