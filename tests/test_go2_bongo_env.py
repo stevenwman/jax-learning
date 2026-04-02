@@ -71,3 +71,49 @@ class TestBongoLoads:
         state = env.reset(jax.random.PRNGKey(0))
         # 42 (state w/o board) + 52 (privileged extras) = 94
         assert state.obs["privileged_state"].shape == (94,)
+
+
+class TestBongoSteps:
+    def test_step_zero_action(self, env, state):
+        action = jnp.zeros(12)
+        next_state = env.step(state, action)
+        assert isinstance(next_state.obs, dict)
+        assert next_state.obs["state"].shape == (46,)
+        assert not jnp.any(jnp.isnan(next_state.obs["state"]))
+        assert not jnp.any(jnp.isnan(next_state.reward))
+
+    def test_step_random_action(self, env, state):
+        key = jax.random.PRNGKey(42)
+        action = jax.random.uniform(key, (12,), minval=-1.0, maxval=1.0)
+        next_state = env.step(state, action)
+        assert next_state.obs["state"].shape == (46,)
+
+    def test_reward_finite_after_steps(self, env, state):
+        action = jnp.zeros(12)
+        for _ in range(5):
+            state = env.step(state, action)
+        assert jnp.isfinite(state.reward)
+
+
+class TestBongoBatched:
+    def test_make_envs_integration(self):
+        from jax_rl.training.env_setup import make_envs
+        from jax_rl.configs.train_config import TrainConfig
+
+        cfg = TrainConfig(
+            env_name="Go2BongoHandstand",
+            num_envs=4,
+            total_timesteps=1000,
+        )
+        env, env_step, env_state, eval_env, obs_dim, action_dim, key = make_envs(
+            cfg, seed=0
+        )
+        assert obs_dim == 46
+        assert action_dim == 12
+        assert isinstance(env_state.obs, dict)
+        assert env_state.obs["state"].shape == (4, 46)
+
+        action = jnp.zeros((4, 12))
+        next_state = env_step(env_state, action)
+        assert isinstance(next_state.obs, dict)
+        assert not jnp.any(jnp.isnan(next_state.obs["state"]))
