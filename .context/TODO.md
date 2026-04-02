@@ -78,7 +78,7 @@
 - [ ] Train PPO on unitree MJCF via Warp — full 50M run (PPO hit 132, entropy collapsed)
 
 ## Short-term — Asymmetric off-policy critic
-- [x] Asymmetric critic for all off-policy algos — actor sees 48d state, critic sees 122d privileged_state. `critic_obs_dim` param on all algos, buffer stores extra obs, training loop auto-detects dict obs. 197/197 tests pass. Smoke tested on Go2Warp.
+- [x] Asymmetric critic for all off-policy algos — actor 48d, critic 122d. A/B result: ~2x faster to 270+ (5M vs 9M), final 279 vs 276 (noise). 197 tests pass.
 
 ## Short-term — Bongo Board Handstand
 - [x] Bongo board MJCF — board + roller, equality constraint, physics validated
