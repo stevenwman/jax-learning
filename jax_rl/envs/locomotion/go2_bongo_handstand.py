@@ -45,14 +45,16 @@ def default_config() -> config_dict.ConfigDict:
         ),
         reward_config=config_dict.create(
             scales=config_dict.create(
-                inverted_orientation=10.0,
-                board_level=12.0,         # bumped — incentivize board balance
-                com_above_support=8.0,    # bumped — stay over support
-                height=-5.0,
-                roller_centered=-3.0,     # bumped — keep roller centered
-                survival=5.0,             # constant reward per step alive
-                torques=-0.0002,
-                action_rate=-0.01,
+                # Cost-based: survival is ceiling, everything else pulls down.
+                # All costs are normalized to [0,1] before weighting.
+                survival=10.0,                  # only positive term
+                orientation_cost=-8.0,          # (gravity_error²)/4, range [0,1]
+                board_tilt_cost=-6.0,           # (tilt²)/0.5, range [0,1]
+                com_offset_cost=-5.0,           # (com_xy_error²)/0.1, range [0,1]
+                height_cost=-3.0,               # (height_error²)/0.1, range [0,1]
+                roller_cost=-2.0,               # (roller_pos²)/0.05, range [0,1]
+                torque_cost=-0.5,               # normalized torques
+                action_rate_cost=-0.5,          # (action_diff²)/1
                 termination=-1.0,
             ),
         ),
@@ -208,27 +210,31 @@ class BongoHandstand(go2_warp_base.Go2WarpEnv):
 
         self._obs_groups = {"state": state_terms, "privileged_state": privileged_terms}
 
+        # Cost-based rewards: normalized quadratic costs in [0,1].
+        # Survival is the ceiling; costs pull down. No saturation.
         target_gravity = jp.array([1.0, 0.0, 0.0])
+        max_torque_norm = 45.43 * 12  # rough max: all joints at calf limit
+
         self._reward_spec = [
-            RewardTerm("inverted_orientation", lambda data, **kw:
-                jp.exp(-jp.sum((self.get_gravity(data) - target_gravity) ** 2))),
-            RewardTerm("board_level", lambda data, **kw:
-                jp.exp(-jp.sum(self._get_board_tilt(data) ** 2) / 0.1)),
-            RewardTerm("com_above_support", lambda data, **kw:
-                jp.exp(-jp.sum((data.subtree_com[self._torso_body_id][:2]
-                                - data.xpos[self._board_body_id][:2]) ** 2) / 0.05)),
-            RewardTerm("height", lambda data, **kw:
-                (data.subtree_com[self._torso_body_id][2]
-                 - self._config.target_handstand_height) ** 2),
-            RewardTerm("roller_centered", lambda data, **kw:
-                data.qpos[self._roller_slide_qposadr] ** 2),
             RewardTerm("survival", lambda **kw:
                 jp.float32(1.0)),
-            RewardTerm("torques", lambda data, **kw:
-                jp.sqrt(jp.sum(jp.square(data.actuator_force)))
-                + jp.sum(jp.abs(data.actuator_force))),
-            RewardTerm("action_rate", lambda action, info, **kw:
-                jp.sum(jp.square(action - info["last_act"]))),
+            RewardTerm("orientation_cost", lambda data, **kw:
+                jp.clip(jp.sum((self.get_gravity(data) - target_gravity) ** 2) / 4.0, 0.0, 1.0)),
+            RewardTerm("board_tilt_cost", lambda data, **kw:
+                jp.clip(jp.sum(self._get_board_tilt(data) ** 2) / 0.5, 0.0, 1.0)),
+            RewardTerm("com_offset_cost", lambda data, **kw:
+                jp.clip(jp.sum((data.subtree_com[self._torso_body_id][:2]
+                                - data.xpos[self._board_body_id][:2]) ** 2) / 0.1, 0.0, 1.0)),
+            RewardTerm("height_cost", lambda data, **kw:
+                jp.clip((data.subtree_com[self._torso_body_id][2]
+                         - self._config.target_handstand_height) ** 2 / 0.1, 0.0, 1.0)),
+            RewardTerm("roller_cost", lambda data, **kw:
+                jp.clip(data.qpos[self._roller_slide_qposadr] ** 2 / 0.05, 0.0, 1.0)),
+            RewardTerm("torque_cost", lambda data, **kw:
+                jp.clip((jp.sqrt(jp.sum(jp.square(data.actuator_force)))
+                         + jp.sum(jp.abs(data.actuator_force))) / max_torque_norm, 0.0, 1.0)),
+            RewardTerm("action_rate_cost", lambda action, info, **kw:
+                jp.clip(jp.sum(jp.square(action - info["last_act"])) / 12.0, 0.0, 1.0)),
             RewardTerm("termination", lambda done, **kw:
                 done),
         ]
