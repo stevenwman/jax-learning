@@ -49,3 +49,45 @@
 **Fix:** Use `quat="0.7071 0.7071 0 0"` instead of euler. Quaternions are unit-independent and work correctly regardless of the `<compiler angle>` setting in any including file.
 
 **Lesson:** When writing MJCF files that will be `<include>`d by other files, use `quat` for rotations — it's immune to the angle convention. Never assume radians unless you control the `<compiler>` block.
+
+---
+
+## Use Contact Sensors, Not Position Heuristics, for Termination (2026-04-02)
+
+**What happened:** Initial termination used position checks: `base_z < 0.15`, `geom_xpos[i][2] < 0.03` for head-near-ground, `board_tilt² > 0.25`. These are all approximations — a geom's xpos is its center, not its surface. A 5cm-radius sphere at xpos z=0.04 is already touching the ground, but the check says it's fine.
+
+**Root cause:** Position is a proxy for contact. MuJoCo already solves exact collision detection — use it.
+
+**Fix:** Named the 3 torso collision geoms in vendored go2.xml (`torso_box`, `torso_cyl`, `torso_nose`). Added `<contact>` sensors in the scene XML for all combinations of torso×{floor, board}, feet×floor, and board×floor. Termination is now purely contact-based — no thresholds to tune.
+
+**Lesson:** For termination conditions involving "did X touch Y", always use MuJoCo contact sensors (`<contact>` in `<sensor>`), not position heuristics. Contact sensors are exact, threshold-free, and JIT-compatible via `data.sensordata`. Position checks are approximations that need manual tuning and can miss edge cases.
+
+---
+
+## Reward Hacking Closes Every Loophole You Leave Open (2026-04-02)
+
+**What happened:** Three separate exploits found across 4 training runs:
+1. **Ground balancing** (run 2): Robot slid off board, balanced on flat ground. Eval 397. Fixed with foot-floor contact termination.
+2. **Board slam** (run 3): Robot could slam the board flat, creating a stable platform. Fixed with board-floor contact termination.
+3. **Head tripod** (CMA-ES): Head resting on ground + 2 feet = 3-point stable contact. Fixed with torso contact termination.
+
+**Root cause:** Each fix closed one exploit, and the policy immediately found the next one. The optimizer (both CMA-ES and SAC) is adversarial — it will find ANY stable configuration that maximizes reward, regardless of whether it looks like a handstand.
+
+**Lesson:** When designing termination for trick/skill tasks, enumerate ALL ways the robot could cheat:
+- What body parts could touch the ground that shouldn't?
+- Could the robot leave the apparatus entirely?
+- Could the apparatus itself become a stable platform?
+
+Add termination for each. A survival bonus without comprehensive termination just rewards finding exploits faster.
+
+---
+
+## Checkpoint Resume Doesn't Save the Replay Buffer (2026-04-02)
+
+**What happened:** Resumed training from 20M → 50M steps. Returns dropped from ~70 to ~7 for the first few thousand steps, then recovered to ~40 within a few thousand more. Alpha (entropy coefficient) spiked from 0.002 to 0.008.
+
+**Root cause:** Orbax checkpoint saves actor/critic params + optimizer state + step count. The replay buffer (millions of transitions, ~2GB) is NOT saved. On resume, the buffer is empty — the critic's Q estimates are based on the old buffer distribution, but it's now getting fresh on-policy data from a different state distribution.
+
+**Expected behavior:** The dip is normal and recovers quickly as the buffer refills (~5-10k steps). The alpha spike is SAC's auto-tuning reacting to the distribution shift. Not a bug.
+
+**Lesson:** When resuming off-policy training, expect a transient performance drop. The policy weights carry the learned behavior, but the critic needs fresh data to recalibrate. Don't panic at the initial dip — watch for recovery over the next few thousand steps.
