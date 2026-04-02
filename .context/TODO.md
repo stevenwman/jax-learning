@@ -80,6 +80,16 @@
 ## Short-term — Asymmetric off-policy critic
 - [x] Asymmetric critic for all off-policy algos — actor sees 48d state, critic sees 122d privileged_state. `critic_obs_dim` param on all algos, buffer stores extra obs, training loop auto-detects dict obs. 197/197 tests pass. Smoke tested on Go2Warp.
 
+## Short-term — Bongo Board Handstand
+- [x] Bongo board MJCF — board + roller, equality constraint, physics validated
+- [x] Scene XML — Go2 + bongo board + floor + sensors
+- [x] `Go2BongoHandstand` env — obs, reward, termination, step, reset
+- [x] Registration + smoke tests (11 pass)
+- [x] CMA-ES handstand keyframe optimization (gen69, PD-hold stable)
+- [ ] Step + integration tests
+- [ ] Training run — smoke test PPO/FastSAC on bongo handstand
+- [ ] Phase 1B: full approach + mount + handstand (future)
+
 ## Mid-term (Vision RL)
 - [ ] Verify MJWarp GPU renderer on RTX 5080 (`mjx.create_render_context` + `mjx.render`). Madrona MJX is gone — replaced by built-in Warp ray-tracer in mujoco>=3.6.0.
 - [ ] Add render context to Go2WarpJoystick env (follow Playground CartpoleBalance vision pattern)
