@@ -117,6 +117,15 @@ class BongoHandstand(go2_warp_base.Go2WarpEnv):
         self._fl_board_sensor = self._mj_model.sensor("FL_board_found").id
         self._fr_board_sensor = self._mj_model.sensor("FR_board_found").id
 
+        # Foot-floor contact sensors (ANY foot on floor = termination).
+        self._feet_floor_sensors = [
+            self._mj_model.sensor(f"{g}_floor_found").id
+            for g in consts.FEET_GEOMS
+        ]
+        self._feet_floor_sensor_adr = [
+            self._mj_model.sensor_adr[sid] for sid in self._feet_floor_sensors
+        ]
+
         # Board contact mode override.
         # IMPORTANT: must modify _mj_model THEN re-create _mjx_model,
         # because base class already called mjx.put_model() in __init__.
@@ -404,7 +413,13 @@ class BongoHandstand(go2_warp_base.Go2WarpEnv):
         roller_pos = data.qpos[self._roller_slide_qposadr]
         roller_at_limit = jp.abs(roller_pos) > 0.22
 
-        return not_handstand | board_too_tilted | too_low | roller_at_limit
+        # Any foot touching the floor = game over. Must stay on the board.
+        feet_on_floor = jp.any(jp.array([
+            data.sensordata[adr] > 0
+            for adr in self._feet_floor_sensor_adr
+        ]))
+
+        return not_handstand | board_too_tilted | too_low | roller_at_limit | feet_on_floor
 
     # ── Rewards ────────────────────────────────────────────────────
 
