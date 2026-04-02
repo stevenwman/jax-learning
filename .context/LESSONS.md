@@ -25,7 +25,7 @@ JAX/Flax fundamentals in `LEARNER_LESSONS.md`.
 - **PPO validation summary** — CartpoleBalance PASS, CheetahRun PASS (826), HumanoidRun PASS (matches Brax ~8-10)
 - **Remaining performance gap (RESOLVED)** — fixed by 0.25x value loss scaling + full-batch advantage norm
 
-## [Off-Policy (SAC / TD3)](lessons/offpolicy.md) — 8 lessons
+## [Off-Policy (SAC / TD3)](lessons/offpolicy.md) — 11 lessons
 
 - **Obs normalization: NEVER before buffer storage** — normalize at sample time with `--obs-norm` (Go2: 139 vs 97)
 - **SAC validation results** — WalkerWalk 975, HumanoidRun 426 (vanilla) / 892 (FastSAC)
@@ -35,6 +35,9 @@ JAX/Flax fundamentals in `LEARNER_LESSONS.md`.
 - **Target entropy = 0 for SAC at scale** — classic `-dim(A)` causes alpha collapse at 1024 envs / 100M steps
 - **AdamW requires `params` in optimizer.update()** — weight decay needs the params themselves
 - **Optimizer decoupling** — algorithms define what to optimize, not how (DI pattern)
+- **Asymmetric critic: faster early learning, same ceiling** — A/B on Go2 FastSAC: ~2x faster to 270+ but final 276 vs 279 (noise). Actor obs bottlenecks convergence.
+- **Frame stacking doesn't help locomotion with proprioceptive obs** — A/B on Go2 FastSAC: 276.5 (48d) vs 271.3 (144d stacked). `last_action` already provides temporal context.
+- **Staged rewards need longer budgets** — gated rewards (box_target after reached_box) require 10M+ steps to discover full sequence; 2M plateau is stage 1, not convergence
 
 ## [Distributional RL (C51 / FastTD3 / FastSAC / FastDSAC)](lessons/distributional.md) — 8 lessons
 
@@ -58,7 +61,7 @@ JAX/Flax fundamentals in `LEARNER_LESSONS.md`.
 - **lax.scan carry cost** — 4M-entry buffer in carry = 30% slower than Python loop
 - **Faster component ≠ faster training** — 4.8x buffer speedup = 1.5% end-to-end improvement
 
-## [Infrastructure](lessons/infrastructure.md) — 10 lessons
+## [Infrastructure](lessons/infrastructure.md) — 12 lessons
 
 - **Orbax checkpointing** — must call `wait_until_finished()`, save meta.json alongside
 - **Orbax restore needs exact pytree match** — separate inference artifacts (numpy) from training (orbax)
@@ -71,6 +74,8 @@ JAX/Flax fundamentals in `LEARNER_LESSONS.md`.
 - **Integer division truncation** — `200000 // 128 * 128 = 199936`, final eval never fired
 - **Verify training budget before debugging** — eval ~17 at 50M steps was on-curve, not broken
 - **`--eval-every` is episodes, not steps** — `--eval-every 5000000` = 5M episodes, never triggers. Use ~50000 for Go2.
+- **Env wrappers must be applied in all consumers** — FrameStackWrapper in training but not record_video = checkpoint incompatible at inference
+- **Brax auto-reset does NOT reset state.info** — only pipeline_state and obs are reset. Any FIFO/history in state.info must use `jp.where(done, ...)` to self-reset
 
 ## [MuJoCo Engine](lessons/mujoco.md) — 3 lessons
 
@@ -86,6 +91,13 @@ JAX/Flax fundamentals in `LEARNER_LESSONS.md`.
 - **MJX→CPU transfer: every obs dimension must match** — zeroed linvel in CPU env killed transfer. Diff obs side-by-side.
 - **MJX can't load all MJCFs** — cylinder-box collisions not implemented. Use MuJoCo Warp instead.
 
+## [Vision RL](lessons/vision.md) — 4 lessons
+
+- **Frame stacking: locomotion ≠ DMC** — DMC/manipulation stacks raw frames (DrQ-v2); locomotion uses CNN + GRU (ANYmal, DeFM). DreamWaQ/WTW are NOT pixel methods.
+- **Asymmetric critic simplifies vision** — privileged critic skips images entirely. No shared encoder stop-grad, no frame stacking on critic. Actor CNN trains from policy gradients only.
+- **Pixel replay buffer: uint8 is non-negotiable** — 100K entries at 84×84×9: 6.3GB (uint8) vs 25GB (float32). Assemble stacks at sample time.
+- **MJWarp renderer: Warp-only, fixed nworld** — `mjx.render()` requires `impl="warp"`. nworld frozen at `create_render_context()` time.
+
 ## [MuJoCo Warp](lessons/warp.md) — 6 lessons
 
 - **CCD overflow — size naccdmax for complex geometry** — 8.6M overflow warnings at 1024 envs, 30% sps loss. Set `naccdmax=4000`, `ccd_iterations=100`, `njmax=100`.
@@ -94,6 +106,16 @@ JAX/Flax fundamentals in `LEARNER_LESSONS.md`.
 - **Inherits XML solver settings** — unitree's iterations=100, elliptic cone, eulerdamp=on vs MJX's 1/pyramidal/off. Audit `<option>` block when porting envs.
 - **PD gains must match solver stiffness** — Kp=35/Kd=0.1 (MJX, 1-iter) collapsed on Warp (100-iter). Use Kp=20/Kd=0.5 (unitree_rl_gym). PD gains are coupled to solver config.
 - **Joint order ≠ actuator order — THE root cause** — unitree qpos is FL-first, ctrl is FR-first. PD applied FL torque to FR actuator. Robot fought itself. Hours of debugging PD/solver/entropy were all red herrings. ALWAYS verify ordering when using third-party MJCFs.
+
+## [Bongo Board Handstand](lessons/bongo.md) — 7 lessons
+
+- **Always verify policy behavior visually** — eval 397 looked great on paper, but the robot was balancing on the floor, not the board. Reward hacking is silent without video.
+- **CMA-ES hard rejects poison the population** — returning 1e6 for invalid poses gives no gradient. Use soft penalties so CMA-ES can learn which direction is better.
+- **Constrained DOFs should be computed, not optimized** — base_z is determined by pitch + joint angles + feet-on-ground constraint. Optimizing it wastes a dimension and causes spawn bugs.
+- **MuJoCo euler uses degrees by default** — `euler="1.5708 0 0"` is 1.5° not 90°. Use `quat` for rotation-safe values across includes with different `<compiler angle>` settings.
+- **Use contact sensors, not position heuristics** — `geom_xpos[i][2] < 0.03` misses edge cases. MuJoCo `<contact>` sensors are exact and threshold-free.
+- **Reward hacking closes every loophole** — ground balance, board slam, head tripod — three exploits found across 4 runs. Enumerate ALL cheats and terminate for each.
+- **Checkpoint resume doesn't save replay buffer** — expect transient dip on resume as buffer refills. Not a bug.
 
 ## [Go2 Locomotion](lessons/go2.md) — 7 lessons
 

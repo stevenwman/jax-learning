@@ -51,9 +51,11 @@ class TD3:
         critic_optimizer: optax.GradientTransformation,
         gamma: float = 0.99,
         handle_truncation: bool = True,
+        critic_obs_dim: int | None = None,
     ) -> None:
         self.config = config
         self.obs_dim = obs_dim
+        self.critic_obs_dim = critic_obs_dim or obs_dim
         self.action_dim = action_dim
         self.gamma = gamma
         self.handle_truncation = handle_truncation
@@ -90,14 +92,15 @@ class TD3:
         def _critic_loss(q_params, target_actor_params, target_q1_params,
                          target_q2_params, batch, key):
             q1_params_, q2_params_ = q_params
-            obs = batch["obs"]
+            critic_obs = batch["critic_obs"]
             action = batch["action"]
             reward = batch["reward"].squeeze(-1)
+            critic_next_obs = batch["critic_next_obs"]
             next_obs = batch["next_obs"]
             done = batch["done"].squeeze(-1)
             truncation = batch["truncation"].squeeze(-1)
 
-            # Target policy smoothing: deterministic action + clipped noise
+            # Target policy smoothing: deterministic action + clipped noise (actor sees 48d obs)
             next_action = _actor_forward(target_actor_params, next_obs)
             noise = jnp.clip(
                 jax.random.normal(key, next_action.shape) * target_noise_std,
@@ -105,15 +108,15 @@ class TD3:
             )
             next_action = jnp.clip(next_action + noise, -1.0, 1.0)
 
-            # Target Q (min of twin targets — no entropy term, unlike SAC)
-            tq1_val = q1.apply(target_q1_params, next_obs, next_action)
-            tq2_val = q2.apply(target_q2_params, next_obs, next_action)
+            # Target Q (min of twin targets — critic sees privileged obs)
+            tq1_val = q1.apply(target_q1_params, critic_next_obs, next_action)
+            tq2_val = q2.apply(target_q2_params, critic_next_obs, next_action)
             min_tq = jnp.minimum(tq1_val, tq2_val)
             target = reward + self.gamma * (1.0 - done) * min_tq
 
-            # Online Q predictions
-            q1_val = q1.apply(q1_params_, obs, action)
-            q2_val = q2.apply(q2_params_, obs, action)
+            # Online Q predictions (critic sees privileged obs)
+            q1_val = q1.apply(q1_params_, critic_obs, action)
+            q2_val = q2.apply(q2_params_, critic_obs, action)
 
             # TD error with truncation masking (same as SAC)
             q1_err = q1_val - jax.lax.stop_gradient(target)
@@ -137,9 +140,9 @@ class TD3:
 
         # ── Full update step ─────────────────────────────────────────────
         # We use a closure-free approach: actor_loss_fn takes obs explicitly
-        def _actor_loss_fn(actor_params, q1_params_, obs):
+        def _actor_loss_fn(actor_params, q1_params_, obs, critic_obs):
             action = _actor_forward(actor_params, obs)
-            q1_val = q1.apply(q1_params_, obs, action)
+            q1_val = q1.apply(q1_params_, critic_obs, action)
             loss = -jnp.mean(q1_val)
             return loss, {"actor_loss": loss}
 
@@ -163,9 +166,10 @@ class TD3:
             def _do_actor_update(args):
                 actor_params, actor_opt_state, q1_p, nq1, nq2, ta, tq1, tq2 = args
                 obs = batch["obs"]
+                critic_obs = batch["critic_obs"]
                 (_, actor_metrics), actor_grads = jax.value_and_grad(
                     _actor_loss_fn, argnums=0, has_aux=True
-                )(actor_params, q1_p, obs)
+                )(actor_params, q1_p, obs, critic_obs)
                 actor_updates, new_actor_opt_state = actor_optimizer.update(
                     actor_grads, actor_opt_state, params=actor_params
                 )
@@ -230,23 +234,26 @@ class TD3:
         self.select_action = select_action
         self._actor_forward = _actor_forward
 
-    def get_q_value(self, state: TrainingState, obs: jax.Array, action: jax.Array) -> jax.Array:
+    def get_q_value(self, state: TrainingState, obs: jax.Array, action: jax.Array,
+                    critic_obs: jax.Array | None = None) -> jax.Array:
         """Return scalar Q1 value for (obs, action). Used for Q diagnostics."""
-        return self.q1.apply(state.q1_params, obs, action)
+        q_obs = critic_obs if critic_obs is not None else obs
+        return self.q1.apply(state.q1_params, q_obs, action)
 
     def init(self, key: jax.Array) -> TrainingState:
         """Initialize parameters and optimizer states."""
         key, k1, k3, k4 = jax.random.split(key, 4)
 
         dummy_obs = jnp.zeros((1, self.obs_dim))
+        dummy_critic_obs = jnp.zeros((1, self.critic_obs_dim))
         dummy_action = jnp.zeros((1, self.action_dim))
 
         # Actor params (single init via composed DeterministicActor)
         actor_params = self.actor.init(k1, dummy_obs)
 
-        # Q params (twin)
-        q1_params = self.q1.init(k3, dummy_obs, dummy_action)
-        q2_params = self.q2.init(k4, dummy_obs, dummy_action)
+        # Q params (twin — uses critic obs dim)
+        q1_params = self.q1.init(k3, dummy_critic_obs, dummy_action)
+        q2_params = self.q2.init(k4, dummy_critic_obs, dummy_action)
 
         # Opt states
         actor_opt_state = self.actor_optimizer.init(actor_params)

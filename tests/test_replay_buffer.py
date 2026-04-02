@@ -118,3 +118,153 @@ def test_sample_different_keys_give_different_batches():
     b2 = buf.sample(32, key=jax.random.PRNGKey(2))
     # Very unlikely to be identical with different keys
     assert not jnp.allclose(b1["obs"], b2["obs"])
+
+
+# ── Frame-stack reconstruction tests ─────────────────────────────────────
+
+from jax_rl.buffers.jax_replay_buffer import FrameStackConfig
+
+
+class TestFrameStackBuffer:
+    """Tests for sample-time frame stack reconstruction."""
+
+    def _make_buffer(self, max_size=200, num_envs=4, n_frames=3, raw_dim=8):
+        fsc = FrameStackConfig(n_frames=n_frames, raw_dim=raw_dim, num_envs=num_envs)
+        return JaxReplayBuffer(raw_dim, ACTION_DIM, max_size=max_size, frame_stack_config=fsc), fsc
+
+    def test_stores_raw_dim(self):
+        buf, fsc = self._make_buffer(raw_dim=8)
+        assert buf.obs.shape == (200, 8)
+        assert not hasattr(buf, 'next_obs') or buf.__dict__.get('next_obs') is None
+
+    def test_no_next_obs_allocated(self):
+        buf, _ = self._make_buffer()
+        # next_obs should not be in __dict__ when frame stacking
+        assert 'next_obs' not in buf.__dict__
+
+    def test_add_extracts_newest_frame(self):
+        buf, fsc = self._make_buffer(num_envs=4, raw_dim=8)
+        # Simulate stacked obs: [frame0=1s, frame1=2s, frame2=3s]
+        stacked = jnp.concatenate([
+            jnp.ones((4, 8)) * 1.0,  # newest
+            jnp.ones((4, 8)) * 2.0,
+            jnp.ones((4, 8)) * 3.0,
+        ], axis=-1)  # (4, 24)
+        buf.add_batch(
+            obs=stacked,
+            action=jnp.zeros((4, ACTION_DIM)),
+            reward=jnp.zeros(4),
+            next_obs=stacked,  # ignored
+            done=jnp.zeros(4),
+        )
+        # Should store only the first 8 dims (newest frame)
+        assert jnp.allclose(buf.obs[0], 1.0)
+        assert jnp.allclose(buf.obs[1], 1.0)
+
+    def test_sample_returns_stacked_shape(self):
+        buf, fsc = self._make_buffer(max_size=200, num_envs=4, n_frames=3, raw_dim=8)
+        # Add enough transitions for valid sampling
+        for i in range(20):
+            obs = jnp.ones((4, 8)) * float(i)
+            stacked = jnp.tile(obs, (1, 3))  # (4, 24)
+            buf.add_batch(
+                obs=stacked, action=jnp.zeros((4, ACTION_DIM)),
+                reward=jnp.zeros(4), next_obs=stacked,
+                done=jnp.zeros(4),
+            )
+        batch = buf.sample(16, key=jax.random.PRNGKey(0))
+        assert batch["obs"].shape == (16, 24)  # 3 * 8
+        assert batch["next_obs"].shape == (16, 24)
+
+    def test_reconstruction_correctness(self):
+        """Verify frames are reconstructed in correct order (newest first)."""
+        buf, fsc = self._make_buffer(max_size=200, num_envs=2, n_frames=3, raw_dim=4)
+        # Add 5 batches with known values (env0 and env1 get same value per batch)
+        for t in range(5):
+            obs = jnp.ones((2, 4)) * float(t)
+            stacked = jnp.tile(obs, (1, 3))
+            buf.add_batch(
+                obs=stacked, action=jnp.zeros((2, ACTION_DIM)),
+                reward=jnp.zeros(2), next_obs=stacked,
+                done=jnp.zeros(2),
+            )
+        # Sample index for env 0 at t=4: index = 4*2 + 0 = 8
+        # Lookback: t=4 (idx=8), t=3 (idx=6), t=2 (idx=4)
+        # Expected stack: [4.0, 3.0, 2.0] (each repeated 4 times)
+        idx = jnp.array([8])
+        reconstructed = buf._reconstruct(buf.obs, buf.dones, idx)
+        assert reconstructed.shape == (1, 12)  # 3 * 4
+        assert jnp.allclose(reconstructed[0, :4], 4.0)   # newest: t=4
+        assert jnp.allclose(reconstructed[0, 4:8], 3.0)   # t=3
+        assert jnp.allclose(reconstructed[0, 8:12], 2.0)  # oldest: t=2
+
+    def test_episode_boundary_tiles(self):
+        """At episode boundaries, older frames should be tiled from latest valid frame."""
+        buf, fsc = self._make_buffer(max_size=200, num_envs=2, n_frames=3, raw_dim=4)
+        # t=0: obs=0, done=0
+        buf.add_batch(obs=jnp.tile(jnp.zeros((2, 4)), (1, 3)),
+                      action=jnp.zeros((2, ACTION_DIM)),
+                      reward=jnp.zeros(2), next_obs=jnp.zeros((2, 12)),
+                      done=jnp.zeros(2))
+        # t=1: obs=1, done=1 (episode ends!)
+        buf.add_batch(obs=jnp.tile(jnp.ones((2, 4)), (1, 3)),
+                      action=jnp.zeros((2, ACTION_DIM)),
+                      reward=jnp.zeros(2), next_obs=jnp.ones((2, 12)),
+                      done=jnp.ones(2))
+        # t=2: obs=2, done=0 (new episode, after auto-reset)
+        buf.add_batch(obs=jnp.tile(jnp.ones((2, 4)) * 2, (1, 3)),
+                      action=jnp.zeros((2, ACTION_DIM)),
+                      reward=jnp.zeros(2), next_obs=jnp.ones((2, 12)) * 2,
+                      done=jnp.zeros(2))
+        # t=3: obs=3, done=0
+        buf.add_batch(obs=jnp.tile(jnp.ones((2, 4)) * 3, (1, 3)),
+                      action=jnp.zeros((2, ACTION_DIM)),
+                      reward=jnp.zeros(2), next_obs=jnp.ones((2, 12)) * 3,
+                      done=jnp.zeros(2))
+
+        # Sample t=3 for env 0: idx = 3*2 + 0 = 6
+        # Lookback: t=3 (idx=6), t=2 (idx=4), t=1 (idx=2, done=1 -> boundary!)
+        # Expected: frame0=3, frame1=2, frame2=2 (tiled from frame1 due to boundary)
+        idx = jnp.array([6])
+        reconstructed = buf._reconstruct(buf.obs, buf.dones, idx)
+        assert jnp.allclose(reconstructed[0, :4], 3.0)    # newest: t=3
+        assert jnp.allclose(reconstructed[0, 4:8], 2.0)    # t=2 (valid)
+        assert jnp.allclose(reconstructed[0, 8:12], 2.0)   # t=1 has done=1, tile t=2
+
+    def test_next_obs_derived_correctly(self):
+        """next_obs should be the stack at index + num_envs."""
+        buf, fsc = self._make_buffer(max_size=200, num_envs=2, n_frames=3, raw_dim=4)
+        for t in range(6):
+            obs = jnp.ones((2, 4)) * float(t)
+            stacked = jnp.tile(obs, (1, 3))
+            buf.add_batch(
+                obs=stacked, action=jnp.zeros((2, ACTION_DIM)),
+                reward=jnp.zeros(2), next_obs=stacked,
+                done=jnp.zeros(2),
+            )
+        # Sample t=3 for env 0: idx = 3*2+0 = 6
+        # obs stack: [3, 2, 1]
+        # next_obs = stack at idx+num_envs = 8 -> [4, 3, 2]
+        idx = jnp.array([6])
+        obs_stack = buf._reconstruct(buf.obs, buf.dones, idx)
+        next_idx = (idx + fsc.num_envs) % buf.max_size
+        next_stack = buf._reconstruct(buf.obs, buf.dones, next_idx)
+        assert jnp.allclose(obs_stack[0, :4], 3.0)
+        assert jnp.allclose(next_stack[0, :4], 4.0)
+        assert jnp.allclose(next_stack[0, 4:8], 3.0)
+
+    def test_plain_buffer_unchanged(self):
+        """Non-frame-stack buffer should work identically to before."""
+        buf = JaxReplayBuffer(OBS_DIM, ACTION_DIM, max_size=100)
+        buf.add_batch(
+            obs=jnp.ones((10, OBS_DIM)) * 5.0,
+            action=jnp.zeros((10, ACTION_DIM)),
+            reward=jnp.ones(10),
+            next_obs=jnp.ones((10, OBS_DIM)) * 6.0,
+            done=jnp.zeros(10),
+        )
+        batch = buf.sample(8, key=jax.random.PRNGKey(0))
+        assert batch["obs"].shape == (8, OBS_DIM)
+        assert batch["next_obs"].shape == (8, OBS_DIM)
+        assert jnp.allclose(batch["obs"], 5.0)
+        assert jnp.allclose(batch["next_obs"], 6.0)

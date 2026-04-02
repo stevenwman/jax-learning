@@ -19,6 +19,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from jax_rl.configs.sac_config import SACConfig
+from jax_rl.configs.fast_sac_config import FastSACConfig
 from jax_rl.configs.td3_config import TD3Config
 from jax_rl.configs.fast_td3_config import FastTD3Config
 from jax_rl.algos.sac import SAC
@@ -35,13 +36,17 @@ KEY = jax.random.PRNGKey(42)
 def _make_batch(key):
     """Create a fake replay batch for testing."""
     k1, k2, k3, k4 = jax.random.split(key, 4)
+    obs = jax.random.normal(k1, (BATCH_SIZE, OBS_DIM), dtype=jnp.float32)
+    next_obs = jax.random.normal(k4, (BATCH_SIZE, OBS_DIM), dtype=jnp.float32)
     return {
-        "obs": jax.random.normal(k1, (BATCH_SIZE, OBS_DIM), dtype=jnp.float32),
+        "obs": obs,
         "action": jax.random.uniform(k2, (BATCH_SIZE, ACTION_DIM), minval=-1, maxval=1, dtype=jnp.float32),
         "reward": jnp.zeros((BATCH_SIZE, 1), dtype=jnp.float32),
-        "next_obs": jax.random.normal(k4, (BATCH_SIZE, OBS_DIM), dtype=jnp.float32),
+        "next_obs": next_obs,
         "done": jnp.zeros((BATCH_SIZE, 1), dtype=jnp.float32),
         "truncation": jnp.zeros((BATCH_SIZE, 1), dtype=jnp.float32),
+        "critic_obs": obs,           # same as obs for non-asymmetric tests
+        "critic_next_obs": next_obs,
     }
 
 
@@ -227,13 +232,13 @@ def test_fast_td3_get_q_value():
 # ── FastSAC ─────────────────────────────────────────────────────────────────
 
 def _make_fast_sac():
-    cfg = SACConfig(hidden_dim=(64, 64), batch_size=BATCH_SIZE)
+    cfg = FastSACConfig(hidden_dim=(64, 64), batch_size=BATCH_SIZE,
+                        num_atoms=11, v_min=-10.0, v_max=10.0)
     opt = optax.adamw(3e-4, b1=0.9, b2=0.95, weight_decay=0.001)
     alpha_opt = optax.adamw(3e-4, b1=0.9, b2=0.95, weight_decay=0.001)
     return FastSAC(
         cfg, OBS_DIM, ACTION_DIM, opt, alpha_opt,
         gamma=0.97, handle_truncation=True,
-        num_atoms=11, v_min=-10.0, v_max=10.0,
     )
 
 

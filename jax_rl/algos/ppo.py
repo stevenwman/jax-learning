@@ -54,7 +54,7 @@ class PPO:
         self.num_envs = config.num_envs
 
         self.actor = Actor(encoder_config, policy_config)
-        self.critic = VCritic(critic_encoder_config, config.value_head)
+        self.critic = VCritic(critic_encoder_config)
         self.actor_optimizer = actor_optimizer
         self.critic_optimizer = critic_optimizer
 

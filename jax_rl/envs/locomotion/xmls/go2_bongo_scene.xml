@@ -1,0 +1,124 @@
+<mujoco model="go2 bongo handstand scene">
+  <!-- Go2 FIRST so robot qpos occupies indices 0-18 -->
+  <include file="unitree_go2/go2.xml"/>
+  <include file="bongo_board.xml"/>
+
+  <statistic center="0 0 0.3" extent="1.0" meansize="0.04"/>
+
+  <visual>
+    <headlight diffuse=".8 .8 .8" ambient=".2 .2 .2" specular="1 1 1"/>
+    <rgba force="1 0 0 1"/>
+    <global azimuth="120" elevation="-20" offwidth="3840" offheight="2160"/>
+    <map force="0.01"/>
+    <scale forcewidth="0.3" contactwidth="0.5" contactheight="0.2"/>
+    <quality shadowsize="8192"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="1 1 1" rgb2="1 1 1"
+      width="800" height="800"/>
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge"
+      rgb1="1 1 1" rgb2="1 1 1" markrgb="0 0 0" width="300" height="300"/>
+    <material name="groundplane" texture="groundplane" texuniform="true"
+      texrepeat="5 5" reflectance="0"/>
+  </asset>
+
+  <worldbody>
+    <geom name="floor" size="0 0 0.01" type="plane" material="groundplane"
+      contype="1" conaffinity="0" priority="1" friction="0.6" condim="3"/>
+  </worldbody>
+
+  <sensor>
+    <!-- Go2 IMU sensors (same as go2_warp_scene_flat.xml) -->
+    <gyro site="imu" name="gyro"/>
+    <accelerometer site="imu" name="accelerometer"/>
+    <framelinvel objtype="site" objname="imu" name="global_linvel"/>
+    <frameangvel objtype="site" objname="imu" name="global_angvel"/>
+    <velocimeter site="imu" name="local_linvel"/>
+    <framezaxis objtype="site" objname="imu" name="upvector"/>
+    <framexaxis objtype="site" objname="imu" name="forwardvector"/>
+
+    <!-- Per-foot position sensors -->
+    <framepos objtype="site" objname="FL_foot" name="FL_pos"
+      reftype="site" refname="imu"/>
+    <framepos objtype="site" objname="FR_foot" name="FR_pos"
+      reftype="site" refname="imu"/>
+    <framepos objtype="site" objname="RL_foot" name="RL_pos"
+      reftype="site" refname="imu"/>
+    <framepos objtype="site" objname="RR_foot" name="RR_pos"
+      reftype="site" refname="imu"/>
+
+    <!-- Per-foot linear velocity sensors -->
+    <framelinvel objtype="site" objname="FL_foot" name="FL_global_linvel"/>
+    <framelinvel objtype="site" objname="FR_foot" name="FR_global_linvel"/>
+    <framelinvel objtype="site" objname="RL_foot" name="RL_global_linvel"/>
+    <framelinvel objtype="site" objname="RR_foot" name="RR_global_linvel"/>
+
+    <!-- Floor contact sensors (for rear legs if they touch ground) -->
+    <contact name="FL_floor_found" geom1="FL" geom2="floor"
+      reduce="mindist" num="1" data="found"/>
+    <contact name="FR_floor_found" geom1="FR" geom2="floor"
+      reduce="mindist" num="1" data="found"/>
+    <contact name="RL_floor_found" geom1="RL" geom2="floor"
+      reduce="mindist" num="1" data="found"/>
+    <contact name="RR_floor_found" geom1="RR" geom2="floor"
+      reduce="mindist" num="1" data="found"/>
+
+    <!-- Board-floor contact (board edge touching ground = fail) -->
+    <contact name="board_floor_found" geom1="board_top" geom2="floor"
+      reduce="mindist" num="1" data="found"/>
+
+    <!-- Torso-floor and torso-board contacts (head touching anything = fail) -->
+    <contact name="torso_box_floor" geom1="torso_box" geom2="floor"
+      reduce="mindist" num="1" data="found"/>
+    <contact name="torso_cyl_floor" geom1="torso_cyl" geom2="floor"
+      reduce="mindist" num="1" data="found"/>
+    <contact name="torso_nose_floor" geom1="torso_nose" geom2="floor"
+      reduce="mindist" num="1" data="found"/>
+    <contact name="torso_box_board" geom1="torso_box" geom2="board_top"
+      reduce="mindist" num="1" data="found"/>
+    <contact name="torso_cyl_board" geom1="torso_cyl" geom2="board_top"
+      reduce="mindist" num="1" data="found"/>
+    <contact name="torso_nose_board" geom1="torso_nose" geom2="board_top"
+      reduce="mindist" num="1" data="found"/>
+
+    <!-- Front leg arm/calf on board = fail (only foot tips allowed) -->
+    <contact name="FL_hip_board" geom1="FL_hip_col" geom2="board_top"
+      reduce="mindist" num="1" data="found"/>
+    <contact name="FL_thigh_board" geom1="FL_thigh_col" geom2="board_top"
+      reduce="mindist" num="1" data="found"/>
+    <contact name="FL_calf_upper_board" geom1="FL_calf_upper" geom2="board_top"
+      reduce="mindist" num="1" data="found"/>
+    <contact name="FL_calf_lower_board" geom1="FL_calf_lower" geom2="board_top"
+      reduce="mindist" num="1" data="found"/>
+    <contact name="FR_hip_board" geom1="FR_hip_col" geom2="board_top"
+      reduce="mindist" num="1" data="found"/>
+    <contact name="FR_thigh_board" geom1="FR_thigh_col" geom2="board_top"
+      reduce="mindist" num="1" data="found"/>
+    <contact name="FR_calf_upper_board" geom1="FR_calf_upper" geom2="board_top"
+      reduce="mindist" num="1" data="found"/>
+    <contact name="FR_calf_lower_board" geom1="FR_calf_lower" geom2="board_top"
+      reduce="mindist" num="1" data="found"/>
+
+    <!-- Front foot contact with BOARD (not floor) -->
+    <contact name="FL_board_found" geom1="FL" geom2="board_top"
+      reduce="mindist" num="1" data="found"/>
+    <contact name="FR_board_found" geom1="FR" geom2="board_top"
+      reduce="mindist" num="1" data="found"/>
+  </sensor>
+
+  <!-- Handstand keyframe — CMA-ES optimized (gen 69, score 9572.7).
+       90deg pitch + 6.6deg extra, front legs extended, rear tucked.
+       PD-hold stable for ~8s on flat ground. Feet on board top (z=0.1468).
+       qpos layout: [robot_base(7), robot_joints(12), board_base(7), roller_slide(1), roller_spin(1)] -->
+  <keyframe>
+    <key name="handstand"
+      qpos="0 0 0.597062 0.470531 -0.527826 0.527826 0.470531
+            0.493386 -0.859650 -1.867154 -0.493386 -0.859650 -1.867154
+            0.090111 1.547200 -2.039923 -0.090111 1.547200 -2.039923
+            0 0 0.1318 1 0 0 0
+            0 0"
+      ctrl="0.493386 -0.859650 -1.867154 -0.493386 -0.859650 -1.867154
+            0.090111 1.547200 -2.039923 -0.090111 1.547200 -2.039923"/>
+  </keyframe>
+</mujoco>

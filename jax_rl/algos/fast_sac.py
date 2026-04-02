@@ -16,7 +16,7 @@ import jax
 import jax.numpy as jnp
 import optax
 
-from jax_rl.configs.sac_config import SACConfig
+from jax_rl.configs.fast_sac_config import FastSACConfig
 from jax_rl.configs.networks_config import EncoderConfig, PolicyHeadConfig
 from jax_rl.networks.builders import Actor
 from jax_rl.networks.heads.q_distributional import DistributionalQHead
@@ -48,21 +48,18 @@ class FastSAC:
 
     def __init__(
         self,
-        config: SACConfig,
+        config: FastSACConfig,
         obs_dim: int,
         action_dim: int,
         optimizer: optax.GradientTransformation,
         alpha_optimizer: optax.GradientTransformation,
         gamma: float = 0.99,
         handle_truncation: bool = True,
-        # C51 params (not in SACConfig to avoid breaking vanilla SAC)
-        num_atoms: int = 51,
-        v_min: float = -10.0,
-        v_max: float = 10.0,
-        q_aggregation: str = "avg",
+        critic_obs_dim: int | None = None,
     ) -> None:
         self.config = config
         self.obs_dim = obs_dim
+        self.critic_obs_dim = critic_obs_dim or obs_dim
         self.action_dim = action_dim
         self.gamma = gamma
         self.handle_truncation = handle_truncation
@@ -86,17 +83,17 @@ class FastSAC:
         self.actor = Actor(enc_cfg, pol_cfg)
         critic_dim = config.critic_hidden_dim or config.hidden_dim
         self.q1 = DistributionalQHead(
-            critic_dim, num_atoms, config.activation, config.q_layer_norm,
+            critic_dim, config.num_atoms, config.activation, config.q_layer_norm,
         )
         self.q2 = DistributionalQHead(
-            critic_dim, num_atoms, config.activation, config.q_layer_norm,
+            critic_dim, config.num_atoms, config.activation, config.q_layer_norm,
         )
 
         self.optimizer = optimizer
         self.alpha_optimizer = alpha_optimizer
 
         # C51 support
-        support = make_support(v_min, v_max, num_atoms)
+        support = make_support(config.v_min, config.v_max, config.num_atoms)
         self._support = support
 
         # Freeze refs
@@ -105,7 +102,7 @@ class FastSAC:
         q2 = self.q2
         tau = config.tau
         target_entropy = self.target_entropy
-        use_avg = q_aggregation == "avg"
+        use_avg = config.q_aggregation == "avg"
 
         # ── Actor forward ────────────────────────────────────────────────
         def _actor_forward(actor_params, obs, key):
@@ -117,21 +114,22 @@ class FastSAC:
         def _critic_loss(q_params, actor_params, target_q1_params, target_q2_params,
                          log_alpha, batch, key):
             q1_params_, q2_params_ = q_params
-            obs = batch["obs"]
+            critic_obs = batch["critic_obs"]
             action = batch["action"]
             reward = batch["reward"].squeeze(-1)
+            critic_next_obs = batch["critic_next_obs"]
             next_obs = batch["next_obs"]
             done = batch["done"].squeeze(-1)
             truncation = batch["truncation"].squeeze(-1)
 
             alpha = jnp.exp(log_alpha)
 
-            # Next action from current policy
+            # Next action from current policy (actor sees 48d obs)
             next_action, next_log_prob = _actor_forward(actor_params, next_obs, key)
 
-            # Target Q distributions
-            tq1_logits = q1.apply(target_q1_params, next_obs, next_action)
-            tq2_logits = q2.apply(target_q2_params, next_obs, next_action)
+            # Target Q distributions (critic sees privileged obs)
+            tq1_logits = q1.apply(target_q1_params, critic_next_obs, next_action)
+            tq2_logits = q2.apply(target_q2_params, critic_next_obs, next_action)
             tq1_probs = jax.nn.softmax(tq1_logits, axis=-1)
             tq2_probs = jax.nn.softmax(tq2_logits, axis=-1)
 
@@ -154,9 +152,9 @@ class FastSAC:
                                      self.gamma, support)
             )
 
-            # Online Q logits
-            q1_logits = q1.apply(q1_params_, obs, action)
-            q2_logits = q2.apply(q2_params_, obs, action)
+            # Online Q logits (critic sees privileged obs)
+            q1_logits = q1.apply(q1_params_, critic_obs, action)
+            q2_logits = q2.apply(q2_params_, critic_obs, action)
 
             # Cross-entropy loss
             # Clamp log_probs to prevent -inf * 0 = NaN in cross-entropy
@@ -181,11 +179,12 @@ class FastSAC:
         # ── Actor loss (uses expected Q from distribution) ───────────────
         def _actor_loss(actor_params, q1_params_, q2_params_, log_alpha, batch, key):
             obs = batch["obs"]
+            critic_obs = batch["critic_obs"]
             alpha = jnp.exp(log_alpha)
 
             action, log_prob = _actor_forward(actor_params, obs, key)
-            q1_logits = q1.apply(q1_params_, obs, action)
-            q2_logits = q2.apply(q2_params_, obs, action)
+            q1_logits = q1.apply(q1_params_, critic_obs, action)
+            q2_logits = q2.apply(q2_params_, critic_obs, action)
             q1_val = logits_to_q(q1_logits, support)
             q2_val = logits_to_q(q2_logits, support)
 
@@ -311,21 +310,24 @@ class FastSAC:
         self.select_action = select_action
         self._actor_forward = _actor_forward
 
-    def get_q_value(self, state, obs: jax.Array, action: jax.Array) -> jax.Array:
+    def get_q_value(self, state, obs: jax.Array, action: jax.Array,
+                    critic_obs: jax.Array | None = None) -> jax.Array:
         """Return scalar Q1 value (expected value from C51 logits)."""
-        logits = self.q1.apply(state.q1_params, obs, action)
+        q_obs = critic_obs if critic_obs is not None else obs
+        logits = self.q1.apply(state.q1_params, q_obs, action)
         return logits_to_q(logits, self._support)
 
     def init(self, key: jax.Array) -> TrainingState:
         key, k1, k3, k4 = jax.random.split(key, 4)
 
         dummy_obs = jnp.zeros((1, self.obs_dim))
+        dummy_critic_obs = jnp.zeros((1, self.critic_obs_dim))
         dummy_action = jnp.zeros((1, self.action_dim))
 
         actor_params = self.actor.init(k1, dummy_obs)
 
-        q1_params = self.q1.init(k3, dummy_obs, dummy_action)
-        q2_params = self.q2.init(k4, dummy_obs, dummy_action)
+        q1_params = self.q1.init(k3, dummy_critic_obs, dummy_action)
+        q2_params = self.q2.init(k4, dummy_critic_obs, dummy_action)
 
         actor_opt_state = self.optimizer.init(actor_params)
         q_params = (q1_params, q2_params)

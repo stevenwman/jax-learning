@@ -101,3 +101,53 @@ PPO shouldn't own optimizer construction. Optimizers are external concerns.
 **After:** PPO takes `actor_optimizer` and `critic_optimizer` as constructor args. Train script builds them.
 
 **Lesson:** Algorithms define *what* they optimize, not *how*. Makes swapping optimizers trivial.
+
+---
+
+## Don't Use Config Inheritance When Variants Share Names but Not Defaults
+
+**Problem:** `FastSACConfig(SACConfig)` inherited SAC defaults for 9/14 fields. Bare `FastSACConfig()` silently produced tau=0.005 (SAC's default), not 0.125 (FastSAC paper). This was the exact bug that caused NaN divergence on HumanoidRun.
+
+**Root cause:** Inheritance implies "same defaults with a few additions." But FastSAC and SAC differ on tau (25x), batch_size (16x), alpha_init (1000x), activation, network dims, policy_delay — nearly everything. The inheritance was a lie.
+
+**Lesson:** Use flat, standalone config dataclasses per algorithm. Field name overlap doesn't justify inheritance — only shared *defaults* would. Accept the duplication; it's the honest representation. Each algo's defaults should be correct out of the box.
+
+**Applies to:** Any algo variant pair (SAC/FastSAC, TD3/FastTD3). Also applies to hypothetical `OffPolicyConfig` base — tau's default would be wrong for half the children.
+
+---
+
+## Asymmetric Critic: Faster Early Learning, Same Ceiling (2026-04-01)
+
+**Experiment:** A/B on Go2WarpJoystickFlat with FastSAC, 1024 envs, 20M steps. Symmetric (actor+critic both 48d) vs asymmetric (actor 48d, critic 122d privileged).
+
+**Result:** Asymmetric reaches 272 by 5M steps (symmetric took ~9M). ~2x sample efficiency to 270+. But final scores converge: 276.5 (sym) vs 279.2 (asym) — within noise.
+
+**Why:** The privileged critic (clean sensor data, unnoised joints/velocities, contact info, external forces) learns value estimates faster. But the actor is still limited to 48d noisy obs, so the final policy quality is bottlenecked by what the actor can perceive, not what the critic can evaluate.
+
+**When it matters more:** Harder tasks where early sample efficiency is critical (short training budgets, expensive sim), or when the privileged/policy obs gap is larger (e.g., vision actor + full-state critic).
+
+---
+
+## Frame Stacking Doesn't Help Locomotion with Proprioceptive Obs (2026-04-01)
+
+**Experiment:** A/B on Go2WarpJoystickFlat with FastSAC, 1024 envs, 20M steps. Baseline (48d) vs 3-frame stack (144d). Same config, different seeds.
+
+**Result:** 276.5 (baseline) vs 271.3 (stacked). No measurable difference.
+
+**Why:** The 48d obs already contains `last_action` (12d) which provides sufficient temporal context for the policy. Stacking adds 96d of redundant frame history that the policy can't use better than what `last_action` already provides. Locomotion temporal context comes from GRU/learned estimators, not raw stacking.
+
+**When frame stacking DOES help:** Vision RL (pixel obs where consecutive frames encode motion — DrQ-v2, CURL), and envs without `last_action` in obs.
+
+**Infrastructure still valuable:** The `FrameStackWrapper`, sample-time buffer reconstruction, and `--frame-stack` CLI flag are needed for future vision RL work.
+
+---
+
+## Staged Rewards Need Longer Training Budgets
+
+**Problem:** SAC on PandaPickCube at 2M steps learned approach (reward ~604) but never lifted the cube. Box z stayed at 0.03 (table surface).
+
+**Root cause:** PandaPickCube uses a gated reward — `box_target` reward (lift to target) only activates after `reached_box` flag (gripper within 1.2cm of box). At 2M steps the policy learned to reach the box (gripper_box reward) but hadn't explored the grasp-lift sequence enough to discover the gated reward.
+
+**Fix:** 10M steps. Cube lifted to z=0.25, reward ~1386.
+
+**Lesson:** When rewards are staged/gated (reward B only available after achieving condition A), training budget must be long enough to discover the full sequence. The first plateau is not convergence — it's the policy stalling at the first reward stage.

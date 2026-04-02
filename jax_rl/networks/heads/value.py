@@ -8,19 +8,14 @@ Dense(1) output: (batch, 1) → (batch,).
 from flax import linen as nn
 import jax
 import jax.numpy as jnp
-from jax_rl.configs.networks_config import ValueHeadConfig
 
 
 class ValueHead(nn.Module):
     """Scalar value head: features → V(s).
 
-    Args:
-        config: ValueHeadConfig (currently no options, placeholder for future).
-
     Input:  features of shape (batch, feature_dim) from encoder
     Output: value estimates of shape (batch,)
     """
-    config: ValueHeadConfig
 
     @nn.compact
     def __call__(self, features: jax.Array) -> jax.Array:

@@ -6,6 +6,7 @@ from jax_rl.configs.ppo_config import PPOConfig
 from jax_rl.configs.sac_config import SACConfig
 from jax_rl.configs.td3_config import TD3Config
 from jax_rl.configs.fast_td3_config import FastTD3Config
+from jax_rl.configs.fast_sac_config import FastSACConfig
 from jax_rl.configs.train_config import TrainConfig
 
 PRESETS: dict[str, TrainConfig] = {
@@ -106,6 +107,11 @@ SAC_PRESETS: dict[str, tuple[TrainConfig, SACConfig]] = {
     ),
     "CheetahRun": (
         dataclasses.replace(_SAC_BASE_CFG, env_name="CheetahRun"),
+        _SAC_BASE_ALGO,
+    ),
+    "PandaPickCube": (
+        dataclasses.replace(_SAC_BASE_CFG, env_name="PandaPickCube",
+                            episode_length=150, total_timesteps=10_000_000),
         _SAC_BASE_ALGO,
     ),
 }
@@ -213,7 +219,7 @@ _FAST_SAC_BASE_CFG = TrainConfig(
     handle_truncation=True,
 )
 
-_FAST_SAC_BASE_ALGO = SACConfig(
+_FAST_SAC_BASE_ALGO = FastSACConfig(
     tau=0.125,                     # paper: 0.125 (fast target update for high UTD ratio)
     target_entropy_scale=0.0,      # target_entropy=0 (prevents alpha collapse at scale)
     alpha_lr=3e-4,
@@ -230,7 +236,7 @@ _FAST_SAC_BASE_ALGO = SACConfig(
     policy_delay=4,                    # paper: actor updates every 4th critic update
 )
 
-FAST_SAC_PRESETS: dict[str, tuple[TrainConfig, SACConfig]] = {
+FAST_SAC_PRESETS: dict[str, tuple[TrainConfig, FastSACConfig]] = {
     "CheetahRun": (
         dataclasses.replace(_FAST_SAC_BASE_CFG, env_name="CheetahRun"),
         _FAST_SAC_BASE_ALGO,
@@ -246,8 +252,8 @@ FAST_SAC_PRESETS: dict[str, tuple[TrainConfig, SACConfig]] = {
 }
 
 
-def get_fast_sac_preset(env_name: str) -> tuple[TrainConfig, SACConfig]:
-    """Return FastSAC preset (TrainConfig, SACConfig) for env, or a default."""
+def get_fast_sac_preset(env_name: str) -> tuple[TrainConfig, FastSACConfig]:
+    """Return FastSAC preset (TrainConfig, FastSACConfig) for env, or a default."""
     if env_name in FAST_SAC_PRESETS:
         return FAST_SAC_PRESETS[env_name]
     return dataclasses.replace(_FAST_SAC_BASE_CFG, env_name=env_name), _FAST_SAC_BASE_ALGO

@@ -92,10 +92,44 @@ encoder_config: MlpEncoderConfig | CnnEncoderConfig = field(default_factory=MlpE
 
 All encoders output `(batch, feature_dim)`. The algo never knows what encoder type is used.
 
+### Frame Stacking Strategy (researched 2026-04-01)
+
+Three approaches exist in the literature:
+
+| Approach | How | Used by | Tradeoff |
+|---|---|---|---|
+| **Raw frame stacking** | Concat N frames along channel dim (84×84×9 for 3 RGB) → one CNN pass | DrQ-v2, DQN, CURL | Simple, cheap, standard for off-policy |
+| **Encode-then-stack** | Shared CNN per frame → concat latent vectors | Flare (NeurIPS 2021) | Cleaner temporal separation, N× CNN cost |
+| **CNN + GRU** | CNN per frame → concat with prop → GRU for temporal memory | ANYmal, DeFM, LocoMamba | Best for long-horizon terrain estimation |
+
+**Decision: Start with raw frame stacking (DrQ-v2 style).** Reasons:
+1. It's the established default for off-policy pixel control (SAC/TD3 territory)
+2. Playground's frame stacking logic already handles it inside the env
+3. Our asymmetric critic **doesn't see images** — it gets privileged 122d state. Frame stacking is actor-only, so the simpler approach costs less.
+
+**Upgrade path:** If raw stacking plateaus on locomotion (likely when terrain context matters over >10 steps), upgrade actor to CNN + GRU on latents. This is the standard locomotion approach (ANYmal in the wild, DeFM).
+
+**Key insight — asymmetric critic simplifies vision:**
+With the privileged critic (Pinto et al. 2018 pattern), the critic never touches pixels. Only the actor needs temporal visual context. This means:
+- No frame stacking complexity on the critic side
+- No shared encoder stop-gradient gymnastics (DrQ-v2 shares CNN between actor/critic with detached grads — we skip this entirely)
+- Critic trains on clean 122d state, actor learns vision independently
+
+**DreamWaQ / Walk These Ways are NOT pixel methods** — they use proprioception + learned terrain estimators. No frame stacking reference from them.
+
+**Memory:**
+- Store frames as **uint8** in replay buffer (4× savings vs float32)
+- 100K buffer at 84×84×9 (3 RGB frames) ≈ 6.3GB — tight but feasible on 16GB
+- Assemble stacks at sample time, not storage time (DrQ-v2 pattern)
+- **Already built:** `JaxReplayBuffer` has `FrameStackConfig` for sample-time reconstruction — stores raw single frames, reconstructs stacks at sample time with episode boundary handling. Extend to uint8 pixel obs for vision.
+
+**Obs normalization with stacked frames:**
+- Normalize per-frame, not per-stacked-obs. Each frame position has a different temporal distribution. Compute running stats on raw single-frame obs (same distribution regardless of frame position), apply to each slice of the stack independently. This prevents blending statistics across time offsets.
+
 ### CNN Encoder (Nature CNN + optional MLP)
 
 ```
-Input: (batch, H, W, C*frame_stack)
+Input: (batch, H, W, C*frame_stack)    # e.g., 84×84×9 for 3 RGB frames
   → Conv(32, 8x8, stride 4) → ReLU
   → Conv(64, 4x4, stride 2) → ReLU
   → Conv(64, 3x3, stride 1) → ReLU
@@ -130,7 +164,7 @@ pixels = mjx.get_rgb(rc, cam_idx=0, pixels=pixels_buf)
 
 - **`mjx.render()` only works with `impl="warp"`** — pure-JAX MJX cannot render. Vision requires Warp backend.
 - Only **CartpoleBalance** and **FrankaPickCubeCartesian** have vision implemented in Playground. Locomotion envs (Go1, Go2) don't have it yet — we need to add the render context to `Go2WarpJoystick`.
-- `wrap_for_brax_training()` does **NOT** have a `vision=True` parameter. Vision is handled inside the env class itself (see Playground's CartpoleBalance vision env). The wrapper just wraps the env normally.
+- `wrap_for_training()` does **NOT** have a `vision=True` parameter. Vision is handled inside the env class itself (see Playground's CartpoleBalance vision env). The wrapper just wraps the env normally.
 - Obs come out as `state.obs` with pixel keys like `pixels/view_0`
 - Frame stacking (grayscale, sequential frames) is handled by the env
 - **No `madrona_mjx` dependency** — only `mujoco>=3.6.0` and `warp-lang>=1.11`
@@ -203,7 +237,7 @@ Pixel replay buffers are much larger than state buffers. Rough estimates suggest
 - [x] Pixel wrapper needed? — **NO**. Playground handles rendering + frame stacking inside env class. Vision is integrated via `mjx.create_render_context` / `mjx.render`, not a separate wrapper.
 - [x] Separate vision train scripts? — **NO**. One script per algo with `--vision` flag.
 - [x] Madrona MJX dependency? — **GONE** (2026-03-30). MJWarp renderer is built into `mujoco>=3.6.0`. Only `warp-lang>=1.11` required.
-- [x] `vision=True` on `wrap_for_brax_training()`? — **NO such parameter**. Vision logic lives inside the env class. Wrapper is unaware of vision.
+- [x] `vision=True` on `wrap_for_training()`? — **NO such parameter**. Vision logic lives inside the env class. Wrapper is unaware of vision.
 
 ### Pinned for empirical testing
 - [ ] GPU memory budget — pixel replay buffer sizing on 16GB. Test with different buffer sizes / resolutions.

@@ -38,6 +38,10 @@
 - [x] Best-policy checkpointing — CheckpointManager saves to ckpt_dir/best/ on new eval high
 - [x] Sync train_ppo.py with train_ppo_fast.py — frozen obs norm, CheckpointManager, eval fix, --eval-every, .3g format
 
+## Completed (2026-03-30)
+- [x] PandaPickCube SAC — **reward 1386, cube lifted 22cm** @ 10M steps. Preset added to env_presets.py.
+- [x] Manipulation benchmark survey — MuJoCo Playground already has 10 tasks (PandaPickCube, LeapCubeReorient, AlohaSinglePegInsertion, etc.)
+
 ## Active
 
 ## Short-term — Go2 robustness (ACTIVE)
@@ -46,8 +50,9 @@
 - [x] Velocity kicks — ±0.75 m/s every 350 steps, already in go2_joystick.py step()
 - [x] Motor strength DR — ×U(0.9, 1.1) via actuator_gainprm scaling
 - [x] Friction DR fix — randomize ALL geoms (MuJoCo max-combine), range [0.3, 1.5]
-- [ ] **Wider DR ranges** — Kp/Kd scaling, action delay (120ms FIFO from WTW). May need curriculum.
-- [ ] Wire frame stacking into Go2 env (currently no frame stack — just raw obs)
+- [x] Action delay — `ActionDelayWrapper` (120ms FIFO), `--action-delay-ms` / `--action-delay-range-ms` CLI flags. Config-driven wrapper pipeline.
+- [ ] **Wider DR ranges** — Kp/Kd scaling. May need curriculum.
+- [x] Frame stacking — universal `FrameStackWrapper` wraps any env, `--frame-stack 3` CLI flag, deploy ObsBuilder mirrors. 125/125 tests pass.
 - [x] Go2 SAC Phase B — FastSAC eval 226. Off-policy validated on Go2.
 
 ## Short-term — Cleanup
@@ -55,6 +60,7 @@
 - [x] Integration debt — 7/7 resolved (select_action_eval, asymmetric PPO test, etc.)
 - [x] `lax.scan` for gradient loops — benchmarked: 1.03x (no speedup)
 - [x] MJX recompilation — root cause found, upstream issue, MEM_FRACTION=0.7 mitigates
+- [x] Vendor training wrappers — Vmap, Episode, AutoReset, DR in `jax_rl/envs/wrappers/training.py`. Removed Brax training wrapper dependency. Parity-tested. 137/137 tests pass.
 
 ## Short-term — Experiment tracking
 - [x] W&B integration — `--wandb` flag on all 3 train scripts, logs step + eval metrics. Tested: SAC (CheetahRun 200k), PPO (CartpoleBalance 500k), no-flag passthrough. All working.
@@ -72,7 +78,22 @@
 - [ ] Train PPO on unitree MJCF via Warp — full 50M run (PPO hit 132, entropy collapsed)
 
 ## Short-term — Asymmetric off-policy critic
-- [ ] Add privileged critic support to SAC/TD3 training scripts (`train_offpolicy.py`). Actor sees `obs["state"]` (48d), critic sees `obs["privileged_state"]` (122d). Theoretically justified: Pinto 2017 (DDPG, the original asymmetric AC paper), Lambrechts ICML 2025 (unbiased policy gradients, algorithm-agnostic). No published system combines SAC + privileged critic + legged locomotion — this would be novel.
+- [x] Asymmetric critic for all off-policy algos — actor 48d, critic 122d. A/B result: ~2x faster to 270+ (5M vs 9M), final 279 vs 276 (noise). 197 tests pass.
+
+## Short-term — Bongo Board Handstand
+- [x] Bongo board MJCF — board + roller, equality constraint, physics validated
+- [x] Scene XML — Go2 + bongo board + floor + sensors
+- [x] `Go2BongoHandstand` env — obs, reward, termination, step, reset
+- [x] Registration + smoke tests (15 pass)
+- [x] CMA-ES handstand keyframe optimization (gen69, PD-hold stable)
+- [x] Step + integration tests
+- [x] Contact-based termination — feet/board/head/arm on floor or board
+- [x] Eval loop `lax.scan` — fixes Warp OOM from Python-loop buffer accumulation
+- [x] Cost-based reward redesign — normalized quadratic costs, survival ceiling
+- [x] Training runs A/B2 — best eval 119 (Run A), 101 (Run B2 w/ arm term)
+- [ ] Run C (cost-based) — in progress
+- [ ] Run D (robustness) — best of above + pushes + init randomization
+- [ ] Phase 1B: full approach + mount + handstand (future)
 
 ## Mid-term (Vision RL)
 - [ ] Verify MJWarp GPU renderer on RTX 5080 (`mjx.create_render_context` + `mjx.render`). Madrona MJX is gone — replaced by built-in Warp ray-tracer in mujoco>=3.6.0.
@@ -80,7 +101,7 @@
 - [ ] CNN encoder (`jax_rl/networks/encoders/cnn.py`) + `CnnEncoderConfig`
 - [ ] DrQ augmentation (`jax_rl/utils/augmentation.py`)
 - [ ] `--vision` flag on train scripts
-- [ ] ManiSkill integration (Gymnasium adapter + DLPack bridge)
+- [ ] ManiSkill / HumanoidBench integration — requires env factory abstraction in `env_setup.py` (currently only coupling point to Playground). Gymnasium adapter + DLPack bridge.
 - [ ] Memory budget testing — pixel replay buffer on 16GB
 
 ## Mid-term (Go2 Deployment)
@@ -96,8 +117,53 @@
 - [ ] DC motor model (`jax_rl/envs/actuators.py`) — Tier 2, add if sim-to-real gap > threshold
 - [ ] Confirm Go2 EDU edition in lab (ask Steven)
 
-## Long-term (Phase 6 — North Star)
-- [ ] DIAYN (skill discovery wrapping SAC)
-- [ ] METRA (contrastive + metric-aware skills)
-- [ ] Goal-conditioned RL architecture — encoder `context_dim` + `context_fusion` (concat/film/cross_attn). Go2 already does goal-conditioning via velocity command concatenated to obs (48d = 45d state + 3d command). The architecture upgrade adds a separate context input to the encoder with richer fusion modes: FiLM (goal modulates hidden features) or cross-attention (handles variable/structured goals). Matters for DIAYN (skill vector z as context) and USD (learned latent goals). Scaffolding exists in `EncoderConfig.context_dim` and `MlpEncoder.__call__(obs, context)` — just unused.
-- [ ] USD (Unified Skill Discovery)
+## Mid-term — Optimizer experiments
+- [ ] Muon optimizer (`optax.contrib.muon`) — matrix-whitening via Newton-Schulz orthogonalization. Already in optax 0.2.6, drop-in `GradientTransformation`. Auto-routes 2D weights → Muon, biases/norms → AdamW internally. **RL caveat:** zero published RL benchmarks, untested on non-stationary targets + small MLPs. Start with actor-only Muon, keep critic on AdamW. First/last layer should stay Adam per author guidance.
+- [ ] Shampoo / other second-order optimizers — evaluate if Muon shows promise on RL
+
+## Mid-term — Env composability (from MJLab audit, prereq for DIAYN)
+- [x] **RewardSpec** — `compute_rewards(spec, **kwargs)` returns unweighted dict. All 3 envs refactored (Warp 17 terms, MJX 16, Bongo 9). DIAYN swaps reward by replacing `env._reward_spec`.
+- [ ] **Curriculum callback** — `curriculum_fn(env_ids, episode_returns) → dr_range_multipliers` in reset. Unblocks wider Kp/Kd DR ranges. ~1 hr, ~50 lines.
+- [x] **ObsSpec** — `compute_obs(groups, noise_level, rng, **kwargs)` with per-term noise. All 3 envs refactored. DIAYN appends `ObsTerm("skill_z", ...)` to "state" group — one line.
+
+## Long-term (Phase 6 — Skill Discovery)
+Informed by D3 paper (arXiv:2508.19953) and leggedrobotics/d3-skill-discovery. See `.context/references/d3_skill_discovery.md`.
+
+### Phase 6A: DIAYN (foundation)
+- [ ] Skill prior — `DirichletSkillPrior(n_skills, concentration_schedule)` with curriculum α ∈ [0.05, 1.0]
+- [ ] Discriminator network — learned q_φ(z|s), 2-layer MLP, softmax output
+- [ ] Intrinsic reward — r_DIAYN(s, z) = log q_φ(z|s) - log p(z), wired via RewardSpec
+- [ ] Skill-conditioned policy — z as context input via `EncoderConfig.context_dim` (scaffolding exists)
+- [ ] Skill vector in obs — append to "state" group via ObsSpec
+- [ ] Benchmark on Go2 Warp — discover forward/backward/strafe skills. Success: 4-5 interpretable skills.
+
+### Phase 6B: Symmetry augmentation
+- [ ] Go2 morphology mirror functions — M_s^k (permute leg indices), M_z^k (permute skill components). 4-fold symmetry for quadruped.
+- [ ] Augmentation in rollout collection — mirror transitions with prob 1/K before buffer storage
+- [ ] A/B test symmetry on skill interpretability
+
+### Phase 6C: Style factor + safety (required for hardware)
+- [ ] Extrinsic reward terms — joint torques, contacts, height deviation, orientation penalties (D3 Table 9)
+- [ ] Factor weighting λ — sample from truncated Gaussian, enforce Σλ=1, balance conflicting skills
+- [ ] Regularization penalties — torque limits, contact bounds, joint velocity caps (D3 Table 10)
+- [ ] These are NOT optional — D3 proves they're load-bearing for sim-to-real transfer
+
+### Phase 6D: METRA + factorized skill discovery (D3 endpoint)
+- [ ] `HypersphereSkillPrior(dim)` — z ~ U(S^d-1) for continuous directional skills (d ≤ 3)
+- [ ] State transition predictor φ(s) + Wasserstein distance objective + learnable Lagrange multiplier
+- [ ] Per-factor algorithm selection — METRA for position (unbounded), DIAYN for heading (bounded/discrete)
+- [ ] State factorization — {base position (2D), heading (2D), base height (1D), roll/pitch (2D)} for Go2
+- [ ] Skill resampling within episode (not just once per episode)
+
+### Phase 6E: Sim-to-real with learned skills
+- [ ] Deploy skill library on real Go2 with style factor active
+- [ ] Zero-shot transfer test — walk to goal using learned skill primitives
+- [ ] Compare vs direct PPO policy (no skill library)
+
+### Infrastructure already in place
+- [x] RewardSpec — DIAYN reward swap is one line
+- [x] ObsSpec — skill vector z injection is one line
+- [x] Asymmetric critic — critic sees privileged state
+- [x] EncoderConfig.context_dim — skill z as context input (scaffolding exists, unused)
+- [x] Action delay wrapper — sim2real latency simulation
+- [ ] Goal-conditioned encoder fusion (concat/FiLM/cross_attn) — needed for skill z context

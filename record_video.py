@@ -83,20 +83,32 @@ def _build_select_action(meta, obs_dim, action_dim):
         return ppo, "ppo"
 
     elif algo in ("sac", "fast_sac"):
-        from jax_rl.algos.sac import SAC
-        from jax_rl.configs.sac_config import SACConfig
         algo_cfg_key = "sac_config" if "sac_config" in meta else "fast_sac_config"
         sc = meta.get(algo_cfg_key, {})
-        sac_cfg = SACConfig(
-            hidden_dim=tuple(sc.get("hidden_dim", (256, 256))),
-            activation=sc.get("activation", "relu"),
-            q_layer_norm=sc.get("q_layer_norm", True),
-            target_entropy_scale=sc.get("target_entropy_scale", 0.5),
-        )
         if algo == "fast_sac":
             from jax_rl.algos.fast_sac import FastSAC
-            sac = FastSAC(sac_cfg, obs_dim, action_dim, dummy_opt, dummy_opt, gamma=0.99)
+            from jax_rl.configs.fast_sac_config import FastSACConfig
+            fast_sac_cfg = FastSACConfig(
+                hidden_dim=tuple(sc.get("hidden_dim", (512, 256, 128))),
+                activation=sc.get("activation", "swish"),
+                q_layer_norm=sc.get("q_layer_norm", True),
+                target_entropy_scale=sc.get("target_entropy_scale", 0.0),
+                num_atoms=sc.get("num_atoms", 101),
+                v_min=sc.get("v_min", -20.0),
+                v_max=sc.get("v_max", 20.0),
+                q_aggregation=sc.get("q_aggregation", "avg"),
+                critic_hidden_dim=tuple(sc["critic_hidden_dim"]) if sc.get("critic_hidden_dim") else None,
+            )
+            sac = FastSAC(fast_sac_cfg, obs_dim, action_dim, dummy_opt, dummy_opt, gamma=0.99)
         else:
+            from jax_rl.algos.sac import SAC
+            from jax_rl.configs.sac_config import SACConfig
+            sac_cfg = SACConfig(
+                hidden_dim=tuple(sc.get("hidden_dim", (256, 256))),
+                activation=sc.get("activation", "relu"),
+                q_layer_norm=sc.get("q_layer_norm", True),
+                target_entropy_scale=sc.get("target_entropy_scale", 0.5),
+            )
             sac = SAC(sac_cfg, obs_dim, action_dim, dummy_opt, dummy_opt, gamma=0.99)
         return sac, "offpolicy"
 
@@ -162,6 +174,18 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
 
     # ── Create env (unwrapped — single env, no auto-reset) ────────────────
     env = pg_registry.load(env_name)
+
+    # Apply wrapper pipeline from checkpoint config (action delay, frame stacking, etc.)
+    train_cfg = meta.get("train_config", {})
+    # For recording, use fixed delay (max of range if randomized)
+    if train_cfg.get("action_delay_range_ms"):
+        train_cfg = {**train_cfg, "action_delay_ms": train_cfg["action_delay_range_ms"][1], "action_delay_range_ms": None}
+    from jax_rl.envs.wrappers import apply_wrapper_pipeline, build_wrapper_pipeline
+    pipeline = build_wrapper_pipeline(train_cfg)
+    if pipeline:
+        env = apply_wrapper_pipeline(env, train_cfg)
+        print(f"  Wrappers: {[name for name, _, _ in pipeline]}")
+
     env_step = jax.jit(env.step)
 
     key = jax.random.PRNGKey(video_seed)

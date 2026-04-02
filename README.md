@@ -104,6 +104,11 @@ uv run python live_viewer.py --checkpoint checkpoints/<go2_checkpoint>
 --eval-every N          # Evaluate every N episodes
 --resume PATH           # Resume training from a checkpoint
 --obs-norm              # Enable sample-time observation normalization
+--domain-rand           # Enable domain randomization (Go2 only)
+--frame-stack N         # Stack N observation frames (default: 1)
+--action-delay-ms N     # Simulate N ms action latency (sim2real)
+--action-delay-range-ms MIN MAX  # Randomized per-episode delay
+--wandb                 # Enable W&B experiment tracking
 
 # Off-policy only (train_offpolicy.py):
 --algo NAME             # Algorithm: sac, td3, fast_td3, fast_sac
@@ -142,8 +147,10 @@ uv run python live_viewer.py --checkpoint checkpoints/<go2_checkpoint>
 │   │
 │   ├── configs/               # Hyperparameter dataclasses + env presets
 │   ├── training/              # Shared infrastructure (checkpointing, eval, logging)
-│   ├── envs/                  # Custom environments (Go2 MJX + Warp backends)
-│   ├── buffers/               # Replay buffer (off-policy) + rollout buffer (PPO)
+│   ├── envs/
+│   │   ├── locomotion/        #   Go2 envs (MJX + Warp backends), bongo handstand
+│   │   └── wrappers/          #   Training wrappers (vmap, episode, auto-reset, frame stack, action delay)
+│   ├── buffers/               # Replay buffer (off-policy, frame-stack-aware) + rollout buffer (PPO)
 │   └── utils/                 # Normalization, frame stacking, distributional math
 │
 ├── checkpoints/               # Saved model checkpoints
@@ -160,16 +167,18 @@ uv run python live_viewer.py --checkpoint checkpoints/<go2_checkpoint>
 | WalkerWalk | 833 | **975** | 955 | — | — |
 | HumanoidRun | ~10 | 426 | 4.3 | 665 | **892** |
 | Go2 Joystick (MJX) | **244** | — | — | — | 226 |
-| Go2 Joystick (Warp) | 132 | — | — | — | **276** |
+| Go2 Joystick (Warp) | 132 | — | — | — | **279** |
 
-SAC dominates on general continuous control. FastSAC excels on high-dim action spaces (HumanoidRun). PPO works well for locomotion with Go2 on MJX. **FastSAC on Warp achieves highest Go2 eval (276)** by training on unitree's exact MJCF.
+SAC dominates on general continuous control. FastSAC excels on high-dim action spaces (HumanoidRun). PPO works well for locomotion with Go2 on MJX. **FastSAC on Warp with asymmetric critic achieves highest Go2 eval (279)** — actor sees 48d noisy obs, critic sees 122d privileged state.
 
 ## Key Design Decisions
 
 - **JAX-native**: Everything runs on GPU via JAX/Flax. No PyTorch dependency.
 - **MuJoCo Playground**: Uses MJX or Warp for GPU-parallelized physics (1024+ envs).
 - **Encoder-swappable**: All algos use `builders.py` — swap MLP for CNN by changing the builder, not the algo.
+- **Asymmetric critic**: Off-policy algos support privileged critic (122d) with policy actor (48d).
 - **Self-contained envs**: Each env handles its own obs, rewards, and action scaling. Training scripts are env-agnostic.
+- **Config-driven wrappers**: Frame stacking, action delay, etc. via pipeline — no per-wrapper code in training scripts.
 - **NaN/Inf safe**: MJX physics can crash stochastically. All training automatically guards against this.
 
 ## For New Contributors

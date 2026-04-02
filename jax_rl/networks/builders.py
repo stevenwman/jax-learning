@@ -15,7 +15,7 @@ modules used directly by algos.
 
 from flax import linen as nn
 import jax
-from jax_rl.configs import EncoderConfig, PolicyHeadConfig, ValueHeadConfig
+from jax_rl.configs import EncoderConfig, PolicyHeadConfig
 from jax_rl.networks.encoders import MlpEncoder
 from jax_rl.networks.heads import GaussianHead, ValueHead, DeterministicHead
 
@@ -56,10 +56,9 @@ class VCritic(nn.Module):
     Used by: PPO.
     """
     encoder_config: EncoderConfig
-    value_config: ValueHeadConfig
 
     @nn.compact
     def __call__(self, obs: jax.Array) -> jax.Array:
         encoder = MlpEncoder(self.encoder_config)
-        value_head = ValueHead(self.value_config)
+        value_head = ValueHead()
         return value_head(encoder(obs))

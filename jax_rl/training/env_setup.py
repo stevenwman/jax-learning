@@ -7,7 +7,7 @@ import jax.numpy as jnp
 
 from mujoco_playground import registry as pg_registry
 from mujoco_playground._src import locomotion as pg_locomotion
-from mujoco_playground._src.wrapper import wrap_for_brax_training
+from jax_rl.envs.wrappers import wrap_for_training
 
 from jax_rl.configs.train_config import TrainConfig
 from jax_rl.utils.normalization import NormalizationState
@@ -29,6 +29,14 @@ def _register_custom_envs():
             "Go2WarpJoystickFlat",
             functools.partial(WarpJoystick, task="flat_terrain"),
             warp_default_config,
+        )
+    from jax_rl.envs.locomotion.go2_bongo_handstand import BongoHandstand
+    from jax_rl.envs.locomotion.go2_bongo_handstand import default_config as bongo_default_config
+    if "Go2BongoHandstand" not in pg_locomotion._envs:
+        pg_locomotion.register_environment(
+            "Go2BongoHandstand",
+            functools.partial(BongoHandstand, task="bongo_handstand"),
+            bongo_default_config,
         )
 
 _register_custom_envs()
@@ -110,7 +118,11 @@ def make_envs(cfg: TrainConfig, seed: int):
             torso_body_id=torso_body_id,
         )
 
-    env = wrap_for_brax_training(
+    # Apply wrapper pipeline (action delay, frame stacking, etc.)
+    from jax_rl.envs.wrappers import apply_wrapper_pipeline
+    env = apply_wrapper_pipeline(env, cfg)
+
+    env = wrap_for_training(
         env, episode_length=cfg.episode_length, randomization_fn=rand_fn,
     )
     env_step = _make_nan_safe_step(env.step)
@@ -120,7 +132,13 @@ def make_envs(cfg: TrainConfig, seed: int):
     env_state = env.reset(jax.random.split(reset_key, cfg.num_envs))
 
     eval_env = pg_registry.load(cfg.env_name)
-    eval_env = wrap_for_brax_training(eval_env, episode_length=cfg.episode_length)
+    # Eval env: same pipeline, but action delay uses fixed max (not randomized).
+    import dataclasses
+    eval_cfg = cfg
+    if cfg.action_delay_range_ms is not None:
+        eval_cfg = dataclasses.replace(cfg, action_delay_ms=cfg.action_delay_range_ms[1], action_delay_range_ms=None)
+    eval_env = apply_wrapper_pipeline(eval_env, eval_cfg)
+    eval_env = wrap_for_training(eval_env, episode_length=cfg.episode_length)
 
     # Dict obs → obs_dim is the policy obs ("state" key).
     if isinstance(env_state.obs, dict):

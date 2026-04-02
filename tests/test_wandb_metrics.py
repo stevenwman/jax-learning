@@ -31,9 +31,9 @@ def test_total_steps_not_remapped():
 
 
 def test_all_sections_present():
-    """All 4 dashboard sections should have at least one metric."""
+    """All 5 dashboard sections should have at least one metric."""
     prefixes = {v.split("/")[0] for v in _WANDB_PREFIX.values()}
-    assert prefixes == {"perf", "critic", "actor", "infra"}
+    assert prefixes == {"perf", "critic", "actor", "eval", "infra"}
 
 
 def test_mixed_row_training_metrics():
@@ -69,7 +69,7 @@ def test_mixed_row_training_metrics():
 
 
 def test_eval_metrics_remapped():
-    """Eval metrics from evaluate() should land in perf/ and critic/ sections."""
+    """Eval metrics from evaluate() should land in perf/ and eval/ sections."""
     eval_row = {
         "eval_mean": 233.0,
         "eval_std": 15.0,
@@ -84,5 +84,5 @@ def test_eval_metrics_remapped():
     remapped = {_WANDB_PREFIX.get(k, k): v for k, v in eval_row.items()}
     assert "perf/eval_mean" in remapped
     assert "perf/eval_std" in remapped
-    assert "critic/q_bias" in remapped
-    assert "critic/q_corr" in remapped
+    assert "eval/q_bias" in remapped
+    assert "eval/q_corr" in remapped
