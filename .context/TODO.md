@@ -126,8 +126,44 @@
 - [ ] **Curriculum callback** — `curriculum_fn(env_ids, episode_returns) → dr_range_multipliers` in reset. Unblocks wider Kp/Kd DR ranges. ~1 hr, ~50 lines.
 - [x] **ObsSpec** — `compute_obs(groups, noise_level, rng, **kwargs)` with per-term noise. All 3 envs refactored. DIAYN appends `ObsTerm("skill_z", ...)` to "state" group — one line.
 
-## Long-term (Phase 6 — North Star)
-- [ ] DIAYN (skill discovery wrapping SAC) — requires RewardSpec + ObsSpec from above
-- [ ] METRA (contrastive + metric-aware skills)
-- [ ] Goal-conditioned RL architecture — encoder `context_dim` + `context_fusion` (concat/film/cross_attn). Go2 already does goal-conditioning via velocity command concatenated to obs (48d = 45d state + 3d command). The architecture upgrade adds a separate context input to the encoder with richer fusion modes: FiLM (goal modulates hidden features) or cross-attention (handles variable/structured goals). Matters for DIAYN (skill vector z as context) and USD (learned latent goals). Scaffolding exists in `EncoderConfig.context_dim` and `MlpEncoder.__call__(obs, context)` — just unused.
-- [ ] USD (Unified Skill Discovery)
+## Long-term (Phase 6 — Skill Discovery)
+Informed by D3 paper (arXiv:2508.19953) and leggedrobotics/d3-skill-discovery. See `.context/references/d3_skill_discovery.md`.
+
+### Phase 6A: DIAYN (foundation)
+- [ ] Skill prior — `DirichletSkillPrior(n_skills, concentration_schedule)` with curriculum α ∈ [0.05, 1.0]
+- [ ] Discriminator network — learned q_φ(z|s), 2-layer MLP, softmax output
+- [ ] Intrinsic reward — r_DIAYN(s, z) = log q_φ(z|s) - log p(z), wired via RewardSpec
+- [ ] Skill-conditioned policy — z as context input via `EncoderConfig.context_dim` (scaffolding exists)
+- [ ] Skill vector in obs — append to "state" group via ObsSpec
+- [ ] Benchmark on Go2 Warp — discover forward/backward/strafe skills. Success: 4-5 interpretable skills.
+
+### Phase 6B: Symmetry augmentation
+- [ ] Go2 morphology mirror functions — M_s^k (permute leg indices), M_z^k (permute skill components). 4-fold symmetry for quadruped.
+- [ ] Augmentation in rollout collection — mirror transitions with prob 1/K before buffer storage
+- [ ] A/B test symmetry on skill interpretability
+
+### Phase 6C: Style factor + safety (required for hardware)
+- [ ] Extrinsic reward terms — joint torques, contacts, height deviation, orientation penalties (D3 Table 9)
+- [ ] Factor weighting λ — sample from truncated Gaussian, enforce Σλ=1, balance conflicting skills
+- [ ] Regularization penalties — torque limits, contact bounds, joint velocity caps (D3 Table 10)
+- [ ] These are NOT optional — D3 proves they're load-bearing for sim-to-real transfer
+
+### Phase 6D: METRA + factorized skill discovery (D3 endpoint)
+- [ ] `HypersphereSkillPrior(dim)` — z ~ U(S^d-1) for continuous directional skills (d ≤ 3)
+- [ ] State transition predictor φ(s) + Wasserstein distance objective + learnable Lagrange multiplier
+- [ ] Per-factor algorithm selection — METRA for position (unbounded), DIAYN for heading (bounded/discrete)
+- [ ] State factorization — {base position (2D), heading (2D), base height (1D), roll/pitch (2D)} for Go2
+- [ ] Skill resampling within episode (not just once per episode)
+
+### Phase 6E: Sim-to-real with learned skills
+- [ ] Deploy skill library on real Go2 with style factor active
+- [ ] Zero-shot transfer test — walk to goal using learned skill primitives
+- [ ] Compare vs direct PPO policy (no skill library)
+
+### Infrastructure already in place
+- [x] RewardSpec — DIAYN reward swap is one line
+- [x] ObsSpec — skill vector z injection is one line
+- [x] Asymmetric critic — critic sees privileged state
+- [x] EncoderConfig.context_dim — skill z as context input (scaffolding exists, unused)
+- [x] Action delay wrapper — sim2real latency simulation
+- [ ] Goal-conditioned encoder fusion (concat/FiLM/cross_attn) — needed for skill z context
