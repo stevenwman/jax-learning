@@ -24,11 +24,11 @@ def default_config() -> config_dict.ConfigDict:
     return config_dict.create(
         ctrl_dt=0.02,
         sim_dt=0.004,
-        episode_length=250,       # shorter — faster reward signal, falls are fast
+        episode_length=250,       # 5s — faster reward signal, falls are fast
         Kp=20.0,
         Kd=0.5,
         action_repeat=1,
-        action_scale=0.5,         # larger — aggressive corrections on unstable board
+        action_scale=0.3,         # moderate — fine balance corrections
         soft_joint_pos_limit_factor=0.95,
         observe_board_state=True,
         target_handstand_height=0.55,
@@ -48,6 +48,7 @@ def default_config() -> config_dict.ConfigDict:
                 com_above_support=8.0,    # bumped — stay over support
                 height=-5.0,
                 roller_centered=-3.0,     # bumped — keep roller centered
+                survival=5.0,             # constant reward per step alive
                 torques=-0.0002,
                 action_rate=-0.01,
                 termination=-1.0,
@@ -472,6 +473,7 @@ class BongoHandstand(go2_warp_base.Go2WarpEnv):
                 - self._config.target_handstand_height
             ) ** 2,
             "roller_centered": roller_pos ** 2,
+            "survival": jp.float32(1.0),  # constant reward per step alive
             "torques": (
                 jp.sqrt(jp.sum(jp.square(data.actuator_force)))
                 + jp.sum(jp.abs(data.actuator_force))
