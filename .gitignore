@@ -7,3 +7,4 @@ wandb/
 *.mp4
 
 MUJOCO_LOG.TXT
+/tmp_videos
