@@ -18,6 +18,7 @@ import numpy as np
 from mujoco_playground._src import mjx_env
 from jax_rl.envs.locomotion import go2_warp_base
 from jax_rl.envs.locomotion import go2_constants as consts
+from jax_rl.envs.obs_spec import ObsTerm, IncludeGroup, compute_obs
 from jax_rl.envs.reward_spec import RewardTerm, compute_rewards
 
 
@@ -166,6 +167,46 @@ class BongoHandstand(go2_warp_base.Go2WarpEnv):
 
         # Re-create Warp model after all _mj_model modifications.
         self._mjx_model = mjx.put_model(self._mj_model, impl=self._config.impl)
+
+        noise = self._config.noise_config.scales
+        state_terms = [
+            ObsTerm("gyro", lambda data, **kw: self.get_gyro(data),
+                    noise_scale=noise.gyro),
+            ObsTerm("gravity", lambda data, **kw: self.get_gravity(data),
+                    noise_scale=noise.gravity),
+            ObsTerm("joint_pos_offset", lambda data, **kw: data.qpos[7:19] - self._default_pose,
+                    noise_scale=noise.joint_pos),
+            ObsTerm("joint_vel", lambda data, **kw: data.qvel[6:18],
+                    noise_scale=noise.joint_vel),
+            ObsTerm("last_act", lambda info, **kw: info["last_act"]),
+        ]
+        if self._config.observe_board_state:
+            state_terms.extend([
+                ObsTerm("board_tilt", lambda data, **kw: self._get_board_tilt(data)),
+                ObsTerm("roller_pos", lambda data, **kw: data.qpos[self._roller_slide_qposadr].reshape(1)),
+                ObsTerm("roller_vel", lambda data, **kw: data.qvel[self._roller_slide_dofadr].reshape(1)),
+            ])
+
+        privileged_terms = [
+            IncludeGroup("state"),
+            ObsTerm("gyro_clean", lambda data, **kw: self.get_gyro(data)),
+            ObsTerm("gravity_clean", lambda data, **kw: self.get_gravity(data)),
+            ObsTerm("joint_pos_clean", lambda data, **kw: data.qpos[7:19] - self._default_pose),
+            ObsTerm("joint_vel_clean", lambda data, **kw: data.qvel[6:18]),
+            ObsTerm("actuator_force", lambda data, **kw: data.actuator_force),
+            ObsTerm("foot_board_contact", lambda data, **kw: jp.array([
+                data.sensordata[self._mj_model.sensor_adr[self._fl_board_sensor]] > 0,
+                data.sensordata[self._mj_model.sensor_adr[self._fr_board_sensor]] > 0,
+            ]).astype(jp.float32)),
+            ObsTerm("board_tilt_clean", lambda data, **kw: self._get_board_tilt(data)),
+            ObsTerm("roller_pos_clean", lambda data, **kw: data.qpos[self._roller_slide_qposadr].reshape(1)),
+            ObsTerm("roller_vel_clean", lambda data, **kw: data.qvel[self._roller_slide_dofadr].reshape(1)),
+            ObsTerm("board_angvel", lambda data, **kw: self._get_board_angvel(data)[:2]),
+            ObsTerm("com_rel_board", lambda data, **kw:
+                data.subtree_com[self._torso_body_id][:2] - data.xpos[self._board_body_id][:2]),
+        ]
+
+        self._obs_groups = {"state": state_terms, "privileged_state": privileged_terms}
 
         target_gravity = jp.array([1.0, 0.0, 0.0])
         self._reward_spec = [
@@ -334,97 +375,13 @@ class BongoHandstand(go2_warp_base.Go2WarpEnv):
     def _get_obs(
         self, data: mjx.Data, info: dict[str, Any]
     ) -> Dict[str, jax.Array]:
-        gyro = self.get_gyro(data)
-        gravity = self.get_gravity(data)
-        joint_angles = data.qpos[7:19]
-        joint_vel = data.qvel[6:18]
-
-        # Apply noise.
-        noise_level = self._config.noise_config.level
-        info["rng"], *noise_rngs = jax.random.split(info["rng"], 5)
-
-        noisy_gyro = (
-            gyro
-            + (2 * jax.random.uniform(noise_rngs[0], shape=gyro.shape) - 1)
-            * noise_level * self._config.noise_config.scales.gyro
+        obs, info["rng"] = compute_obs(
+            self._obs_groups,
+            noise_level=self._config.noise_config.level,
+            rng=info["rng"],
+            data=data, info=info,
         )
-        noisy_gravity = (
-            gravity
-            + (2 * jax.random.uniform(noise_rngs[1], shape=gravity.shape) - 1)
-            * noise_level * self._config.noise_config.scales.gravity
-        )
-        noisy_joint_angles = (
-            joint_angles
-            + (2 * jax.random.uniform(noise_rngs[2], shape=joint_angles.shape) - 1)
-            * noise_level * self._config.noise_config.scales.joint_pos
-        )
-        noisy_joint_vel = (
-            joint_vel
-            + (2 * jax.random.uniform(noise_rngs[3], shape=joint_vel.shape) - 1)
-            * noise_level * self._config.noise_config.scales.joint_vel
-        )
-
-        # Core robot state (42d).
-        state_parts = [
-            noisy_gyro,                                 # 3
-            noisy_gravity,                              # 3
-            noisy_joint_angles - self._default_pose,    # 12
-            noisy_joint_vel,                            # 12
-            info["last_act"],                           # 12
-        ]  # Total: 42
-
-        # Optional board state (4d).
-        if self._config.observe_board_state:
-            board_tilt_xy = self._get_board_tilt(data)
-            roller_pos = data.qpos[self._roller_slide_qposadr]
-            roller_vel = data.qvel[self._roller_slide_dofadr]
-            state_parts.extend([
-                board_tilt_xy,                          # 2
-                roller_pos.reshape(1),                  # 1
-                roller_vel.reshape(1),                  # 1
-            ])  # Total: 46
-
-        state = jp.concatenate(state_parts)
-
-        # Privileged state for critic.
-        fl_board = data.sensordata[
-            self._mj_model.sensor_adr[self._fl_board_sensor]
-        ]
-        fr_board = data.sensordata[
-            self._mj_model.sensor_adr[self._fr_board_sensor]
-        ]
-
-        board_tilt_xy_clean = self._get_board_tilt(data)
-        roller_pos_clean = data.qpos[self._roller_slide_qposadr]
-        roller_vel_clean = data.qvel[self._roller_slide_dofadr]
-
-        # Board angular velocity (from board body).
-        board_angvel = self._get_board_angvel(data)
-
-        # CoM relative to board center.
-        com_xy = data.subtree_com[self._torso_body_id][:2]
-        board_xy = data.xpos[self._board_body_id][:2]
-        com_rel_board = com_xy - board_xy
-
-        privileged_state = jp.concatenate([
-            state,                                      # 42 or 46
-            gyro,                                       # 3 (unnoised)
-            gravity,                                    # 3 (unnoised)
-            joint_angles - self._default_pose,          # 12 (unnoised)
-            joint_vel,                                  # 12 (unnoised)
-            data.actuator_force,                        # 12
-            jp.array([fl_board > 0, fr_board > 0]).astype(jp.float32),  # 2
-            board_tilt_xy_clean,                        # 2
-            roller_pos_clean.reshape(1),                # 1
-            roller_vel_clean.reshape(1),                # 1
-            board_angvel[:2],                           # 2
-            com_rel_board,                              # 2
-        ])  # Total: 42+52=94 or 46+52=98
-
-        return {
-            "state": state,
-            "privileged_state": privileged_state,
-        }
+        return obs
 
     # ── Board state helpers ────────────────────────────────────────
 
