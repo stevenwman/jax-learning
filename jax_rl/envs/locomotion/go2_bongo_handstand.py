@@ -28,7 +28,7 @@ def default_config() -> config_dict.ConfigDict:
         Kp=20.0,
         Kd=0.5,
         action_repeat=1,
-        action_scale=0.3,         # moderate — fine balance corrections
+        action_scale=1.0,         # full authority — let policy use full joint range
         soft_joint_pos_limit_factor=0.95,
         observe_board_state=True,
         target_handstand_height=0.55,
@@ -55,7 +55,7 @@ def default_config() -> config_dict.ConfigDict:
             ),
         ),
         # Antagonistic pushes config.
-        push_interval=200,        # steps between pushes (~4s at 50Hz)
+        push_interval=99999,      # disabled — learn balance first, add pushes later
         push_robot_vel=0.5,       # ±m/s velocity kick on robot base
         push_board_vel=0.3,       # ±m/s velocity kick on board
         impl="warp",
@@ -282,7 +282,7 @@ class BongoHandstand(go2_warp_base.Go2WarpEnv):
             k: v * self._config.reward_config.scales[k]
             for k, v in rewards.items()
         }
-        reward = jp.clip(sum(rewards.values()) * self.dt, 0.0, 10000.0)
+        reward = jp.clip(sum(rewards.values()) * self.dt, -10000.0, 10000.0)
 
         state.info["reward_components"] = rewards
         state.info["last_act"] = action
