@@ -24,14 +24,14 @@ def default_config() -> config_dict.ConfigDict:
     return config_dict.create(
         ctrl_dt=0.02,
         sim_dt=0.004,
-        episode_length=500,
+        episode_length=250,       # shorter — faster reward signal, falls are fast
         Kp=20.0,
         Kd=0.5,
         action_repeat=1,
-        action_scale=0.25,
+        action_scale=0.5,         # larger — aggressive corrections on unstable board
         soft_joint_pos_limit_factor=0.95,
         observe_board_state=True,
-        target_handstand_height=0.55,  # CMA-ES gen69: init 0.597, settles ~0.54
+        target_handstand_height=0.55,
         noise_config=config_dict.create(
             level=1.0,
             scales=config_dict.create(
@@ -44,20 +44,24 @@ def default_config() -> config_dict.ConfigDict:
         reward_config=config_dict.create(
             scales=config_dict.create(
                 inverted_orientation=10.0,
-                board_level=8.0,
-                com_above_support=5.0,
+                board_level=12.0,         # bumped — incentivize board balance
+                com_above_support=8.0,    # bumped — stay over support
                 height=-5.0,
-                roller_centered=-2.0,
+                roller_centered=-3.0,     # bumped — keep roller centered
                 torques=-0.0002,
                 action_rate=-0.01,
                 termination=-1.0,
             ),
         ),
+        # Antagonistic pushes config.
+        push_interval=200,        # steps between pushes (~4s at 50Hz)
+        push_robot_vel=0.5,       # ±m/s velocity kick on robot base
+        push_board_vel=0.3,       # ±m/s velocity kick on board
         impl="warp",
         contact_mode="training",
         naconmax=4 * 8192,
-        naccdmax=5000,
-        njmax=150,
+        naccdmax=4000,   # same as joystick — board adds few extra contacts
+        njmax=100,
     )
 
 
@@ -197,13 +201,43 @@ class BongoHandstand(go2_warp_base.Go2WarpEnv):
     def step(self, state: mjx_env.State, action: jax.Array) -> mjx_env.State:
         motor_targets = self._default_pose + action * self._config.action_scale
 
-        # External PD at physics rate (same pattern as WarpJoystick).
+        # Antagonistic pushes: velocity kicks on robot and board.
+        step_count = state.info["step_count"]
+        push_interval = self._config.push_interval
+        rng, robot_key, board_key = jax.random.split(state.info["rng"], 3)
+        do_push = (step_count > 0) & (step_count % push_interval == 0)
+
+        data = state.data
+
+        # Push robot base (xy velocity kick).
+        robot_push = jax.random.uniform(
+            robot_key, (2,),
+            minval=-self._config.push_robot_vel,
+            maxval=self._config.push_robot_vel,
+        )
+        new_qvel = data.qvel.at[0:2].set(
+            jp.where(do_push, data.qvel[0:2] + robot_push, data.qvel[0:2])
+        )
+
+        # Push board (xy velocity kick via board freejoint qvel).
+        board_dofadr = self._board_jnt_dofadr
+        board_push = jax.random.uniform(
+            board_key, (2,),
+            minval=-self._config.push_board_vel,
+            maxval=self._config.push_board_vel,
+        )
+        new_qvel = new_qvel.at[board_dofadr:board_dofadr + 2].set(
+            jp.where(do_push,
+                     new_qvel[board_dofadr:board_dofadr + 2] + board_push,
+                     new_qvel[board_dofadr:board_dofadr + 2])
+        )
+        data = data.replace(qvel=new_qvel)
+
+        # External PD at physics rate.
         kp = self._kp
         kd = self._kd
         model = self.mjx_model
         a2j = self._act_to_joint
-
-        data = state.data
 
         def substep(data, _):
             current_q = data.qpos[7:19]
@@ -228,7 +262,7 @@ class BongoHandstand(go2_warp_base.Go2WarpEnv):
         state.info["reward_components"] = rewards
         state.info["last_act"] = action
         state.info["step_count"] = state.info["step_count"] + 1
-        state.info["rng"], _ = jax.random.split(state.info["rng"])
+        state.info["rng"] = rng
 
         for k, v in rewards.items():
             state.metrics[f"reward/{k}"] = v
