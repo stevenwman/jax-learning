@@ -378,6 +378,8 @@ if __name__ == "__main__":
                         help="Max steps per episode (default: from env preset)")
     parser.add_argument("--exploration-noise", type=float, default=None,
                         help="Exploration noise std for TD3-family (SAC uses entropy instead)")
+    parser.add_argument("--target-entropy-scale", type=float, default=None,
+                        help="target_entropy = -scale * action_dim (default: from algo config)")
     parser.add_argument("--eval-every", type=int, default=None,
                         help="Evaluate every N episodes (default: every 512 episodes)")
     parser.add_argument("--obs-norm", action="store_true",
@@ -414,6 +416,7 @@ if __name__ == "__main__":
     if args.grad_updates_per_step is not None: algo_overrides["grad_updates_per_step"] = args.grad_updates_per_step
     if args.buffer_size is not None: algo_overrides["buffer_size"] = args.buffer_size
     if args.exploration_noise is not None: algo_overrides["exploration_noise_std"] = args.exploration_noise
+    if args.target_entropy_scale is not None: algo_overrides["target_entropy_scale"] = args.target_entropy_scale
     if args.obs_norm: algo_overrides["obs_normalization"] = True
     if args.domain_rand: cfg_overrides["domain_rand"] = True
     if args.frame_stack is not None: cfg_overrides["n_frame_stack"] = args.frame_stack

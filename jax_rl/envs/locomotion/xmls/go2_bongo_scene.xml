@@ -82,6 +82,24 @@
     <contact name="torso_nose_board" geom1="torso_nose" geom2="board_top"
       reduce="mindist" num="1" data="found"/>
 
+    <!-- Front leg arm/calf on board = fail (only foot tips allowed) -->
+    <contact name="FL_hip_board" geom1="FL_hip_col" geom2="board_top"
+      reduce="mindist" num="1" data="found"/>
+    <contact name="FL_thigh_board" geom1="FL_thigh_col" geom2="board_top"
+      reduce="mindist" num="1" data="found"/>
+    <contact name="FL_calf_upper_board" geom1="FL_calf_upper" geom2="board_top"
+      reduce="mindist" num="1" data="found"/>
+    <contact name="FL_calf_lower_board" geom1="FL_calf_lower" geom2="board_top"
+      reduce="mindist" num="1" data="found"/>
+    <contact name="FR_hip_board" geom1="FR_hip_col" geom2="board_top"
+      reduce="mindist" num="1" data="found"/>
+    <contact name="FR_thigh_board" geom1="FR_thigh_col" geom2="board_top"
+      reduce="mindist" num="1" data="found"/>
+    <contact name="FR_calf_upper_board" geom1="FR_calf_upper" geom2="board_top"
+      reduce="mindist" num="1" data="found"/>
+    <contact name="FR_calf_lower_board" geom1="FR_calf_lower" geom2="board_top"
+      reduce="mindist" num="1" data="found"/>
+
     <!-- Front foot contact with BOARD (not floor) -->
     <contact name="FL_board_found" geom1="FL" geom2="board_top"
       reduce="mindist" num="1" data="found"/>

@@ -124,13 +124,21 @@ class BongoHandstand(go2_warp_base.Go2WarpEnv):
         ]
 
         # Torso contact sensors (head/body touching floor or board = fail).
-        torso_contact_names = [
+        # Body contact sensors: torso + front leg arms on floor/board = fail.
+        # Only foot spheres (FL, FR) may touch the board.
+        body_contact_names = [
+            # Torso on floor/board
             "torso_box_floor", "torso_cyl_floor", "torso_nose_floor",
             "torso_box_board", "torso_cyl_board", "torso_nose_board",
+            # Front leg arms/calves on board (no forearm balancing)
+            "FL_hip_board", "FL_thigh_board",
+            "FL_calf_upper_board", "FL_calf_lower_board",
+            "FR_hip_board", "FR_thigh_board",
+            "FR_calf_upper_board", "FR_calf_lower_board",
         ]
-        self._torso_contact_sensor_adr = [
+        self._body_contact_sensor_adr = [
             self._mj_model.sensor_adr[self._mj_model.sensor(n).id]
-            for n in torso_contact_names
+            for n in body_contact_names
         ]
 
         # Foot-floor contact sensors (ANY foot on floor = termination).
@@ -431,14 +439,14 @@ class BongoHandstand(go2_warp_base.Go2WarpEnv):
         ]))
         # Board edge on floor.
         board_on_floor = data.sensordata[self._board_floor_sensor_adr] > 0
-        # Head/torso on floor or board.
-        head_contact = jp.any(jp.array([
+        # Body contact: torso or front leg arms on floor/board.
+        body_contact = jp.any(jp.array([
             data.sensordata[adr] > 0
-            for adr in self._torso_contact_sensor_adr
+            for adr in self._body_contact_sensor_adr
         ]))
 
         return (not_handstand | too_low
-                | feet_on_floor | board_on_floor | head_contact)
+                | feet_on_floor | board_on_floor | body_contact)
 
     # ── Rewards ────────────────────────────────────────────────────
 
