@@ -31,7 +31,7 @@ def default_config() -> config_dict.ConfigDict:
         action_scale=0.25,
         soft_joint_pos_limit_factor=0.95,
         observe_board_state=True,
-        target_handstand_height=0.45,
+        target_handstand_height=0.55,  # CMA-ES gen69: init 0.597, settles ~0.54
         noise_config=config_dict.create(
             level=1.0,
             scales=config_dict.create(
@@ -356,7 +356,10 @@ class BongoHandstand(go2_warp_base.Go2WarpEnv):
 
     def _get_termination(self, data: mjx.Data) -> jax.Array:
         gravity = self.get_gravity(data)
-        not_inverted = gravity[2] < 0.0  # should be positive when inverted
+        # At ~97deg pitch, gravity_body ≈ [0.99, 0, 0.11].
+        # gravity_body[0] > 0 means body X-axis points down (handstand).
+        # Terminate if gravity_body[0] < 0.3 (tipped too far from handstand).
+        not_handstand = gravity[0] < 0.3
 
         board_tilt = self._get_board_tilt(data)
         board_too_tilted = jp.sum(board_tilt ** 2) > 0.25  # ~30 deg
@@ -367,7 +370,7 @@ class BongoHandstand(go2_warp_base.Go2WarpEnv):
         roller_pos = data.qpos[self._roller_slide_qposadr]
         roller_at_limit = jp.abs(roller_pos) > 0.22
 
-        return not_inverted | board_too_tilted | too_low | roller_at_limit
+        return not_handstand | board_too_tilted | too_low | roller_at_limit
 
     # ── Rewards ────────────────────────────────────────────────────
 
@@ -379,7 +382,9 @@ class BongoHandstand(go2_warp_base.Go2WarpEnv):
         done: jax.Array,
     ) -> dict[str, jax.Array]:
         gravity = self.get_gravity(data)
-        target_gravity = jp.array([0.0, 0.0, 1.0])
+        # At ~97deg pitch handstand, gravity_body ≈ [1, 0, 0].
+        # Body X-axis points down, Y/Z are horizontal/vertical.
+        target_gravity = jp.array([1.0, 0.0, 0.0])
 
         board_tilt = self._get_board_tilt(data)
         roller_pos = data.qpos[self._roller_slide_qposadr]

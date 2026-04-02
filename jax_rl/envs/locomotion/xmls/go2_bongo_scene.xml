@@ -71,16 +71,18 @@
       reduce="mindist" num="1" data="found"/>
   </sensor>
 
-  <!-- Placeholder handstand keyframe — robot inverted on board.
-       qpos layout: [robot_base(7), robot_joints(12), board_base(7), roller_slide(1), roller_spin(1)]
-       Total: 28 qpos values.
-       Joint angles and base position TBD via geometric calculation + visual iteration. -->
+  <!-- Handstand keyframe — CMA-ES optimized (gen 69, score 9572.7).
+       90deg pitch + 6.6deg extra, front legs extended, rear tucked.
+       PD-hold stable for ~8s on flat ground. Feet on board top (z=0.1468).
+       qpos layout: [robot_base(7), robot_joints(12), board_base(7), roller_slide(1), roller_spin(1)] -->
   <keyframe>
     <key name="handstand"
-      qpos="0 0 0.5 0 0 1 0
-            0 0.9 -1.8 0 0.9 -1.8 0 0.9 -1.8 0 0.9 -1.8
+      qpos="0 0 0.597062 0.470531 -0.527826 0.527826 0.470531
+            0.493386 -0.859650 -1.867154 -0.493386 -0.859650 -1.867154
+            0.090111 1.547200 -2.039923 -0.090111 1.547200 -2.039923
             0 0 0.1318 1 0 0 0
             0 0"
-      ctrl="0 0.9 -1.8 0 0.9 -1.8 0 0.9 -1.8 0 0.9 -1.8"/>
+      ctrl="0.493386 -0.859650 -1.867154 -0.493386 -0.859650 -1.867154
+            0.090111 1.547200 -2.039923 -0.090111 1.547200 -2.039923"/>
   </keyframe>
 </mujoco>
