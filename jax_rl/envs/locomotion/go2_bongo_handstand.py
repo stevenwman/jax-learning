@@ -18,6 +18,7 @@ import numpy as np
 from mujoco_playground._src import mjx_env
 from jax_rl.envs.locomotion import go2_warp_base
 from jax_rl.envs.locomotion import go2_constants as consts
+from jax_rl.envs.reward_spec import RewardTerm, compute_rewards
 
 
 def default_config() -> config_dict.ConfigDict:
@@ -165,6 +166,31 @@ class BongoHandstand(go2_warp_base.Go2WarpEnv):
 
         # Re-create Warp model after all _mj_model modifications.
         self._mjx_model = mjx.put_model(self._mj_model, impl=self._config.impl)
+
+        target_gravity = jp.array([1.0, 0.0, 0.0])
+        self._reward_spec = [
+            RewardTerm("inverted_orientation", lambda data, **kw:
+                jp.exp(-jp.sum((self.get_gravity(data) - target_gravity) ** 2))),
+            RewardTerm("board_level", lambda data, **kw:
+                jp.exp(-jp.sum(self._get_board_tilt(data) ** 2) / 0.1)),
+            RewardTerm("com_above_support", lambda data, **kw:
+                jp.exp(-jp.sum((data.subtree_com[self._torso_body_id][:2]
+                                - data.xpos[self._board_body_id][:2]) ** 2) / 0.05)),
+            RewardTerm("height", lambda data, **kw:
+                (data.subtree_com[self._torso_body_id][2]
+                 - self._config.target_handstand_height) ** 2),
+            RewardTerm("roller_centered", lambda data, **kw:
+                data.qpos[self._roller_slide_qposadr] ** 2),
+            RewardTerm("survival", lambda **kw:
+                jp.float32(1.0)),
+            RewardTerm("torques", lambda data, **kw:
+                jp.sqrt(jp.sum(jp.square(data.actuator_force)))
+                + jp.sum(jp.abs(data.actuator_force))),
+            RewardTerm("action_rate", lambda action, info, **kw:
+                jp.sum(jp.square(action - info["last_act"]))),
+            RewardTerm("termination", lambda done, **kw:
+                done),
+        ]
 
     # ── Core env methods ───────────────────────────────────────────
 
@@ -457,35 +483,7 @@ class BongoHandstand(go2_warp_base.Go2WarpEnv):
         info: dict[str, Any],
         done: jax.Array,
     ) -> dict[str, jax.Array]:
-        gravity = self.get_gravity(data)
-        # At ~97deg pitch handstand, gravity_body ≈ [1, 0, 0].
-        # Body X-axis points down, Y/Z are horizontal/vertical.
-        target_gravity = jp.array([1.0, 0.0, 0.0])
-
-        board_tilt = self._get_board_tilt(data)
-        roller_pos = data.qpos[self._roller_slide_qposadr]
-
-        com_xy = data.subtree_com[self._torso_body_id][:2]
-        board_xy = data.xpos[self._board_body_id][:2]
-
-        return {
-            "inverted_orientation": jp.exp(
-                -jp.sum((gravity - target_gravity) ** 2)
-            ),
-            "board_level": jp.exp(-jp.sum(board_tilt ** 2) / 0.1),
-            "com_above_support": jp.exp(
-                -jp.sum((com_xy - board_xy) ** 2) / 0.05
-            ),
-            "height": (
-                data.subtree_com[self._torso_body_id][2]
-                - self._config.target_handstand_height
-            ) ** 2,
-            "roller_centered": roller_pos ** 2,
-            "survival": jp.float32(1.0),  # constant reward per step alive
-            "torques": (
-                jp.sqrt(jp.sum(jp.square(data.actuator_force)))
-                + jp.sum(jp.abs(data.actuator_force))
-            ),
-            "action_rate": jp.sum(jp.square(action - info["last_act"])),
-            "termination": done,
-        }
+        return compute_rewards(
+            self._reward_spec,
+            data=data, action=action, info=info, done=done,
+        )
