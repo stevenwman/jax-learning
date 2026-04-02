@@ -106,6 +106,13 @@ JAX/Flax fundamentals in `LEARNER_LESSONS.md`.
 - **PD gains must match solver stiffness** — Kp=35/Kd=0.1 (MJX, 1-iter) collapsed on Warp (100-iter). Use Kp=20/Kd=0.5 (unitree_rl_gym). PD gains are coupled to solver config.
 - **Joint order ≠ actuator order — THE root cause** — unitree qpos is FL-first, ctrl is FR-first. PD applied FL torque to FR actuator. Robot fought itself. Hours of debugging PD/solver/entropy were all red herrings. ALWAYS verify ordering when using third-party MJCFs.
 
+## [Bongo Board Handstand](lessons/bongo.md) — 4 lessons
+
+- **Always verify policy behavior visually** — eval 397 looked great on paper, but the robot was balancing on the floor, not the board. Reward hacking is silent without video.
+- **CMA-ES hard rejects poison the population** — returning 1e6 for invalid poses gives no gradient. Use soft penalties so CMA-ES can learn which direction is better.
+- **Constrained DOFs should be computed, not optimized** — base_z is determined by pitch + joint angles + feet-on-ground constraint. Optimizing it wastes a dimension and causes spawn bugs.
+- **MuJoCo euler uses degrees by default** — `euler="1.5708 0 0"` is 1.5° not 90°. Use `quat` for rotation-safe values across includes with different `<compiler angle>` settings.
+
 ## [Go2 Locomotion](lessons/go2.md) — 7 lessons
 
 - **Reward rebalancing when porting robots** — 10x tracking weights needed (Go1→Go2), pose dominated at 1x
