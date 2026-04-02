@@ -119,7 +119,7 @@
 ## Mid-term — Env composability (from MJLab audit, prereq for DIAYN)
 - [x] **RewardSpec** — `compute_rewards(spec, **kwargs)` returns unweighted dict. All 3 envs refactored (Warp 17 terms, MJX 16, Bongo 9). DIAYN swaps reward by replacing `env._reward_spec`.
 - [ ] **Curriculum callback** — `curriculum_fn(env_ids, episode_returns) → dr_range_multipliers` in reset. Unblocks wider Kp/Kd DR ranges. ~1 hr, ~50 lines.
-- [ ] **ObsSpec** — extract `_get_obs()` into config-driven `(name, fn, noise_cfg)` groups. Adding vision or DIAYN skill vector z = config change, not env surgery. ~2 hrs, ~100 lines.
+- [x] **ObsSpec** — `compute_obs(groups, noise_level, rng, **kwargs)` with per-term noise. All 3 envs refactored. DIAYN appends `ObsTerm("skill_z", ...)` to "state" group — one line.
 
 ## Long-term (Phase 6 — North Star)
 - [ ] DIAYN (skill discovery wrapping SAC) — requires RewardSpec + ObsSpec from above
