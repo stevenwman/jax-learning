@@ -64,6 +64,10 @@
     <contact name="RR_floor_found" geom1="RR" geom2="floor"
       reduce="mindist" num="1" data="found"/>
 
+    <!-- Board-floor contact (board edge touching ground = fail) -->
+    <contact name="board_floor_found" geom1="board_top" geom2="floor"
+      reduce="mindist" num="1" data="found"/>
+
     <!-- Front foot contact with BOARD (not floor) -->
     <contact name="FL_board_found" geom1="FL" geom2="board_top"
       reduce="mindist" num="1" data="found"/>

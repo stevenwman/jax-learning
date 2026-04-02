@@ -117,6 +117,20 @@ class BongoHandstand(go2_warp_base.Go2WarpEnv):
         self._fl_board_sensor = self._mj_model.sensor("FL_board_found").id
         self._fr_board_sensor = self._mj_model.sensor("FR_board_found").id
 
+        # Board-floor contact sensor (board edge touching ground = fail).
+        self._board_floor_sensor_adr = self._mj_model.sensor_adr[
+            self._mj_model.sensor("board_floor_found").id
+        ]
+
+        # Torso collision geom IDs (for head-contact termination).
+        self._torso_geom_ids = []
+        for i in range(self._mj_model.ngeom):
+            if (self._mj_model.geom_bodyid[i] == self._torso_body_id
+                    and self._mj_model.geom_group[i] == 3):
+                self._torso_geom_ids.append(i)
+        self._floor_geom_id = self._mj_model.geom("floor").id
+        self._board_geom_id = self._mj_model.geom("board_top").id
+
         # Foot-floor contact sensors (ANY foot on floor = termination).
         self._feet_floor_sensors = [
             self._mj_model.sensor(f"{g}_floor_found").id
@@ -419,7 +433,19 @@ class BongoHandstand(go2_warp_base.Go2WarpEnv):
             for adr in self._feet_floor_sensor_adr
         ]))
 
-        return not_handstand | board_too_tilted | too_low | roller_at_limit | feet_on_floor
+        # Board edge touching floor = game over.
+        board_on_floor = data.sensordata[self._board_floor_sensor_adr] > 0
+
+        # Head/torso touching floor or board = game over.
+        # Check min z of torso collision geoms.
+        torso_geom_z = jp.array([
+            data.geom_xpos[gid][2] for gid in self._torso_geom_ids
+        ])
+        head_on_ground = jp.min(torso_geom_z) < 0.03  # within 3cm of floor
+
+        return (not_handstand | board_too_tilted | too_low
+                | roller_at_limit | feet_on_floor | board_on_floor
+                | head_on_ground)
 
     # ── Rewards ────────────────────────────────────────────────────
 
