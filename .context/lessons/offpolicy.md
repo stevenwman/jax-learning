@@ -116,6 +116,18 @@ PPO shouldn't own optimizer construction. Optimizers are external concerns.
 
 ---
 
+## Asymmetric Critic: Faster Early Learning, Same Ceiling (2026-04-01)
+
+**Experiment:** A/B on Go2WarpJoystickFlat with FastSAC, 1024 envs, 20M steps. Symmetric (actor+critic both 48d) vs asymmetric (actor 48d, critic 122d privileged).
+
+**Result:** Asymmetric reaches 272 by 5M steps (symmetric took ~9M). ~2x sample efficiency to 270+. But final scores converge: 276.5 (sym) vs 279.2 (asym) — within noise.
+
+**Why:** The privileged critic (clean sensor data, unnoised joints/velocities, contact info, external forces) learns value estimates faster. But the actor is still limited to 48d noisy obs, so the final policy quality is bottlenecked by what the actor can perceive, not what the critic can evaluate.
+
+**When it matters more:** Harder tasks where early sample efficiency is critical (short training budgets, expensive sim), or when the privileged/policy obs gap is larger (e.g., vision actor + full-state critic).
+
+---
+
 ## Frame Stacking Doesn't Help Locomotion with Proprioceptive Obs (2026-04-01)
 
 **Experiment:** A/B on Go2WarpJoystickFlat with FastSAC, 1024 envs, 20M steps. Baseline (48d) vs 3-frame stack (144d). Same config, different seeds.

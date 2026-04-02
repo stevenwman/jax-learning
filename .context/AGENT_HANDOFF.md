@@ -222,7 +222,8 @@ Every checkpoint contains: `meta.json` (full config), `metrics.csv` (training cu
 **Go2 Joystick — Warp** (unitree go2.xml, full collision geometry):
 | Algo | Eval | Steps | Notes |
 |------|------|-------|-------|
-| **FastSAC** | **276.5** | 18M | Kp=20/Kd=0.5, sim2sim to CPU validated |
+| **FastSAC (asym critic)** | **279.2** | 20M | Actor 48d, critic 122d privileged. ~2x faster to 270+ |
+| FastSAC (symmetric) | 276.5 | 18M | Kp=20/Kd=0.5, sim2sim to CPU validated |
 | PPO | 132 | 50M | Kp=20/Kd=0.5, entropy collapsed to squat |
 
 **Key takeaways:** Low-dim → FastTD3. High-dim → FastSAC. gamma=0.97 for locomotion. C51 helps at scale. Vanilla algos at 128 envs are competitive for sample efficiency. Use `motor` actuators for sim2sim/sim2real transfer. **Warp + unitree MJCF eliminates sim2sim gap** — FastSAC on Warp surpasses MJX PPO.
