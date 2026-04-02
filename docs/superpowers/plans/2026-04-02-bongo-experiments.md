@@ -57,11 +57,30 @@ Increase reset perturbation ranges to force robustness from the start:
 - Yaw: ±5deg → ±10deg
 - Board tilt: ±2deg → ±5deg
 
+### 6. Target entropy -6
+Current `target_entropy=0` makes policy nearly deterministic at convergence.
+Original SAC uses `-dim(A)=-12`. Try `-6` as middle ground — more exploration
+without going full noisy. Could break out of local optimum.
+
+Change: `--target-entropy -6` CLI flag (if exists) or algo config override.
+
 ## Run plan
 
-**Run A (quick wins):** Remove pushes + full action scale. Everything else same.
-See if the ceiling lifts.
+**Run A (quick wins):** Remove pushes + full action scale + negative rewards. ← RUNNING
+- action_scale=1.0, push_interval=99999, clip(-10000, 10000)
 
-**Run B (reward redesign):** Cost-based reward from #3. Compare to Run A.
+**Run B (exploration):** Run A + target_entropy=-6.
 
-**Run C (full):** Best of A/B + init randomization + pushes back on.
+**Run C (reward redesign):** Cost-based reward from #3. Compare to Run A/B.
+
+**Run D (robustness):** Best of above + more init randomization + pushes back on.
+
+## Results
+
+| Run | Config | Best eval | Steps | Notes |
+|-----|--------|-----------|-------|-------|
+| v1 (no floor term) | old rewards, scale=0.5, pushes, ep=1000 | 397 | 20M | CHEATING — ground balance |
+| v2 (floor term) | old rewards, scale=0.5, pushes, ep=1000 | 71 | 20M | Honest, plateaued |
+| v3 (resumed) | same as v2 | 89 | 50M | Marginal improvement |
+| v4 (tuned) | survival=5, scale=0.3, pushes, ep=1000 | 65 | 20M | Plateaued ~50-70 |
+| A | scale=1.0, no pushes, neg rewards, ep=250 | 89+ (running) | 50M | Still climbing at 11M |

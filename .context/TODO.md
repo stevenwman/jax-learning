@@ -117,7 +117,7 @@
 - [ ] Shampoo / other second-order optimizers — evaluate if Muon shows promise on RL
 
 ## Mid-term — Env composability (from MJLab audit, prereq for DIAYN)
-- [ ] **RewardSpec** — extract `_get_reward()` into composable `(name, weight, fn)` tuples. DIAYN swaps reward = discriminator output by replacing the spec, not forking the env. ~2 hrs, ~80 lines.
+- [x] **RewardSpec** — `compute_rewards(spec, **kwargs)` returns unweighted dict. All 3 envs refactored (Warp 17 terms, MJX 16, Bongo 9). DIAYN swaps reward by replacing `env._reward_spec`.
 - [ ] **Curriculum callback** — `curriculum_fn(env_ids, episode_returns) → dr_range_multipliers` in reset. Unblocks wider Kp/Kd DR ranges. ~1 hr, ~50 lines.
 - [ ] **ObsSpec** — extract `_get_obs()` into config-driven `(name, fn, noise_cfg)` groups. Adding vision or DIAYN skill vector z = config change, not env surgery. ~2 hrs, ~100 lines.
 
