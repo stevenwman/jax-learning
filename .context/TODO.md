@@ -84,10 +84,15 @@
 - [x] Bongo board MJCF — board + roller, equality constraint, physics validated
 - [x] Scene XML — Go2 + bongo board + floor + sensors
 - [x] `Go2BongoHandstand` env — obs, reward, termination, step, reset
-- [x] Registration + smoke tests (11 pass)
+- [x] Registration + smoke tests (15 pass)
 - [x] CMA-ES handstand keyframe optimization (gen69, PD-hold stable)
-- [ ] Step + integration tests
-- [ ] Training run — smoke test PPO/FastSAC on bongo handstand
+- [x] Step + integration tests
+- [x] Contact-based termination — feet/board/head/arm on floor or board
+- [x] Eval loop `lax.scan` — fixes Warp OOM from Python-loop buffer accumulation
+- [x] Cost-based reward redesign — normalized quadratic costs, survival ceiling
+- [x] Training runs A/B2 — best eval 119 (Run A), 101 (Run B2 w/ arm term)
+- [ ] Run C (cost-based) — in progress
+- [ ] Run D (robustness) — best of above + pushes + init randomization
 - [ ] Phase 1B: full approach + mount + handstand (future)
 
 ## Mid-term (Vision RL)
