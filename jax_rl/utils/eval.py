@@ -181,6 +181,7 @@ def evaluate(
     if eval_log_path is not None:
         import csv
         import os
+        os.makedirs(os.path.dirname(eval_log_path), exist_ok=True)
         write_header = not os.path.exists(eval_log_path)
         nq = init_qpos.shape[1] if init_qpos is not None else 0
         with open(eval_log_path, 'a', newline='') as f:
@@ -190,7 +191,7 @@ def evaluate(
                 if nq > 0:
                     header += [f'init_qpos_{i}' for i in range(nq)]
                 writer.writerow(header)
-            for ep_idx in range(num_episodes):
+            for ep_idx in range(len(results)):
                 row = [
                     total_steps if total_steps is not None else -1,
                     ep_idx,
