@@ -245,29 +245,28 @@ class BongoHandstand(go2_warp_base.Go2WarpEnv):
         qpos = self._init_q
         qvel = jp.zeros(self.mjx_model.nv)
 
-        # Small perturbations on robot joint angles.
+        # Perturbations on robot joint angles (±0.1 rad).
         rng, key = jax.random.split(rng)
-        joint_noise = jax.random.uniform(key, (12,), minval=-0.05, maxval=0.05)
+        joint_noise = jax.random.uniform(key, (12,), minval=-0.1, maxval=0.1)
         qpos = qpos.at[7:19].set(qpos[7:19] + joint_noise)
 
-        # Small perturbation on robot base xy position (±2cm) — offset from board center.
+        # Perturbation on robot base xy position (±5cm) — offset from board center.
         rng, key = jax.random.split(rng)
-        xy_noise = jax.random.uniform(key, (2,), minval=-0.02, maxval=0.02)
+        xy_noise = jax.random.uniform(key, (2,), minval=-0.05, maxval=0.05)
         qpos = qpos.at[0:2].set(qpos[0:2] + xy_noise)
 
-        # Small yaw perturbation on robot (±5deg ≈ ±0.087 rad) — not perfectly
-        # aligned with board axes. Balance dynamics differ along vs across board.
+        # Yaw perturbation on robot (±10deg ≈ ±0.175 rad).
         rng, key = jax.random.split(rng)
-        yaw = jax.random.uniform(key, (1,), minval=-0.087, maxval=0.087)
+        yaw = jax.random.uniform(key, (1,), minval=-0.175, maxval=0.175)
         yaw_quat = mjx_math.axis_angle_to_quat(jp.array([0, 0, 1]), yaw)
         robot_quat = qpos[3:7]
         qpos = qpos.at[3:7].set(mjx_math.quat_mul(robot_quat, yaw_quat))
 
-        # Small perturbation on board tilt (±2deg ≈ ±0.035 rad).
+        # Board tilt perturbation (±5deg ≈ ±0.087 rad).
         # Perturb board quat with small rotation around X and Y.
         rng, key = jax.random.split(rng)
         board_qposadr = self._board_jnt_qposadr
-        tilt_noise = jax.random.uniform(key, (2,), minval=-0.035, maxval=0.035)
+        tilt_noise = jax.random.uniform(key, (2,), minval=-0.087, maxval=0.087)
         # Apply as small-angle quaternion perturbation.
         dq = jp.array([1.0, tilt_noise[0], tilt_noise[1], 0.0])
         dq = dq / jp.linalg.norm(dq)
