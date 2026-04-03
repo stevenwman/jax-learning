@@ -142,15 +142,20 @@ def train(cfg: TrainConfig, algo_cfg, algo_name: str, seed: int = 0, resume: str
     print(f"  tau={algo_cfg.tau}, lr={cfg.lr}, gamma={cfg.gamma}")
     print(f"  reward_scaling={cfg.reward_scaling}")
 
+    # ── Timestamp (shared by checkpoint dir + W&B run name) ─────────────────
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    env_short = cfg.env_name.lower().replace(" ", "_")
+
     # ── W&B (optional) ─────────────────────────────────────────────────────
     if use_wandb:
         wandb_init(
             project=wandb_project,
-            name=f"{algo_name}_{cfg.env_name}_seed{seed}",
+            name=f"{timestamp}_{algo_name}_{env_short}_seed{seed}",
             config={
                 "algo": algo_name,
                 "env": cfg.env_name,
                 "seed": seed,
+                "timestamp": timestamp,
                 **{k: v for k, v in dataclasses.asdict(cfg).items() if k != "ppo"},
                 **{f"algo_{k}": v for k, v in dataclasses.asdict(algo_cfg).items()},
             },
@@ -213,8 +218,6 @@ def train(cfg: TrainConfig, algo_cfg, algo_name: str, seed: int = 0, resume: str
     # ── Tracking + infra ───────────────────────────────────────────────────
     tracker = EpisodeTracker(cfg.num_envs)
     metrics_log: list[dict] = []
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    env_short = cfg.env_name.lower().replace(" ", "_")
     ckpt_dir = os.path.join("checkpoints", f"{timestamp}_{algo_name}_{env_short}_seed{seed}")
     ckpt_mgr = CheckpointManager(ckpt_dir)
 
