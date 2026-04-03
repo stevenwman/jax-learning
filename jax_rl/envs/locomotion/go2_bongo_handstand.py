@@ -22,15 +22,16 @@ from jax_rl.envs.obs_spec import ObsTerm, IncludeGroup, compute_obs
 from jax_rl.envs.reward_spec import RewardTerm, compute_rewards
 
 
-def default_config() -> config_dict.ConfigDict:
+def _base_config() -> config_dict.ConfigDict:
+    """Shared config across all reward presets."""
     return config_dict.create(
         ctrl_dt=0.02,
         sim_dt=0.004,
-        episode_length=250,       # 5s — faster reward signal, falls are fast
+        episode_length=250,
         Kp=20.0,
         Kd=0.5,
         action_repeat=1,
-        action_scale=1.0,         # full authority — let policy use full joint range
+        action_scale=1.0,
         soft_joint_pos_limit_factor=0.95,
         observe_board_state=True,
         target_handstand_height=0.55,
@@ -43,31 +44,59 @@ def default_config() -> config_dict.ConfigDict:
                 gravity=0.05,
             ),
         ),
-        reward_config=config_dict.create(
-            scales=config_dict.create(
-                # Cost-based: survival is ceiling, everything else pulls down.
-                # All costs are normalized to [0,1] before weighting.
-                survival=10.0,                  # only positive term
-                orientation_cost=-8.0,          # (gravity_error²)/4, range [0,1]
-                board_tilt_cost=-6.0,           # (tilt²)/0.5, range [0,1]
-                com_offset_cost=-5.0,           # (com_xy_error²)/0.1, range [0,1]
-                height_cost=-3.0,               # (height_error²)/0.1, range [0,1]
-                roller_cost=-2.0,               # (roller_pos²)/0.05, range [0,1]
-                torque_cost=-0.5,               # normalized torques
-                action_rate_cost=-0.5,          # (action_diff²)/1
-                termination=-1.0,
-            ),
-        ),
-        # Antagonistic pushes config.
-        push_interval=99999,      # disabled — learn balance first, add pushes later
-        push_robot_vel=0.5,       # ±m/s velocity kick on robot base
-        push_board_vel=0.3,       # ±m/s velocity kick on board
+        reward_config=None,  # set by preset
+        push_interval=99999,
+        push_robot_vel=0.5,
+        push_board_vel=0.3,
         impl="warp",
         contact_mode="training",
         naconmax=4 * 8192,
-        naccdmax=4000,   # same as joystick — board adds few extra contacts
+        naccdmax=4000,
         njmax=100,
     )
+
+
+def config_b2() -> config_dict.ConfigDict:
+    """Exp-based rewards (Run B2 — best eval 101)."""
+    cfg = _base_config()
+    cfg.reward_config = config_dict.create(
+        scales=config_dict.create(
+            inverted_orientation=10.0,
+            board_level=12.0,
+            com_above_support=8.0,
+            height=-5.0,
+            roller_centered=-3.0,
+            survival=5.0,
+            torques=-0.0002,
+            action_rate=-0.01,
+            termination=-1.0,
+        ),
+    )
+    return cfg
+
+
+def config_c() -> config_dict.ConfigDict:
+    """Cost-based rewards (Run C — normalized quadratic, survival ceiling)."""
+    cfg = _base_config()
+    cfg.reward_config = config_dict.create(
+        scales=config_dict.create(
+            survival=10.0,
+            orientation_cost=-8.0,
+            board_tilt_cost=-6.0,
+            com_offset_cost=-5.0,
+            height_cost=-3.0,
+            roller_cost=-2.0,
+            torque_cost=-0.5,
+            action_rate_cost=-0.5,
+            termination=-1.0,
+        ),
+    )
+    return cfg
+
+
+def default_config() -> config_dict.ConfigDict:
+    """Default = config C (cost-based)."""
+    return config_c()
 
 
 class BongoHandstand(go2_warp_base.Go2WarpEnv):
@@ -210,34 +239,56 @@ class BongoHandstand(go2_warp_base.Go2WarpEnv):
 
         self._obs_groups = {"state": state_terms, "privileged_state": privileged_terms}
 
-        # Cost-based rewards: normalized quadratic costs in [0,1].
-        # Survival is the ceiling; costs pull down. No saturation.
+        # Build reward spec from config keys — supports both B2 (exp) and C (cost) presets.
         target_gravity = jp.array([1.0, 0.0, 0.0])
-        max_torque_norm = 45.43 * 12  # rough max: all joints at calf limit
+        max_torque_norm = 45.43 * 12
 
-        self._reward_spec = [
-            RewardTerm("survival", lambda **kw:
-                jp.float32(1.0)),
-            RewardTerm("orientation_cost", lambda data, **kw:
+        # All possible reward terms. Only terms present in reward_config.scales are used.
+        all_terms = {
+            # B2 exp-based terms
+            "inverted_orientation": RewardTerm("inverted_orientation", lambda data, **kw:
+                jp.exp(-jp.sum((self.get_gravity(data) - target_gravity) ** 2))),
+            "board_level": RewardTerm("board_level", lambda data, **kw:
+                jp.exp(-jp.sum(self._get_board_tilt(data) ** 2) / 0.1)),
+            "com_above_support": RewardTerm("com_above_support", lambda data, **kw:
+                jp.exp(-jp.sum((data.subtree_com[self._torso_body_id][:2]
+                                - data.xpos[self._board_body_id][:2]) ** 2) / 0.05)),
+            "height": RewardTerm("height", lambda data, **kw:
+                (data.subtree_com[self._torso_body_id][2]
+                 - self._config.target_handstand_height) ** 2),
+            "roller_centered": RewardTerm("roller_centered", lambda data, **kw:
+                data.qpos[self._roller_slide_qposadr] ** 2),
+            # C cost-based terms (normalized to [0,1])
+            "orientation_cost": RewardTerm("orientation_cost", lambda data, **kw:
                 jp.clip(jp.sum((self.get_gravity(data) - target_gravity) ** 2) / 4.0, 0.0, 1.0)),
-            RewardTerm("board_tilt_cost", lambda data, **kw:
+            "board_tilt_cost": RewardTerm("board_tilt_cost", lambda data, **kw:
                 jp.clip(jp.sum(self._get_board_tilt(data) ** 2) / 0.5, 0.0, 1.0)),
-            RewardTerm("com_offset_cost", lambda data, **kw:
+            "com_offset_cost": RewardTerm("com_offset_cost", lambda data, **kw:
                 jp.clip(jp.sum((data.subtree_com[self._torso_body_id][:2]
                                 - data.xpos[self._board_body_id][:2]) ** 2) / 0.1, 0.0, 1.0)),
-            RewardTerm("height_cost", lambda data, **kw:
+            "height_cost": RewardTerm("height_cost", lambda data, **kw:
                 jp.clip((data.subtree_com[self._torso_body_id][2]
                          - self._config.target_handstand_height) ** 2 / 0.1, 0.0, 1.0)),
-            RewardTerm("roller_cost", lambda data, **kw:
+            "roller_cost": RewardTerm("roller_cost", lambda data, **kw:
                 jp.clip(data.qpos[self._roller_slide_qposadr] ** 2 / 0.05, 0.0, 1.0)),
-            RewardTerm("torque_cost", lambda data, **kw:
+            "torque_cost": RewardTerm("torque_cost", lambda data, **kw:
                 jp.clip((jp.sqrt(jp.sum(jp.square(data.actuator_force)))
                          + jp.sum(jp.abs(data.actuator_force))) / max_torque_norm, 0.0, 1.0)),
-            RewardTerm("action_rate_cost", lambda action, info, **kw:
+            "action_rate_cost": RewardTerm("action_rate_cost", lambda action, info, **kw:
                 jp.clip(jp.sum(jp.square(action - info["last_act"])) / 12.0, 0.0, 1.0)),
-            RewardTerm("termination", lambda done, **kw:
-                done),
-        ]
+            # Shared terms
+            "survival": RewardTerm("survival", lambda **kw: jp.float32(1.0)),
+            "torques": RewardTerm("torques", lambda data, **kw:
+                jp.sqrt(jp.sum(jp.square(data.actuator_force)))
+                + jp.sum(jp.abs(data.actuator_force))),
+            "action_rate": RewardTerm("action_rate", lambda action, info, **kw:
+                jp.sum(jp.square(action - info["last_act"]))),
+            "termination": RewardTerm("termination", lambda done, **kw: done),
+        }
+
+        # Only include terms that have weights in the config.
+        scales = self._config.reward_config.scales
+        self._reward_spec = [all_terms[k] for k in scales.keys()]
 
     # ── Core env methods ───────────────────────────────────────────
 
