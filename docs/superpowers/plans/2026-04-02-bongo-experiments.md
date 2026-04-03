@@ -85,4 +85,6 @@ Change: `--target-entropy -6` CLI flag (if exists) or algo config override.
 | v4 (tuned) | survival=5, scale=0.3, pushes, ep=1000 | 65 | 20M | Plateaued ~50-70 |
 | A | scale=1.0, no pushes, neg rewards, ep=250 | 119 | 30M | Plateau 80-100 |
 | B2 | A + entropy=-6 + arm termination | 101 | 36M | Harder w/ arm term, OOM crash |
-| C | B2 + cost-based rewards | running | 50M | Normalized quadratic costs |
+| C | B2 + cost-based rewards | 28 | 25M | Normalized quadratic costs, plateaued 15-28 |
+| D (abandoned) | C + wider init rand | 2.6 | 100k | Init rand too aggressive, instant deaths |
+| PPO-C | PPO + config C, ep=250 | running | 50M | On-policy, asymmetric critic |
