@@ -27,6 +27,8 @@ def evaluate(
     q_fn: Callable | None = None,
     gamma: float = 0.99,
     action_fn_kwargs: dict | None = None,
+    eval_log_path: str | None = None,
+    total_steps: int | None = None,
 ) -> dict:
     """Run deterministic evaluation episodes.
 
@@ -42,6 +44,9 @@ def evaluate(
         q_fn: optional fn(obs, action) -> Q value. If provided, computes Q prediction
               accuracy vs Monte Carlo returns (bias, RMSE, correlation).
         gamma: discount factor for MC return computation (only used if q_fn is provided).
+        eval_log_path: if provided, append per-episode eval data to this CSV.
+            Includes episode return and init_qpos (if available in env state.info).
+        total_steps: current training step count (logged in eval CSV).
 
     Returns:
         dict with eval_mean, eval_std, eval_min, eval_max.
@@ -63,6 +68,12 @@ def evaluate(
 
     key, reset_key = jax.random.split(key)
     env_state = env.reset(jax.random.split(reset_key, batch_dim))
+
+    # Capture init_qpos before scan (if env provides it in state.info).
+    init_qpos = None
+    if hasattr(env_state, 'info') and isinstance(env_state.info, dict):
+        if 'init_qpos' in env_state.info:
+            init_qpos = np.asarray(env_state.info['init_qpos'])
 
     _action_kwargs = action_fn_kwargs or {}
 
@@ -165,5 +176,28 @@ def evaluate(
                 "q_mean": float(np.mean(q_vals)),
                 "mc_mean": float(np.mean(mc_vals)),
             })
+
+    # Write per-episode eval log CSV (append mode).
+    if eval_log_path is not None:
+        import csv
+        import os
+        write_header = not os.path.exists(eval_log_path)
+        nq = init_qpos.shape[1] if init_qpos is not None else 0
+        with open(eval_log_path, 'a', newline='') as f:
+            writer = csv.writer(f)
+            if write_header:
+                header = ['total_steps', 'episode_idx', 'return']
+                if nq > 0:
+                    header += [f'init_qpos_{i}' for i in range(nq)]
+                writer.writerow(header)
+            for ep_idx in range(num_episodes):
+                row = [
+                    total_steps if total_steps is not None else -1,
+                    ep_idx,
+                    float(results[ep_idx]),
+                ]
+                if init_qpos is not None:
+                    row += [float(v) for v in init_qpos[ep_idx]]
+                writer.writerow(row)
 
     return metrics

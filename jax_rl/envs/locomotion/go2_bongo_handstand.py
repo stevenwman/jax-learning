@@ -288,6 +288,7 @@ class BongoHandstand(go2_warp_base.Go2WarpEnv):
 
         info = {
             "rng": rng,
+            "init_qpos": qpos,  # for extracting best initial pose
             "last_act": jp.zeros(self.mjx_model.nu),
             "step_count": jp.int32(0),
             "reward_components": {

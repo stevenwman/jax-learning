@@ -38,6 +38,10 @@ def maybe_eval_and_checkpoint(
     if n_eps < last_eval_eps + cfg.eval_every_n_episodes:
         return last_eval_eps, key
 
+    import os
+    total_steps = metrics_log[-1]["total_steps"] if metrics_log else 0
+    eval_log = os.path.join(ckpt_dir, "eval_log.csv")
+
     key, eval_key = jax.random.split(key)
     eval_metrics = evaluate(
         select_action_fn, actor_params,
@@ -47,6 +51,8 @@ def maybe_eval_and_checkpoint(
         obs_normalize_fn=obs_normalize_fn,
         q_fn=q_fn,
         gamma=cfg.gamma,
+        eval_log_path=eval_log,
+        total_steps=total_steps,
     )
 
     q_str = ""
