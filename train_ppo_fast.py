@@ -89,11 +89,16 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
     print(f"  samples/update={samples_per_update:,}, samples/iter={samples_per_iter:,}, "
           f"iterations={num_iterations}, total_steps={cfg.total_timesteps:,}")
 
+    # ── Timestamp (shared by checkpoint dir + W&B run name) ─────────────────
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    env_short = cfg.env_name.lower().replace(" ", "_")
+
     # ── W&B (optional) ─────────────────────────────────────────────────────
     if use_wandb:
         wandb_init(
             project=wandb_project,
-            name=f"ppo_{cfg.env_name}_seed{seed}",
+            name=f"{timestamp}_ppo_{env_short}_seed{seed}",
             config={**dataclasses.asdict(cfg)},
         )
         wandb_setup_metrics()
