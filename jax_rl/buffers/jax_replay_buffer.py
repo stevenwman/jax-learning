@@ -80,13 +80,13 @@ class JaxReplayBuffer:
 
     def add_batch(
         self,
-        obs,
-        action,
-        reward,
-        next_obs,
-        done,
-        truncation=None,
-        **extra,
+        obs: jax.Array,
+        action: jax.Array,
+        reward: jax.Array,
+        next_obs: jax.Array,
+        done: jax.Array,
+        truncation: jax.Array | None = None,
+        **extra: jax.Array,
     ) -> None:
         """Add a batch of transitions. Accepts jax.Array or numpy (auto-converts).
 

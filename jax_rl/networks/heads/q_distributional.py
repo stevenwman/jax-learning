@@ -16,7 +16,7 @@ class DistributionalQHead(nn.Module):
     Same hidden structure as QHead. Final layer outputs num_atoms logits
     instead of a single scalar.
 
-    Args:
+    Attributes:
         hidden_dim: Sizes of hidden layers, e.g. (256, 256).
         num_atoms: Number of categorical atoms (default 51 for C51).
         activation: Activation function name.

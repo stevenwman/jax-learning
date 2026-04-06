@@ -11,21 +11,23 @@ class ActionDelayWrapper(Wrapper):
 
     Maintains a FIFO buffer in state.info. Supports fixed delay or
     per-episode randomized delay (uniform over a range).
-
-    Args:
-        env: Base environment to wrap.
-        delay_ms: Fixed delay in milliseconds. Converted to control steps
-            via env.dt. Ignored if delay_range_ms is provided.
-        delay_range_ms: Tuple (min_ms, max_ms) for per-episode random delay.
-            Overrides delay_ms.
     """
 
     def __init__(
         self,
-        env,
+        env: Wrapper,
         delay_ms: int = 0,
         delay_range_ms: tuple[int, int] | None = None,
     ):
+        """Initialize ActionDelayWrapper.
+
+        Args:
+            env: Base environment to wrap.
+            delay_ms: Fixed delay in milliseconds. Converted to control steps
+                via env.dt. Ignored if delay_range_ms is provided.
+            delay_range_ms: Tuple (min_ms, max_ms) for per-episode random delay.
+                Overrides delay_ms.
+        """
         super().__init__(env)
         ctrl_dt_ms = env.dt * 1000
 

@@ -40,6 +40,8 @@ plugins:
             heading_level: 3
             members_order: source
             docstring_style: google
+            docstring_options:
+              warn_unknown_params: false
 
 exclude_docs: |
   superpowers/

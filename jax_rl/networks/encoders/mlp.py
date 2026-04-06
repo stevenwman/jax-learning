@@ -22,7 +22,7 @@ from jax_rl.networks.activations import ACTIVATIONS
 class MlpEncoder(nn.Module):
     """Multi-layer perceptron encoder.
 
-    Args:
+    Attributes:
         config: EncoderConfig specifying hidden_dim (tuple of layer sizes),
             activation ("relu", "swish", etc.), and norm (None or "layer").
 

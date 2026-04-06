@@ -22,7 +22,7 @@ from jax_rl.configs.networks_config import PolicyHeadConfig
 class GaussianHead(nn.Module):
     """Gaussian policy head.
 
-    Args:
+    Attributes:
         config: PolicyHeadConfig specifying action_dim, std mode, noise bounds.
 
     Input:  features from encoder, shape (batch, feature_dim)

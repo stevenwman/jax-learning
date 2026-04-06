@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Any
 
 
-def build_wrapper_pipeline(cfg) -> list[tuple[str, Any, dict]]:
+def build_wrapper_pipeline(cfg: Any) -> list[tuple[str, Any, dict]]:
     """Return ordered list of (name, wrapper_cls, kwargs) from config.
 
     Wrappers are applied in the returned order, before wrap_for_training().

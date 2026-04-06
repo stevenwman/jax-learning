@@ -36,7 +36,7 @@ def compute_obs(
     groups: dict[str, list[ObsTerm | IncludeGroup]],
     noise_level: float,
     rng: jax.Array,
-    **kwargs,
+    **kwargs: Any,
 ) -> tuple[dict[str, jax.Array], jax.Array]:
     """Compute all obs groups with noise.
 

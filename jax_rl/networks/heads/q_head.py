@@ -13,7 +13,7 @@ from jax_rl.networks.activations import ACTIVATIONS
 class QHead(nn.Module):
     """MLP Q-network: concat(obs, action) → scalar Q-value.
 
-    Args:
+    Attributes:
         hidden_dim: Sizes of hidden layers, e.g. (256, 256).
         activation: Activation function name (must be in ACTIVATIONS).
         layer_norm: Whether to apply LayerNorm after each hidden layer.

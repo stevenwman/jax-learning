@@ -19,7 +19,7 @@ class RewardTerm:
     fn: Callable[..., Any]  # (**kwargs) -> scalar
 
 
-def compute_rewards(terms: list[RewardTerm], **kwargs) -> dict[str, Any]:
+def compute_rewards(terms: list[RewardTerm], **kwargs: Any) -> dict[str, Any]:
     """Compute all reward terms, return unweighted dict.
 
     Args:
