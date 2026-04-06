@@ -91,3 +91,39 @@ Add termination for each. A survival bonus without comprehensive termination jus
 **Expected behavior:** The dip is normal and recovers quickly as the buffer refills (~5-10k steps). The alpha spike is SAC's auto-tuning reacting to the distribution shift. Not a bug.
 
 **Lesson:** When resuming off-policy training, expect a transient performance drop. The policy weights carry the learned behavior, but the critic needs fresh data to recalibrate. Don't panic at the initial dip — watch for recovery over the next few thousand steps.
+
+---
+
+## Frame Stacking is Critical for Balance Tasks (2026-04-03)
+
+**What happened:** PPO on bongo handstand plateaued at eval ~24 (48% of max) across multiple reward configs and 50-100M steps. Adding `--frame-stack 3` (3× obs stacking) jumped to eval **46.9** (94% of max) with same rewards.
+
+**Root cause:** Single-frame obs gives positions and velocities, but balance requires knowing accelerations — is the board tilt increasing or recovering? Frame stacking gives the policy implicit access to second derivatives of all state variables. The existing `last_act` in obs provided some temporal context but not enough.
+
+**Contrast with locomotion:** Frame stacking didn't help Go2 joystick locomotion (eval 276.5 without vs 271.3 with). Locomotion is mostly a steady-state task where velocity is sufficient. Balance on an unstable platform is fundamentally about reacting to acceleration.
+
+**Lesson:** For dynamic balance/stabilization tasks on unstable platforms, frame stacking (or equivalent temporal context) is not optional — the policy literally cannot solve the task without it. Test early.
+
+---
+
+## Regularization Penalties Can Suppress Necessary Corrective Actions (2026-04-03)
+
+**What happened:** Added joint velocity cost (-1.0) and bumped torque cost (-0.5 → -1.0) to reduce jerky behavior. PPO peaked at 15.9 then regressed to ~11 over 100M steps. Previous run without these penalties reached 23.7.
+
+**Root cause:** Balancing on a bongo board requires aggressive corrective movements. The velocity/torque penalties taught the policy "don't move much" which directly conflicts with "stay balanced." The policy found a local optimum of minimal movement that delayed falling by ~2s but couldn't sustain balance.
+
+**Nuance:** The penalties were kept for the frame-stacking run (PPO4) which hit 46.9 — suggesting the penalties aren't fatal when the policy has enough temporal context to plan corrections efficiently. Frame stacking let the policy make smaller, better-timed corrections instead of large reactive ones.
+
+**Lesson:** Don't add regularization penalties to hard tasks until the policy can solve the base task. They can prevent learning entirely if the optimal strategy requires exactly what you're penalizing.
+
+---
+
+## PPO Entropy Collapse Signals Premature Commitment (2026-04-03)
+
+**What happened:** PPO entropy dropped from 7.8 → -0.89 over 780 iterations (25M steps). All 512 envs produced identical returns (train return std ≈ 0). Policy locked into one strategy and polished it rather than exploring alternatives.
+
+**Root cause:** Default PPO entropy coefficient (0.01) provides only a weak exploration incentive. For hard tasks where the initial random policy dies quickly, the first strategy that survives a few steps gets reinforced heavily. With near-deterministic actions, every env plays out identically — no diversity to discover better strategies.
+
+**Implication:** Low return variance in PPO training is not a sign of stability — it's a sign of dead exploration. Healthy training should show spread as different envs stumble into different strategies.
+
+**Lesson:** Monitor entropy and return variance together. If both collapse early and returns are below the theoretical max, consider higher entropy coefficient, entropy annealing schedule, or population-based approaches.

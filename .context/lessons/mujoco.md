@@ -48,3 +48,17 @@ MuJoCo has three distinct Python interfaces. They share the same physics engine 
 **The `mujoco_warp` tutorial notebook** (`mjw.put_model`) uses the standalone Warp API — same physics, different interface. You'd need manual data bridging (Warp→JAX) for RL training. Not what we want.
 
 **Rule:** For RL training, always use `mjx` with `impl="warp"`. For standalone simulation/benchmarking without JAX, the `mjw` API is fine.
+
+---
+
+## Use `<pair>` Elements for Per-Contact Friction Control (2026-04-03)
+
+**What happened:** Bongo board DR needs different friction ranges for feet-board vs board-roller contacts. Uniform `geom_friction` randomization (current Go2 approach) can't distinguish them.
+
+**Root cause:** With default combining (element-wise max), setting foot friction=0.3 and board friction=0.8 gives effective=0.8. You can't make feet slippery on the board by lowering foot friction — the board caps it. The `priority` flag helps (higher priority geom's params win) but only gives binary control, not per-pair.
+
+**Solution:** `<pair>` elements in `<contact>` bypass combining entirely. The pair's friction/solref/solimp are used directly for that geom pair. `mjx.Model` exposes `pair_friction` (N,5), `pair_solref` (N,2), `pair_solimp` (N,5) — all batchable via `tree_replace` for vmapped DR.
+
+**Community note:** Isaac Lab, WTW, and legged_gym all randomize friction coefficients [0.3, 1.5]. Nobody randomizes contact stiffness/damping (solref/solimp equivalent). Isaac Lab has an open proposal for it (Issue #2281) but it's not implemented.
+
+**Lesson:** For scenes with multiple distinct contact interfaces needing independent friction DR, use explicit `<pair>` elements rather than fighting the combining rules.

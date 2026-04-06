@@ -87,4 +87,6 @@ Change: `--target-entropy -6` CLI flag (if exists) or algo config override.
 | B2 | A + entropy=-6 + arm termination | 101 | 36M | Harder w/ arm term, OOM crash |
 | C | B2 + cost-based rewards | 28 | 25M | Normalized quadratic costs, plateaued 15-28 |
 | D (abandoned) | C + wider init rand | 2.6 | 100k | Init rand too aggressive, instant deaths |
-| PPO-C | PPO + config C, ep=250 | running | 50M | On-policy, asymmetric critic |
+| PPO-C | PPO + config C, ep=250 | 23.7 | 50M | Entropy collapsed, still climbing at end |
+| PPO-C2 | PPO-C + torque/vel penalties, 100M | 15.9 | 100M | Peaked 28M, regressed to ~11. Penalties hurt. |
+| PPO-C3 | PPO-C2 + frame-stack 3, 256 envs | **46.9** | 100M | ★ Breakthrough. 94% of max. Best at 80M. |

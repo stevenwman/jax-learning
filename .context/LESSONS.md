@@ -77,11 +77,12 @@ JAX/Flax fundamentals in `LEARNER_LESSONS.md`.
 - **Env wrappers must be applied in all consumers** — FrameStackWrapper in training but not record_video = checkpoint incompatible at inference
 - **Brax auto-reset does NOT reset state.info** — only pipeline_state and obs are reset. Any FIFO/history in state.info must use `jp.where(done, ...)` to self-reset
 
-## [MuJoCo Engine](lessons/mujoco.md) — 3 lessons
+## [MuJoCo Engine](lessons/mujoco.md) — 4 lessons
 
 - **Friction uses max-combine** — randomize foot geoms not just floor. PhysX DR ranges don't port to MuJoCo.
 - **Sim2sim between different MJCFs is nearly as hard as sim2real** — train on the target model directly when possible.
 - **Three Python APIs** — CPU (`mujoco`), MJX (`mjx` with `impl="jax"/"warp"`), standalone Warp (`mujoco_warp`). For RL: always MJX. Standalone Warp is a different interface to the same physics.
+- **Use `<pair>` for per-contact friction control** — bypasses max-combine, gives independent friction per geom pair. `mjx.Model.pair_friction` is batchable for vmapped DR.
 
 ## [MJX Physics](lessons/mjx.md) — 5 lessons
 
@@ -107,7 +108,7 @@ JAX/Flax fundamentals in `LEARNER_LESSONS.md`.
 - **PD gains must match solver stiffness** — Kp=35/Kd=0.1 (MJX, 1-iter) collapsed on Warp (100-iter). Use Kp=20/Kd=0.5 (unitree_rl_gym). PD gains are coupled to solver config.
 - **Joint order ≠ actuator order — THE root cause** — unitree qpos is FL-first, ctrl is FR-first. PD applied FL torque to FR actuator. Robot fought itself. Hours of debugging PD/solver/entropy were all red herrings. ALWAYS verify ordering when using third-party MJCFs.
 
-## [Bongo Board Handstand](lessons/bongo.md) — 7 lessons
+## [Bongo Board Handstand](lessons/bongo.md) — 10 lessons
 
 - **Always verify policy behavior visually** — eval 397 looked great on paper, but the robot was balancing on the floor, not the board. Reward hacking is silent without video.
 - **CMA-ES hard rejects poison the population** — returning 1e6 for invalid poses gives no gradient. Use soft penalties so CMA-ES can learn which direction is better.
@@ -116,6 +117,9 @@ JAX/Flax fundamentals in `LEARNER_LESSONS.md`.
 - **Use contact sensors, not position heuristics** — `geom_xpos[i][2] < 0.03` misses edge cases. MuJoCo `<contact>` sensors are exact and threshold-free.
 - **Reward hacking closes every loophole** — ground balance, board slam, head tripod — three exploits found across 4 runs. Enumerate ALL cheats and terminate for each.
 - **Checkpoint resume doesn't save replay buffer** — expect transient dip on resume as buffer refills. Not a bug.
+- **Frame stacking is critical for balance tasks** — single-frame obs can't infer acceleration. Frame-stack 3 jumped bongo eval from 24 → 47 (94% of max). Locomotion didn't benefit — balance is fundamentally about reacting to acceleration.
+- **Regularization penalties can suppress necessary corrections** — torque/velocity penalties regressed bongo eval from 24 → 11. Only safe to add after the policy can solve the base task (or with frame stacking for efficient corrections).
+- **PPO entropy collapse = dead exploration** — entropy -0.89, all 512 envs identical returns. First surviving strategy gets locked in. Monitor entropy + return variance together.
 
 ## [Go2 Locomotion](lessons/go2.md) — 7 lessons
 
