@@ -107,16 +107,24 @@ def make_envs(cfg: TrainConfig, seed: int):
     """
     env = pg_registry.load(cfg.env_name)
 
-    # Domain randomization (optional, Go2 only for now).
+    # Domain randomization (optional).
     rand_fn = None
     if getattr(cfg, 'domain_rand', False) and 'Go2' in cfg.env_name:
-        from jax_rl.envs.locomotion.go2_randomize import domain_randomize
         key, rand_key = jax.random.split(jax.random.PRNGKey(seed))
         torso_body_id = getattr(env, '_torso_body_id', 1)
-        rand_fn = functools.partial(
-            domain_randomize, rng=jax.random.split(rand_key, cfg.num_envs),
-            torso_body_id=torso_body_id,
-        )
+        if 'Bongo' in cfg.env_name:
+            from jax_rl.envs.locomotion.bongo_randomize import domain_randomize
+            board_body_id = getattr(env, '_board_body_id', 14)
+            rand_fn = functools.partial(
+                domain_randomize, rng=jax.random.split(rand_key, cfg.num_envs),
+                torso_body_id=torso_body_id, board_body_id=board_body_id,
+            )
+        else:
+            from jax_rl.envs.locomotion.go2_randomize import domain_randomize
+            rand_fn = functools.partial(
+                domain_randomize, rng=jax.random.split(rand_key, cfg.num_envs),
+                torso_body_id=torso_body_id,
+            )
 
     # Apply wrapper pipeline (action delay, frame stacking, etc.)
     from jax_rl.envs.wrappers import apply_wrapper_pipeline

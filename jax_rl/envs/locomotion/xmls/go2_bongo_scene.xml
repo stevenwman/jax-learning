@@ -107,6 +107,15 @@
       reduce="mindist" num="1" data="found"/>
   </sensor>
 
+  <!-- Explicit contact pairs for per-pair friction DR.
+       These bypass MuJoCo's max-combine rule — friction is used directly. -->
+  <contact>
+    <pair geom1="FL" geom2="board_top" condim="3"
+          friction="0.8 0.8 0.005 0.001 0.001"/>
+    <pair geom1="FR" geom2="board_top" condim="3"
+          friction="0.8 0.8 0.005 0.001 0.001"/>
+  </contact>
+
   <!-- Handstand keyframe — CMA-ES optimized (gen 69, score 9572.7).
        90deg pitch + 6.6deg extra, front legs extended, rear tucked.
        PD-hold stable for ~8s on flat ground. Feet on board top (z=0.1468).
