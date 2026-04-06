@@ -139,6 +139,7 @@ The lessons system is your search engine for "has this been solved before?" Read
 | Lit mismatch audit | `.context/archive/FAST_ALGOS_LIT_MISMATCH.md` | Paper vs code config audit |
 | Framework plan | `.context/rl_framework_plan.md` | North star architecture (Phases 1-6) |
 | Vision design | `.context/vision_rl_design.md` | CNN encoder, MJWarp, ManiSkill |
+| Docs site | `.context/docs_site.md` | MkDocs site: what auto-updates, what's manual, generators, deployment |
 
 ---
 

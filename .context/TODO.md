@@ -44,6 +44,17 @@
 
 ## Active
 
+## Completed (2026-04-06)
+- [x] Documentation site — MkDocs + Material theme, 20 pages, mkdocstrings autodoc, videos embedded
+- [x] Auto-generators for CLI flags (`docs/scripts/gen_cli_reference.py`) and env presets (`docs/scripts/gen_env_presets.py`)
+- [x] Moved superpowers specs/plans from `docs/superpowers/` to `.superpowers/` (CLAUDE.md override)
+- [x] Context doc `.context/docs_site.md` for future agents
+
+## Short-term — Documentation
+- [ ] Finalize GitHub repo → set `repo_url` in mkdocs.yml, activate GH Actions workflow
+- [ ] Content polish pass — second draft on tutorials and getting-started pages
+- [ ] Add more training videos if available (e.g., CartpoleBalance, PandaPickCube)
+
 ## Short-term — Go2 robustness (ACTIVE)
 - [x] Domain rand (Tier 1) — friction, mass, COM, armature, frictionloss. `go2_randomize.py` + `--domain-rand` flag.
 - [x] CPU sister env — `go2_cpu.py`, same MJCF + overrides, CPU mj_step. Policy walks 3s.

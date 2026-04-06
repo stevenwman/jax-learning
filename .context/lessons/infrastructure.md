@@ -140,3 +140,17 @@ Spent hours debugging Go2 PPO at eval ~17. Playground paper shows Go1 reaching ~
 **Fix:** Any per-env state in `state.info` that should reset at episode boundaries must handle it explicitly. Pattern: `jp.where(state.done, reset_value, normal_value)` inside the wrapper's `step()`. This is JIT-safe and adds negligible overhead.
 
 **Applies to:** Frame stacking, action delay buffers, any FIFO/history stored in `state.info`.
+
+---
+
+## mkdocstrings requires Google-style docstrings with correct section headers
+
+**Symptom:** `mkdocs build --strict` fails with warnings about unresolvable parameters or unknown params on Flax `nn.Module` classes.
+
+**Root cause:** mkdocstrings (via griffe) parses docstrings strictly. Two gotchas:
+1. Flax `nn.Module` class attributes look like constructor params but griffe doesn't recognize `Args:` for them — must use `Attributes:` section header instead.
+2. Untyped function parameters generate warnings under `--strict`. Add type annotations to all public function params.
+
+**Fix:** Use `Attributes:` (not `Args:`) for `nn.Module` dataclass-style fields. Add type annotations to public API functions. If warnings persist, `warn_unknown_params: false` in mkdocs.yml as a last resort.
+
+**Applies to:** Any new `nn.Module` class or public function that should appear in API docs.

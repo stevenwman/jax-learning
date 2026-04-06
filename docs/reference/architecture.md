@@ -4,27 +4,14 @@
 
 The codebase follows a strict three-layer separation:
 
-```
-┌─────────────────────────────────────────────────┐
-│  Environment Layer (MuJoCo Playground)          │
-│  MJX backend (JAX-native) or Warp backend       │
-│  Produces: obs, reward, done, info              │
-└──────────────────────┬──────────────────────────┘
-                       │ (obs, reward, done)
-┌──────────────────────▼──────────────────────────┐
-│  Training Script (train_ppo_fast.py,            │
-│                   train_offpolicy.py)            │
-│  Owns the loop, batches data, manages state     │
-│  Handles: env creation, normalization, logging, │
-│           checkpointing, W&B, eval              │
-└──────────────────────┬──────────────────────────┘
-                       │ (batch of transitions)
-┌──────────────────────▼──────────────────────────┐
-│  Algorithm Layer (jax_rl/algos/*.py)            │
-│  Pure math — no env knowledge                   │
-│  PPO, SAC, TD3, FastSAC, FastTD3               │
-│  Computes: gradients, loss, updated params      │
-└─────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    ENV["<b>Environment Layer</b><br/>MuJoCo Playground<br/>MJX (JAX-native) or Warp backend<br/>Produces: obs, reward, done, info"]
+    TRAIN["<b>Training Script</b><br/>train_ppo_fast.py / train_offpolicy.py<br/>Owns the loop, batches data, manages state<br/>Handles: env creation, normalization,<br/>logging, checkpointing, W&B, eval"]
+    ALGO["<b>Algorithm Layer</b><br/>jax_rl/algos/*.py<br/>Pure math — no env knowledge<br/>PPO, SAC, TD3, FastSAC, FastTD3<br/>Computes: gradients, loss, updated params"]
+
+    ENV -->|"obs, reward, done"| TRAIN
+    TRAIN -->|"batch of transitions"| ALGO
 ```
 
 **Key invariant:** Algorithms never import or reference environments. They receive batches of `(obs, action, reward, next_obs, done)` and return updated parameters. This makes algorithms reusable across any environment.

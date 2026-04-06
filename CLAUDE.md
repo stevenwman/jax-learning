@@ -1,5 +1,8 @@
 # Project Instructions
 
+## Superpowers Output
+Superpowers specs go in `.superpowers/specs/`, plans in `.superpowers/plans/` (NOT `docs/superpowers/`).
+
 ## Doc Sync Checkpoint
 
 After completing a logical chunk of work (debugging session, feature, config change, training run), do a doc sweep before moving on. Use all three to find what's stale:
@@ -21,5 +24,7 @@ After completing a logical chunk of work (debugging session, feature, config cha
 |---|---|
 | `jax_rl/envs/locomotion/` (env config, physics, rewards) | `deploy/go2_constants.py`, `.context/go2/mjcf_comparison.md` |
 | `deploy/` (deploy code, constants, interface) | `deploy/README.md` |
-| `train_*.py` (training scripts, CLI flags) | `.context/AGENT_HANDOFF.md` (Quick Reference) |
-| Training results (new eval scores, benchmarks) | `.context/AGENT_HANDOFF.md` (benchmarks), `.context/TODO.md` |
+| `train_*.py` (training scripts, CLI flags) | `.context/AGENT_HANDOFF.md` (Quick Reference), run `docs/scripts/gen_cli_reference.py` |
+| `jax_rl/configs/env_presets.py` | Run `docs/scripts/gen_env_presets.py` |
+| `jax_rl/algos/*.py` docstrings | API docs auto-update on `mkdocs build` |
+| Training results (new eval scores, benchmarks) | `.context/AGENT_HANDOFF.md` (benchmarks), `.context/TODO.md`, `docs/index.md` |

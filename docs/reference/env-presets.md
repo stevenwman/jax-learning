@@ -1,5 +1,11 @@
 # Environment Presets
 
+Auto-generated from `jax_rl/configs/env_presets.py`. Regenerate with:
+
+```bash
+uv run python docs/scripts/gen_env_presets.py
+```
+
 Presets return fully-configured `(TrainConfig, AlgoConfig)` tuples with tuned hyperparameters per environment. CLI flags override individual fields via `dataclasses.replace()`.
 
 If an environment is not listed, a default config is used with the environment name set.
@@ -10,83 +16,71 @@ If an environment is not listed, a default config is used with the environment n
 
 Used by `train_ppo_fast.py`. Accessed via `get_preset(env_name)`.
 
-| Environment | num_envs | total_timesteps | lr | gamma | reward_scaling | num_steps | num_epochs | entropy_coef | Notes |
+| Environment | num_envs | timesteps | lr | gamma | reward_scaling | num_steps | epochs | entropy_coef | Notes |
 |---|---|---|---|---|---|---|---|---|---|
-| CartpoleBalance | 64 | 1M | 3e-4 | 0.99 | 1.0 | 64 | 4 | 0.01 | Baseline test env |
-| CheetahRun | 2048 | 20M | 1e-3 | 0.995 | 10.0 | 30 | 16 | 1e-2 | Eval 826 |
-| WalkerWalk | 2048 | 60M | 1e-3 | 0.995 | 10.0 | 30 | 16 | 1e-2 | |
-| HumanoidRun | 2048 | 60M | 1e-3 | 0.995 | 10.0 | 480 | 16 | 1e-2 | state_dependent_std, anneal_lr=False, policy (128,128,128,128) |
-| Go2JoystickFlat | 4096 | 100M | 3e-4 | 0.97 | 1.0 | 20 | 4 | 1e-2 | 32 minibatches, 4 updates/batch, policy/value (512,256,128) |
-| Go2WarpJoystickFlat | 4096 | 100M | 3e-4 | 0.97 | 1.0 | 20 | 4 | 1e-2 | Same as Go2JoystickFlat; FastSAC preferred for Go2 Warp |
+| CartpoleBalance | 64 | 1M | 3e-04 | 0.99 | 1 | 64 | 4 | 0.01 | max_grad_norm=0.5 |
+| CheetahRun | 2,048 | 20M | 0.001 | 0.995 | 10 | 30 | 16 | 0.01 |  |
+| WalkerWalk | 2,048 | 60M | 0.001 | 0.995 | 10 | 30 | 16 | 0.01 |  |
+| HumanoidRun | 2,048 | 60M | 0.001 | 0.995 | 10 | 480 | 16 | 0.01 | policy_hidden_dim=(128, 128, 128, 128), state_dependent_std=True, anneal_lr=False |
+| Go2JoystickFlat | 4,096 | 100M | 3e-04 | 0.97 | 1 | 20 | 4 | 0.01 | num_updates_per_batch=4, policy_hidden_dim=(512, 256, 128), value_hidden_dim=(512, 256, 128), max_grad_norm=1 |
+| Go2WarpJoystickFlat | 4,096 | 100M | 3e-04 | 0.97 | 1 | 20 | 4 | 0.01 | num_updates_per_batch=4, policy_hidden_dim=(512, 256, 128), value_hidden_dim=(512, 256, 128), max_grad_norm=1 |
 
-PPO defaults not shown: `clip_eps=0.3`, `gae_lambda=0.95`, `num_minibatches=32`, `num_updates_per_batch=1`, `max_grad_norm=None`, `anneal_lr=True`, `squash=True`, `state_dependent_std=False`, `policy_hidden_dim=(32,32,32,32)`, `value_hidden_dim=(256,256,256,256,256)`.
+PPO algo defaults: `clip_eps=0.3`, `entropy_coef=0.01`, `gae_lambda=0.95`, `num_epochs=4`, `num_steps=64`, `num_updates_per_batch=1`, `policy_hidden_dim=(32, 32, 32, 32)`, `value_hidden_dim=(256, 256, 256, 256, 256)`, `activation=swish`, `squash=True`, `state_dependent_std=False`, `max_grad_norm=None`, `anneal_lr=True`, `critic_encoder=None`, `policy_head=None`, `normalize_advantage=True`.
 
 ---
 
 ## SAC Presets
 
-Used by `train_offpolicy.py --algo sac`. Accessed via `get_sac_preset(env_name)`.
+Used by `train_offpolicy.py --algo <name>`. Accessed via `get_sac_preset(env_name)`.
 
-Base config: `num_envs=128`, `lr=1e-3`, `gamma=0.99`, `episode_length=1000`, `handle_truncation=True`.
+| Environment | num_envs | timesteps | lr | gamma | reward_scaling | batch_size | UTD | Notes |
+|---|---|---|---|---|---|---|---|---|
+| WalkerWalk | 128 | 5M | 0.001 | 0.99 | 1 | 512 | 8 |  |
+| HumanoidRun | 128 | 5M | 0.001 | 0.99 | 1 | 512 | 8 |  |
+| CheetahRun | 128 | 5M | 0.001 | 0.99 | 1 | 512 | 8 |  |
+| PandaPickCube | 128 | 10M | 0.001 | 0.99 | 1 | 512 | 8 |  |
 
-| Environment | total_timesteps | Notes |
-|---|---|---|
-| WalkerWalk | 5M | Eval 975 avg, 995 max |
-| HumanoidRun | 5M | Eval 426 (vanilla SAC, 20M) |
-| CheetahRun | 5M | |
-| PandaPickCube | 10M | episode_length=150 |
-
-SAC algo defaults: `tau=0.005`, `target_entropy_scale=0.5`, `alpha_lr=1e-3`, `buffer_size=4M`, `min_buffer_size=8192`, `batch_size=512`, `grad_updates_per_step=8`, `hidden_dim=(256,256)`, `activation=relu`, `q_layer_norm=True`.
+SAC algo defaults: `tau=0.005`, `hidden_dim=(256, 256)`, `activation=relu`, `batch_size=512`, `grad_updates_per_step=8`, `buffer_size=4M`, `min_buffer_size=8,192`, `q_layer_norm=True`.
 
 ---
 
 ## TD3 Presets
 
-Used by `train_offpolicy.py --algo td3`. Accessed via `get_td3_preset(env_name)`.
+Used by `train_offpolicy.py --algo <name>`. Accessed via `get_td3_preset(env_name)`.
 
-Base config: `num_envs=128`, `lr=3e-4`, `gamma=0.99`, `episode_length=1000`, `handle_truncation=True`.
+| Environment | num_envs | timesteps | lr | gamma | reward_scaling | batch_size | UTD | Notes |
+|---|---|---|---|---|---|---|---|---|
+| CheetahRun | 128 | 5M | 3e-04 | 0.99 | 1 | 256 | 4 |  |
+| WalkerWalk | 128 | 5M | 3e-04 | 0.99 | 1 | 256 | 4 |  |
+| HumanoidRun | 128 | 5M | 3e-04 | 0.99 | 1 | 256 | 4 | q_layer_norm=True |
 
-| Environment | total_timesteps | grad_updates_per_step | batch_size | q_layer_norm | Notes |
-|---|---|---|---|---|---|
-| CheetahRun | 5M | 4 | 256 | False | Eval 749 |
-| WalkerWalk | 5M | 4 | 256 | False | |
-| HumanoidRun | 5M | 4 | 256 | True | LayerNorm for stability on high-dim |
-
-TD3 algo defaults: `tau=0.005`, `policy_delay=2`, `target_noise_std=0.2`, `noise_clip=0.5`, `exploration_noise_std=0.1`, `buffer_size=1M`, `min_buffer_size=10000`, `hidden_dim=(256,256)`, `activation=relu`, `grad_clip_norm=1.0`.
+TD3 algo defaults: `tau=0.005`, `hidden_dim=(256, 256)`, `activation=relu`, `batch_size=256`, `grad_updates_per_step=1`, `buffer_size=1M`, `min_buffer_size=10,000`, `q_layer_norm=False`.
 
 ---
 
 ## FastTD3 Presets
 
-Used by `train_offpolicy.py --algo fast_td3`. Accessed via `get_fast_td3_preset(env_name)`.
+Used by `train_offpolicy.py --algo <name>`. Accessed via `get_fast_td3_preset(env_name)`.
 
-Based on Seo et al. 2025 (arXiv:2512.01996). Designed for large-scale training (1024+ envs, 50M+ steps).
+| Environment | num_envs | timesteps | lr | gamma | reward_scaling | batch_size | UTD | Notes |
+|---|---|---|---|---|---|---|---|---|
+| CheetahRun | 1,024 | 100M | 3e-04 | 0.97 | 1 | 8,192 | 8 | noise_min=0.01, noise_max=0.05 |
+| WalkerWalk | 1,024 | 100M | 3e-04 | 0.97 | 1 | 8,192 | 8 | noise_min=0.01, noise_max=0.05 |
+| HumanoidRun | 1,024 | 100M | 3e-04 | 0.97 | 1 | 8,192 | 8 | noise_min=0.01, noise_max=0.05 |
 
-Base config: `num_envs=1024`, `lr=3e-4`, `gamma=0.97`, `episode_length=1000`, `handle_truncation=True`.
-
-| Environment | total_timesteps | Notes |
-|---|---|---|
-| CheetahRun | 100M | Eval 880 |
-| WalkerWalk | 100M | |
-| HumanoidRun | 100M | Eval 665 |
-
-FastTD3 algo defaults: `tau=0.125`, `policy_delay=2`, `noise_min=0.01`, `noise_max=0.05` (mixed noise, overrides `exploration_noise_std=0.2`), `batch_size=8192`, `grad_updates_per_step=8`, `min_buffer_size=25000`, `num_atoms=101`, `v_min=-20`, `v_max=20`, `hidden_dim=(512,256,128)`, `critic_hidden_dim=(768,384,192)`, `activation=swish`, `q_layer_norm=True`, `lr_end=3e-4` (constant LR).
+FastTD3 algo defaults: `tau=0.125`, `hidden_dim=(512, 256, 128)`, `activation=swish`, `batch_size=8,192`, `grad_updates_per_step=8`, `buffer_size=1M`, `min_buffer_size=25,000`, `q_layer_norm=True`.
 
 ---
 
 ## FastSAC Presets
 
-Used by `train_offpolicy.py --algo fast_sac`. Accessed via `get_fast_sac_preset(env_name)`.
+Used by `train_offpolicy.py --algo <name>`. Accessed via `get_fast_sac_preset(env_name)`.
 
-Based on Seo et al. 2025 (arXiv:2512.01996). C51 distributional critic with SAC entropy. Preferred for Go2 locomotion.
+| Environment | num_envs | timesteps | lr | gamma | reward_scaling | batch_size | UTD | Notes |
+|---|---|---|---|---|---|---|---|---|
+| CheetahRun | 1,024 | 100M | 3e-04 | 0.97 | 1 | 8,192 | 8 |  |
+| WalkerWalk | 1,024 | 100M | 3e-04 | 0.97 | 1 | 8,192 | 8 |  |
+| HumanoidRun | 1,024 | 100M | 3e-04 | 0.97 | 1 | 8,192 | 8 |  |
+| Go2WarpJoystickFlat | 1,024 | 100M | 3e-04 | 0.97 | 1 | 8,192 | 8 |  |
 
-Base config: `num_envs=1024`, `lr=3e-4`, `gamma=0.97`, `episode_length=1000`, `handle_truncation=True`.
-
-| Environment | total_timesteps | Notes |
-|---|---|---|
-| CheetahRun | 100M | |
-| WalkerWalk | 100M | |
-| HumanoidRun | 100M | Eval 892 (SOTA for this framework) |
-| Go2WarpJoystickFlat | 100M | Eval 276.5 @ 18M steps |
-
-FastSAC algo defaults: `tau=0.125`, `target_entropy_scale=0.0`, `alpha_lr=3e-4`, `alpha_init=0.001`, `max_std=1.0`, `policy_delay=4`, `batch_size=8192`, `grad_updates_per_step=8`, `num_atoms=101`, `v_min=-20`, `v_max=20`, `hidden_dim=(512,256,128)`, `critic_hidden_dim=(768,384,192)`, `activation=swish`, `q_layer_norm=True`, `lr_end=3e-5` (cosine decay).
+FastSAC algo defaults: `tau=0.125`, `hidden_dim=(512, 256, 128)`, `activation=swish`, `batch_size=8,192`, `grad_updates_per_step=8`, `buffer_size=4M`, `min_buffer_size=8,192`, `q_layer_norm=True`.

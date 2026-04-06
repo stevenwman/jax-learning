@@ -4,6 +4,21 @@
 
 jax-learning is built around the [Unitree Go2](https://www.unitree.com/go2/) quadruped robot. It provides GPU-accelerated environments, multiple RL algorithms, and a sim-to-real deployment pipeline — all in pure JAX for maximum speed.
 
+<div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem;">
+<div style="flex: 1; min-width: 300px;">
+<video autoplay loop muted playsinline style="width: 100%; border-radius: 8px;">
+  <source src="assets/videos/go2_joystick_walk.mp4" type="video/mp4">
+</video>
+<p style="text-align: center; font-size: 0.85em; color: gray;">Go2 locomotion — FastSAC, eval 276.5</p>
+</div>
+<div style="flex: 1; min-width: 300px;">
+<video autoplay loop muted playsinline style="width: 100%; border-radius: 8px;">
+  <source src="assets/videos/go2_bongo_handstand.mp4" type="video/mp4">
+</video>
+<p style="text-align: center; font-size: 0.85em; color: gray;">Bongo board handstand — PPO</p>
+</div>
+</div>
+
 ## Key Features
 
 - **5 RL algorithms** — PPO, SAC, TD3, FastSAC, and FastTD3 (distributional critics with large-batch training)
