@@ -1,1 +1,124 @@
 # Architecture
+
+## System Overview
+
+The codebase follows a strict three-layer separation:
+
+```
+┌─────────────────────────────────────────────────┐
+│  Environment Layer (MuJoCo Playground)          │
+│  MJX backend (JAX-native) or Warp backend       │
+│  Produces: obs, reward, done, info              │
+└──────────────────────┬──────────────────────────┘
+                       │ (obs, reward, done)
+┌──────────────────────▼──────────────────────────┐
+│  Training Script (train_ppo_fast.py,            │
+│                   train_offpolicy.py)            │
+│  Owns the loop, batches data, manages state     │
+│  Handles: env creation, normalization, logging, │
+│           checkpointing, W&B, eval              │
+└──────────────────────┬──────────────────────────┘
+                       │ (batch of transitions)
+┌──────────────────────▼──────────────────────────┐
+│  Algorithm Layer (jax_rl/algos/*.py)            │
+│  Pure math — no env knowledge                   │
+│  PPO, SAC, TD3, FastSAC, FastTD3               │
+│  Computes: gradients, loss, updated params      │
+└─────────────────────────────────────────────────┘
+```
+
+**Key invariant:** Algorithms never import or reference environments. They receive batches of `(obs, action, reward, next_obs, done)` and return updated parameters. This makes algorithms reusable across any environment.
+
+---
+
+## Data Flow
+
+### PPO (on-policy)
+
+1. `lax.scan` collects `num_steps` transitions across `num_envs` environments in a single JIT'd call
+2. Training script assembles a `RolloutBatch` (shape `[T, E, ...]`)
+3. PPO computes GAE advantages, splits into minibatches, runs `num_epochs` of SGD
+4. Repeat for `num_updates_per_batch` collect-update cycles per iteration
+
+### Off-policy (SAC, TD3, FastSAC, FastTD3)
+
+1. Python loop: select action, step env, store transition in replay buffer
+2. After `min_buffer_size` transitions, begin gradient updates
+3. Each env step triggers `grad_updates_per_step` gradient updates (UTD ratio)
+4. Each gradient step: sample batch from buffer, compute loss, update params
+
+---
+
+## Config System
+
+Two-level configuration using dataclasses:
+
+- **`TrainConfig`** -- shared fields: `env_name`, `num_envs`, `total_timesteps`, `lr`, `gamma`, `reward_scaling`, `episode_length`, `domain_rand`, `n_frame_stack`, `action_delay_ms`
+- **Algo configs** -- algorithm-specific: `PPOConfig`, `SACConfig`, `TD3Config`, `FastSACConfig`, `FastTD3Config`
+
+Presets return fully-configured tuples:
+
+```python
+# PPO
+cfg = get_preset("CheetahRun")  # returns TrainConfig (with cfg.ppo populated)
+
+# Off-policy
+cfg, algo_cfg = get_fast_sac_preset("HumanoidRun")  # returns (TrainConfig, FastSACConfig)
+```
+
+CLI overrides apply via `dataclasses.replace()`:
+
+```python
+cfg = dataclasses.replace(cfg, num_envs=2048, lr=1e-3)
+algo_cfg = dataclasses.replace(algo_cfg, batch_size=4096)
+```
+
+Each algo config is a standalone dataclass with correct defaults. FastSAC and FastTD3 do not inherit from SAC/TD3 configs because their defaults diverge on nearly every field.
+
+---
+
+## Checkpoint Format
+
+Each checkpoint directory contains:
+
+| File | Purpose |
+|------|---------|
+| `meta.json` | Full config (TrainConfig + AlgoConfig), algo type, obs/action dims |
+| `metrics.csv` | Training curve (step, return, loss, etc.) |
+| `actor_params.npy` | Actor parameters for inference (deploy, video recording) |
+| `orbax/` | Full training state for resume (actor, critic, optimizer, norm state) |
+
+`record_video.py` reads `meta.json` to reconstruct the correct network architecture and loads `actor_params.npy` for rollouts.
+
+---
+
+## Physics Backends
+
+Two MuJoCo backends are supported through MuJoCo Playground:
+
+| Backend | Accessed via | MJCF source | Geometry support | Use case |
+|---------|-------------|-------------|-----------------|----------|
+| **MJX** (JAX-native) | `impl="jax"` (default) | Menagerie (e.g., `go2_mjx.xml`) | Spheres, capsules, planes | DM Control Suite tasks, simple locomotion |
+| **Warp** | `impl="warp"` | Unitree (e.g., `go2.xml`) | Full (cylinders, meshes, boxes) | Go2 with real-robot MJCF, complex geometry |
+
+Warp runs MuJoCo physics on GPU through a Warp kernel, exposed via JAX FFI. Policy networks, `vmap`, `jit`, and autodiff stay in JAX. The `impl="warp"` flag only swaps the physics step.
+
+**Preferred for Go2:** Warp, because it uses the unitree MJCF directly (same model file as the real robot). MJX requires a simplified MJCF (sphere-only collision geometry) which creates sim-to-sim transfer issues.
+
+---
+
+## Wrapper Pipeline
+
+Raw environments are wrapped in a fixed order:
+
+```
+Raw env (MuJoCo Playground)
+  → FrameStackWrapper      (if n_frame_stack > 1)
+  → ActionDelayWrapper      (if action_delay_ms > 0 or action_delay_range_ms set)
+  → VmapWrapper             (vectorize across num_envs)
+  → EpisodeWrapper          (episode length tracking)
+  → AutoResetWrapper        (auto-reset on done/truncation)
+    or DomainRandAutoResetWrapper  (if domain_rand=True)
+```
+
+Wrappers are configured from `TrainConfig` fields. The pipeline is built by `build_wrapper_pipeline()` and applied by `apply_wrapper_pipeline()` in `jax_rl/envs/wrappers.py`.
