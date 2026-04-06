@@ -1,0 +1,40 @@
+# TODO: This workflow is dormant until a GitHub repo is set up.
+# Uncomment the trigger and update repo settings to enable.
+#
+# To activate:
+# 1. Push this repo to GitHub
+# 2. Enable GitHub Pages (Settings > Pages > Source: GitHub Actions)
+# 3. Uncomment the 'on:' trigger below
+# 4. Push to main
+
+name: Deploy Docs
+
+# on:
+#   push:
+#     branches: [main]
+#     paths:
+#       - 'docs/**'
+#       - 'mkdocs.yml'
+#       - 'jax_rl/**'
+#   workflow_dispatch:
+
+# Placeholder — will not run until 'on:' is uncommented
+on: workflow_dispatch
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv sync --group docs
+
+      - name: Build and deploy
+        run: uv run mkdocs gh-deploy --force
