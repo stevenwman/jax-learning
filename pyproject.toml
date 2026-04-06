@@ -23,3 +23,7 @@ dev = [
     "pytest>=9.0.2",
     "wandb>=0.25.1",
 ]
+docs = [
+    "mkdocs-material>=9.6",
+    "mkdocstrings[python]>=0.29",
+]

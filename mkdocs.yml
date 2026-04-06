@@ -1,0 +1,85 @@
+site_name: jax-learning
+site_description: JAX-based reinforcement learning for robot learning
+# TODO: set these when repo is finalized
+# repo_url: https://github.com/YOUR_USERNAME/jax-learning
+# repo_name: jax-learning
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [.]
+          options:
+            show_source: true
+            show_root_heading: true
+            heading_level: 3
+            members_order: source
+            docstring_style: google
+
+exclude_docs: |
+  superpowers/
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - toc:
+      permalink: true
+  - attr_list
+  - md_in_html
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Quickstart: getting-started/quickstart.md
+    - Concepts: getting-started/concepts.md
+  - Tutorials:
+    - Train Locomotion: tutorials/train-locomotion.md
+    - Custom Environment: tutorials/custom-env.md
+    - Custom Rewards: tutorials/custom-rewards.md
+    - Sim-to-Real: tutorials/sim2real.md
+    - Asymmetric Critic: tutorials/asymmetric-critic.md
+  - API Reference:
+    - Algorithms: api/algos.md
+    - Environments: api/envs.md
+    - Configs: api/configs.md
+    - Buffers: api/buffers.md
+    - Wrappers: api/wrappers.md
+    - Networks: api/networks.md
+  - Reference:
+    - CLI Flags: reference/cli-flags.md
+    - Environment Presets: reference/env-presets.md
+    - Architecture: reference/architecture.md
+    - Lessons Learned: reference/lessons-learned.md
+  - Contributing: contributing.md
