@@ -70,13 +70,13 @@ class JaxReplayBuffer:
         # Extra obs buffers (e.g., critic_obs for asymmetric critic)
         self._extra_obs_dims = extra_obs_dims or {}
         self._extra_bufs: dict[str, jax.Array] = {}
+        self._extra_next_keys: dict[str, str] = {}
         for name, dim in self._extra_obs_dims.items():
             # Convention: "critic_obs" → also allocates "critic_next_obs"
             next_name = name.replace("_obs", "_next_obs") if "_obs" in name else f"next_{name}"
             self._extra_bufs[name] = jnp.zeros((max_size, dim), dtype=jnp.float32)
             self._extra_bufs[next_name] = jnp.zeros((max_size, dim), dtype=jnp.float32)
-            self._extra_next_keys = {n: n.replace("_obs", "_next_obs") if "_obs" in n else f"next_{n}"
-                                     for n in self._extra_obs_dims}
+            self._extra_next_keys[name] = next_name
 
     def add_batch(
         self,

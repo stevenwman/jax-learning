@@ -168,7 +168,7 @@ jax-learning/
 ├── jax_rl/training/          # checkpointing, eval_runner, env_setup, metrics_logger
 ├── jax_rl/buffers/           # jax_replay_buffer.py, rollout_buffer.py
 ├── jax_rl/envs/wrappers/     # FrameStackWrapper, vendored training wrappers (Vmap, Episode, AutoReset, DR)
-├── tests/                    # 137 tests (uv run python -m pytest tests/ -v)
+├── tests/                    # 221 tests (uv run python -m pytest tests/ -v)
 └── tools/brax_baselines/     # Brax PPO A/B test scripts
 ```
 

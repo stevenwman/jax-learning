@@ -67,6 +67,27 @@ PRESETS: dict[str, TrainConfig] = {
             value_hidden_dim=(512, 256, 128),
         ),
     ),
+    # Go2 Warp locomotion — same PPO recipe, unitree MJCF via Warp backend.
+    # PPO hit 132 (entropy collapse); FastSAC preferred (see FAST_SAC_PRESETS).
+    "Go2WarpJoystickFlat": TrainConfig(
+        env_name="Go2WarpJoystickFlat",
+        total_timesteps=100_000_000,
+        num_envs=4096,
+        gamma=0.97,
+        lr=3e-4,
+        reward_scaling=1.0,
+        episode_length=1000,
+        ppo=PPOConfig(
+            num_steps=20,
+            num_minibatches=32,
+            num_updates_per_batch=4,
+            num_epochs=4,
+            entropy_coef=1e-2,
+            max_grad_norm=1.0,
+            policy_hidden_dim=(512, 256, 128),
+            value_hidden_dim=(512, 256, 128),
+        ),
+    ),
 }
 
 
@@ -247,6 +268,11 @@ FAST_SAC_PRESETS: dict[str, tuple[TrainConfig, FastSACConfig]] = {
     ),
     "HumanoidRun": (
         dataclasses.replace(_FAST_SAC_BASE_CFG, env_name="HumanoidRun"),
+        _FAST_SAC_BASE_ALGO,
+    ),
+    # Go2 Warp — eval 276.5 @ 18M steps (seed 6001). Preferred over PPO for Go2.
+    "Go2WarpJoystickFlat": (
+        dataclasses.replace(_FAST_SAC_BASE_CFG, env_name="Go2WarpJoystickFlat"),
         _FAST_SAC_BASE_ALGO,
     ),
 }

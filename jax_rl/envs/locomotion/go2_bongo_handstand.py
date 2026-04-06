@@ -86,8 +86,9 @@ def config_c() -> config_dict.ConfigDict:
             com_offset_cost=-5.0,
             height_cost=-3.0,
             roller_cost=-2.0,
-            torque_cost=-0.5,
+            torque_cost=-1.0,
             action_rate_cost=-0.5,
+            joint_vel_cost=-1.0,
             termination=-1.0,
         ),
     )
@@ -137,7 +138,7 @@ class BongoHandstand(go2_warp_base.Go2WarpEnv):
 
         # Torso body (robot).
         self._torso_body_id = self._mj_model.body(consts.WARP_ROOT_BODY).id
-        self._torso_mass = self._mj_model.body_subtreemass[self._torso_body_id]
+        self._torso_mass = self._mj_model.body_subtreemass[self._torso_body_id]  # UNUSED — kept for potential mass-normalized rewards
 
         # Board/roller indices — resolved by name, never hardcoded.
         # Convert to Python int so JAX sees static slice indices.
@@ -276,6 +277,8 @@ class BongoHandstand(go2_warp_base.Go2WarpEnv):
                          + jp.sum(jp.abs(data.actuator_force))) / max_torque_norm, 0.0, 1.0)),
             "action_rate_cost": RewardTerm("action_rate_cost", lambda action, info, **kw:
                 jp.clip(jp.sum(jp.square(action - info["last_act"])) / 12.0, 0.0, 1.0)),
+            "joint_vel_cost": RewardTerm("joint_vel_cost", lambda data, **kw:
+                jp.clip(jp.sum(jp.square(data.qvel[6:18])) / (12.0 * 21.0**2), 0.0, 1.0)),
             # Shared terms
             "survival": RewardTerm("survival", lambda **kw: jp.float32(1.0)),
             "torques": RewardTerm("torques", lambda data, **kw:

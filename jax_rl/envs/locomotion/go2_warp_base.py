@@ -12,6 +12,7 @@ import jax.numpy as jp
 from ml_collections import config_dict
 import mujoco
 from mujoco import mjx
+import numpy as np
 
 from etils import epath
 from mujoco_playground._src import mjx_env
@@ -54,16 +55,14 @@ class Go2WarpEnv(mjx_env.MjxEnv):
         # "training": firm foot contacts for crisp push-off (matches Go1 PG).
         # "deploy": keep unitree XML native contacts (condim=6, soft solimp).
         if getattr(self._config, 'contact_mode', 'training') == 'training':
-            import numpy as _np
             for foot_name in consts.FEET_GEOMS:
                 gid = self._mj_model.geom(foot_name).id
-                self._mj_model.geom_solimp[gid, :3] = _np.array([0.9, 0.95, 0.023])
+                self._mj_model.geom_solimp[gid, :3] = np.array([0.9, 0.95, 0.023])
                 self._mj_model.geom_condim[gid] = 3
-                self._mj_model.geom_friction[gid] = _np.array([0.6, 0.005, 0.0001])
+                self._mj_model.geom_friction[gid] = np.array([0.6, 0.005, 0.0001])
 
         # Set actuator force limits (unitree XML has forcerange=[0,0] = unlimited).
         # Must match ctrlrange so PD torques are clamped to motor limits.
-        import numpy as _np
         for i in range(self._mj_model.nu):
             self._mj_model.actuator_forcerange[i] = self._mj_model.actuator_ctrlrange[i]
 
@@ -75,8 +74,7 @@ class Go2WarpEnv(mjx_env.MjxEnv):
         # order (FL,FR,RL,RR) but ctrl is in actuator order (FR,FL,RR,RL).
         # Build act_to_joint: for each actuator index, which joint index it drives.
         # Then ctrl[a] = tau_joint[act_to_joint[a]].
-        import numpy as _np
-        act_to_joint = _np.zeros(self._mj_model.nu, dtype=int)
+        act_to_joint = np.zeros(self._mj_model.nu, dtype=int)
         for i in range(self._mj_model.nu):
             jnt_id = self._mj_model.actuator_trnid[i, 0]
             act_to_joint[i] = jnt_id - 1  # joint index in qpos[7:]

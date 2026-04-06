@@ -47,6 +47,7 @@ class FastSACConfig:
     # LR decay — paper uses cosine decay
     lr_end: float = 3e-5                # paper: cosine to near-zero
 
-    # Observation normalization
+    # Observation normalization — paper uses True. Defaulting to False until
+    # we A/B test on Go2 (paper benchmarks are DM Control, not locomotion).
     obs_normalization: bool = False
     obs_norm_eps: float = 1e-2

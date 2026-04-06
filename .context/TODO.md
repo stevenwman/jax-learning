@@ -52,7 +52,7 @@
 - [x] Friction DR fix — randomize ALL geoms (MuJoCo max-combine), range [0.3, 1.5]
 - [x] Action delay — `ActionDelayWrapper` (120ms FIFO), `--action-delay-ms` / `--action-delay-range-ms` CLI flags. Config-driven wrapper pipeline.
 - [ ] **Wider DR ranges** — Kp/Kd scaling. May need curriculum.
-- [x] Frame stacking — universal `FrameStackWrapper` wraps any env, `--frame-stack 3` CLI flag, deploy ObsBuilder mirrors. 125/125 tests pass.
+- [x] Frame stacking — universal `FrameStackWrapper` wraps any env, `--frame-stack 3` CLI flag, deploy ObsBuilder mirrors.
 - [x] Go2 SAC Phase B — FastSAC eval 226. Off-policy validated on Go2.
 
 ## Short-term — Cleanup
@@ -60,7 +60,7 @@
 - [x] Integration debt — 7/7 resolved (select_action_eval, asymmetric PPO test, etc.)
 - [x] `lax.scan` for gradient loops — benchmarked: 1.03x (no speedup)
 - [x] MJX recompilation — root cause found, upstream issue, MEM_FRACTION=0.7 mitigates
-- [x] Vendor training wrappers — Vmap, Episode, AutoReset, DR in `jax_rl/envs/wrappers/training.py`. Removed Brax training wrapper dependency. Parity-tested. 137/137 tests pass.
+- [x] Vendor training wrappers — Vmap, Episode, AutoReset, DR in `jax_rl/envs/wrappers/training.py`. Removed Brax training wrapper dependency. Parity-tested.
 
 ## Short-term — Experiment tracking
 - [x] W&B integration — `--wandb` flag on all 3 train scripts, logs step + eval metrics. Tested: SAC (CheetahRun 200k), PPO (CartpoleBalance 500k), no-flag passthrough. All working.
@@ -78,7 +78,7 @@
 - [ ] Train PPO on unitree MJCF via Warp — full 50M run (PPO hit 132, entropy collapsed)
 
 ## Short-term — Asymmetric off-policy critic
-- [x] Asymmetric critic for all off-policy algos — actor 48d, critic 122d. A/B result: ~2x faster to 270+ (5M vs 9M), final 279 vs 276 (noise). 197 tests pass.
+- [x] Asymmetric critic for all off-policy algos — actor 48d, critic 122d. A/B result: ~2x faster to 270+ (5M vs 9M), final 279 vs 276 (noise).
 
 ## Short-term — Bongo Board Handstand
 - [x] Bongo board MJCF — board + roller, equality constraint, physics validated
@@ -91,8 +91,12 @@
 - [x] Eval loop `lax.scan` — fixes Warp OOM from Python-loop buffer accumulation
 - [x] Cost-based reward redesign — normalized quadratic costs, survival ceiling
 - [x] Training runs A/B2 — best eval 119 (Run A), 101 (Run B2 w/ arm term)
-- [ ] Run C (cost-based) — in progress
-- [ ] Run D (robustness) — best of above + pushes + init randomization
+- [x] Run C (cost-based) — eval 28, plateaued. Normalized quadratic costs.
+- [x] PPO-C — eval 23.7, entropy collapsed, still climbing at 50M
+- [x] PPO-C2 (torque/vel penalties) — eval 15.9, regressed to 11. Penalties hurt.
+- [x] PPO-C3 (frame-stack 3) — **eval 46.9** (94% of max). Breakthrough.
+- [ ] Domain randomization — feet-board friction DR via `<pair>` elements, board mass, robot mass/motor
+- [ ] Push force curriculum — antagonistic pushes after stable balance converges
 - [ ] Phase 1B: full approach + mount + handstand (future)
 
 ## Mid-term (Vision RL)
@@ -116,6 +120,9 @@
 - [ ] ONNX export utility (`jax_rl/utils/export.py`) — JAX weights → ONNX for Jetson (deferred — numpy inference at 50Hz is fine for now)
 - [ ] DC motor model (`jax_rl/envs/actuators.py`) — Tier 2, add if sim-to-real gap > threshold
 - [ ] Confirm Go2 EDU edition in lab (ask Steven)
+
+## Short-term — Ablations
+- [ ] **obs_normalization A/B** — FastSAC on Go2WarpJoystickFlat with `--obs-norm` vs without. Paper uses True (DM Control benchmarks), we default False. Quick 20M run each.
 
 ## Mid-term — Optimizer experiments
 - [ ] Muon optimizer (`optax.contrib.muon`) — matrix-whitening via Newton-Schulz orthogonalization. Already in optax 0.2.6, drop-in `GradientTransformation`. Auto-routes 2D weights → Muon, biases/norms → AdamW internally. **RL caveat:** zero published RL benchmarks, untested on non-stationary targets + small MLPs. Start with actor-only Muon, keep critic on AdamW. First/last layer should stay Adam per author guidance.

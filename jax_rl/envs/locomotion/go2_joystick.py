@@ -5,7 +5,7 @@ Adapted from Playground's Go1 Joystick env. Matches Go1 config exactly
 parity. Will switch to Unitree official values (Kp=20, action_scale=0.25)
 for sim-to-real.
 
-Returns dict obs: {"state": 48d policy obs, "privileged_state": ~100d critic obs}.
+Returns dict obs: {"state": 48d policy obs, "privileged_state": 122d critic obs}.
 Self-contained env: training script never touches obs construction,
 reward computation, frame stacking, or action scaling.
 """
@@ -116,13 +116,13 @@ class Joystick(go2_base.Go2Env):
         self._soft_uppers = self._uppers * self._config.soft_joint_pos_limit_factor
 
         self._torso_body_id = self._mj_model.body(consts.ROOT_BODY).id
-        self._torso_mass = self._mj_model.body_subtreemass[self._torso_body_id]
+        self._torso_mass = self._mj_model.body_subtreemass[self._torso_body_id]  # UNUSED — kept for potential mass-normalized rewards
 
         self._feet_site_id = np.array(
             [self._mj_model.site(name).id for name in consts.FEET_SITES]
         )
-        self._floor_geom_id = self._mj_model.geom("floor").id
-        self._feet_geom_id = np.array(
+        self._floor_geom_id = self._mj_model.geom("floor").id  # UNUSED — contact detection uses sensors now
+        self._feet_geom_id = np.array(  # UNUSED — contact detection uses sensors now
             [self._mj_model.geom(name).id for name in consts.FEET_GEOMS]
         )
 
@@ -397,7 +397,7 @@ class Joystick(go2_base.Go2Env):
         first_contact: jax.Array,
         contact: jax.Array,
     ) -> dict[str, jax.Array]:
-        del metrics
+        del metrics  # UNUSED — kept for potential curriculum-dependent rewards
         return compute_rewards(
             self._reward_spec,
             data=data, action=action, info=info,
@@ -446,7 +446,7 @@ class Joystick(go2_base.Go2Env):
     def _cost_action_rate(
         self, act: jax.Array, last_act: jax.Array, last_last_act: jax.Array
     ) -> jax.Array:
-        del last_last_act
+        del last_last_act  # UNUSED — passed but never read; kept for potential jerk penalty
         return jp.sum(jp.square(act - last_act))
 
     # ── Joint costs ─────────────────────────────────────────────────────

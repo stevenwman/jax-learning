@@ -37,6 +37,7 @@ class FastTD3Config:
     # LR decay — paper uses constant LR (lr_end=lr). Set lr_end < lr for cosine decay.
     lr_end: float = 3e-4  # same as default lr = constant
 
-    # Observation normalization — paper: obs_normalization=True
+    # Observation normalization — paper uses True. Defaulting to False until
+    # we A/B test on Go2 (paper benchmarks are DM Control, not locomotion).
     obs_normalization: bool = False
     obs_norm_eps: float = 1e-2

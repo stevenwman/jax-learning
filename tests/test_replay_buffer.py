@@ -268,3 +268,66 @@ class TestFrameStackBuffer:
         assert batch["next_obs"].shape == (8, OBS_DIM)
         assert jnp.allclose(batch["obs"], 5.0)
         assert jnp.allclose(batch["next_obs"], 6.0)
+
+
+# ── Extra obs (asymmetric critic) tests ──────────────────────────────────
+
+CRITIC_DIM = 32
+
+
+class TestExtraObsBuffer:
+    """Tests for extra_obs_dims (asymmetric critic support)."""
+
+    def test_extra_next_keys_mapping(self):
+        """_extra_next_keys should map each extra name to its next-obs key."""
+        buf = JaxReplayBuffer(OBS_DIM, ACTION_DIM, max_size=100,
+                              extra_obs_dims={"critic_obs": CRITIC_DIM})
+        assert buf._extra_next_keys == {"critic_obs": "critic_next_obs"}
+
+    def test_extra_next_keys_multiple(self):
+        """Multiple extra obs dims should all get correct next-key mappings."""
+        buf = JaxReplayBuffer(OBS_DIM, ACTION_DIM, max_size=100,
+                              extra_obs_dims={"critic_obs": CRITIC_DIM,
+                                              "aux_obs": 8})
+        assert buf._extra_next_keys == {"critic_obs": "critic_next_obs",
+                                        "aux_obs": "aux_next_obs"}
+
+    def test_extra_next_keys_no_obs_suffix(self):
+        """Names without '_obs' should use 'next_' prefix convention."""
+        buf = JaxReplayBuffer(OBS_DIM, ACTION_DIM, max_size=100,
+                              extra_obs_dims={"privileged": 64})
+        assert buf._extra_next_keys == {"privileged": "next_privileged"}
+
+    def test_extra_bufs_allocated(self):
+        """Both current and next buffers should be allocated with correct shapes."""
+        buf = JaxReplayBuffer(OBS_DIM, ACTION_DIM, max_size=100,
+                              extra_obs_dims={"critic_obs": CRITIC_DIM})
+        assert "critic_obs" in buf._extra_bufs
+        assert "critic_next_obs" in buf._extra_bufs
+        assert buf._extra_bufs["critic_obs"].shape == (100, CRITIC_DIM)
+        assert buf._extra_bufs["critic_next_obs"].shape == (100, CRITIC_DIM)
+
+    def test_add_and_sample_extra_obs(self):
+        """Extra obs should round-trip through add_batch → sample correctly."""
+        buf = JaxReplayBuffer(OBS_DIM, ACTION_DIM, max_size=100,
+                              extra_obs_dims={"critic_obs": CRITIC_DIM})
+        n = 20
+        buf.add_batch(
+            obs=jnp.ones((n, OBS_DIM)),
+            action=jnp.zeros((n, ACTION_DIM)),
+            reward=jnp.zeros(n),
+            next_obs=jnp.ones((n, OBS_DIM)),
+            done=jnp.zeros(n),
+            critic_obs=jnp.ones((n, CRITIC_DIM)) * 3.0,
+            critic_next_obs=jnp.ones((n, CRITIC_DIM)) * 4.0,
+        )
+        batch = buf.sample(8, key=KEY)
+        assert batch["critic_obs"].shape == (8, CRITIC_DIM)
+        assert batch["critic_next_obs"].shape == (8, CRITIC_DIM)
+        assert jnp.allclose(batch["critic_obs"], 3.0)
+        assert jnp.allclose(batch["critic_next_obs"], 4.0)
+
+    def test_no_extra_obs_unchanged(self):
+        """Buffer without extra_obs_dims should have empty mappings."""
+        buf = JaxReplayBuffer(OBS_DIM, ACTION_DIM, max_size=100)
+        assert not hasattr(buf, '_extra_next_keys') or buf._extra_obs_dims == {}
