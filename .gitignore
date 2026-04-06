@@ -5,6 +5,8 @@ deploy/.venv/
 checkpoints/
 wandb/
 *.mp4
+!docs/assets/videos/*.mp4
 
 MUJOCO_LOG.TXT
 /tmp_videos
+site/
