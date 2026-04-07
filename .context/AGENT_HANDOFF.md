@@ -162,14 +162,17 @@ jax-learning/
 ├── train_ppo.py              # PPO (Python loop, ~32k sps, all envs)
 ├── train_ppo_fast.py         # PPO (lax.scan, ~110k sps, JIT-able envs only)
 ├── train_offpolicy.py        # SAC/TD3/FastTD3/FastSAC via --algo flag
+├── train_flashsac.py         # FlashSAC (standalone script, not integrated in train_offpolicy.py)
 ├── record_video.py           # Loads any checkpoint, renders rollout + _traj.npz
-├── jax_rl/algos/             # ppo.py, sac.py, td3.py, fast_td3.py, fast_sac.py
+├── jax_rl/algos/             # ppo.py, sac.py, td3.py, fast_td3.py, fast_sac.py, flash_sac.py
 ├── jax_rl/envs/locomotion/   # go2_warp_base.py, go2_warp_joystick.py, go2_bongo_handstand.py (MJX files archived in archive/)
-├── jax_rl/configs/           # train_config.py, *_config.py, env_presets.py
+├── jax_rl/configs/           # train_config.py, *_config.py, env_presets.py, flash_sac_config.py
+├── jax_rl/networks/          # flash_blocks.py (inverted residual blocks with BatchNorm + weight norm)
+├── jax_rl/utils/             # reward_scaling.py (adaptive reward normalization)
 ├── jax_rl/training/          # checkpointing, eval_runner, env_setup, metrics_logger
 ├── jax_rl/buffers/           # jax_replay_buffer.py, rollout_buffer.py
 ├── jax_rl/envs/wrappers/     # FrameStackWrapper, vendored training wrappers (Vmap, Episode, AutoReset, DR)
-├── tests/                    # 221 tests (uv run python -m pytest tests/ -v)
+├── tests/                    # 243 tests (uv run python -m pytest tests/ -v)
 └── tools/brax_baselines/     # Brax PPO A/B test scripts
 ```
 
@@ -191,6 +194,16 @@ Every checkpoint contains: `meta.json` (full config), `metrics.csv` (training cu
 - **Best PPO**: eval 244 @ 50M steps (seed 4000, motor actuators)
 - **Warp env**: `Go2WarpJoystickFlat` — uses unitree_mujoco's go2.xml (full cylinder collision geometry) via MuJoCo Warp backend. Eliminates sim2sim gap. `contact_mode` flag: `"training"` (firm contacts) / `"deploy"` (unitree-native physics). Kp=20, Kd=0.5 (unitree RL gains). Best result: **FastSAC eval 276.5 @ 18M steps** — surpasses MJX PPO 244. Sim2sim to CPU MuJoCo validated (walks 20s+ with random commands).
 - **CRITICAL:** Warp env has joint→actuator remapping (`_act_to_joint`). Unitree XML has different qpos vs ctrl ordering. Without remap, PD applies torques to wrong legs.
+
+### Algorithm quick reference
+| Algo | Training script | Key features | Notes |
+|------|-----------------|--------------|-------|
+| PPO | `train_ppo.py` / `train_ppo_fast.py` | On-policy, policy gradient, asymmetric AC for Go2 | Fast scan version; frozen obs norm; CheckpointManager |
+| SAC | `train_offpolicy.py --algo sac` | Off-policy, entropy regularization, symmetric AC | Vanilla SAC, 128 envs |
+| TD3 | `train_offpolicy.py --algo td3` | Off-policy, deterministic, delayed critic update, target noise | Vanilla TD3 |
+| FastTD3 | `train_offpolicy.py --algo fast_td3` | C51 distributional + TD3 | Eval **880** on CheetahRun (low-dim). Benchmark: 1024 envs, 86M steps |
+| FastSAC | `train_offpolicy.py --algo fast_sac` | C51 distributional + SAC + asymmetric critic (Go2) | Eval **892** on HumanoidRun, **279.2** on Go2. Benchmark: 1024 envs. |
+| **FlashSAC** | `train_flashsac.py` | Inverted residual blocks + BatchNorm + weight norm + adaptive reward scaling + Zeta noise | Standalone script (not in train_offpolicy.py). 22 tests passing. |
 
 ---
 
@@ -248,6 +261,7 @@ See `TODO.md` for full prioritized list. Summary:
 # Training
 uv run python train_ppo_fast.py --env Go2WarpJoystickFlat --num-envs 1024 --total-timesteps 50000000  # Warp backend (unitree MJCF)
 uv run python train_offpolicy.py --algo fast_sac --env Go2WarpJoystickFlat --num-envs 1024 --total-timesteps 20000000 --domain-rand  # FastSAC + DR on Warp
+uv run python train_flashsac.py --env CheetahRun --total-timesteps 5000000 --seed 100  # FlashSAC (standalone)
 
 # Monitoring
 nvidia-smi | grep python                    # Is it running?

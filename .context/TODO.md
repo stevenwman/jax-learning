@@ -50,6 +50,16 @@
 - [x] Moved superpowers specs/plans from `docs/superpowers/` to `.superpowers/` (CLAUDE.md override)
 - [x] Context doc `.context/docs_site.md` for future agents
 
+## Completed (2026-04-07)
+- [x] FlashSAC JAX port — inverted residual blocks + BatchNorm + weight norm + adaptive reward scaling + Zeta noise repetition. 22 tests passing. New files: `reward_scaling.py`, `flash_sac_config.py`, `flash_blocks.py`, `flash_sac.py`, `train_flashsac.py`.
+
+## Short-term — FlashSAC benchmarking
+- [ ] A/B benchmark FlashSAC vs FastSAC on CheetahRun (5M steps) and Go2WarpJoystickFlat (100M steps)
+  ```
+  uv run python train_flashsac.py --env CheetahRun --total-timesteps 5000000 --seed 100
+  uv run python train_offpolicy.py --env CheetahRun --algo fast_sac --total-timesteps 5000000 --seed 100
+  ```
+
 ## Short-term — Documentation
 - [ ] Finalize GitHub repo → set `repo_url` in mkdocs.yml, activate GH Actions workflow
 - [ ] Content polish pass — second draft on tutorials and getting-started pages
