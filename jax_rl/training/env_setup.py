@@ -15,13 +15,6 @@ from jax_rl.utils.normalization import NormalizationState
 
 # ── Register custom envs with Playground's registry ─────────────────────
 def _register_custom_envs():
-    from jax_rl.envs.locomotion.go2_joystick import Joystick, default_config
-    if "Go2JoystickFlat" not in pg_locomotion._envs:
-        pg_locomotion.register_environment(
-            "Go2JoystickFlat",
-            functools.partial(Joystick, task="flat_terrain"),
-            default_config,
-        )
     from jax_rl.envs.locomotion.go2_warp_joystick import WarpJoystick
     from jax_rl.envs.locomotion.go2_warp_joystick import default_config as warp_default_config
     if "Go2WarpJoystickFlat" not in pg_locomotion._envs:

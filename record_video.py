@@ -42,7 +42,6 @@ ENV_DEFAULTS = {
     "HumanoidRun":      ((256, 256), "side"),
     "HumanoidWalk":     ((256, 256), "side"),
     "HumanoidStand":    ((256, 256), "side"),
-    "Go2JoystickFlat":  ((480, 480), "track"),
     "Go2WarpJoystickFlat": ((480, 480), None),  # no named camera — use free cam
 }
 
