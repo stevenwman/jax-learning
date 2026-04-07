@@ -123,6 +123,6 @@ class TestWarpBatched:
         from jax_rl.training.env_setup import make_envs
         from jax_rl.configs.train_config import TrainConfig
 
-        cfg = TrainConfig(env_name="Go2JoystickFlat", num_envs=2, total_timesteps=1000)
+        cfg = TrainConfig(env_name="Go2WarpJoystickFlat", num_envs=2, total_timesteps=1000)
         _, _, env_state, _, obs_dim, _, _ = make_envs(cfg, seed=0)
         assert obs_dim == 48

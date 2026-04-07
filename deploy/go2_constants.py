@@ -22,12 +22,10 @@ DEFAULT_POSE_SDK = DEFAULT_POSE_POLICY[POLICY_TO_SDK]
 ACTION_SCALE = 0.5
 
 # PD gains for deployment
-# WARNING: These must match the training env. Two configs exist:
-#   MJX env (Go2JoystickFlat):      Kp=35, Kd=0.1
-#   Warp env (Go2WarpJoystickFlat): Kp=20, Kd=0.5
+# WARNING: These must match the training env (Go2WarpJoystickFlat).
 # Using the wrong gains with a checkpoint = policy fights itself.
 # TODO: read gains from checkpoint meta.json instead of hardcoding.
-KP_SIM = 35.0    # MJX training env
+KP_SIM = 35.0    # ARCHIVED — was MJX training env (Go2JoystickFlat)
 KD_SIM = 0.1     # MJX training env
 KP_WARP = 20.0   # Warp training env (unitree RL gains)
 KD_WARP = 0.5    # Warp training env

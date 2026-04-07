@@ -51,7 +51,7 @@ KEY_W, KEY_S, KEY_A, KEY_D = 87, 83, 65, 68
 KEY_Q, KEY_E, KEY_R, KEY_SPACE = 81, 69, 82, 32
 
 # ── Command configuration ──────────────────────────────────────────────────
-# Ranges match Go2JoystickFlat env command sampling
+# Ranges match Go2WarpJoystickFlat env command sampling
 VX_RANGE = (-1.0, 2.0)     # m/s forward/backward
 VY_RANGE = (-0.5, 0.5)     # m/s lateral
 YAW_RANGE = (-1.0, 1.0)    # rad/s yaw
@@ -62,7 +62,7 @@ CMD_STEP = 0.1             # increment per keypress
 N_SUBSTEPS = 5
 
 # Action scaling: must match the env's action_scale config
-# Go2JoystickFlat uses 0.5 (from go2_joystick.py)
+# Go2WarpJoystickFlat uses 0.5 (from go2_warp_joystick.py)
 ACTION_SCALE = 0.5
 
 # ── Global mutable state (for keyboard callback) ───────────────────────────
