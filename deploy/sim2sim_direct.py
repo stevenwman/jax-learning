@@ -121,7 +121,7 @@ def run_sim2sim(
     model = mujoco.MjModel.from_xml_path(scene_path)
     data = mujoco.MjData(model)
 
-    # Match training env physics (go2_base.py overrides).
+    # Match training env physics (go2_warp_base.py overrides).
     # Contact: unitree defaults condim=6, friction=[0.4,0.02,0.01], solimp=Menagerie.
     for foot_name in ["FL", "FR", "RL", "RR"]:
         gid = model.geom(foot_name).id

@@ -32,7 +32,7 @@ class ObsBuilder:
 
     With n_frame_stack > 1, returns stacked obs (n_frame_stack * 48d). Newest frame at front, oldest at back.
 
-    Obs layout (matching go2_joystick.py _get_obs):
+    Obs layout (matching go2_warp_joystick.py _get_obs):
         [0:3]   local_linvel (zeroed for deployment — not available on hardware)
         [3:6]   gyroscope
         [6:9]   projected_gravity (from quaternion)

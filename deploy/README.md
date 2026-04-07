@@ -118,7 +118,7 @@ uv run python train_offpolicy.py --algo fast_sac --env Go2WarpJoystickFlat \
 
 **Alternative: PPO on MJX backend** (faster training, but sim2sim gap with unitree model):
 ```bash
-uv run python train_ppo_fast.py --env Go2JoystickFlat --num-envs 1024 \
+uv run python train_ppo_fast.py --env Go2WarpJoystickFlat --num-envs 1024 \
     --total-timesteps 50000000 --seed 42 --wandb --domain-rand
 ```
 
@@ -150,7 +150,7 @@ deploy/.venv/bin/python deploy/deploy_go2.py \
 
 ### Key concepts
 - **Training env (Warp)** uses MuJoCo Warp backend with unitree's go2.xml — same MJCF as the deploy sim. Motor actuators + external PD at physics rate (Kp=20, Kd=0.5). Policy outputs position targets, env computes torque via PD. **This is the recommended training path for deployment.**
-- **Training env (MJX)** uses MJX (JAX) backend with Menagerie's go2_mjx.xml — simplified collision geometry. Faster training but has sim2sim gap with unitree model. Motor actuators + external PD (Kp=35, Kd=0.1).
+- **Training env (MJX)** uses MJX (JAX) backend with Menagerie's go2_mjx.xml — simplified collision geometry. Archived; has sim2sim gap with unitree model. Motor actuators + external PD (Kp=35, Kd=0.1).
 - **Deploy env** uses standard MuJoCo (unitree_mujoco's Go2 model) with the same motor + PD setup. The deploy code loads the policy as pure numpy — no JAX needed.
 - **Two venvs**: training (`.venv/`, Python 3.13, JAX) and deploy (`deploy/.venv/`, Python 3.12, CycloneDDS). They don't share dependencies.
 - **PD gains must match**: Warp-trained policies use Kp=20/Kd=0.5, MJX-trained use Kp=35/Kd=0.1. The sim2sim script must use the same gains as training.
@@ -171,10 +171,10 @@ The deploy package has **zero JAX dependency** at runtime. Policy weights are lo
 
 ## Joint Ordering
 
-Our training env (MJX/Menagerie) uses: **FL, FR, RL, RR**
+Our training env (Warp/unitree) uses: **FR, FL, RR, RL** (unitree actuator order)
 Unitree SDK uses: **FR, FL, RR, RL**
 
-The deploy code handles this remapping automatically. You never need to think about it.
+The env handles remapping internally via `act_to_joint`. The deploy code handles any remaining remapping automatically.
 
 ## Observation Space
 
