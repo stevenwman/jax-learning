@@ -194,22 +194,31 @@ Temperature update (every policy_delay steps, after actor):
 Critic update (every step, uses freshly-updated actor params from this step):
   1. Sample next_action from updated actor (stop_gradient, train=False)
   2. Construct obs_all = concat([obs, next_obs]), act_all = concat([action, next_action])
-     - IMPORTANT: next_action portion of act_all must be wrapped in stop_gradient
-       so online critic backward doesn't flow through the actor's next-action sampling
+     - In JAX, since `jax.grad(_critic_loss, argnums=0)` differentiates only w.r.t. critic params,
+       there is no gradient path through next_action (it doesn't depend on critic params).
+       No explicit stop_gradient needed — the argnums pattern handles this automatically.
+       (In the PyTorch reference, this was handled by torch.no_grad() context.)
   3. Target critic forward on obs_all (train=True, mutable) → split at B, take second half
   4. Min-Q critic selection for C51 target:
      - Compute expected Q from both target critics: q1_val, q2_val
      - Select the FULL log_prob distribution from whichever critic has lower expected Q
      - This is NOT scalar min(Q1, Q2) — we select the entire distribution, not just the value
   5. C51 projection (FlashSAC-specific, NOT reusing existing project_distribution):
-     - actor_entropy = alpha * next_log_prob    [negative, since log_prob < 0]
-     - target_bin_values = reward + gamma^n_step * (bin_values - actor_entropy) * (1-done)
-     - Expanding: bin_values - actor_entropy = bin_values - alpha*log_prob = bin_values + alpha*|log_prob|
+     - alpha_log_prob = alpha * next_log_prob    [negative, since log_prob < 0]
+     - done = batch["terminated"] ONLY (NOT terminated | truncated)
+     - target_bin_values = reward + gamma^n_step * (bin_values - alpha_log_prob) * (1-done)
+     - Expanding: bin_values - alpha_log_prob = bin_values + alpha*|log_prob| (entropy bonus)
      - This differs from FastSAC which adjusts the reward: r - alpha*log_prob + gamma*(1-d)*z
      - FlashSAC adjusts the support: r + gamma*(z - alpha*log_prob)*(1-d)
      - These are NOT algebraically equivalent (entropy is inside vs outside the gamma term)
+     
+     **Asymmetric `done` signals (important):**
+     - Reward normalizer: resets G_r on `terminated | truncated` (both end the return estimate)
+     - C51 projection: bootstraps with `terminated` only (truncation should NOT zero out bootstrap)
+     - This asymmetry is deliberate and matches the reference. Getting it wrong causes value underestimation.
   6. Online critic forward on obs_all (train=True, mutable) → split at B, take first half
-  7. Cross-entropy loss between projected target and online logits
+  7. Cross-entropy loss: -sum(target_probs * log_softmax(online_logits))
+     - Clamp log_softmax to -30.0 minimum to prevent -inf * 0 = NaN (same as FastSAC)
   8. Apply weight normalization to updated critic params
 
 Target update (after critic):
@@ -294,7 +303,7 @@ noise = where(reinit[:, None], new_noise, old_noise)
 repeat_n = where(reinit, new_n, old_repeat_n)
 count = where(reinit, 1, count + 1)
 
-action = tanh(mean + std * noise)
+action = tanh(mean + std * noise)  # reference has * temperature (1.0 train, 0.0 eval) — omitted since always 1.0 during training
 ```
 
 Only active during training. Eval uses deterministic `tanh(mean)`.
@@ -335,6 +344,7 @@ class FlashSACConfig:
     buffer_size: int = 1_000_000
     min_buffer_size: int = 10_000
     grad_updates_per_step: int = 1
+    gamma: float = 0.99                     # discount factor (passed to algo constructor in existing pattern)
     n_step: int = 1                        # n-step returns (default single-step)
 
     # Temperature
@@ -363,6 +373,9 @@ class FlashSACConfig:
 
     # Weight norm
     weight_norm: bool = True
+
+    # Asymmetric observation (actor sees subset, critic sees full state)
+    # Inherited from existing codebase pattern via critic_obs_dim constructor arg
 ```
 
 ---
