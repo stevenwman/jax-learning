@@ -151,10 +151,12 @@ class TrainingState:
     key: jax.Array
     update_count: jnp.ndarray
 
-    # BatchNorm running stats
+    # BatchNorm running stats (online networks)
     actor_batch_stats: Any
     q1_batch_stats: Any
     q2_batch_stats: Any
+    # Target critic batch stats — maintained independently via training=True forward passes,
+    # NOT copied from online critics. Updated during critic update step 3.
     target_q1_batch_stats: Any
     target_q2_batch_stats: Any
 
@@ -179,9 +181,9 @@ FlashSAC concatenates obs + next_obs into a 2B batch for shared BatchNorm statis
 Actor update (every policy_delay steps):
   1. Concat: [obs; next_obs] → 2B batch through actor (train=True for BN stats)
   2. Take first half for loss computation
-  3. Critic forward with train=False (don't pollute critic BN stats with policy actions)
+  3. Critic forward on critic_obs (NOT actor_obs) with train=False (don't pollute BN stats)
   4. loss = mean(alpha * log_prob - min(Q1, Q2))
-  5. Optional BC regularization: loss += bc_alpha * |Q|.mean() * MSE(action, batch["action"])
+  5. Optional BC regularization: loss += bc_alpha * stop_gradient(|Q|.mean()) * MSE(action, batch["action"])
   6. Apply weight normalization to updated actor params
 
 Temperature update (every policy_delay steps, after actor):
@@ -211,8 +213,11 @@ Critic update (every step, uses freshly-updated actor params from this step):
   8. Apply weight normalization to updated critic params
 
 Target update (after critic):
-  - Polyak: target_params = tau * online + (1-tau) * target  [tau=0.01]
-  - Copy online batch_stats to target (use fresh running stats)
+  - Polyak on PARAMS ONLY: target_params = tau * online + (1-tau) * target  [tau=0.01]
+  - Batch stats are NOT copied from online to target. The target critic maintains its own
+    running BN stats via the training=True forward pass in step 3 above. The EMA only
+    affects learned parameters (kernels, BN scale/bias), not running statistics (mean/var).
+    This matches the reference where EMA updates nn.Parameter but not registered buffers.
 ```
 
 **Note on `jax.lax.cond` + BatchNorm:** The policy_delay branching (do actor update vs skip) requires both branches to return pytrees with identical structure. The "skip" branch must return dummy batch_stats of the same shape. This is the same pattern as FastSAC's `_skip_actor_alpha_update` but extended to include batch_stats — pass through the existing batch_stats unchanged.
@@ -235,7 +240,23 @@ class RewardNormState:
     G_count: jnp.ndarray   # scalar: sample count (init to 0.0)
 ```
 
-**Init:** `G_r=zeros`, `G_r_max=0`, `G_mean=0`, `G_var=1`, `G_count=0`. Welford update uses `epsilon=1e-4` in the variance denominator to prevent division-by-zero in the first few updates (matching reference `RunningMeanStd`).
+**Init:** `G_r=zeros(num_envs)`, `G_r_max=0`, `G_mean=0`, `G_var=1`, `G_count=0`.
+
+**Two separate epsilons (important):**
+1. **Welford epsilon = 1e-4** — used in variance update formula: `m_a = running_var * (running_count + 1e-4)`. This prevents NaN when count=0 in early training. Non-standard Welford modification from the reference.
+2. **Scale epsilon = 1e-8** — used in `scale_reward`: `sqrt(G_var + 1e-8)`. Standard numerical stability.
+
+**Exact Welford formula** (matching reference `_update_mean_var_count_from_moments`):
+```python
+delta = sample_mean - running_mean
+total_count = running_count + sample_count
+ratio = sample_count / total_count
+new_mean = running_mean + delta * ratio
+m_a = running_var * (running_count + epsilon)    # epsilon=1e-4, NOT running_count alone
+m_b = sample_var * sample_count
+M2 = m_a + m_b + delta² * running_count * ratio
+new_var = M2 / total_count
+```
 
 **Per env step** (called in train script collection loop):
 ```python
@@ -280,7 +301,7 @@ Only active during training. Eval uses deterministic `tanh(mean)`.
 
 Zeta CDF is precomputed once at init: `P(k) ∝ k^{-2}` for k=1..16, normalized and cumsum'd. The `zeta_sample` function draws `(num_envs,)` uniform samples and uses `jnp.searchsorted` against the precomputed CDF to produce per-env repeat lengths.
 
-**Note:** The reference implementation uses scalar noise state (single noise vector shared across all envs). Our vectorized design `(num_envs, action_dim)` is an intentional improvement — each env gets independent repeat lengths, which is more natural for parallel simulation. Functionally equivalent for single-env, strictly better for multi-env.
+**Deviation from reference:** The reference uses scalar noise state — a single noise vector and repeat counter shared across ALL envs. All envs resample simultaneously. Our vectorized design `(num_envs, action_dim)` gives each env independent repeat cycles. This is a **behavioral change** that increases exploration diversity in multi-env settings. Functionally identical for `num_envs=1`, but produces different exploration patterns at scale. This needs validation during benchmarking — if results diverge from the paper, try falling back to scalar noise.
 
 ---
 
