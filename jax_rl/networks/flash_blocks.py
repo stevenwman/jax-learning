@@ -13,6 +13,7 @@ Reference: FlashSAC PyTorch implementation (flash_rl/agents/flashSAC/layer.py)
 from flax import linen as nn
 import jax.numpy as jnp
 import jax
+from typing import Any
 
 
 class FlashSACEmbedder(nn.Module):
@@ -177,3 +178,56 @@ class FlashSACCritic(nn.Module):
             + self.param('value_bias', nn.initializers.zeros, (self.num_atoms,))
         )
         return logits  # (batch, num_atoms)
+
+
+def normalize_weights(params: Any) -> Any:
+    """Project network parameters to the FlashSAC constraint set.
+
+    Three normalization rules applied in a single pass over the pytree:
+
+    1. Dense kernels (shape (in, out)): each column normalized to unit L2 norm.
+    2. BatchNorm scale+bias: normalized jointly so ||(scale, bias)||₂ = sqrt(D).
+    3. UnitRMSNorm scale: normalized so ||scale||₂ = sqrt(D).
+    4. Everything else (mean_bias, logstd_bias, value_bias): untouched.
+
+    Pure function; JIT-compatible.
+    """
+    # --- Pass 1: collect BatchNorm (scale, bias) pairs by parent path string ---
+    # We need both leaves simultaneously to compute the joint normalization factor.
+    bn_sqsums: dict[str, jax.Array] = {}
+    for path, leaf in jax.tree_util.tree_leaves_with_path(params):
+        path_str = '/'.join(str(p) for p in path)
+        if 'BatchNorm' in path_str and ('scale' in path_str or 'bias' in path_str):
+            parent = path_str.rsplit('/', 1)[0]
+            if parent not in bn_sqsums:
+                bn_sqsums[parent] = jnp.zeros(())
+            bn_sqsums[parent] = bn_sqsums[parent] + jnp.sum(leaf ** 2)
+
+    # --- Pass 2: apply normalization leaf-by-leaf ---
+    def _normalize_leaf(path: tuple, leaf: jax.Array) -> jax.Array:
+        path_str = '/'.join(str(p) for p in path)
+
+        # Dense kernels: normalize each column (output neuron) to unit L2 norm.
+        if 'kernel' in path_str and leaf.ndim == 2:
+            col_norms = jnp.linalg.norm(leaf, axis=0, keepdims=True)  # (1, out)
+            return leaf / jnp.maximum(col_norms, 1e-8)
+
+        # BatchNorm scale or bias: joint normalization to sqrt(D).
+        if 'BatchNorm' in path_str and ('scale' in path_str or 'bias' in path_str):
+            parent = path_str.rsplit('/', 1)[0]
+            d = leaf.shape[-1]
+            sqsum = bn_sqsums[parent]
+            factor = jnp.sqrt(d) / jnp.sqrt(sqsum + 1e-8)
+            return leaf * factor
+
+        # UnitRMSNorm scale: normalize to sqrt(D).
+        if 'UnitRMSNorm' in path_str and 'scale' in path_str:
+            d = leaf.shape[-1]
+            sqsum = jnp.sum(leaf ** 2)
+            factor = jnp.sqrt(d) / jnp.sqrt(sqsum + 1e-8)
+            return leaf * factor
+
+        # Free bias params (mean_bias, logstd_bias, value_bias): untouched.
+        return leaf
+
+    return jax.tree_util.tree_map_with_path(_normalize_leaf, params)
