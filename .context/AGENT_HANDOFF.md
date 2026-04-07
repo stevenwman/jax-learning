@@ -92,7 +92,7 @@ WebFetch gets blocked by many sites. Workarounds:
 | `.context/go2/sac_phase_b.md` | SAC experiment plan + research | When SAC config or findings change |
 | `.context/go2/mjcf_comparison.md` | Training vs deploy physics diff | When env physics overrides change |
 
-**Don't forget non-.context docs.** `deploy/README.md` and `deploy/go2_constants.py` must stay in sync with training env changes (PD gains, default pose, action scale). If you change `go2_joystick.py` or `go2_base.py`, check whether deploy constants need updating too.
+**Don't forget non-.context docs.** `deploy/README.md` and `deploy/go2_constants.py` must stay in sync with training env changes (PD gains, default pose, action scale). If you change `go2_warp_joystick.py` or `go2_warp_base.py`, check whether deploy constants need updating too.
 
 ### The refactor philosophy
 Brax-style shared utilities. No Trainer base class, no BaseAlgorithm ABC. Envs are self-contained black boxes, algos own their math, training scripts mediate. See `.context/archive/refactor_idea.md` for the full reasoning.
@@ -164,7 +164,7 @@ jax-learning/
 ├── train_offpolicy.py        # SAC/TD3/FastTD3/FastSAC via --algo flag
 ├── record_video.py           # Loads any checkpoint, renders rollout + _traj.npz
 ├── jax_rl/algos/             # ppo.py, sac.py, td3.py, fast_td3.py, fast_sac.py
-├── jax_rl/envs/locomotion/   # go2_base.py, go2_joystick.py, go2_warp_base.py, go2_warp_joystick.py
+├── jax_rl/envs/locomotion/   # go2_warp_base.py, go2_warp_joystick.py, go2_bongo_handstand.py (MJX files archived in archive/)
 ├── jax_rl/configs/           # train_config.py, *_config.py, env_presets.py
 ├── jax_rl/training/          # checkpointing, eval_runner, env_setup, metrics_logger
 ├── jax_rl/buffers/           # jax_replay_buffer.py, rollout_buffer.py
@@ -212,7 +212,7 @@ Every checkpoint contains: `meta.json` (full config), `metrics.csv` (training cu
 | Vanilla SAC | 426 | 20M | 128 envs |
 | **FastSAC** | **892** | 100M | 1024 envs, SOTA |
 
-**Go2 Joystick — MJX** (Menagerie go2_mjx.xml, 12-dim actions):
+**Go2 Joystick — MJX (archived)** (Menagerie go2_mjx.xml, 12-dim actions; env files in `jax_rl/envs/locomotion/archive/`):
 | Algo | Eval | Steps | Notes |
 |------|------|-------|-------|
 | Our PPO (motor) | **244** | 50M | Seed 4000, motor actuators + external PD |
@@ -236,8 +236,8 @@ See `TODO.md` for full prioritized list. Summary:
 - **Mid-term:** Vision RL (CNN encoder, DrQ), real robot deployment
 - **Long-term:** DIAYN → METRA → USD (skill discovery on real Go2)
 
-### Strategic note: Warp is the primary backend
-**All new Go2 features go in the Warp env only.** Warp is strictly better for our use case: supports cylinder collisions (MJX can't), trains on the exact unitree MJCF (zero sim2sim gap), faster on complex scenes, and we only use NVIDIA GPUs. The MJX env (`Go2JoystickFlat`) is frozen — no new features, no bug fixes unless critical. New envs (other robots, terrains) should be built on Warp from the start. DIAYN, Kp/Kd DR, frame stacking — all Warp-only.
+### Strategic note: Warp is the sole Go2 backend
+**MJX Go2 env archived** (`jax_rl/envs/locomotion/archive/` — go2_base.py, go2_joystick.py, go2_cpu.py). `Go2WarpJoystickFlat` is the sole active Go2 locomotion env. `Go2BongoHandstand` (Warp, bongo board task) is also active. Warp is strictly better for our use case: supports cylinder collisions (MJX can't), trains on the exact unitree MJCF (zero sim2sim gap), faster on complex scenes, and we only use NVIDIA GPUs. New envs (other robots, terrains) should be built on Warp from the start. DIAYN, Kp/Kd DR, frame stacking — all Warp-only.
 
 ---
 
@@ -246,10 +246,8 @@ See `TODO.md` for full prioritized list. Summary:
 ### Commands
 ```bash
 # Training
-uv run python train_ppo_fast.py --env Go2JoystickFlat --num-envs 1024 --total-timesteps 200000000
 uv run python train_ppo_fast.py --env Go2WarpJoystickFlat --num-envs 1024 --total-timesteps 50000000  # Warp backend (unitree MJCF)
 uv run python train_offpolicy.py --algo fast_sac --env Go2WarpJoystickFlat --num-envs 1024 --total-timesteps 20000000 --domain-rand  # FastSAC + DR on Warp
-uv run python train_offpolicy.py --algo sac --env Go2JoystickFlat --obs-norm
 
 # Monitoring
 nvidia-smi | grep python                    # Is it running?

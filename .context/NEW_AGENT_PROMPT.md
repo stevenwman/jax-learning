@@ -32,7 +32,7 @@ AGENT_HANDOFF.md          ← START HERE (project overview, codebase map)
 - Go2 dict obs: {"state": 48d, "privileged_state": 116-122d}
 - PPO: asymmetric (critic sees privileged_state). SAC/TD3: both see state.
 - 5 root scripts: train_ppo_fast.py, train_ppo.py, train_offpolicy.py, record_video.py, live_viewer.py
-- **Two Go2 envs:** `Go2JoystickFlat` (MJX, Menagerie MJCF, Kp=35/Kd=0.1) and `Go2WarpJoystickFlat` (Warp, unitree MJCF, Kp=20/Kd=0.5). Warp is preferred — eliminates sim2sim gap, FastSAC eval 276.5.
+- **Go2 envs:** `Go2WarpJoystickFlat` (Warp backend, unitree MJCF, Kp=20/Kd=0.5) is the sole active Go2 locomotion env — eliminates sim2sim gap, FastSAC eval 276.5. Also `Go2BongoHandstand` (Warp, bongo board task). MJX env archived in `jax_rl/envs/locomotion/archive/`.
 - **CRITICAL:** Warp env has joint→actuator ordering mismatch. `_act_to_joint` remap is essential. See `lessons/warp.md`.
 
 Say "Ready" and wait for instructions.
