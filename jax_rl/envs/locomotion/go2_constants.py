@@ -15,6 +15,8 @@ from mujoco_playground._src import mjx_env
 # Path to our XML files.
 ROOT_PATH = Path(__file__).parent / "xmls"
 
+# ARCHIVED — MJX env used Menagerie scene XML (go2_base.py, go2_joystick.py).
+# Kept for reference. Active env uses WARP_SCENE_FLAT_XML.
 SCENE_FLAT_XML = ROOT_PATH / "go2_scene_flat.xml"
 
 # Foot geom names (used for contact sensors).
@@ -26,6 +28,7 @@ FEET_SITES = ["FL_foot", "FR_foot", "RL_foot", "RR_foot"]
 
 FEET_POS_SENSOR = ["FL_pos", "FR_pos", "RL_pos", "RR_pos"]
 
+# ARCHIVED — Menagerie root body name. Warp env uses WARP_ROOT_BODY.
 ROOT_BODY = "base"
 
 # Sensor names (matching scene XML + Menagerie sensors).
