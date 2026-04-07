@@ -36,7 +36,7 @@ Our current FastSAC achieves eval 276.5 on Go2WarpJoystickFlat @ 18M steps. Flas
 input (D_in) → BatchNorm(D_in, momentum=0.01) → Dense(D_in → D_hidden) [orthogonal, no bias]
 ```
 - BatchNorm normalizes raw inputs (obs for actor, concat(obs,action) for critic)
-- Dense: orthogonal init, no bias — weight rows projected to unit norm post-step
+- Dense: orthogonal init, no bias — weight columns projected to unit norm post-step (Flax kernel is `(in, out)`)
 
 ### FlashSACBlock (inverted residual, expansion=4)
 ```
@@ -94,7 +94,11 @@ Batch stats (running mean/var) stored in TrainingState as separate fields.
 
 ## 2. Weight Normalization
 
-Post-optimizer-step function applied to all network parameters:
+Applied at two points:
+1. **After `init()`** — orthogonal init doesn't guarantee unit-norm columns, so normalize immediately after network construction
+2. **After each optimizer step** — project params back to the constraint set
+
+Details:
 
 **Dense kernels:** Project each output neuron's weight vector to unit L2 norm.
 ```python
@@ -119,7 +123,7 @@ scale = scale * factor
 ```
 
 Implemented as `normalize_weights(params)` using `jax.tree_util.tree_map_with_path`. Path matching rules:
-- Leaf name `kernel` → unit-norm rows (all Dense layers in embedder + blocks + heads)
+- Leaf name `kernel` → unit-norm columns (each column = one output neuron in Flax's `(in, out)` layout)
 - Leaf name `scale` under a `BatchNorm` parent → joint (scale, bias) normalization to √D
 - Leaf name `scale` under `UnitRMSNorm` → scale-only normalization to √D
 - Leaf name `bias` under `BatchNorm` → handled jointly with scale (see above)
@@ -169,29 +173,42 @@ FlashSAC concatenates obs + next_obs into a 2B batch for shared BatchNorm statis
 
 **Update order matches reference:** actor → temperature → critic → target EMA (per step).
 
+**WARNING:** This is the OPPOSITE order from our existing FastSAC, which does critic → actor → alpha. Do NOT copy FastSAC's `update()` ordering. The reference deliberately uses the freshly-updated actor for the critic's next-action sampling within the same step.
+
 ```
 Actor update (every policy_delay steps):
   1. Concat: [obs; next_obs] → 2B batch through actor (train=True for BN stats)
   2. Take first half for loss computation
   3. Critic forward with train=False (don't pollute critic BN stats with policy actions)
   4. loss = mean(alpha * log_prob - min(Q1, Q2))
-  5. Optional BC regularization: loss += bc_alpha * |Q|.mean() * MSE(action, batch_action)
+  5. Optional BC regularization: loss += bc_alpha * |Q|.mean() * MSE(action, batch["action"])
   6. Apply weight normalization to updated actor params
 
 Temperature update (every policy_delay steps, after actor):
-  - entropy = -mean(log_prob)    [positive value]
+  - entropy = -mean(log_prob)    [positive value, since log_prob < 0]
   - loss = alpha * (entropy - target_entropy)
+  - Temperature uses the SAME warmup+cosine LR schedule as actor/critic (not a separate fixed LR)
 
-Critic update (every step, uses freshly-updated actor):
-  1. Sample next_action from updated actor (no grad, train=False)
-  2. Concat: obs_all = [obs; next_obs], act_all = [action; next_action]  → shape (2B, ...)
-  3. Target critic forward on obs_all (train=True, mutable) → split, take next-state half
-  4. C51 projection (FlashSAC-specific, NOT reusing existing project_distribution):
-     - target_bin_values = reward + gamma^n_step * (bin_values - alpha*log_prob) * (1-done)
-     - This differs from FastSAC which adjusts the reward instead of the support
-  5. Online critic forward on obs_all (train=True, mutable) → split, take current-state half
-  6. Cross-entropy loss between projected target and online logits
-  7. Apply weight normalization to updated critic params
+Critic update (every step, uses freshly-updated actor params from this step):
+  1. Sample next_action from updated actor (stop_gradient, train=False)
+  2. Construct obs_all = concat([obs, next_obs]), act_all = concat([action, next_action])
+     - IMPORTANT: next_action portion of act_all must be wrapped in stop_gradient
+       so online critic backward doesn't flow through the actor's next-action sampling
+  3. Target critic forward on obs_all (train=True, mutable) → split at B, take second half
+  4. Min-Q critic selection for C51 target:
+     - Compute expected Q from both target critics: q1_val, q2_val
+     - Select the FULL log_prob distribution from whichever critic has lower expected Q
+     - This is NOT scalar min(Q1, Q2) — we select the entire distribution, not just the value
+  5. C51 projection (FlashSAC-specific, NOT reusing existing project_distribution):
+     - actor_entropy = alpha * next_log_prob    [negative, since log_prob < 0]
+     - target_bin_values = reward + gamma^n_step * (bin_values - actor_entropy) * (1-done)
+     - Expanding: bin_values - actor_entropy = bin_values - alpha*log_prob = bin_values + alpha*|log_prob|
+     - This differs from FastSAC which adjusts the reward: r - alpha*log_prob + gamma*(1-d)*z
+     - FlashSAC adjusts the support: r + gamma*(z - alpha*log_prob)*(1-d)
+     - These are NOT algebraically equivalent (entropy is inside vs outside the gamma term)
+  6. Online critic forward on obs_all (train=True, mutable) → split at B, take first half
+  7. Cross-entropy loss between projected target and online logits
+  8. Apply weight normalization to updated critic params
 
 Target update (after critic):
   - Polyak: target_params = tau * online + (1-tau) * target  [tau=0.01]
@@ -215,8 +232,10 @@ class RewardNormState:
     G_r_max: jnp.ndarray   # scalar: all-time max |G_r|
     G_mean: jnp.ndarray    # scalar: Welford running mean
     G_var: jnp.ndarray     # scalar: Welford running variance
-    G_count: jnp.ndarray   # scalar: sample count
+    G_count: jnp.ndarray   # scalar: sample count (init to 0.0)
 ```
+
+**Init:** `G_r=zeros`, `G_r_max=0`, `G_mean=0`, `G_var=1`, `G_count=0`. Welford update uses `epsilon=1e-4` in the variance denominator to prevent division-by-zero in the first few updates (matching reference `RunningMeanStd`).
 
 **Per env step** (called in train script collection loop):
 ```python
@@ -248,7 +267,7 @@ During training collection:
 ```python
 reinit = (count == 0) | (count >= repeat_n)
 new_noise = random.normal(key, (num_envs, action_dim))
-new_n = zeta_sample(key, mu=2.0, max_n=16)  # inverse CDF, precomputed
+new_n = zeta_sample(key, mu=2.0, max_n=16, shape=(num_envs,))  # vectorized inverse CDF
 
 noise = where(reinit[:, None], new_noise, old_noise)
 repeat_n = where(reinit, new_n, old_repeat_n)
@@ -259,7 +278,7 @@ action = tanh(mean + std * noise)
 
 Only active during training. Eval uses deterministic `tanh(mean)`.
 
-Zeta CDF is precomputed once at init: `P(k) ∝ k^{-2}` for k=1..16, normalized and cumsum'd.
+Zeta CDF is precomputed once at init: `P(k) ∝ k^{-2}` for k=1..16, normalized and cumsum'd. The `zeta_sample` function draws `(num_envs,)` uniform samples and uses `jnp.searchsorted` against the precomputed CDF to produce per-env repeat lengths.
 
 **Note:** The reference implementation uses scalar noise state (single noise vector shared across all envs). Our vectorized design `(num_envs, action_dim)` is an intentional improvement — each env gets independent repeat lengths, which is more natural for parallel simulation. Functionally equivalent for single-env, strictly better for multi-env.
 
@@ -298,9 +317,9 @@ class FlashSACConfig:
     n_step: int = 1                        # n-step returns (default single-step)
 
     # Temperature
-    alpha_init: float = 0.01
+    alpha_init: float = 0.01               # stored as log_alpha = log(0.01) ≈ -4.6
     sigma_target: float = 0.15
-    alpha_lr: float = 3e-4
+    # NOTE: temperature optimizer uses the SAME LR schedule as actor/critic (no separate alpha_lr)
 
     # Actor regularization
     bc_alpha: float = 0.0                  # behavioral cloning weight (0 = disabled)
@@ -313,12 +332,13 @@ class FlashSACConfig:
     noise_zeta_mu: float = 2.0
     noise_zeta_max: int = 16
 
-    # LR schedule (warmup → cosine decay)
+    # LR schedule (warmup → cosine decay) — shared by actor, critic, AND temperature
     lr_init: float = 3e-4                  # initial LR (before warmup)
     lr_peak: float = 3e-4                  # peak LR (after warmup)
     lr_end: float = 1.5e-4                 # final LR (after decay)
-    lr_warmup_frac: float = 1e-6           # fraction of total steps for warmup
-    lr_decay_frac: float = 1.0             # fraction of total steps for decay
+    lr_warmup_frac: float = 1e-6           # fraction of total GRADIENT steps for warmup
+    lr_decay_frac: float = 1.0             # fraction of total GRADIENT steps for decay
+    # Total gradient steps = (total_timesteps / num_envs) * grad_updates_per_step
 
     # Weight norm
     weight_norm: bool = True
