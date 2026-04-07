@@ -441,7 +441,7 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--env", type=str, default="CartpoleBalance",
-                        help="Environment name (e.g., CartpoleBalance, CheetahRun, Go2JoystickFlat)")
+                        help="Environment name (e.g., CartpoleBalance, CheetahRun, Go2WarpJoystickFlat)")
     parser.add_argument("--seed", type=int, default=0, help="Random seed")
     parser.add_argument("--resume", type=str, default=None,
                         help="Resume from checkpoint directory path")

@@ -1,7 +1,7 @@
 """Unified off-policy training: SAC, TD3, FastSAC, FastTD3.
 
 Usage:
-    uv run python train_offpolicy.py --algo sac --env Go2JoystickFlat
+    uv run python train_offpolicy.py --algo sac --env Go2WarpJoystickFlat
     uv run python train_offpolicy.py --algo fast_td3 --env CheetahRun --exploration-noise 0.15
     uv run python train_offpolicy.py --algo fast_sac --env HumanoidRun --obs-norm
 
@@ -379,7 +379,7 @@ if __name__ == "__main__":
     parser.add_argument("--algo", type=str, required=True, choices=list(ALGO_REGISTRY.keys()),
                         help="RL algorithm: sac, td3, fast_td3, fast_sac")
     parser.add_argument("--env", type=str, default="WalkerWalk",
-                        help="Environment name (e.g., CheetahRun, HumanoidRun, Go2JoystickFlat)")
+                        help="Environment name (e.g., CheetahRun, HumanoidRun, Go2WarpJoystickFlat)")
     parser.add_argument("--seed", type=int, default=0, help="Random seed")
     parser.add_argument("--resume", type=str, default=None,
                         help="Resume from checkpoint directory path")
