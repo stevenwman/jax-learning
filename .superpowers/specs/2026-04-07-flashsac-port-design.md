@@ -96,9 +96,12 @@ Batch stats (running mean/var) stored in TrainingState as separate fields.
 
 Post-optimizer-step function applied to all network parameters:
 
-**Dense kernels:** Project each row to unit L2 norm.
+**Dense kernels:** Project each output neuron's weight vector to unit L2 norm.
 ```python
-kernel = kernel / max(‖kernel‖₂ along axis=-1, 1e-8)
+# Flax kernel shape: (input_dim, output_dim) — each COLUMN is one output neuron
+# PyTorch weight shape: (output_dim, input_dim) — each ROW is one output neuron
+# To match reference F.normalize(w, dim=-1), normalize along axis=0 in Flax:
+kernel = kernel / max(‖kernel‖₂ along axis=0, 1e-8)
 ```
 
 **BatchNorm scale+bias:** Project joint (scale, bias) vector to ‖·‖₂ = √D.
@@ -170,11 +173,13 @@ FlashSAC concatenates obs + next_obs into a 2B batch for shared BatchNorm statis
 Actor update (every policy_delay steps):
   1. Concat: [obs; next_obs] → 2B batch through actor (train=True for BN stats)
   2. Take first half for loss computation
-  3. loss = mean(alpha * log_prob - min(Q1, Q2))
-  4. Optional BC regularization: loss += bc_alpha * |Q|.mean() * MSE(action, batch_action)
-  5. Apply weight normalization to updated actor params
+  3. Critic forward with train=False (don't pollute critic BN stats with policy actions)
+  4. loss = mean(alpha * log_prob - min(Q1, Q2))
+  5. Optional BC regularization: loss += bc_alpha * |Q|.mean() * MSE(action, batch_action)
+  6. Apply weight normalization to updated actor params
 
 Temperature update (every policy_delay steps, after actor):
+  - entropy = -mean(log_prob)    [positive value]
   - loss = alpha * (entropy - target_entropy)
 
 Critic update (every step, uses freshly-updated actor):
@@ -215,6 +220,7 @@ class RewardNormState:
 
 **Per env step** (called in train script collection loop):
 ```python
+done = terminated | truncated    # BOTH signals reset the return estimate
 G_r = gamma * (1 - done) * G_r + reward
 G_r_max = max(G_r_max, max(|G_r|))
 # Welford update on G_r
@@ -254,6 +260,8 @@ action = tanh(mean + std * noise)
 Only active during training. Eval uses deterministic `tanh(mean)`.
 
 Zeta CDF is precomputed once at init: `P(k) ∝ k^{-2}` for k=1..16, normalized and cumsum'd.
+
+**Note:** The reference implementation uses scalar noise state (single noise vector shared across all envs). Our vectorized design `(num_envs, action_dim)` is an intentional improvement — each env gets independent repeat lengths, which is more natural for parallel simulation. Functionally equivalent for single-env, strictly better for multi-env.
 
 ---
 
