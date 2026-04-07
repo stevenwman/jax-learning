@@ -2,38 +2,32 @@
 
 Environment wrappers for observation transforms, action delays, vectorization, and episode management. The pipeline module provides a declarative way to compose wrappers from config.
 
-## FrameStackWrapper
-
 ::: jax_rl.envs.wrappers.frame_stack.FrameStackWrapper
-
-## ActionDelayWrapper
+    options:
+      filters: ["!__init__"]
 
 ::: jax_rl.envs.wrappers.action_delay.ActionDelayWrapper
-
-## build_wrapper_pipeline
+    options:
+      filters: ["!__init__"]
 
 ::: jax_rl.envs.wrappers.pipeline.build_wrapper_pipeline
 
-## apply_wrapper_pipeline
-
 ::: jax_rl.envs.wrappers.pipeline.apply_wrapper_pipeline
 
-## VmapWrapper
-
 ::: jax_rl.envs.wrappers.training.VmapWrapper
-
-## EpisodeWrapper
+    options:
+      filters: ["!__init__"]
 
 ::: jax_rl.envs.wrappers.training.EpisodeWrapper
-
-## AutoResetWrapper
+    options:
+      filters: ["!__init__"]
 
 ::: jax_rl.envs.wrappers.training.AutoResetWrapper
-
-## DomainRandomizationVmapWrapper
+    options:
+      filters: ["!__init__"]
 
 ::: jax_rl.envs.wrappers.training.DomainRandomizationVmapWrapper
-
-## wrap_for_training
+    options:
+      filters: ["!__init__"]
 
 ::: jax_rl.envs.wrappers.training.wrap_for_training

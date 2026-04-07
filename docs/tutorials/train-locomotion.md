@@ -1,13 +1,13 @@
 # Train Go2 Locomotion
 
-This tutorial walks through training a Unitree Go2 quadruped robot to follow velocity commands, from zero to a walking policy in ~30 minutes on a single GPU.
+This tutorial covers training a Unitree Go2 to follow velocity commands. Expect ~30 minutes on a single GPU.
 
-## What You'll Build
+## Overview
 
 A policy that takes joystick-style velocity commands (forward, lateral, yaw) and controls 12 joint motors to make the Go2 walk, turn, and stop on flat ground.
 
 <video autoplay loop muted playsinline style="width: 100%; max-width: 640px; border-radius: 8px;">
-  <source src="../assets/videos/go2_joystick_walk.mp4" type="video/mp4">
+  <source src="/assets/videos/go2_joystick_walk.mp4" type="video/mp4">
 </video>
 
 ## Prerequisites

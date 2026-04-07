@@ -2,7 +2,7 @@
 
 **A JAX-based reinforcement learning framework for training robot policies in simulation and deploying them on real hardware.**
 
-jax-learning is built around the [Unitree Go2](https://www.unitree.com/go2/) quadruped robot. It provides GPU-accelerated environments, multiple RL algorithms, and a sim-to-real deployment pipeline — all in pure JAX for maximum speed.
+jax-learning is built around the [Unitree Go2](https://www.unitree.com/go2/) quadruped robot. It provides GPU-accelerated environments, multiple RL algorithms, and a sim-to-real deployment pipeline — all in pure JAX.
 
 <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem;">
 <div style="flex: 1; min-width: 300px;">
@@ -27,34 +27,6 @@ jax-learning is built around the [Unitree Go2](https://www.unitree.com/go2/) qua
 - **Composable rewards and observations** — Swap reward terms and observation groups without touching environment internals
 - **Fast iteration** — PPO at ~110k steps/sec, off-policy algorithms scale to 100M+ steps
 
-## Benchmarks
-
-### CheetahRun (6-dim actions)
-
-| Algorithm | Eval Score | Training Steps |
-|-----------|-----------|----------------|
-| PPO       | 826       | 20M            |
-| SAC       | 771       | 5M             |
-| FastTD3   | 880       | 86M            |
-
-### HumanoidRun (21-dim actions)
-
-| Algorithm | Eval Score | Training Steps |
-|-----------|-----------|----------------|
-| PPO       | ~10       | 60M            |
-| SAC       | 426       | 20M            |
-| FastSAC   | 892       | 100M           |
-
-### Go2 Joystick — Warp (12-dim actions, Unitree MJCF)
-
-| Algorithm                | Eval Score | Training Steps |
-|--------------------------|-----------|----------------|
-| FastSAC (asym. critic)   | 279.2     | 20M            |
-| FastSAC (symmetric)      | 276.5     | 18M            |
-
-!!! note "What do these scores mean?"
-    Eval scores are average undiscounted episode returns. Higher is better. The Go2 Joystick task rewards tracking velocity commands while maintaining stable locomotion.
-
 ## Quick Links
 
 <div class="grid cards" markdown>
@@ -63,7 +35,7 @@ jax-learning is built around the [Unitree Go2](https://www.unitree.com/go2/) qua
 
     ---
 
-    Set up jax-learning with `uv sync` in under 2 minutes.
+    Set up jax-learning with `uv sync`.
 
     [:octicons-arrow-right-24: Install](getting-started/installation.md)
 
@@ -71,7 +43,7 @@ jax-learning is built around the [Unitree Go2](https://www.unitree.com/go2/) qua
 
     ---
 
-    Train CartpoleBalance in 5 minutes, from zero to video.
+    Train CartpoleBalance and record a video.
 
     [:octicons-arrow-right-24: Quickstart](getting-started/quickstart.md)
 

@@ -133,11 +133,23 @@
 - [ ] Confirm Go2 EDU edition in lab (ask Steven)
 
 ## Short-term — Ablations
+- [x] **Per-frame obs normalization** — `normalize_stacked()` tracks stats on single-frame obs, normalizes each frame slice with shared stats. Wired into both train scripts. 3 new tests pass.
+- [ ] **Frame-stack + obs-norm A/B** — CheetahRun FastSAC 5M steps: `--frame-stack 3` vs `--frame-stack 3 --obs-norm`. Tests whether per-frame normalization helps with stacked proprioceptive obs.
+  ```
+  uv run python train_offpolicy.py --env CheetahRun --algo fast_sac --frame-stack 3 --total-timesteps 5000000 --seed 100
+  uv run python train_offpolicy.py --env CheetahRun --algo fast_sac --frame-stack 3 --obs-norm --total-timesteps 5000000 --seed 100
+  ```
 - [ ] **obs_normalization A/B** — FastSAC on Go2WarpJoystickFlat with `--obs-norm` vs without. Paper uses True (DM Control benchmarks), we default False. Quick 20M run each.
 
 ## Mid-term — Optimizer experiments
 - [ ] Muon optimizer (`optax.contrib.muon`) — matrix-whitening via Newton-Schulz orthogonalization. Already in optax 0.2.6, drop-in `GradientTransformation`. Auto-routes 2D weights → Muon, biases/norms → AdamW internally. **RL caveat:** zero published RL benchmarks, untested on non-stationary targets + small MLPs. Start with actor-only Muon, keep critic on AdamW. First/last layer should stay Adam per author guidance.
 - [ ] Shampoo / other second-order optimizers — evaluate if Muon shows promise on RL
+
+## Short-term — MJX archival
+- [ ] Archive MJX Go2 env (go2_base, go2_joystick, go2_cpu, record_video_cpu) + doc cleanup. Spec: `docs/superpowers/specs/2026-04-06-archive-mjx-go2.md`
+
+## Mid-term — DR wrapper v2 (runtime params)
+- [ ] Redesign DR wrapper to support runtime params (Kp/Kd scales, custom force params) alongside model-level DR. Currently Kp/Kd DR lives inline in go2_warp_joystick.py because external PD gains aren't MuJoCo model fields. The wrapper should be able to inject per-env runtime params into `state.info`.
 
 ## Mid-term — Env composability (from MJLab audit, prereq for DIAYN)
 - [x] **RewardSpec** — `compute_rewards(spec, **kwargs)` returns unweighted dict. All 3 envs refactored (Warp 17 terms, MJX 16, Bongo 9). DIAYN swaps reward by replacing `env._reward_spec`.

@@ -123,8 +123,8 @@ With the privileged critic (Pinto et al. 2018 pattern), the critic never touches
 - Assemble stacks at sample time, not storage time (DrQ-v2 pattern)
 - **Already built:** `JaxReplayBuffer` has `FrameStackConfig` for sample-time reconstruction — stores raw single frames, reconstructs stacks at sample time with episode boundary handling. Extend to uint8 pixel obs for vision.
 
-**Obs normalization with stacked frames:**
-- Normalize per-frame, not per-stacked-obs. Each frame position has a different temporal distribution. Compute running stats on raw single-frame obs (same distribution regardless of frame position), apply to each slice of the stack independently. This prevents blending statistics across time offsets.
+**Obs normalization with stacked frames:** IMPLEMENTED
+- `normalize_stacked()` in `jax_rl/utils/normalization.py`. Stats tracked on single-frame obs (raw_dim), tiled across N frames. Both train scripts wired up. A/B test pending on CheetahRun.
 
 ### CNN Encoder (Nature CNN + optional MLP)
 

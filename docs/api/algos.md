@@ -2,22 +2,22 @@
 
 Five RL algorithms, each self-contained with no shared base class.
 
-## PPO
-
 ::: jax_rl.algos.ppo.PPO
-
-## SAC
+    options:
+      filters: ["!__init__"]
 
 ::: jax_rl.algos.sac.SAC
-
-## TD3
+    options:
+      filters: ["!__init__"]
 
 ::: jax_rl.algos.td3.TD3
-
-## FastSAC
+    options:
+      filters: ["!__init__"]
 
 ::: jax_rl.algos.fast_sac.FastSAC
-
-## FastTD3
+    options:
+      filters: ["!__init__"]
 
 ::: jax_rl.algos.fast_td3.FastTD3
+    options:
+      filters: ["!__init__"]

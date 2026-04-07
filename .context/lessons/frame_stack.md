@@ -22,10 +22,11 @@ Reference doc for A/B testing frame stacking. Each item is a concern to verify �
 
 ## Edge Cases — Deferred (low priority)
 
-### 4. Obs normalization interaction
-- **Concern:** `--obs-norm` computes running statistics over 144d stacked obs. Frames 0-2 have different temporal distributions (frame 0 = current, frame 2 = 2 steps old). Joint velocities especially drift over 2 steps. Normalizing the full 144d blends these distributions, biasing the statistics.
-- **Correct approach:** Normalize per-frame — apply norm to each 48d slice independently using the same running stats. The stats are computed on raw 48d obs (same distribution regardless of frame position), then applied to each slice of the stack separately.
-- **Why deferred:** Off-policy Go2 doesn't use `--obs-norm`. Only relevant for vision RL with `--obs-norm`.
+### 4. Obs normalization interaction — FIXED
+- **Problem:** `--obs-norm` computed running statistics over 144d stacked obs. Frames 0-2 have different temporal distributions (frame 0 = current, frame 2 = 2 steps old). Normalizing the full 144d blended these distributions, biasing the statistics.
+- **Fix:** `normalize_stacked()` in `normalization.py`. Stats tracked on single-frame obs (raw_dim), tiled across N frames for normalization. Both `train_offpolicy.py` and `train_ppo_fast.py` now use `norm_init(raw_dim)`, update with newest frame only, and normalize via `normalize_stacked()`. 3 unit tests pass.
+- **Research:** Surveyed Isaac Lab, SB3, rsl_rl, DrQ-v2, DreamerV3. Isaac Lab normalizes per-term before stacking (equivalent). SB3 normalizes full stack (known issue #693). Most locomotion repos skip running-mean norm entirely (manual scaling).
+- **A/B pending:** CheetahRun `--frame-stack 3` with vs without `--obs-norm`, 5M steps.
 
 ### 5. sim2sim with frame stacking
 - **Concern:** Deploy `ObsBuilder` mirrors frame stacking in numpy. Need to verify FIFO matches JAX wrapper.

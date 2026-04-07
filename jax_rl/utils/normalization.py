@@ -116,6 +116,30 @@ def normalize(state: NormalizationState, x: jnp.ndarray, eps: float = 1e-8) -> j
     return (x - state.mean) / std
 
 
+def normalize_stacked(
+    state: NormalizationState, x: jnp.ndarray, n_frames: int, eps: float = 1e-8,
+) -> jnp.ndarray:
+    """Normalize a frame-stacked obs using per-frame shared statistics.
+
+    The norm state tracks stats for a single frame (raw_dim). Each frame slice
+    in the stacked obs is normalized with the same stats, preserving relative
+    differences between frames (which encode velocity/acceleration info).
+
+    Args:
+        state: Normalization state with shape (raw_dim,) statistics.
+        x: Stacked observations, shape (batch_size, raw_dim * n_frames).
+        n_frames: Number of stacked frames.
+        eps: Small constant added to std to prevent division by zero.
+
+    Returns:
+        Normalized stacked observations, same shape as x.
+    """
+    variance = jnp.maximum(state.mean_of_squares - state.mean ** 2, 0.0)
+    tiled_mean = jnp.tile(state.mean, n_frames)
+    tiled_std = jnp.tile(jnp.sqrt(variance) + eps, n_frames)
+    return (x - tiled_mean) / tiled_std
+
+
 def unnormalize(state: NormalizationState, x: jnp.ndarray, eps: float = 1e-8) -> jnp.ndarray:
     """Reverse the normalization: recover original-scale observations.
 

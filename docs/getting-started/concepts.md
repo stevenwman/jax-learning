@@ -4,7 +4,7 @@ This page explains the key abstractions in jax-learning. Understanding these wil
 
 ## Three-layer architecture
 
-jax-learning follows a clean separation of concerns:
+jax-learning uses a three-layer architecture:
 
 ```
 Environment  →  Training Script  →  Algorithm
@@ -37,7 +37,7 @@ For the Go2 quadruped, observations are dictionaries:
 | **Warp** | MuJoCo Warp | Go2 tasks — supports cylinder collisions and the exact Unitree MJCF model |
 
 !!! tip "When to use which"
-    If you're working with Go2 environments, use Warp. It's more physically accurate for the robot's geometry. For standard benchmarks (Cheetah, Humanoid, etc.), MJX works well.
+    If you're working with Go2 environments, use Warp. For standard benchmarks (Cheetah, Humanoid, etc.), MJX works well.
 
 ## Algorithms
 

@@ -4,6 +4,9 @@ site_description: JAX-based reinforcement learning for robot learning
 # repo_url: https://github.com/YOUR_USERNAME/jax-learning
 # repo_name: jax-learning
 
+extra_css:
+  - stylesheets/code.css
+
 theme:
   name: material
   palette:
@@ -53,6 +56,8 @@ markdown_extensions:
           format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.highlight:
       anchor_linenums: true
+      use_pygments: true
+      pygments_lang_class: true
   - pymdownx.inlinehilite
   - pymdownx.tabbed:
       alternate_style: true

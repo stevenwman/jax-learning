@@ -1,6 +1,6 @@
 # Quickstart
 
-Train a CartpoleBalance policy in under 5 minutes — from zero to a recorded video.
+Train a CartpoleBalance policy and record a video.
 
 ## Prerequisites
 
@@ -17,7 +17,7 @@ uv run python train_ppo_fast.py \
     --total-timesteps 500000
 ```
 
-You'll see eval scores printed periodically as training progresses. The scores should climb steadily and reach **~950+** by the end of training.
+Eval scores are printed periodically. Expect **~950+** by end of training.
 
 ```
 eval/episode_reward: 342.1  (step 50000)
@@ -27,7 +27,7 @@ eval/episode_reward: 968.7  (step 500000)
 ```
 
 !!! tip "Training speed"
-    CartpoleBalance is a simple environment. With 64 parallel envs on a modern GPU, 500k steps should finish in about 1-2 minutes.
+    With 64 parallel envs on a modern GPU, 500k steps should finish in about 1-2 minutes.
 
 A checkpoint is saved automatically to the `checkpoints/` directory.
 
@@ -46,8 +46,6 @@ Replace `<latest>` with the actual checkpoint folder name (it includes a timesta
     This tells MuJoCo to render offscreen using EGL (GPU-based rendering without a display). You need this on headless servers or when running over SSH.
 
 ## What just happened?
-
-Here's what each piece did:
 
 1. **Environment** — `CartpoleBalance` is an MJX environment: a cart with a pole that the agent must keep upright. The physics runs entirely on GPU via JAX.
 2. **Algorithm** — PPO (Proximal Policy Optimization) collected experience from 64 parallel environments, then updated the policy using that experience. This on-policy loop repeated until 500k total steps.

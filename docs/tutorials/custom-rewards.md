@@ -1,6 +1,6 @@
 # Custom Rewards and Observations
 
-This tutorial explains the **RewardSpec** and **ObsSpec** systems -- composable building blocks for defining what the agent optimizes (rewards) and what it sees (observations). Both follow the same pattern: define a list of named terms, each backed by a function, and let the framework handle the rest.
+This tutorial explains the **RewardSpec** and **ObsSpec** systems -- composable building blocks for defining what the agent optimizes (rewards) and what it sees (observations). Both follow the same pattern: define a list of named terms, each backed by a function.
 
 ## RewardSpec
 
@@ -203,7 +203,7 @@ self._obs_groups["state"].append(
 )
 ```
 
-The lambda captures `z` at definition time. No noise, no env surgery -- just append to the list.
+The lambda captures `z` at definition time. No noise is applied.
 
 ## Putting It Together
 

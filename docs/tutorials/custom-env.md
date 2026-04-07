@@ -1,9 +1,9 @@
 # Custom Environment
 
-This tutorial walks through adding a new Go2 environment, using the **bongo board handstand** task as a worked example. By the end, you'll know how to create a scene, define observations and rewards, register the env, and run a smoke test.
+This tutorial walks through adding a new Go2 environment, using the **bongo board handstand** task as a worked example.
 
 <video autoplay loop muted playsinline style="width: 100%; max-width: 640px; border-radius: 8px;">
-  <source src="../assets/videos/go2_bongo_handstand.mp4" type="video/mp4">
+  <source src="/assets/videos/go2_bongo_handstand.mp4" type="video/mp4">
 </video>
 
 ## Overview
@@ -160,7 +160,7 @@ self._reward_spec = [all_terms[k] for k in scales.keys()]
 ```
 
 !!! note
-    `compute_rewards()` returns **unweighted** values. The `step()` method applies weights from `reward_config.scales` afterward. This separation makes it easy to tune weights without modifying reward functions.
+    `compute_rewards()` returns **unweighted** values. The `step()` method applies weights from `reward_config.scales` afterward.
 
 ### step: Physics Loop
 

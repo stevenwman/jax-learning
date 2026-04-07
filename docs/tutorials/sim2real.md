@@ -130,8 +130,7 @@ ONNX export is not yet implemented. Numpy inference at 50Hz is sufficient for th
 
 ## Key Insights
 
-1. **Train on the exact deploy model.** Using Unitree's `go2.xml` via Warp eliminates the sim-to-sim gap entirely. This is the single most impactful decision for transfer.
-
+1. **Train on the exact deploy model.** Using Unitree's `go2.xml` via Warp eliminates the sim-to-sim gap entirely.
 2. **Domain randomization is non-negotiable.** Friction, mass, COM, and motor strength randomization force the policy to be robust to the physical uncertainty of the real world.
 
 3. **PD gains must match.** The same Kp/Kd values used during training must be used in deployment. Warp-trained policies use Kp=20, Kd=0.5 (Unitree's official gains).

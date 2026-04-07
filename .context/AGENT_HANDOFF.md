@@ -137,9 +137,9 @@ The lessons system is your search engine for "has this been solved before?" Read
 | Go2 PPO debugging | `.context/go2/ppo_debugging.md` | Full hypothesis log, run table |
 | Go2 SAC Phase B | `.context/go2/sac_phase_b.md` | SAC plan, replay ratio research |
 | Lit mismatch audit | `.context/archive/FAST_ALGOS_LIT_MISMATCH.md` | Paper vs code config audit |
-| Framework plan | `.context/rl_framework_plan.md` | North star architecture (Phases 1-6) |
-| Vision design | `.context/vision_rl_design.md` | CNN encoder, MJWarp, ManiSkill |
-| Docs site | `.context/docs_site.md` | MkDocs site: what auto-updates, what's manual, generators, deployment |
+| Framework plan | `.context/references/rl_framework_plan.md` | North star architecture (Phases 1-6) |
+| Vision design | `.context/references/vision_rl_design.md` | CNN encoder, MJWarp, ManiSkill |
+| Docs site | `.context/references/docs_site.md` | MkDocs site: what auto-updates, what's manual, generators, deployment |
 
 ---
 

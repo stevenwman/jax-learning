@@ -57,7 +57,7 @@ The asymmetric critic reaches the 270+ performance threshold roughly **2x faster
 **Use when privileged information is available.** If your environment has information that's available in simulation but not on hardware (terrain maps, contact forces, object poses), put it in the privileged observations. The critic uses it during training; the actor learns to infer what it can from limited sensors.
 
 !!! tip
-    There is no observed downside to using asymmetric critics. When in doubt, use them.
+    There is no observed downside to using asymmetric critics.
 
 ## Frame Stacking
 

@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from jax_rl.utils.normalization import init, update, normalize, unnormalize
+from jax_rl.utils.normalization import init, update, normalize, normalize_stacked, unnormalize
 
 
 def test_init():
@@ -105,6 +105,76 @@ def test_zero_variance_safe():
     print("  zero variance safety: OK")
 
 
+def test_normalize_stacked_matches_per_frame():
+    """normalize_stacked should produce same result as normalizing each frame slice."""
+    key = jax.random.PRNGKey(3)
+    raw_dim = 8
+    n_frames = 3
+    stacked_dim = raw_dim * n_frames
+
+    # Build stats from single-frame data
+    state = init(obs_dim=raw_dim)
+    for _ in range(50):
+        key, subkey = jax.random.split(key)
+        state = update(state, jax.random.normal(subkey, (32, raw_dim)) * 3 + 1)
+
+    # Create stacked obs
+    key, subkey = jax.random.split(key)
+    stacked = jax.random.normal(subkey, (16, stacked_dim))
+
+    # Method 1: normalize_stacked
+    result_stacked = normalize_stacked(state, stacked, n_frames)
+
+    # Method 2: manually normalize each frame slice
+    slices = [normalize(state, stacked[:, i*raw_dim:(i+1)*raw_dim]) for i in range(n_frames)]
+    result_manual = jnp.concatenate(slices, axis=-1)
+
+    assert jnp.allclose(result_stacked, result_manual, atol=1e-6), \
+        f"max diff: {jnp.abs(result_stacked - result_manual).max()}"
+    print("  normalize_stacked matches per-frame: OK")
+
+
+def test_normalize_stacked_single_frame_identity():
+    """normalize_stacked with n_frames=1 should equal normalize."""
+    key = jax.random.PRNGKey(4)
+    state = init(obs_dim=8)
+    for _ in range(20):
+        key, subkey = jax.random.split(key)
+        state = update(state, jax.random.normal(subkey, (32, 8)))
+
+    key, subkey = jax.random.split(key)
+    obs = jax.random.normal(subkey, (16, 8))
+
+    result_stacked = normalize_stacked(state, obs, n_frames=1)
+    result_plain = normalize(state, obs)
+    assert jnp.allclose(result_stacked, result_plain, atol=1e-6)
+    print("  normalize_stacked n_frames=1 identity: OK")
+
+
+def test_normalize_stacked_shared_stats():
+    """Same feature at different frame positions should get same normalization."""
+    raw_dim = 4
+    state = init(obs_dim=raw_dim)
+    # Known stats: mean=[1,2,3,4], mos=[2,5,10,17] → var=[1,1,1,1], std=[1,1,1,1]
+    data = jnp.array([[0.0, 1.0, 2.0, 3.0],
+                       [2.0, 3.0, 4.0, 5.0]])
+    state = update(state, data)
+
+    # Stacked obs: same values repeated in all 3 frames
+    obs = jnp.array([[5.0, 5.0, 5.0, 5.0,  # frame 0
+                       5.0, 5.0, 5.0, 5.0,  # frame 1
+                       5.0, 5.0, 5.0, 5.0]]) # frame 2
+
+    result = normalize_stacked(state, obs, n_frames=3)
+    # Each frame should be normalized identically
+    frame0 = result[0, :4]
+    frame1 = result[0, 4:8]
+    frame2 = result[0, 8:12]
+    assert jnp.allclose(frame0, frame1, atol=1e-6)
+    assert jnp.allclose(frame1, frame2, atol=1e-6)
+    print("  normalize_stacked shared stats: OK")
+
+
 def main():
     print("=" * 50)
     print("Normalization Tests")
@@ -116,6 +186,9 @@ def main():
     test_normalize_zero_mean_unit_var()
     test_unnormalize_roundtrip()
     test_zero_variance_safe()
+    test_normalize_stacked_matches_per_frame()
+    test_normalize_stacked_single_frame_identity()
+    test_normalize_stacked_shared_stats()
 
     print("\nAll normalization tests passed!")
 

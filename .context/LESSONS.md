@@ -1,7 +1,7 @@
 # Lessons Learned — Index
 
 Navigable index of all project lessons. Each entry is a one-liner — click through for full context.
-JAX/Flax fundamentals in `LEARNER_LESSONS.md`.
+JAX/Flax fundamentals in `lessons/learner.md`.
 
 ---
 

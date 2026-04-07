@@ -37,6 +37,7 @@ from jax_rl.utils.normalization import (
     init as norm_init,
     update as norm_update,
     normalize as norm_normalize,
+    normalize_stacked as norm_normalize_stacked,
 )
 
 
@@ -52,12 +53,12 @@ class StepData(NamedTuple):
     truncation: jax.Array     # (E,)
 
 
-def _make_eval_action(ppo, get_policy_obs):
+def _make_eval_action(ppo, get_policy_obs, n_frame_stack=1):
     """Build a JIT'd eval action function. Norm state passed as kwarg (no recompilation)."""
     @jax.jit
     def _ppo_eval_action(actor_params, obs, key=None, deterministic=True, *, norm_state):
         policy_obs = get_policy_obs(obs)
-        normed = norm_normalize(norm_state, policy_obs)
+        normed = norm_normalize_stacked(norm_state, policy_obs, n_frame_stack) if n_frame_stack > 1 else norm_normalize(norm_state, policy_obs)
         mean, _log_std = ppo.actor.apply(actor_params, normed)
         return jnp.clip(mean, -1.0, 1.0)
     return _ppo_eval_action
@@ -156,8 +157,12 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
     print(f"  actor_params={actor_param_count:,}, critic_params={critic_param_count:,}")
 
     # ── Observation normalization ─────────────────────────────────────────
-    norm_state = norm_init(obs_dim)
-    critic_norm_state = norm_init(critic_obs_dim)
+    n_frame_stack = cfg.n_frame_stack
+    # Per-frame normalization: track stats on single-frame obs when stacking
+    policy_raw_dim = obs_dim // n_frame_stack if n_frame_stack > 1 else obs_dim
+    critic_raw_dim = critic_obs_dim // n_frame_stack if n_frame_stack > 1 else critic_obs_dim
+    norm_state = norm_init(policy_raw_dim)
+    critic_norm_state = norm_init(critic_raw_dim)
 
     # ── Resume ────────────────────────────────────────────────────────────
     start_iteration = 0
@@ -195,8 +200,8 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
             critic_obs = _get_critic_obs(env_state.obs)
 
             # Normalize with FROZEN stats (updated after full rollout, like Brax)
-            normed_obs = norm_normalize(ns, policy_obs)
-            normed_critic_obs = norm_normalize(cns, critic_obs)
+            normed_obs = norm_normalize_stacked(ns, policy_obs, n_frame_stack) if n_frame_stack > 1 else norm_normalize(ns, policy_obs)
+            normed_critic_obs = norm_normalize_stacked(cns, critic_obs, n_frame_stack) if n_frame_stack > 1 else norm_normalize(cns, critic_obs)
 
             # Select action
             key, action_key = jax.random.split(key)
@@ -249,14 +254,18 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
         # raw_policy_obs: (num_steps, num_envs, obs_dim) → reshape to (N, obs_dim)
         flat_policy_obs = raw_policy_obs.reshape(-1, raw_policy_obs.shape[-1])
         flat_critic_obs = raw_critic_obs.reshape(-1, raw_critic_obs.shape[-1])
+        # When frame stacking, update stats with newest frame only (raw_dim)
+        if n_frame_stack > 1:
+            flat_policy_obs = flat_policy_obs[:, :policy_raw_dim]
+            flat_critic_obs = flat_critic_obs[:, :critic_raw_dim]
         norm_state = norm_update(norm_state, flat_policy_obs)
         critic_norm_state = norm_update(critic_norm_state, flat_critic_obs)
 
         # Bootstrap value for the state after the last step
         next_policy_obs = _get_policy_obs(env_state.obs)
         next_critic_obs = _get_critic_obs(env_state.obs)
-        normed_next = norm_normalize(norm_state, next_policy_obs)
-        normed_next_critic = norm_normalize(critic_norm_state, next_critic_obs)
+        normed_next = norm_normalize_stacked(norm_state, next_policy_obs, n_frame_stack) if n_frame_stack > 1 else norm_normalize(norm_state, next_policy_obs)
+        normed_next_critic = norm_normalize_stacked(critic_norm_state, next_critic_obs, n_frame_stack) if n_frame_stack > 1 else norm_normalize(critic_norm_state, next_critic_obs)
         _, _, next_value = _select_deterministic(
             training_state.actor_params, training_state.critic_params,
             normed_next, normed_next_critic,
@@ -275,7 +284,7 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
     last_eval_eps = 0
 
     # Create eval action fn ONCE (no recompilation per eval call).
-    _ppo_eval_action = _make_eval_action(ppo, _get_policy_obs)
+    _ppo_eval_action = _make_eval_action(ppo, _get_policy_obs, n_frame_stack)
 
     # ── Training loop ────────────────────────────────────────────────────
     running_ep_return = jnp.zeros(cfg.num_envs)

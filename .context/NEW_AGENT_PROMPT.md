@@ -18,8 +18,8 @@ AGENT_HANDOFF.md          ← START HERE (project overview, codebase map)
       ├→ sim_to_real_plan.md
       └→ sac_phase_b.md
   └→ lessons/warp.md      ← MuJoCo Warp lessons (joint ordering, PD gains, CCD)
-  └→ vision_rl_design.md  ← Read only when working on vision
-  └→ gpu_management.md    ← Nuclio docker fix, memory budget
+  └→ references/vision_rl_design.md  ← Read only when working on vision
+  └→ lessons/gpu_management.md       ← Nuclio docker fix, memory budget
 ```
 
 **Rule:** Don't pre-load docs into context. When you encounter a topic (e.g., "why does Go2 use 10x tracking?"), grep `.context/` or read the specific file. Treat docs like a reference manual, not a textbook.

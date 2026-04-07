@@ -39,6 +39,7 @@ from jax_rl.training.checkpointing import CheckpointManager
 from jax_rl.training.metrics_logger import wandb_init, wandb_setup_metrics, wandb_log, wandb_finish
 from jax_rl.utils.normalization import (
     init as norm_init, update as norm_update, normalize as norm_normalize,
+    normalize_stacked as norm_normalize_stacked,
 )
 
 # ── Algo registry ──────────────────────────────────────────────────────────
@@ -175,17 +176,21 @@ def train(cfg: TrainConfig, algo_cfg, algo_name: str, seed: int = 0, resume: str
 
     use_obs_norm = algo_cfg.obs_normalization
     obs_norm_eps = getattr(algo_cfg, 'obs_norm_eps', 1e-8)
-    norm_state = norm_init(obs_dim) if use_obs_norm else make_identity_norm_state(obs_dim)
+    n_frame_stack = cfg.n_frame_stack
     extra_obs_dims = {"critic_obs": critic_obs_dim} if has_privileged else None
-    if cfg.n_frame_stack > 1:
+    if n_frame_stack > 1:
         from jax_rl.buffers.jax_replay_buffer import FrameStackConfig
-        raw_dim = obs_dim // cfg.n_frame_stack
-        fsc = FrameStackConfig(n_frames=cfg.n_frame_stack, raw_dim=raw_dim, num_envs=cfg.num_envs)
+        raw_dim = obs_dim // n_frame_stack
+        fsc = FrameStackConfig(n_frames=n_frame_stack, raw_dim=raw_dim, num_envs=cfg.num_envs)
         buffer = JaxReplayBuffer(raw_dim, action_dim, max_size=algo_cfg.buffer_size,
                                  frame_stack_config=fsc, extra_obs_dims=extra_obs_dims)
+        # Per-frame normalization: track stats on single-frame obs (raw_dim),
+        # normalize each frame slice independently with shared stats.
+        norm_state = norm_init(raw_dim) if use_obs_norm else make_identity_norm_state(obs_dim)
     else:
         buffer = JaxReplayBuffer(obs_dim, action_dim, max_size=algo_cfg.buffer_size,
                                  extra_obs_dims=extra_obs_dims)
+        norm_state = norm_init(obs_dim) if use_obs_norm else make_identity_norm_state(obs_dim)
 
     # ── Exploration closures (family-specific) ─────────────────────────────
     if family == "sac":
@@ -246,8 +251,13 @@ def train(cfg: TrainConfig, algo_cfg, algo_name: str, seed: int = 0, resume: str
 
         # ── Obs normalization ──────────────────────────────────────────
         if use_obs_norm:
-            norm_state = norm_update(norm_state, raw_obs)
-        obs_for_action = norm_normalize(norm_state, raw_obs, eps=obs_norm_eps) if use_obs_norm else raw_obs
+            # When frame stacking, update stats with newest frame only (raw_dim)
+            update_obs = raw_obs[:, :raw_dim] if n_frame_stack > 1 else raw_obs
+            norm_state = norm_update(norm_state, update_obs)
+        if use_obs_norm:
+            obs_for_action = norm_normalize_stacked(norm_state, raw_obs, n_frame_stack, eps=obs_norm_eps) if n_frame_stack > 1 else norm_normalize(norm_state, raw_obs, eps=obs_norm_eps)
+        else:
+            obs_for_action = raw_obs
 
         # ── Action selection ───────────────────────────────────────────
         if len(buffer) < algo_cfg.min_buffer_size:
@@ -281,8 +291,12 @@ def train(cfg: TrainConfig, algo_cfg, algo_name: str, seed: int = 0, resume: str
                 key, sample_key = jax.random.split(key)
                 jax_batch = buffer.sample(algo_cfg.batch_size, key=sample_key)
                 if use_obs_norm:
-                    jax_batch["obs"] = norm_normalize(norm_state, jax_batch["obs"], eps=obs_norm_eps)
-                    jax_batch["next_obs"] = norm_normalize(norm_state, jax_batch["next_obs"], eps=obs_norm_eps)
+                    if n_frame_stack > 1:
+                        jax_batch["obs"] = norm_normalize_stacked(norm_state, jax_batch["obs"], n_frame_stack, eps=obs_norm_eps)
+                        jax_batch["next_obs"] = norm_normalize_stacked(norm_state, jax_batch["next_obs"], n_frame_stack, eps=obs_norm_eps)
+                    else:
+                        jax_batch["obs"] = norm_normalize(norm_state, jax_batch["obs"], eps=obs_norm_eps)
+                        jax_batch["next_obs"] = norm_normalize(norm_state, jax_batch["next_obs"], eps=obs_norm_eps)
                 # Algos always read batch["critic_obs"]. For non-privileged envs,
                 # critic sees the same obs as actor.
                 if not has_privileged:
@@ -323,7 +337,10 @@ def train(cfg: TrainConfig, algo_cfg, algo_name: str, seed: int = 0, resume: str
                 wandb_log(row, step=total_steps)
 
         # ── Eval + checkpoint ──────────────────────────────────────────
-        obs_norm_fn = (lambda o: norm_normalize(norm_state, _get_obs(o), eps=obs_norm_eps)) if use_obs_norm else (lambda o: _get_obs(o)) if dict_obs else None
+        if use_obs_norm:
+            obs_norm_fn = (lambda o: norm_normalize_stacked(norm_state, _get_obs(o), n_frame_stack, eps=obs_norm_eps)) if n_frame_stack > 1 else (lambda o: norm_normalize(norm_state, _get_obs(o), eps=obs_norm_eps))
+        else:
+            obs_norm_fn = (lambda o: _get_obs(o)) if dict_obs else None
         _ts = training_state
         last_eval_eps, key = maybe_eval_and_checkpoint(
             algo.select_action, training_state.actor_params, eval_env, tracker,
@@ -337,7 +354,10 @@ def train(cfg: TrainConfig, algo_cfg, algo_name: str, seed: int = 0, resume: str
         )
 
     # ── Final eval ─────────────────────────────────────────────────────────
-    obs_norm_fn = (lambda o: norm_normalize(norm_state, _get_obs(o), eps=obs_norm_eps)) if use_obs_norm else (lambda o: _get_obs(o)) if dict_obs else None
+    if use_obs_norm:
+        obs_norm_fn = (lambda o: norm_normalize_stacked(norm_state, _get_obs(o), n_frame_stack, eps=obs_norm_eps)) if n_frame_stack > 1 else (lambda o: norm_normalize(norm_state, _get_obs(o), eps=obs_norm_eps))
+    else:
+        obs_norm_fn = (lambda o: _get_obs(o)) if dict_obs else None
     final_eval_and_checkpoint(
         algo.select_action, training_state.actor_params, eval_env, tracker,
         cfg, algo_cfg, algo_name, ckpt_dir, training_state, norm_state,
