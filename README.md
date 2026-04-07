@@ -54,8 +54,8 @@ uv run python train_ppo_fast.py --env CheetahRun --total-timesteps 20000000
 ### Go2 quadruped locomotion
 
 ```bash
-# PPO on Go2 joystick walking (MJX backend, Menagerie MJCF)
-uv run python train_ppo_fast.py --env Go2JoystickFlat --total-timesteps 50000000
+# FastSAC on Go2 joystick walking (Warp backend, unitree MJCF)
+uv run python train_offpolicy.py --algo fast_sac --env Go2WarpJoystickFlat --total-timesteps 50000000
 
 # FastSAC on Go2 (Warp backend, unitree MJCF — best for sim2sim/sim2real)
 uv run python train_offpolicy.py --algo fast_sac --env Go2WarpJoystickFlat --num-envs 1024
@@ -72,8 +72,7 @@ MUJOCO_GL=egl uv run python deploy/sim2sim_direct.py \
     --vx 0.5 --duration 10 --record /tmp/sim2sim.mp4
 ```
 
-**Two Go2 backends:**
-- `Go2JoystickFlat` — MJX (JAX) backend, Menagerie go2_mjx.xml (simplified collision geometry). Fast, proven.
+**Go2 backend:**
 - `Go2WarpJoystickFlat` — MuJoCo Warp backend, unitree go2.xml (full cylinder collision geometry). Eliminates sim2sim gap. Use for deployment.
 
 ### Recording and visualizing policies
@@ -97,7 +96,7 @@ uv run python live_viewer.py --checkpoint checkpoints/<go2_checkpoint>
 
 ```bash
 # All training scripts support:
---env NAME              # Environment name (e.g., CheetahRun, Go2JoystickFlat)
+--env NAME              # Environment name (e.g., CheetahRun, Go2WarpJoystickFlat)
 --seed N                # Random seed (default: 0)
 --total-timesteps N     # Total environment steps
 --num-envs N            # Parallel environments (default: varies by env preset)
