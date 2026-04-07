@@ -6,10 +6,6 @@ MuJoCo-based environments for quadruped locomotion. Environments define observat
     options:
       filters: ["!__init__"]
 
-::: jax_rl.envs.locomotion.go2_joystick.Joystick
-    options:
-      filters: ["!__init__"]
-
 ::: jax_rl.envs.locomotion.go2_bongo_handstand.BongoHandstand
     options:
       filters: ["!__init__"]

@@ -41,7 +41,7 @@ uv run python docs/scripts/gen_cli_reference.py
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--algo` | str | - | RL algorithm: sac, td3, fast_td3, fast_sac |
-| `--env` | str | `WalkerWalk` | Environment name (e.g., CheetahRun, HumanoidRun, Go2JoystickFlat) |
+| `--env` | str | `WalkerWalk` | Environment name (e.g., CheetahRun, HumanoidRun, Go2WarpJoystickFlat) |
 | `--seed` | int | `0` | Random seed |
 | `--resume` | str | - | Resume from checkpoint directory path |
 | `--num-envs` | int | from preset | Number of parallel environments (default: from env preset) |

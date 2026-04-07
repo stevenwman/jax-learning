@@ -22,7 +22,6 @@ Used by `train_ppo_fast.py`. Accessed via `get_preset(env_name)`.
 | CheetahRun | 2,048 | 20M | 0.001 | 0.995 | 10 | 30 | 16 | 0.01 |  |
 | WalkerWalk | 2,048 | 60M | 0.001 | 0.995 | 10 | 30 | 16 | 0.01 |  |
 | HumanoidRun | 2,048 | 60M | 0.001 | 0.995 | 10 | 480 | 16 | 0.01 | policy_hidden_dim=(128, 128, 128, 128), state_dependent_std=True, anneal_lr=False |
-| Go2JoystickFlat | 4,096 | 100M | 3e-04 | 0.97 | 1 | 20 | 4 | 0.01 | num_updates_per_batch=4, policy_hidden_dim=(512, 256, 128), value_hidden_dim=(512, 256, 128), max_grad_norm=1 |
 | Go2WarpJoystickFlat | 4,096 | 100M | 3e-04 | 0.97 | 1 | 20 | 4 | 0.01 | num_updates_per_batch=4, policy_hidden_dim=(512, 256, 128), value_hidden_dim=(512, 256, 128), max_grad_norm=1 |
 
 PPO algo defaults: `clip_eps=0.3`, `entropy_coef=0.01`, `gae_lambda=0.95`, `num_epochs=4`, `num_steps=64`, `num_updates_per_batch=1`, `policy_hidden_dim=(32, 32, 32, 32)`, `value_hidden_dim=(256, 256, 256, 256, 256)`, `activation=swish`, `squash=True`, `state_dependent_std=False`, `max_grad_norm=None`, `anneal_lr=True`, `critic_encoder=None`, `policy_head=None`, `normalize_advantage=True`.

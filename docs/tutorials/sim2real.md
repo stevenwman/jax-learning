@@ -13,16 +13,18 @@ Train (GPU, Warp)  -->  Sim2Sim (CPU, MuJoCo)  -->  Real Robot (Go2 EDU)
 
 ## Step 1: Why Warp Matters
 
-MuJoCo offers two JAX-accelerated backends for parallel simulation:
+Warp (via `Go2WarpJoystickFlat`) is the sole active Go2 training backend. It uses Unitree's exact MJCF (`go2.xml`) so the policy sees the same collision geometry, contact dynamics, and PD behavior it will encounter on the real robot, giving direct sim-to-real transfer with no extra sim2sim step.
 
-| | MJX | Warp |
+The earlier MJX backend (`Go2JoystickFlat`, Menagerie `go2_mjx.xml`) has been archived. For historical reference, here is why it was insufficient:
+
+| | MJX (archived) | Warp (active) |
 |---|---|---|
 | **MJCF source** | Menagerie `go2_mjx.xml` | Unitree `go2.xml` |
 | **Collision geometry** | Convex hulls (simplified) | Cylinders + boxes (exact) |
 | **PD gains** | Kp=35, Kd=0.1 | Kp=20, Kd=0.5 |
-| **Sim-to-real gap** | Requires sim2sim transfer | Direct -- same model as deploy |
+| **Sim-to-real gap** | Required sim2sim transfer; often did not transfer cleanly | Direct -- same model as deploy |
 
-Training on Warp with Unitree's exact MJCF means the policy sees the same collision geometry, contact dynamics, and PD behavior it will encounter on the real robot. MJX-trained policies require an additional sim2sim transfer step and often don't transfer cleanly because the Menagerie model has different solver settings and simplified geometry.
+MJX-trained policies required an additional sim2sim transfer step and frequently failed to transfer cleanly because the Menagerie model has different solver settings and simplified geometry. Warp eliminates this problem entirely.
 
 ## Step 2: Train with Domain Randomization
 

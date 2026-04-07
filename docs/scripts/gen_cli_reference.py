@@ -64,7 +64,7 @@ def build_offpolicy_parser() -> argparse.ArgumentParser:
     parser.add_argument("--algo", type=str, required=True, choices=["sac", "td3", "fast_td3", "fast_sac"],
                         help="RL algorithm: sac, td3, fast_td3, fast_sac")
     parser.add_argument("--env", type=str, default="WalkerWalk",
-                        help="Environment name (e.g., CheetahRun, HumanoidRun, Go2JoystickFlat)")
+                        help="Environment name (e.g., CheetahRun, HumanoidRun, Go2WarpJoystickFlat)")
     parser.add_argument("--seed", type=int, default=0, help="Random seed")
     parser.add_argument("--resume", type=str, default=None,
                         help="Resume from checkpoint directory path")
