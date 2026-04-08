@@ -103,15 +103,18 @@ def save_checkpoint(
                 writer.writerow(row)
             writer.writerows(metrics_log)
 
-    # Inference artifact: actor_params + norm stats
+    # Inference artifact: actor_params + norm stats (+ batch_stats for FlashSAC)
+    inference_dict = {
+        "actor_params": jax.device_get(training_state.actor_params),
+        "norm_mean": jax.device_get(norm_state.mean),
+        "norm_mean_of_squares": jax.device_get(norm_state.mean_of_squares),
+        "norm_count": int(norm_state.count),
+    }
+    if hasattr(training_state, "actor_batch_stats") and training_state.actor_batch_stats:
+        inference_dict["actor_batch_stats"] = jax.device_get(training_state.actor_batch_stats)
     np.save(
         os.path.join(ckpt_dir, "actor_params.npy"),
-        {
-            "actor_params": jax.device_get(training_state.actor_params),
-            "norm_mean": jax.device_get(norm_state.mean),
-            "norm_mean_of_squares": jax.device_get(norm_state.mean_of_squares),
-            "norm_count": int(norm_state.count),
-        },
+        inference_dict,
         allow_pickle=True,
     )
 
@@ -172,4 +175,5 @@ def load_actor_for_inference(ckpt_dir: str) -> tuple[dict, dict, NormalizationSt
         count=int(saved["norm_count"]),
     )
 
-    return meta, saved["actor_params"], norm_state
+    actor_batch_stats = saved.get("actor_batch_stats", None)
+    return meta, saved["actor_params"], norm_state, actor_batch_stats

@@ -87,7 +87,7 @@ def main():
     args = parser.parse_args()
 
     # ── Load checkpoint ─────────────────────────────────────────────────
-    meta, actor_params, norm_state = load_actor_for_inference(args.checkpoint)
+    meta, actor_params, norm_state, _actor_batch_stats = load_actor_for_inference(args.checkpoint)
     env_name = meta.get("env_name", meta.get("train_config", {}).get("env_name", ""))
     obs_dim = meta["obs_dim"]
     action_dim = meta["action_dim"]

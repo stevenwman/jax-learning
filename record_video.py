@@ -111,6 +111,23 @@ def _build_select_action(meta, obs_dim, action_dim):
             sac = SAC(sac_cfg, obs_dim, action_dim, dummy_opt, dummy_opt, gamma=0.99)
         return sac, "offpolicy"
 
+    elif algo == "flash_sac":
+        from jax_rl.algos.flash_sac import FlashSAC
+        from jax_rl.configs.flash_sac_config import FlashSACConfig
+        sc = meta.get("flash_sac_config", {})
+        flash_cfg = FlashSACConfig(
+            num_blocks=sc.get("num_blocks", 2),
+            actor_hidden_dim=sc.get("actor_hidden_dim", 128),
+            critic_hidden_dim=sc.get("critic_hidden_dim", 256),
+            expansion=sc.get("expansion", 4),
+            num_atoms=sc.get("num_atoms", 101),
+            v_min=sc.get("v_min", -5.0),
+            v_max=sc.get("v_max", 5.0),
+            sigma_target=sc.get("sigma_target", 0.15),
+        )
+        flash = FlashSAC(flash_cfg, obs_dim, action_dim, dummy_opt, dummy_opt, gamma=0.99)
+        return flash, "offpolicy"
+
     elif algo in ("td3", "fast_td3"):
         from jax_rl.configs.td3_config import TD3Config
         algo_cfg_key = "td3_config" if "td3_config" in meta else "fast_td3_config"
@@ -149,7 +166,7 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
     actor_params = None
 
     if checkpoint is not None:
-        meta, actor_params, norm_state = load_actor_for_inference(checkpoint)
+        meta, actor_params, norm_state, actor_batch_stats = load_actor_for_inference(checkpoint)
         algo_name = meta.get("algo", "ppo")
         env_name = env_name or meta.get("train_config", {}).get("env_name")
         # Detect if training used obs normalization (stored in algo config)
@@ -164,6 +181,7 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
     else:
         meta = {}
         algo_name = "ppo"
+        actor_batch_stats = None
         use_obs_norm = False
         print("Using random (untrained) policy")
 
@@ -205,6 +223,9 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
 
     if actor_params is not None:
         training_state = training_state.replace(actor_params=actor_params)
+    if actor_batch_stats is not None and hasattr(training_state, "actor_batch_stats"):
+        training_state = training_state.replace(actor_batch_stats=actor_batch_stats)
+        algo._default_actor_bs = actor_batch_stats
     if norm_state is None:
         from jax_rl.utils.normalization import init as norm_init
         norm_state = norm_init(obs_dim)
