@@ -36,6 +36,9 @@ theme:
     - content.tabs.link
     - navigation.footer
 
+hooks:
+  - docs/scripts/glossary_links.py
+
 plugins:
   - search
 

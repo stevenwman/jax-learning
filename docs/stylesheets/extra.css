@@ -68,6 +68,20 @@
 
 [data-md-color-scheme="default"] .highlight .nv { color: #4078f2; }
 
+/* ── Glossary auto-links — subtle, not flashy ── */
+
+.gl {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--md-default-fg-color--lighter);
+  text-underline-offset: 2px;
+  transition: text-decoration-color 0.15s;
+}
+
+.gl:hover {
+  text-decoration-color: var(--md-primary-fg-color);
+}
+
 /* ── API reference — mkdocstrings visual separation ── */
 
 /* Separate each documented class/function with a top border */

@@ -28,7 +28,7 @@ Go2WarpJoystickFlat
 ├── MJCF: unitree_mujoco's go2.xml (exact robot model from Unitree)
 ├── Collision: Full cylinder + box geometry (no simplifications)
 ├── Obs: dict with "state" (48d) and "privileged_state" (122d)
-└── Action: 12d joint position targets ([PD controller](../glossary.md#pd-gains-kp-kd) computes torques)
+└── Action: 12d joint position targets (PD controller computes torques)
 ```
 
 !!! note "Why Warp over MJX?"
@@ -36,13 +36,13 @@ Go2WarpJoystickFlat
 
 ## Step 2: Pick an Algorithm and Preset
 
-We'll use **FastSAC** — a high-[UTD](../glossary.md#utd-ratio-update-to-data) (update-to-data) ratio variant of SAC from [Seo et al. 2025](https://arxiv.org/abs/2512.01996). It trains faster than PPO on this task and produces smoother gaits.
+We'll use **FastSAC** — a high-UTD (update-to-data) ratio variant of SAC from [Seo et al. 2025](https://arxiv.org/abs/2512.01996). It trains faster than PPO on this task and produces smoother gaits.
 
 The preset configures everything:
 
-- **[PD gains](../glossary.md#pd-gains-kp-kd):** Kp=20, Kd=0.5 (matches Unitree's official gains)
+- **PD gains:** Kp=20, Kd=0.5 (matches Unitree's official gains)
 - **Parallel envs:** 1024 environments running simultaneously on GPU
-- **Critic architecture:** Tapered [MLP](../glossary.md#mlp-multi-layer-perceptron) (768-384-192) with [C51](../glossary.md#c51) distributional heads
+- **Critic architecture:** Tapered MLP (768-384-192) with C51 distributional heads
 - **Actor architecture:** Tapered MLP (512-256-128)
 - **UTD ratio:** 8 gradient updates per environment step
 
@@ -97,7 +97,7 @@ The video is saved to the checkpoint directory. It shows the Go2 following rando
 
 - **Try FlashSAC:** `uv run python train_flashsac.py --env Go2WarpJoystickFlat --seed 100` — uses inverted residual blocks, BatchNorm, and adaptive reward scaling. Eval 282.4 on Go2 at 10M steps (single seed — variance across seeds not yet characterized).
 - **Deploy to real hardware:** See the [Sim-to-Real](sim2real.md) tutorial
-- **Add [domain randomization](../glossary.md#domain-randomization-dr):** Append `--domain-rand` to the training command for policies that transfer better to real robots
+- **Add domain randomization:** Append `--domain-rand` to the training command for policies that transfer better to real robots
 - **Try a custom task:** See [Custom Environment](custom-env.md) to build your own Go2 task
 - **Understand the reward function:** See [Custom Rewards](custom-rewards.md) for how the 17 reward terms work together
 

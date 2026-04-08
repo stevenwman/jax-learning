@@ -45,15 +45,15 @@ Six algorithms, each a self-contained class with no inheritance hierarchy:
 
 | Algorithm | Type | Key trait |
 |-----------|------|-----------|
-| **PPO** | [On-policy](../glossary.md#on-policy) | Fast (~110k steps/sec), uses [`lax.scan`](../glossary.md#laxscan) for vectorized rollouts |
-| **SAC** | [Off-policy](../glossary.md#off-policy) | Entropy-regularized, good sample efficiency |
+| **PPO** | On-policy | Fast (~110k steps/sec), uses `lax.scan` for vectorized rollouts |
+| **SAC** | Off-policy | Entropy-regularized, good sample efficiency |
 | **TD3** | Off-policy | Twin critics, delayed policy updates |
-| **FastSAC** | Off-policy | [Distributional](../glossary.md#distributional-rl) [C51](../glossary.md#c51) critic, large batch training |
+| **FastSAC** | Off-policy | Distributional C51 critic, large batch training |
 | **FastTD3** | Off-policy | Distributional C51 critic, large batch training |
 | **FlashSAC** | Off-policy | Inverted residual blocks, BatchNorm, weight norm, adaptive reward scaling |
 
 !!! note "On-policy vs off-policy"
-    **On-policy** (PPO) collects fresh experience every iteration and discards it after one update. Simple and stable, but needs many environment steps. **Off-policy** (SAC, TD3, Fast variants) stores experience in a [replay buffer](../glossary.md#replay-buffer) and reuses it across many updates — more sample-efficient, but trickier to tune.
+    **On-policy** (PPO) collects fresh experience every iteration and discards it after one update. Simple and stable, but needs many environment steps. **Off-policy** (SAC, TD3, Fast variants) stores experience in a replay buffer and reuses it across many updates — more sample-efficient, but trickier to tune.
 
 ## Configs
 
