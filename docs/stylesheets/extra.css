@@ -68,6 +68,22 @@
 
 [data-md-color-scheme="default"] .highlight .nv { color: #4078f2; }
 
+/* ── API reference — mkdocstrings visual separation ── */
+
+/* Separate each documented class/function with a top border */
+.doc-object + .doc-object {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--md-default-fg-color--lightest);
+}
+
+/* Indent methods inside a class */
+.doc-class > .doc-contents > .doc-object {
+  margin-left: 1rem;
+  padding-left: 1rem;
+  border-left: 3px solid var(--md-primary-fg-color--light);
+}
+
 /* ── Video styling ── */
 
 .video-grid {

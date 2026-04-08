@@ -7,26 +7,246 @@ Six RL algorithms, each self-contained with no shared base class.
 
     Instead, all algorithms define JIT'd functions as closures inside `__init__` that capture only JAX-compatible values (networks, configs, constants), then assign them to `self._update`, `self.select_action`, etc. This pattern is standard for JAX RL implementations (Brax, PureJaxRL use the same approach).
 
-::: jax_rl.algos.ppo.PPO
-    options:
-      filters: ["!__init__"]
+---
 
-::: jax_rl.algos.sac.SAC
-    options:
-      filters: ["!__init__"]
+| Algorithm | Type | Key difference |
+|-----------|------|----------------|
+| [PPO](#ppo) | On-policy | Clipped surrogate + GAE |
+| [SAC](#sac) | Off-policy | Auto-tuned entropy, Gaussian policy |
+| [TD3](#td3) | Off-policy | Deterministic policy, twin critics, delayed actor |
+| [FastSAC](#fastsac) | Off-policy | C51 distributional critics, UTD 8–20 |
+| [FastTD3](#fasttd3) | Off-policy | C51 distributional critics, UTD 8–20 |
+| [FlashSAC](#flashsac) | Off-policy | Inverted residual blocks + BatchNorm + adaptive reward scaling |
 
-::: jax_rl.algos.td3.TD3
-    options:
-      filters: ["!__init__"]
+---
 
-::: jax_rl.algos.fast_sac.FastSAC
-    options:
-      filters: ["!__init__"]
+## PPO
 
-::: jax_rl.algos.fast_td3.FastTD3
-    options:
-      filters: ["!__init__"]
+```python
+from jax_rl.algos.ppo import PPO
+```
 
-::: jax_rl.algos.flash_sac.FlashSAC
-    options:
-      filters: ["!__init__"]
+On-policy algorithm with clipped surrogate objective and GAE. The only on-policy algorithm in this framework — simpler to tune, lower sample efficiency than off-policy alternatives.
+
+**Constructor**
+
+```python
+PPO(
+    config: PPOConfig,
+    obs_dim: int,
+    action_dim: int,
+    actor_optimizer: optax.GradientTransformation,
+    critic_optimizer: optax.GradientTransformation,
+    critic_obs_dim: int | None = None,  # asymmetric critic
+)
+```
+
+**Methods**
+
+`init(key) → TrainingState`
+: Initialize network parameters and optimizer state. Call once before training.
+
+`select_action(state, obs, key, deterministic=False, critic_obs=None) → (action, log_prob, value)`
+: Sample action during rollout collection. Returns all three values needed for GAE computation.
+
+`select_action_eval(actor_params, obs) → action`
+: Deterministic action for evaluation and deployment. Takes only `actor_params` — no full `TrainingState` or `critic_obs` needed.
+
+`update(state, batch, key, next_obs=None, critic_obs=None, ...) → (TrainingState, metrics)`
+: Run one PPO update epoch over the collected rollout batch.
+
+---
+
+## SAC
+
+```python
+from jax_rl.algos.sac import SAC
+```
+
+Off-policy actor-critic with auto-tuned temperature and reparameterized Gaussian policy. Standard baseline for continuous control.
+
+**Constructor**
+
+```python
+SAC(
+    config: SACConfig,
+    obs_dim: int,
+    action_dim: int,
+    optimizer: optax.GradientTransformation,
+    alpha_optimizer: optax.GradientTransformation,
+    gamma: float = 0.99,
+    handle_truncation: bool = True,
+    critic_obs_dim: int | None = None,
+)
+```
+
+**Methods**
+
+`init(key) → TrainingState`
+: Initialize networks, replay buffer pointers, and temperature.
+
+`select_action(actor_params, obs, key, deterministic=False) → action`
+: Sample or take the deterministic tanh-squashed action.
+
+`update(state, batch) → (TrainingState, metrics)`
+: One SAC gradient step — updates actor, twin critics, and temperature.
+
+`get_q_value(state, obs, action, critic_obs=None) → q`
+: Query the minimum of the twin Q-networks. Useful for debugging reward shaping.
+
+---
+
+## TD3
+
+```python
+from jax_rl.algos.td3 import TD3
+```
+
+Deterministic off-policy algorithm with twin critics and delayed actor updates. More stable than DDPG; lower variance than SAC on some tasks.
+
+**Constructor**
+
+```python
+TD3(
+    config: TD3Config,
+    obs_dim: int,
+    action_dim: int,
+    actor_optimizer: optax.GradientTransformation,
+    critic_optimizer: optax.GradientTransformation,
+    gamma: float = 0.99,
+    handle_truncation: bool = True,
+    critic_obs_dim: int | None = None,
+)
+```
+
+**Methods**
+
+`init(key) → TrainingState`
+: Initialize actor, twin critics, and target networks.
+
+`select_action(actor_params, obs, key, deterministic=False) → action`
+: Deterministic action with optional exploration noise.
+
+`update(state, batch) → (TrainingState, metrics)`
+: One TD3 gradient step. Actor updated every `policy_delay` critic steps.
+
+`get_q_value(state, obs, action, critic_obs=None) → q`
+: Query the minimum Q-value from twin critics.
+
+---
+
+## FastSAC
+
+```python
+from jax_rl.algos.fast_sac import FastSAC
+```
+
+SAC with C51 distributional critics and high UTD ratios (8–20). Better sample efficiency than standard SAC; preferred for off-policy locomotion training.
+
+**Constructor**
+
+```python
+FastSAC(
+    config: FastSACConfig,
+    obs_dim: int,
+    action_dim: int,
+    optimizer: optax.GradientTransformation,
+    alpha_optimizer: optax.GradientTransformation,
+    gamma: float = 0.99,
+    handle_truncation: bool = True,
+    critic_obs_dim: int | None = None,
+)
+```
+
+**Methods**
+
+`init(key) → TrainingState`
+: Initialize actor, C51 critics, and target networks.
+
+`select_action(actor_params, obs, key, deterministic=False) → action`
+: Same interface as SAC.
+
+`update(state, batch) → (TrainingState, metrics)`
+: One FastSAC update step — runs `utd_ratio` critic updates per actor update.
+
+`get_q_value(state, obs, action, critic_obs=None) → q`
+: Expected Q-value from the C51 distributional critics.
+
+---
+
+## FastTD3
+
+```python
+from jax_rl.algos.fast_td3 import FastTD3
+```
+
+TD3 with C51 distributional critics and high UTD ratios. Deterministic policy counterpart to FastSAC.
+
+**Constructor**
+
+```python
+FastTD3(
+    config: FastTD3Config,
+    obs_dim: int,
+    action_dim: int,
+    actor_optimizer: optax.GradientTransformation,
+    critic_optimizer: optax.GradientTransformation,
+    gamma: float = 0.99,
+    handle_truncation: bool = True,
+    critic_obs_dim: int | None = None,
+)
+```
+
+**Methods**
+
+`init(key) → TrainingState`
+: Initialize actor, C51 twin critics, and target networks.
+
+`select_action(actor_params, obs, key, deterministic=False) → action`
+: Deterministic action with optional exploration noise.
+
+`update(state, batch) → (TrainingState, metrics)`
+: One FastTD3 update step with delayed actor updates.
+
+`get_q_value(state, obs, action, critic_obs=None) → q`
+: Expected Q-value from the C51 distributional critics.
+
+---
+
+## FlashSAC
+
+```python
+from jax_rl.algos.flash_sac import FlashSAC
+```
+
+Highest-performing algorithm in this framework (eval **282.4** on Go2 joystick). Combines inverted residual blocks, BatchNorm, weight normalization, and adaptive reward scaling. Requires more tuning than FastSAC but achieves better asymptotic performance.
+
+**Constructor**
+
+```python
+FlashSAC(
+    config: FlashSACConfig,
+    obs_dim: int,
+    action_dim: int,
+    optimizer: optax.GradientTransformation,
+    alpha_optimizer: optax.GradientTransformation,
+    gamma: float = 0.99,
+    handle_truncation: bool = True,
+    critic_obs_dim: int | None = None,
+    num_envs: int = 1,  # needed for per-env reward scaling
+)
+```
+
+**Methods**
+
+`init(key) → TrainingState`
+: Initialize flash networks, batch norm stats, and reward scaling state.
+
+`select_action(actor_params, obs, key, deterministic=False, actor_batch_stats=None) → action`
+: Action selection with optional BatchNorm statistics (required when `use_batch_norm=True`).
+
+`update(state, batch) → (TrainingState, metrics)`
+: One FlashSAC update — includes reward scaling normalization and flash critic updates.
+
+`get_q_value(state, obs, action, critic_obs=None) → q`
+: Expected Q-value from the flash distributional critics.
