@@ -432,22 +432,10 @@ class FlashSAC:
             new_q1_params = _maybe_normalize(new_q1_params)
             new_q2_params = _maybe_normalize(new_q2_params)
 
-            # ── Target EMA (params only, NOT batch_stats) ───────────────
-            def _do_ema(args):
-                nq1, nq2, tq1, tq2 = args
-                return _soft_update(nq1, tq1), _soft_update(nq2, tq2)
-
-            def _skip_ema(args):
-                _, _, tq1, tq2 = args
-                return tq1, tq2
-
-            new_tq1_params, new_tq2_params = jax.lax.cond(
-                do_actor_update,
-                _do_ema,
-                _skip_ema,
-                (new_q1_params, new_q2_params,
-                 state.target_q1_params, state.target_q2_params),
-            )
+            # ── Target EMA (every step, NOT gated by policy_delay) ──────
+            # Reference: update_target_network is called unconditionally
+            new_tq1_params = _soft_update(new_q1_params, state.target_q1_params)
+            new_tq2_params = _soft_update(new_q2_params, state.target_q2_params)
 
             new_state = state.replace(
                 actor_params=new_actor_params,

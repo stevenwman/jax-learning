@@ -301,7 +301,15 @@ def train(cfg: TrainConfig, algo_cfg: FlashSACConfig, seed: int = 0,
 
                 training_state, step_metrics = algo.update(training_state, jax_batch)
                 total_gradient_steps += 1
-                last_metrics = step_metrics
+                # Carry forward actor metrics on skip steps (policy_delay pattern)
+                if float(step_metrics.get("actor_loss", 0.0)) != 0.0:
+                    last_metrics = step_metrics
+                else:
+                    last_metrics = {
+                        **step_metrics,
+                        "actor_loss": last_metrics.get("actor_loss", 0.0),
+                        "entropy": last_metrics.get("entropy", 0.0),
+                    }
 
         # ── Logging ────────────────────────────────────────────────────
         if outer_step % log_every == 0 or total_steps >= total_env_steps:
