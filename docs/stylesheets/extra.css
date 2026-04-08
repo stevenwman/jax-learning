@@ -64,7 +64,7 @@
 
 [data-md-color-scheme="default"] .highlight .c,
 [data-md-color-scheme="default"] .highlight .c1,
-[data-md-color-scheme="default"] .highlight .cm { color: #a0a1a7; font-style: italic; }
+[data-md-color-scheme="default"] .highlight .cm { color: #717580; font-style: italic; }
 
 [data-md-color-scheme="default"] .highlight .nv { color: #4078f2; }
 
@@ -107,5 +107,12 @@
 .video-grid .caption {
   text-align: center;
   font-size: 0.85em;
-  color: gray;
+  color: var(--md-default-fg-color--light);
+}
+
+/* ── Table scroll on mobile ── */
+
+.md-typeset table:not([class]) {
+  display: block;
+  overflow-x: auto;
 }

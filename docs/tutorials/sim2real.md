@@ -19,7 +19,7 @@ Warp (via `Go2WarpJoystickFlat`) is the sole active Go2 training backend. It use
 
 The earlier MJX backend (`Go2JoystickFlat`, Menagerie `go2_mjx.xml`) has been archived. For historical reference, here is why it was insufficient:
 
-| | MJX (archived) | Warp (active) |
+| Feature | MJX (archived) | Warp (active) |
 |---|---|---|
 | **MJCF source** | Menagerie `go2_mjx.xml` | Unitree `go2.xml` |
 | **Collision geometry** | Convex hulls (simplified) | Cylinders + boxes (exact) |

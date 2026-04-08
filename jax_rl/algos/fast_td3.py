@@ -3,7 +3,7 @@
 Paper: https://arxiv.org/abs/2505.22642 (Seo et al., 2025)
 
 Key modifications over vanilla TD3:
-  1. C51 distributional critic (51 atoms, cross-entropy loss)
+  1. C51 distributional critic (101 atoms by default, cross-entropy loss)
   2. Q averaging instead of min (reduces underestimation at scale)
   3. Large batch sizes (8K-32K) with LayerNorm for stability
   4. LR cosine decay (3e-4 → 3e-5)

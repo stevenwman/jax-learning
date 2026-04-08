@@ -92,7 +92,7 @@ SAC(
 : One SAC gradient step — updates actor, twin critics, and temperature.
 
 `get_q_value(state, obs, action, critic_obs=None) → q`
-: Query the minimum of the twin Q-networks. Useful for debugging reward shaping.
+: Query the first Q-network. Useful for debugging reward shaping.
 
 ---
 
@@ -131,7 +131,7 @@ TD3(
 : One TD3 gradient step. Actor updated every `policy_delay` critic steps.
 
 `get_q_value(state, obs, action, critic_obs=None) → q`
-: Query the minimum Q-value from twin critics.
+: Query the first Q-network.
 
 ---
 
@@ -243,7 +243,7 @@ FlashSAC(
 : Initialize flash networks, batch norm stats, and reward scaling state.
 
 `select_action(actor_params, obs, key, deterministic=False, actor_batch_stats=None) → action`
-: Action selection with optional BatchNorm statistics (required when `use_batch_norm=True`).
+: Action selection with BatchNorm statistics (FlashSAC always uses BatchNorm).
 
 `update(state, batch) → (TrainingState, metrics)`
 : One FlashSAC update — includes reward scaling normalization and flash critic updates.

@@ -33,6 +33,7 @@ theme:
     - search.highlight
     - content.code.copy
     - content.tabs.link
+    - navigation.footer
 
 plugins:
   - search

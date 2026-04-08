@@ -107,7 +107,7 @@ export MUJOCO_GL=egl
 Or prefix your command:
 
 ```bash
-MUJOCO_GL=egl uv run python train_sac.py ...
+MUJOCO_GL=egl uv run python train_offpolicy.py --algo sac ...
 ```
 
 ---

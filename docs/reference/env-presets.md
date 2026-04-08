@@ -88,7 +88,7 @@ FastSAC algo defaults: `tau=0.125`, `hidden_dim=(512, 256, 128)`, `activation=sw
 
 ## FlashSAC Presets
 
-Used by `train_offpolicy.py --algo <name>`. Accessed via `get_flash_sac_preset(env_name)`.
+Used by `train_flashsac.py`. Accessed via `get_flash_sac_preset(env_name)`.
 
 | Environment | num_envs | timesteps | lr | gamma | reward_scaling | batch_size | UTD | Notes |
 |---|---|---|---|---|---|---|---|---|

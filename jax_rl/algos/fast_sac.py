@@ -1,7 +1,7 @@
 """FastSAC — SAC with C51 distributional critic.
 
 Same as SAC but with:
-  1. C51 distributional critic (51 atoms, cross-entropy loss)
+  1. C51 distributional critic (101 atoms by default, cross-entropy loss)
   2. Q averaging instead of min (configurable)
   3. LR cosine decay
   4. Designed for large batch sizes + parallel envs

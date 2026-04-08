@@ -8,7 +8,7 @@ The codebase follows a strict three-layer separation:
 flowchart TD
     ENV["<b>Environment Layer</b><br/>MuJoCo Playground<br/>Warp backend (primary), MJX for benchmarks<br/>Produces: obs, reward, done, info"]
     TRAIN["<b>Training Script</b><br/>train_ppo_fast.py / train_offpolicy.py<br/>Owns the loop, batches data, manages state<br/>Handles: env creation, normalization,<br/>logging, checkpointing, W&B, eval"]
-    ALGO["<b>Algorithm Layer</b><br/>jax_rl/algos/*.py<br/>Pure math — no env knowledge<br/>PPO, SAC, TD3, FastSAC, FastTD3<br/>Computes: gradients, loss, updated params"]
+    ALGO["<b>Algorithm Layer</b><br/>jax_rl/algos/*.py<br/>Pure math — no env knowledge<br/>PPO, SAC, TD3, FastSAC, FastTD3, FlashSAC<br/>Computes: gradients, loss, updated params"]
 
     ENV -->|"obs, reward, done"| TRAIN
     TRAIN -->|"batch of transitions"| ALGO
@@ -41,7 +41,7 @@ flowchart TD
 Two-level configuration using dataclasses:
 
 - **`TrainConfig`** -- shared fields: `env_name`, `num_envs`, `total_timesteps`, `lr`, `gamma`, `reward_scaling`, `episode_length`, `domain_rand`, `n_frame_stack`, `action_delay_ms`
-- **Algo configs** -- algorithm-specific: `PPOConfig`, `SACConfig`, `TD3Config`, `FastSACConfig`, `FastTD3Config`
+- **Algo configs** -- algorithm-specific: `PPOConfig`, `SACConfig`, `TD3Config`, `FastSACConfig`, `FastTD3Config`, `FlashSACConfig`
 
 Presets return fully-configured tuples:
 
@@ -103,7 +103,7 @@ Raw env (MuJoCo Playground)
   → VmapWrapper             (vectorize across num_envs)
   → EpisodeWrapper          (episode length tracking)
   → AutoResetWrapper        (auto-reset on done/truncation)
-    or DomainRandAutoResetWrapper  (if domain_rand=True)
+    or DomainRandWrapper           (if domain_rand=True)
 ```
 
 Action-modifying wrappers are applied first, then observation-modifying wrappers, then the training wrappers.
