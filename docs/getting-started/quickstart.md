@@ -47,8 +47,8 @@ Replace `<latest>` with the actual checkpoint folder name (it includes a timesta
 
 ## What just happened?
 
-1. **Environment** — `CartpoleBalance` is an MJX environment: a cart with a pole that the agent must keep upright. The physics runs entirely on GPU via JAX.
-2. **Algorithm** — PPO (Proximal Policy Optimization) collected experience from 64 parallel environments, then updated the policy using that experience. This on-policy loop repeated until 500k total steps.
+1. **Environment** — `CartpoleBalance` is an [MJX](../glossary.md#mjx) environment: a cart with a pole that the agent must keep upright. The physics runs entirely on GPU via JAX.
+2. **Algorithm** — PPO (Proximal Policy Optimization) collected experience from 64 parallel environments, then updated the [policy](../glossary.md#policy) using that experience. This [on-policy](../glossary.md#on-policy) loop repeated until 500k total steps.
 3. **Checkpoint** — The trained policy network weights were saved to disk so you can load them later for evaluation or deployment.
 4. **Video** — `record_video.py` loaded the checkpoint, ran the policy in the environment, and rendered the result to an MP4 file.
 

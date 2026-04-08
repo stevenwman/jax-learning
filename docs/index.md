@@ -33,3 +33,4 @@ jax-learning is built around the [Unitree Go2](https://www.unitree.com/go2/) qua
 - :material-rocket-launch: [**Quickstart**](getting-started/quickstart.md) — Train CartpoleBalance and record a video
 - :material-book-open-variant: [**Concepts**](getting-started/concepts.md) — Understand the architecture: environments, algorithms, configs
 - :material-school: [**Tutorials**](tutorials/train-locomotion.md) — Train locomotion, build custom environments, go sim-to-real
+- :material-book-alphabet: [**Glossary**](glossary.md) — New to RL or JAX? Start here
