@@ -84,11 +84,15 @@
   border-left: 3px solid var(--md-primary-fg-color--light);
 }
 
-/* ── Abbreviation inside links — keep pointer cursor ── */
+/* ── Abbreviation tooltips — subtle, not interactive-looking ── */
+
+abbr {
+  text-decoration: none;
+  border-bottom: none;
+  cursor: inherit;
+}
 
 a abbr {
-  cursor: pointer;
-  text-decoration: none;
   pointer-events: none;
 }
 
