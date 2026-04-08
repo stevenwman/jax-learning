@@ -89,6 +89,7 @@
 a abbr {
   cursor: pointer;
   text-decoration: none;
+  pointer-events: none;
 }
 
 /* ── Video styling ── */
