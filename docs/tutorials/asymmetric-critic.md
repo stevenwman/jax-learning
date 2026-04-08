@@ -1,5 +1,7 @@
 # Asymmetric Critic
 
+*Intermediate — assumes familiarity with actor-critic RL ([Concepts](../getting-started/concepts.md)).*
+
 An asymmetric critic is a training technique where the critic (value function) sees more information than the actor (policy). During training, the critic uses privileged observations -- terrain info, contact forces, noise-free sensors -- to provide better gradient signals. At deployment, only the actor runs, using the limited observations available on the real robot.
 
 ## How It Works

@@ -1,6 +1,8 @@
 # Custom Rewards and Observations
 
-This tutorial explains the **RewardSpec** and **ObsSpec** systems -- composable building blocks for defining what the agent optimizes (rewards) and what it sees (observations). Both follow the same pattern: define a list of named terms, each backed by a function.
+*Intermediate — assumes familiarity with the [Concepts](../getting-started/concepts.md) page.*
+
+This tutorial explains the **RewardSpec** and **ObsSpec** systems — composable building blocks for defining what the agent optimizes (rewards) and what it sees (observations). Both follow the same pattern: define a list of named terms, each backed by a function.
 
 ## RewardSpec
 

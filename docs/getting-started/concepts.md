@@ -25,19 +25,16 @@ For the Go2 quadruped, observations are dictionaries:
 ```python
 {
     "state": jnp.array(shape=(48,)),              # what the real robot can see
-    "privileged_state": jnp.array(shape=(116,)),   # extra sim info (friction, etc.)
+    "privileged_state": jnp.array(shape=(122,)),   # extra sim info (friction, contacts, etc.)
 }
 ```
 
-### Two backends
+### Physics backends
 
-| Backend | Engine | Best for |
-|---------|--------|----------|
-| **MJX** | JAX-native MuJoCo | Simple envs (Cartpole, Cheetah, Humanoid) |
-| **Warp** | MuJoCo Warp | Go2 tasks — supports cylinder collisions and the exact Unitree MJCF model |
-
-!!! tip "When to use which"
-    If you're working with Go2 environments, use Warp. For standard benchmarks (Cheetah, Humanoid, etc.), MJX works well.
+| Backend | Engine | Status | Used for |
+|---------|--------|--------|----------|
+| **Warp** | MuJoCo Warp | **Primary** | Go2 tasks — cylinder collisions, exact Unitree MJCF, sim2real validated |
+| **MJX** | JAX-native MuJoCo | Benchmarks only | DM Control Suite (Cartpole, Cheetah, Humanoid). Go2 MJX env is archived. |
 
 ## Algorithms
 
@@ -91,8 +88,8 @@ Rewards and observations are built from composable terms, so you can add or remo
 **Reward terms:**
 
 ```python
-RewardTerm(name="tracking_lin_vel", fn=reward_tracking_lin_vel, weight=1.0)
-RewardTerm(name="action_rate", fn=reward_action_rate, weight=0.01)
+RewardTerm(name="tracking_lin_vel", fn=reward_tracking_lin_vel)
+RewardTerm(name="action_rate", fn=reward_action_rate)
 ```
 
 **Observation terms:**
@@ -102,16 +99,16 @@ ObsTerm(name="joint_pos", fn=obs_joint_pos, noise_scale=0.01)
 ObsTerm(name="joint_vel", fn=obs_joint_vel, noise_scale=0.05)
 ```
 
-Each environment defines lists of these terms. At runtime, they're automatically composed into the full reward signal and observation vector.
+Each environment defines lists of these terms. Weights are applied separately in the env's `step()` method via a config dict — not in `RewardTerm` itself. This lets you retune weights without modifying reward functions.
 
 ## Training scripts
 
-Three entry points cover all use cases:
-
 | Script | Use |
 |--------|-----|
-| `train_ppo_fast.py` | On-policy training (PPO) |
+| `train_ppo_fast.py` | On-policy training (PPO) with `lax.scan` |
+| `train_ppo.py` | On-policy training (PPO) with Python loop — slower, supports non-JIT envs |
 | `train_offpolicy.py --algo sac\|td3\|fast_sac\|fast_td3` | Off-policy training |
+| `train_flashsac.py` | FlashSAC training (standalone script) |
 | `record_video.py` | Load a checkpoint and render a video |
 
 ## Next steps

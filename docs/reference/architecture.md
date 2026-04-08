@@ -6,7 +6,7 @@ The codebase follows a strict three-layer separation:
 
 ```mermaid
 flowchart TD
-    ENV["<b>Environment Layer</b><br/>MuJoCo Playground<br/>MJX (JAX-native) or Warp backend<br/>Produces: obs, reward, done, info"]
+    ENV["<b>Environment Layer</b><br/>MuJoCo Playground<br/>Warp backend (primary), MJX for benchmarks<br/>Produces: obs, reward, done, info"]
     TRAIN["<b>Training Script</b><br/>train_ppo_fast.py / train_offpolicy.py<br/>Owns the loop, batches data, manages state<br/>Handles: env creation, normalization,<br/>logging, checkpointing, W&B, eval"]
     ALGO["<b>Algorithm Layer</b><br/>jax_rl/algos/*.py<br/>Pure math — no env knowledge<br/>PPO, SAC, TD3, FastSAC, FastTD3<br/>Computes: gradients, loss, updated params"]
 
@@ -81,16 +81,14 @@ Each checkpoint directory contains:
 
 ## Physics Backends
 
-Two MuJoCo backends are supported through MuJoCo Playground:
+MuJoCo Playground supports two backends via the `impl` flag:
 
-| Backend | Accessed via | MJCF source | Geometry support | Use case |
-|---------|-------------|-------------|-----------------|----------|
-| **MJX** (JAX-native) | `impl="jax"` (default) | Menagerie (e.g., `go2_mjx.xml`) | Spheres, capsules, planes | DM Control Suite tasks, simple locomotion |
-| **Warp** | `impl="warp"` | Unitree (e.g., `go2.xml`) | Full (cylinders, meshes, boxes) | Go2 with real-robot MJCF, complex geometry |
+| Backend | Accessed via | Geometry support | Status |
+|---------|-------------|-----------------|--------|
+| **Warp** | `impl="warp"` | Full (cylinders, meshes, boxes) | **Primary.** Used for all Go2 envs and new development. |
+| **MJX** (JAX-native) | `impl="jax"` | Spheres, capsules, planes | DM Control benchmarks (Cartpole, Cheetah, Humanoid). Go2 MJX env archived. |
 
-Warp runs MuJoCo physics on GPU through a Warp kernel, exposed via JAX FFI. Policy networks, `vmap`, `jit`, and autodiff stay in JAX. The `impl="warp"` flag only swaps the physics step.
-
-**Preferred for Go2:** Warp, because it uses the unitree MJCF directly (same model file as the real robot). MJX requires a simplified MJCF (sphere-only collision geometry) which creates sim-to-sim transfer issues.
+Both backends work with the same MuJoCo Playground API — `impl` only swaps the physics step. Policy networks, `vmap`, `jit`, and autodiff stay in JAX regardless of backend.
 
 ---
 
@@ -100,12 +98,14 @@ Raw environments are wrapped in a fixed order:
 
 ```
 Raw env (MuJoCo Playground)
-  → FrameStackWrapper      (if n_frame_stack > 1)
   → ActionDelayWrapper      (if action_delay_ms > 0 or action_delay_range_ms set)
+  → FrameStackWrapper       (if n_frame_stack > 1)
   → VmapWrapper             (vectorize across num_envs)
   → EpisodeWrapper          (episode length tracking)
   → AutoResetWrapper        (auto-reset on done/truncation)
     or DomainRandAutoResetWrapper  (if domain_rand=True)
 ```
+
+Action-modifying wrappers are applied first, then observation-modifying wrappers, then the training wrappers.
 
 Wrappers are configured from `TrainConfig` fields. The pipeline is built by `build_wrapper_pipeline()` and applied by `apply_wrapper_pipeline()` in `jax_rl/envs/wrappers.py`.

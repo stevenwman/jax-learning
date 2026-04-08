@@ -1,6 +1,8 @@
 # Sim-to-Real
 
-This tutorial covers the full pipeline from training a locomotion policy in simulation to running it on a real Unitree Go2 robot. The key insight: training on the right simulator model eliminates most of the sim-to-real gap.
+*Advanced — requires a trained checkpoint and (for real robot deployment) a Unitree Go2 EDU.*
+
+This tutorial covers the full pipeline from training a locomotion policy in simulation to running it on a real Unitree Go2 robot. Training on the exact deployment MJCF model eliminates most of the sim-to-real gap.
 
 ## The Pipeline
 

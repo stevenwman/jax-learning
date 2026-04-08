@@ -11,7 +11,7 @@
 Clone the repository and install dependencies:
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/jax-learning.git
+git clone https://github.com/stevenwman/jax-learning.git
 cd jax-learning
 uv sync
 ```

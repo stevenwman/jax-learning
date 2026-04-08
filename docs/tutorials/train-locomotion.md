@@ -1,5 +1,7 @@
 # Train Go2 Locomotion
 
+*Intermediate — assumes you've completed the [Quickstart](../getting-started/quickstart.md).*
+
 This tutorial covers training a Unitree Go2 to follow velocity commands. Expect ~30 minutes on a single GPU.
 
 ## Overview
@@ -63,11 +65,7 @@ This runs 20 million timesteps across 1024 parallel environments. On an RTX 4090
 
 ## Step 4: Monitor Training
 
-The training script prints evaluation results periodically. To see recent evals:
-
-```bash
-grep "EVAL" /tmp/claude-*/tasks/*.output | tail -10
-```
+The training script prints evaluation results to stdout periodically. Look for lines starting with `EVAL`:
 
 You should see the eval score climbing over time:
 

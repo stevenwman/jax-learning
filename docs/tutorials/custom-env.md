@@ -1,5 +1,7 @@
 # Custom Environment
 
+*Advanced — requires familiarity with Python dataclasses, MuJoCo XML, and JAX basics.*
+
 This tutorial walks through adding a new Go2 environment, using the **bongo board handstand** task as a worked example.
 
 <video autoplay loop muted playsinline style="width: 100%; max-width: 640px; border-radius: 8px;">
