@@ -39,7 +39,7 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **Frame stacking doesn't help locomotion with proprioceptive obs** — A/B on Go2 FastSAC: 276.5 (48d) vs 271.3 (144d stacked). `last_action` already provides temporal context.
 - **Staged rewards need longer budgets** — gated rewards (box_target after reached_box) require 10M+ steps to discover full sequence; 2M plateau is stage 1, not convergence
 
-## [Distributional RL (C51 / FastTD3 / FastSAC / FastDSAC)](lessons/distributional.md) — 8 lessons
+## [Distributional RL (C51 / FastTD3 / FastSAC / FlashSAC)](lessons/distributional.md) — 11 lessons
 
 - **FastTD3 scale matters** — 285 eval at 128 envs/5M steps, **880** at 1024 envs/86M steps
 - **C51 V_min/V_max is critical** — distributional Q is hard-bounded, get it wrong and critic is blind
@@ -49,6 +49,9 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **Verify configs against source code** — 7+ critical mismatches found (tau 25x wrong, hidden dims, activation)
 - **Read the whole recipe** — missing gamma=0.97 and AdamW β2=0.95 completely changed behavior
 - **FastDSAC paper says "Gaussian NLL" but code uses Huber** — 2 days debugging the wrong loss
+- **FlashSAC weight norm axis** — Flax kernel `(in, out)` vs PyTorch `(out, in)` → normalize `axis=0` not `axis=-1`. Silent correctness bug.
+- **Target BN stats NOT copied from online** — target critics maintain own running stats via `train=True` forwards. EMA only updates learned params.
+- **Asymmetric done signals** — reward normalizer resets on `terminated|truncated`, C51 bootstrap uses `terminated` only. Mixing them causes value underestimation.
 
 ## [JAX Performance](lessons/jax_performance.md) — 8 lessons
 

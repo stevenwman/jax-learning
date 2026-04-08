@@ -119,3 +119,29 @@ loss = mean(ratio * huber(q_mean, target_q, delta=50) + ...)
 3. Guard against BOTH NaN AND Inf from physics engines.
 4. Stress test edge cases directly (inject Inf/NaN) — 30 seconds vs 53M steps.
 5. Match paper setup EXACTLY first (128 envs), then scale one variable at a time.
+
+---
+
+## FlashSAC Port: Three Porting Gotchas
+
+**Context:** Porting FlashSAC from PyTorch to JAX/Flax. Five spec review passes caught 22 issues — three would have silently broken training.
+
+### 1. Weight norm axis: Flax ≠ PyTorch kernel layout
+
+PyTorch `nn.Linear` weight: `(output_dim, input_dim)` → `F.normalize(w, dim=-1)` normalizes each row.
+Flax `nn.Dense` kernel: `(input_dim, output_dim)` → must normalize along `axis=0` (not `axis=-1`).
+
+Getting this wrong produces unit-norm INPUT features instead of unit-norm OUTPUT neurons. Training runs without error but learns garbage. Always verify kernel layout conventions when porting.
+
+### 2. Target BN stats are NOT copied from online
+
+FlashSAC's target critics run with `train=True` to maintain their OWN BatchNorm running statistics. The Polyak EMA only updates learned parameters (kernels, BN scale/bias), NOT running buffers (mean/var). Copying online batch_stats to target would overwrite the target's independent statistics — subtle behavioral difference.
+
+In PyTorch, `ema_update_parameters()` naturally skips buffers. In JAX/Flax, where params and batch_stats are separate pytrees, you must be deliberate about which pytrees get Polyak'd.
+
+### 3. Asymmetric `done` signals
+
+- **Reward normalizer** resets running return on `terminated | truncated` (both end the return estimate)
+- **C51 bootstrap** uses `terminated` ONLY (truncation should NOT zero out the value estimate)
+
+FastSAC uses `max(done, truncation)` for both. FlashSAC's asymmetry is deliberate — mixing them up causes value underestimation on long-horizon tasks.
