@@ -1,8 +1,7 @@
 site_name: jax-learning
 site_description: JAX-based reinforcement learning for robot learning
-# TODO: set these when repo is finalized
-# repo_url: https://github.com/YOUR_USERNAME/jax-learning
-# repo_name: jax-learning
+repo_url: https://github.com/stevenwman/jax-learning
+repo_name: stevenwman/jax-learning
 
 extra_css:
   - stylesheets/code.css
