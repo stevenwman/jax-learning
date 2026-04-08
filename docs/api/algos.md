@@ -2,6 +2,11 @@
 
 Six RL algorithms, each self-contained with no shared base class.
 
+??? note "Why closures instead of methods?"
+    JAX's JIT compiler traces Python functions and captures the values they close over. If we used regular methods (`self.update`), JAX would try to trace `self`, which is a mutable Python object — this breaks JIT.
+
+    Instead, all algorithms define JIT'd functions as closures inside `__init__` that capture only JAX-compatible values (networks, configs, constants), then assign them to `self._update`, `self.select_action`, etc. This pattern is standard for JAX RL implementations (Brax, PureJaxRL use the same approach).
+
 ::: jax_rl.algos.ppo.PPO
     options:
       filters: ["!__init__"]
