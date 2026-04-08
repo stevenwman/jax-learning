@@ -42,6 +42,9 @@ class TrainConfig:
     # Domain randomization
     domain_rand: bool = False
 
+    # Reset mode: "legacy" (AutoResetWrapper), "per_step" or "syncd" (DomainRandWrapper)
+    reset_mode: str = "legacy"
+
     # Observation preprocessing
     n_frame_stack: int = 1  # 1 = no stacking, 3 = standard for locomotion
 

@@ -100,32 +100,40 @@ def make_envs(cfg: TrainConfig, seed: int):
     """
     env = pg_registry.load(cfg.env_name)
 
-    # Domain randomization (optional).
+    # Domain randomization (legacy v1 — only used with reset_mode="legacy").
+    # For DomainRandWrapper (reset_mode="per_step"), DR specs come from the env's
+    # get_domain_randomization_spec() method. The --domain-rand flag is ignored.
     rand_fn = None
-    if getattr(cfg, 'domain_rand', False) and 'Go2' in cfg.env_name:
-        key, rand_key = jax.random.split(jax.random.PRNGKey(seed))
-        torso_body_id = getattr(env, '_torso_body_id', 1)
-        if 'Bongo' in cfg.env_name:
-            from jax_rl.envs.locomotion.bongo_randomize import domain_randomize
-            board_body_id = getattr(env, '_board_body_id', 14)
-            rand_fn = functools.partial(
-                domain_randomize, rng=jax.random.split(rand_key, cfg.num_envs),
-                torso_body_id=torso_body_id, board_body_id=board_body_id,
-            )
-        else:
-            from jax_rl.envs.locomotion.go2_randomize import domain_randomize
-            rand_fn = functools.partial(
-                domain_randomize, rng=jax.random.split(rand_key, cfg.num_envs),
-                torso_body_id=torso_body_id,
-            )
+    if getattr(cfg, 'domain_rand', False) and getattr(cfg, 'reset_mode', 'legacy') == 'legacy':
+        if 'Go2' in cfg.env_name:
+            key, rand_key = jax.random.split(jax.random.PRNGKey(seed))
+            torso_body_id = getattr(env, '_torso_body_id', 1)
+            if 'Bongo' in cfg.env_name:
+                from jax_rl.envs.locomotion.archive.bongo_randomize import domain_randomize
+                board_body_id = getattr(env, '_board_body_id', 14)
+                rand_fn = functools.partial(
+                    domain_randomize, rng=jax.random.split(rand_key, cfg.num_envs),
+                    torso_body_id=torso_body_id, board_body_id=board_body_id,
+                )
+            else:
+                from jax_rl.envs.locomotion.archive.go2_randomize import domain_randomize
+                rand_fn = functools.partial(
+                    domain_randomize, rng=jax.random.split(rand_key, cfg.num_envs),
+                    torso_body_id=torso_body_id,
+                )
 
     # Apply wrapper pipeline (action delay, frame stacking, etc.)
     from jax_rl.envs.wrappers import apply_wrapper_pipeline
     env = apply_wrapper_pipeline(env, cfg)
 
-    env = wrap_for_training(
-        env, episode_length=cfg.episode_length, randomization_fn=rand_fn,
-    )
+    reset_mode = getattr(cfg, 'reset_mode', 'legacy')
+    if reset_mode in ("per_step", "syncd"):
+        from jax_rl.envs.wrappers.domain_rand import DomainRandWrapper
+        env = DomainRandWrapper(env, episode_length=cfg.episode_length, mode=reset_mode)
+    else:
+        env = wrap_for_training(
+            env, episode_length=cfg.episode_length, randomization_fn=rand_fn,
+        )
     env_step = _make_nan_safe_step(env.step)
 
     key = jax.random.PRNGKey(seed)

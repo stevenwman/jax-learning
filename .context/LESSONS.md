@@ -114,8 +114,8 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **Cumulative SPS is misleading** — JIT warmup dominates early. Always compare converged SPS.
 - **Per-step GPU→CPU sync kills async execution** — one np.asarray() per step = 8x slowdown.
 - **Syncd mode: 2x raw throughput, impractical waste** — 60-95% waste, tracker/buffer integration nightmare.
-- **Per_step DRv2: 4% slower, better eval** — Go2 FastSAC 5M: eval 280 (per_step) vs 270 (legacy).
-- **DRv2 per_step is the path forward for Go2** — fresh ICs, clean state.info, per-episode DR foundation.
+- **Per_step DomainRandWrapper (formerly DRv2): 4% slower, better eval** — Go2 FastSAC 5M: eval 280 (per_step) vs 270 (legacy).
+- **DomainRandWrapper per_step is the path forward for Go2** — fresh ICs, clean state.info, per-episode DR foundation.
 
 ## [MuJoCo Warp](lessons/warp.md) — 6 lessons
 

@@ -198,6 +198,38 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
                 self._cost_base_height(data)),
         ]
 
+    # ── Domain Randomization ─────────────────────────────────────────────
+
+    def get_domain_randomization_spec(self):
+        """Declare per-episode domain randomization for DomainRandWrapper."""
+        from jax_rl.envs.wrappers.domain_rand import DRSpec
+        return [
+            # Model-level DR
+            DRSpec(name="friction", type="model", field="geom_friction",
+                   column=0, min=0.3, max=1.5, per_element=False, operation="set",
+                   description="Uniform friction across all geoms"),
+            DRSpec(name="dof_damping", type="model", field="dof_damping",
+                   indices=(6, 18), min=0.7, max=2.0, per_element=True,
+                   description="Joint damping variation"),
+            DRSpec(name="dof_armature", type="model", field="dof_armature",
+                   indices=(6, 18), min=0.9, max=1.3, per_element=True,
+                   description="Joint armature variation"),
+            DRSpec(name="dof_frictionloss", type="model", field="dof_frictionloss",
+                   indices=(6, 18), min=0.7, max=1.5, per_element=True,
+                   description="Joint friction loss variation"),
+            DRSpec(name="body_mass", type="model", field="body_mass",
+                   min=0.8, max=1.2, per_element=True,
+                   description="Per-link mass variation"),
+            DRSpec(name="motor_strength", type="model", field="actuator_gainprm",
+                   column=0, min=0.9, max=1.1, per_element=True,
+                   description="Per-actuator motor heterogeneity"),
+            # Runtime DR
+            DRSpec(name="kp_scale", type="runtime",
+                   min=0.8, max=1.3, description="PD Kp gain scale"),
+            DRSpec(name="kd_scale", type="runtime",
+                   min=0.5, max=1.5, description="PD Kd gain scale"),
+        ]
+
     # ── Core env methods ────────────────────────────────────────────────
 
     def reset(self, rng: jax.Array) -> mjx_env.State:

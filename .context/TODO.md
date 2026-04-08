@@ -158,8 +158,26 @@
 ## Short-term — MJX archival
 - [ ] Archive MJX Go2 env (go2_base, go2_joystick, go2_cpu, record_video_cpu) + doc cleanup. Spec: `docs/superpowers/specs/2026-04-06-archive-mjx-go2.md`
 
-## Mid-term — DR wrapper v2 (runtime params)
-- [ ] Redesign DR wrapper to support runtime params (Kp/Kd scales, custom force params) alongside model-level DR. Currently Kp/Kd DR lives inline in go2_warp_joystick.py because external PD gains aren't MuJoCo model fields. The wrapper should be able to inject per-env runtime params into `state.info`.
+## Mid-term — DR wrapper v2
+
+`DomainRandWrapper` (formerly DRv2, in `jax_rl/envs/wrappers/domain_rand.py`), integrated into training pipeline. Per_step mode validated on Go2: 6% throughput cost, better sample efficiency. Syncd mode works but waste kills effective efficiency — parked.
+
+### Completed
+- [x] DomainRandWrapper (formerly DRv2) with per_step + syncd modes
+- [x] Training pipeline integration (`--reset-mode` flag)
+- [x] Benchmarked across 5 envs (Go2, Bongo, Cartpole, CheetahRun, Walker)
+- [x] Per_step vs legacy training comparison on Go2 FastSAC (5M steps, wandb: drv2-comparison). Per_step: 6% slower throughput, ~19% better return at same wall clock.
+
+### Next
+- [x] **Wire DR specs into Go2** — `get_domain_randomization_spec()` on Go2WarpJoystick: 6 model specs (friction, damping, armature, frictionloss, mass, motor strength) + 2 runtime (kp_scale, kd_scale). Smoke tested on 4 envs.
+- [x] **Clean up benchmark scripts** — deleted 10 bench/profile scripts from repo root.
+- [ ] **Validate DR in full training** — runs on wandb `drv2-comparison`:
+  1. Go2 per_step + DR specs, seed 0, 5M — main test
+  2. Go2 per_step + DR specs, seed 1, 5M — seed robustness
+  3. CheetahRun per_step (no DR), seed 0, 5M — already showed 6,309 sps (not catastrophic!), but killed before first episode completed at step 1000. Need full run to confirm.
+  Compare against: per_step-no-DR (eval 280) and legacy (eval 270).
+- [ ] **Archive old DR files** — after training validation: delete `go2_randomize.py`, `bongo_randomize.py`. Add DR specs to Bongo env.
+- [ ] **Investigate CheetahRun full_reset catastrophe** — 99% slowdown, not explained by forward() cost. Low priority.
 
 ## Mid-term — Env composability (from MJLab audit, prereq for DIAYN)
 - [x] **RewardSpec** — `compute_rewards(spec, **kwargs)` returns unweighted dict. All 3 envs refactored (Warp 17 terms, MJX 16, Bongo 9). DIAYN swaps reward by replacing `env._reward_spec`.

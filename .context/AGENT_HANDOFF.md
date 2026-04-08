@@ -171,13 +171,13 @@ jax-learning/
 ├── jax_rl/utils/             # reward_scaling.py (adaptive reward normalization)
 ├── jax_rl/training/          # checkpointing, eval_runner, env_setup, metrics_logger
 ├── jax_rl/buffers/           # jax_replay_buffer.py, rollout_buffer.py
-├── jax_rl/envs/wrappers/     # FrameStackWrapper, vendored training wrappers (Vmap, Episode, AutoReset, DR), DRv2 (dr_v2.py)
+├── jax_rl/envs/wrappers/     # FrameStackWrapper, vendored training wrappers (Vmap, Episode, AutoReset, DR), DomainRandWrapper (domain_rand.py, formerly DRv2)
 ├── tests/                    # 243 tests (uv run python -m pytest tests/ -v)
 └── tools/brax_baselines/     # Brax PPO A/B test scripts
 ```
 
 ### Env framework coupling
-Training wrappers (Vmap, Episode, AutoReset, DR) are vendored in `jax_rl/envs/wrappers/training.py` — no Brax training wrapper dependency. **DRv2 wrapper** (`jax_rl/envs/wrappers/dr_v2.py`) replaces the full wrapper stack for Go2 — handles vmap, episode tracking, auto-reset, and per-episode domain randomization in one wrapper. Activated via `--reset-mode per_step` on train scripts. Env declares DR specs via `get_domain_randomization_spec()`. See `.context/lessons/autoreset_and_dr.md` for the full investigation.
+Training wrappers (Vmap, Episode, AutoReset, DR) are vendored in `jax_rl/envs/wrappers/training.py` — no Brax training wrapper dependency. **`DomainRandWrapper`** (`jax_rl/envs/wrappers/domain_rand.py`, formerly DRv2) replaces the full wrapper stack for Go2 — handles vmap, episode tracking, auto-reset, and per-episode domain randomization in one wrapper. Activated via `--reset-mode per_step` on train scripts. Env declares DR specs via `get_domain_randomization_spec()`. See `.context/lessons/autoreset_and_dr.md` for the full investigation.
 
 `env_setup.py` still uses Playground's registry (`pg_registry.load()`) for env loading and `mjx_env.MjxEnv` as the env type. All other core infra (algos, networks, configs, buffers, utils) is pure JAX/Flax/Optax with zero env framework dependencies. To add ManiSkill/HumanoidBench, extract an env factory interface from env_setup.py — everything downstream works unchanged.
 

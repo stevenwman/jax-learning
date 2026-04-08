@@ -236,6 +236,18 @@ def train(cfg: TrainConfig, algo_cfg, algo_name: str, seed: int = 0, resume: str
     last_metrics: dict = {}
     total_gradient_steps = 0
 
+    # DR syncd mode: track waste + batch reset
+    reset_mode = getattr(cfg, 'reset_mode', 'legacy')
+    is_dr_syncd = reset_mode == "syncd"
+    is_dr = reset_mode in ("per_step", "syncd")
+    _prev_done = np.zeros(cfg.num_envs)  # CPU-side tracking for syncd
+    _cumul_wasted = 0
+    _cumul_raw = 0
+    if is_dr_syncd:
+        _jit_batch_reset = jax.jit(env.batch_reset)
+        # Warm up batch_reset JIT
+        _jit_batch_reset(env_state).reward.block_until_ready()
+
     def _get_obs(obs):
         """Extract flat obs from dict or flat."""
         return obs["state"] if dict_obs else obs
@@ -245,7 +257,8 @@ def train(cfg: TrainConfig, algo_cfg, algo_name: str, seed: int = 0, resume: str
         return obs["privileged_state"] if has_privileged else _get_obs(obs)
 
     for outer_step in range(start_step // cfg.num_envs, total_env_steps // cfg.num_envs):
-        total_steps = (outer_step + 1) * cfg.num_envs
+        raw_steps = (outer_step + 1) * cfg.num_envs
+        total_steps = raw_steps
         raw_obs = _get_obs(env_state.obs)
         critic_raw_obs = _get_critic_obs(env_state.obs) if has_privileged else None
 
@@ -269,8 +282,17 @@ def train(cfg: TrainConfig, algo_cfg, algo_name: str, seed: int = 0, resume: str
 
         # ── Env step ───────────────────────────────────────────────────
         env_state = env_step(env_state, action)
-        truncation = (env_state.info["truncation"] if cfg.handle_truncation
-                      else jnp.zeros_like(env_state.done))
+
+        if is_dr_syncd:
+            # Batch reset when all envs done OR at episode_length (whichever first)
+            all_done = bool(_prev_done.all())
+            if all_done or (outer_step + 1) % cfg.episode_length == 0:
+                env_state = _jit_batch_reset(env_state)
+                _prev_done = np.zeros(cfg.num_envs)
+                tracker.episode_rewards[:] = 0.0
+
+        truncation = (env_state.info.get("truncation", jnp.zeros_like(env_state.done))
+                      if cfg.handle_truncation else jnp.zeros_like(env_state.done))
 
         # ── Buffer ─────────────────────────────────────────────────────
         next_raw_obs = _get_obs(env_state.obs)
@@ -283,7 +305,16 @@ def train(cfg: TrainConfig, algo_cfg, algo_name: str, seed: int = 0, resume: str
                          next_obs=next_raw_obs, done=env_state.done,
                          truncation=truncation, **extra_kwargs)
 
-        tracker.step(np.asarray(env_state.reward), np.asarray(env_state.done))
+        # For syncd: only count newly-done envs, not already-dead ones
+        _cur_done = np.asarray(env_state.done)
+        if is_dr_syncd:
+            _cumul_wasted += int(_prev_done.sum())
+            _cumul_raw += cfg.num_envs
+            _newly_done = _cur_done * (1.0 - _prev_done)
+            tracker.step(np.asarray(env_state.reward), _newly_done)
+            _prev_done = np.maximum(_prev_done, _cur_done)
+        else:
+            tracker.step(np.asarray(env_state.reward), _cur_done)
 
         # ── Gradient updates ───────────────────────────────────────────
         if len(buffer) >= algo_cfg.min_buffer_size:
@@ -333,8 +364,18 @@ def train(cfg: TrainConfig, algo_cfg, algo_name: str, seed: int = 0, resume: str
                     total_steps, tracker, last_metrics, total_gradient_steps, sps, elapsed,
                     extra_keys=log_extra_keys,
                 )
+
+                # DR waste metrics
+                if is_dr_syncd and _cumul_raw > 0:
+                    waste_frac = _cumul_wasted / _cumul_raw
+                    effective_steps = _cumul_raw - _cumul_wasted
+                    row["waste_fraction"] = round(waste_frac, 4)
+                    row["effective_steps"] = effective_steps
+                    row["effective_sps"] = int(effective_steps / elapsed) if elapsed > 0 else 0
+                    row["raw_sps"] = int(raw_steps / elapsed) if elapsed > 0 else 0
+
                 metrics_log.append(row)
-                wandb_log(row, step=total_steps)
+                wandb_log(row, step=raw_steps)
 
         # ── Eval + checkpoint ──────────────────────────────────────────
         if use_obs_norm:
@@ -420,6 +461,9 @@ if __name__ == "__main__":
     parser.add_argument("--action-delay-range-ms", type=int, nargs=2, default=None,
                         metavar=("MIN", "MAX"),
                         help="Randomized action delay range in ms (e.g., 40 120)")
+    parser.add_argument("--reset-mode", type=str, default=None,
+                        choices=["legacy", "per_step", "syncd"],
+                        help="Reset mode: legacy (AutoReset), per_step or syncd (DomainRandWrapper)")
     args = parser.parse_args()
 
     # Load preset
@@ -445,6 +489,7 @@ if __name__ == "__main__":
     if args.frame_stack is not None: cfg_overrides["n_frame_stack"] = args.frame_stack
     if args.action_delay_ms is not None: cfg_overrides["action_delay_ms"] = args.action_delay_ms
     if args.action_delay_range_ms is not None: cfg_overrides["action_delay_range_ms"] = tuple(args.action_delay_range_ms)
+    if args.reset_mode is not None: cfg_overrides["reset_mode"] = args.reset_mode
 
     if cfg_overrides: cfg = dataclasses.replace(cfg, **cfg_overrides)
     if algo_overrides: algo_cfg = dataclasses.replace(algo_cfg, **algo_overrides)

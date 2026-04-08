@@ -83,6 +83,37 @@ def save_checkpoint(
         algo_cfg_key: dataclasses.asdict(algo_cfg),
         "algo": algo_name,
     }
+
+    # Reproducibility: seed, git hash, DR specs
+    # Seed: extract from ckpt_dir name (format: timestamp_algo_env_seedN)
+    import re
+    seed_match = re.search(r"seed(\d+)", ckpt_dir)
+    if seed_match:
+        meta["seed"] = int(seed_match.group(1))
+
+    # Git hash
+    try:
+        import subprocess
+        git_hash = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL
+        ).decode().strip()
+        meta["git_hash"] = git_hash
+    except Exception:
+        pass
+
+    # DR specs (if env declares them)
+    try:
+        from mujoco_playground import registry as pg_registry
+        env = pg_registry.load(cfg.env_name)
+        if hasattr(env, 'get_domain_randomization_spec'):
+            specs = env.get_domain_randomization_spec()
+            meta["dr_specs"] = [
+                {k: v for k, v in dataclasses.asdict(s).items() if v is not None}
+                for s in specs
+            ]
+    except Exception:
+        pass
+
     with open(os.path.join(ckpt_dir, "meta.json"), "w") as f:
         json.dump(meta, f, indent=2)
 

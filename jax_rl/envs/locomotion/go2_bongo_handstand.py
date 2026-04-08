@@ -293,6 +293,49 @@ class BongoHandstand(go2_warp_base.Go2WarpEnv):
         scales = self._config.reward_config.scales
         self._reward_spec = [all_terms[k] for k in scales.keys()]
 
+    # ── Domain Randomization ──────────────────────────────────────────
+
+    def get_domain_randomization_spec(self):
+        """Declare per-episode domain randomization for DomainRandWrapper."""
+        from jax_rl.envs.wrappers.domain_rand import DRSpec
+        return [
+            # Feet-board friction via pair elements (pairs 0,1 = FL-board, FR-board)
+            DRSpec(name="pair_friction", type="model", field="pair_friction",
+                   indices=(0, 2), column=0, min=0.5, max=1.2,
+                   per_element=False, operation="set",
+                   description="Feet-board tangential friction"),
+            # Board mass
+            DRSpec(name="board_mass", type="model", field="body_mass",
+                   indices=(self._board_body_id, self._board_body_id + 1),
+                   min=0.8, max=1.2, per_element=True,
+                   description="Board mass variation"),
+            # Robot link masses
+            DRSpec(name="body_mass", type="model", field="body_mass",
+                   min=0.8, max=1.2, per_element=True,
+                   description="Per-link mass variation"),
+            # Torso COM jitter (smaller range than Go2 — handstand is sensitive)
+            DRSpec(name="torso_com_jitter", type="model", field="body_ipos",
+                   indices=(1, 2), min=-0.05, max=0.05,
+                   per_element=True, operation="add",
+                   description="Torso COM offset"),
+            # Motor strength
+            DRSpec(name="motor_strength", type="model", field="actuator_gainprm",
+                   column=0, min=0.9, max=1.1, per_element=True,
+                   description="Per-actuator motor heterogeneity"),
+            # Joint damping
+            DRSpec(name="dof_damping", type="model", field="dof_damping",
+                   indices=(6, 18), min=0.7, max=2.0, per_element=True,
+                   description="Joint damping variation"),
+            # Joint armature
+            DRSpec(name="dof_armature", type="model", field="dof_armature",
+                   indices=(6, 18), min=0.9, max=1.3, per_element=True,
+                   description="Joint armature variation"),
+            # Joint friction loss
+            DRSpec(name="dof_frictionloss", type="model", field="dof_frictionloss",
+                   indices=(6, 18), min=0.7, max=1.5, per_element=True,
+                   description="Joint friction loss variation"),
+        ]
+
     # ── Core env methods ───────────────────────────────────────────
 
     def reset(self, rng: jax.Array) -> mjx_env.State:

@@ -1,8 +1,12 @@
 """Training wrappers — vectorization, episode management, auto-reset.
 
-Vendored from Brax (VmapWrapper, EpisodeWrapper) and MuJoCo Playground
-(AutoResetWrapper, DomainRandomizationVmapWrapper) to own core training
-infrastructure. Pure JAX — no Brax dependency.
+LEGACY: These wrappers are the original training stack, vendored from Brax
+and MuJoCo Playground. For Go2/sim-to-real work, use DomainRandWrapper
+(jax_rl/envs/wrappers/domain_rand.py) which replaces this entire stack with
+per-episode DR + fresh ICs. These wrappers remain for lightweight envs
+(CheetahRun, Cartpole) where the legacy stack is 3x faster.
+
+Activate via: --reset-mode legacy (default) vs --reset-mode per_step (DomainRandWrapper).
 """
 
 import contextlib

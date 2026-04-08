@@ -69,14 +69,22 @@ class TestWarpGo2Steps:
 
 
 class TestWarpDomainRand:
-    def test_domain_randomize_with_warp_body_id(self, env):
-        from jax_rl.envs.locomotion.go2_randomize import domain_randomize
+    def test_legacy_domain_randomize_with_warp_body_id(self, env):
+        from jax_rl.envs.locomotion.archive.go2_randomize import domain_randomize
         model, in_axes = domain_randomize(
             env.mjx_model,
             jax.random.split(jax.random.PRNGKey(0), 2),
             torso_body_id=env._torso_body_id,
         )
         assert model is not None
+
+    def test_dr_specs_declared(self, env):
+        specs = env.get_domain_randomization_spec()
+        model_specs = [s for s in specs if s.type == "model"]
+        runtime_specs = [s for s in specs if s.type == "runtime"]
+        assert len(model_specs) == 6
+        assert len(runtime_specs) == 2
+        assert {s.name for s in runtime_specs} == {"kp_scale", "kd_scale"}
 
 
 class TestWarpContactModes:
