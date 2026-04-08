@@ -1,0 +1,10 @@
+# Extra auto-link terms that point to pages other than the glossary.
+# Format: term: page.md#anchor
+# Terms are matched case-sensitive for short acronyms, case-insensitive for phrases.
+
+PPO: api/algos.md#ppo
+SAC: api/algos.md#sac
+TD3: api/algos.md#td3
+FastSAC: api/algos.md#fastsac
+FastTD3: api/algos.md#fasttd3
+FlashSAC: api/algos.md#flashsac
