@@ -65,7 +65,7 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **lax.scan carry cost** — 4M-entry buffer in carry = 30% slower than Python loop
 - **Faster component ≠ faster training** — 4.8x buffer speedup = 1.5% end-to-end improvement
 
-## [Infrastructure](lessons/infrastructure.md) — 13 lessons
+## [Infrastructure](lessons/infrastructure.md) — 14 lessons
 
 - **Orbax checkpointing** — must call `wait_until_finished()`, save meta.json alongside
 - **Orbax restore needs exact pytree match** — separate inference artifacts (numpy) from training (orbax)
@@ -80,6 +80,7 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **`--eval-every` is episodes, not steps** — `--eval-every 5000000` = 5M episodes, never triggers. Use ~50000 for Go2.
 - **Env wrappers must be applied in all consumers** — FrameStackWrapper in training but not record_video = checkpoint incompatible at inference
 - **Brax auto-reset does NOT reset state.info** — only pipeline_state and obs are reset. Any FIFO/history in state.info must use `jp.where(done, ...)` to self-reset
+- **Inference artifacts must include ALL model state** — FlashSAC `actor_params.npy` missing BN batch_stats → eval 26 vs training 282. Orbax had it, inference artifact didn't.
 - **mkdocstrings requires `Attributes:` for nn.Module** — `Args:` doesn't work for Flax dataclass fields; untyped params fail `--strict`
 
 ## [MuJoCo Engine](lessons/mujoco.md) — 4 lessons

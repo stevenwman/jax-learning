@@ -84,18 +84,6 @@
   border-left: 3px solid var(--md-primary-fg-color--light);
 }
 
-/* ── Abbreviation tooltips — subtle, not interactive-looking ── */
-
-abbr {
-  text-decoration: none;
-  border-bottom: none;
-  cursor: inherit;
-}
-
-a abbr {
-  pointer-events: none;
-}
-
 /* ── Video styling ── */
 
 .video-grid {

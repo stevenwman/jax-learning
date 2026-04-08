@@ -40,12 +40,8 @@ plugins:
   - search
 
 markdown_extensions:
-  - abbr
   - admonition
   - pymdownx.details
-  - pymdownx.snippets:
-      auto_append:
-        - docs/includes/abbreviations.md
   - pymdownx.superfences:
       custom_fences:
         - name: mermaid

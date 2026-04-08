@@ -143,6 +143,18 @@ Spent hours debugging Go2 PPO at eval ~17. Playground paper shows Go1 reaching ~
 
 ---
 
+## Inference Artifacts Must Include ALL Model State — Not Just Params (2026-04-08)
+
+**Problem:** FlashSAC checkpoint's `actor_params.npy` saved actor params but NOT BatchNorm `batch_stats`. The saving code was added in a commit AFTER the training run finished. `record_video.py` rollout produced instant falls (26 steps), while training eval showed 282.
+
+**Root cause:** FlashSAC's actor uses BatchNorm. At inference (`train=False`), BN uses running mean/var from `batch_stats`. Without them, BN normalizes with init-time zeros/ones → completely different activations → garbage actions. The full orbax checkpoint had batch_stats (saved for training resume), but the lightweight inference artifact didn't.
+
+**Fix:** Extracted batch_stats from orbax checkpoint and patched `actor_params.npy`. Going forward, `save_checkpoint` now includes `actor_batch_stats` when present on `training_state`.
+
+**Lesson:** Any model state that affects inference output must be in the inference artifact — not just learned params. For BatchNorm: running mean/var. For LayerNorm: nothing extra (stateless). For weight norm: nothing extra (applied to params). Test the inference artifact independently from the training checkpoint.
+
+---
+
 ## mkdocstrings requires Google-style docstrings with correct section headers
 
 **Symptom:** `mkdocs build --strict` fails with warnings about unresolvable parameters or unknown params on Flax `nn.Module` classes.

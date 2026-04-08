@@ -1,8 +1,9 @@
 """Record a video of any trained policy.
 
 Usage:
-  MUJOCO_GL=egl uv run python record_video.py                    # random policy
-  MUJOCO_GL=egl uv run python record_video.py --checkpoint ckpt  # trained policy
+  uv run python record_video.py                    # random policy
+  uv run python record_video.py --checkpoint ckpt  # trained policy
+  MUJOCO_GL=osmesa uv run python record_video.py   # force osmesa if EGL unavailable
 
 Works with ALL algos (PPO, SAC, TD3, FastTD3, FastSAC, FastDSAC) — reads meta.json
 to determine algo type and reconstruct the actor network automatically.
@@ -16,6 +17,10 @@ import argparse
 from datetime import datetime
 import os
 import time
+
+# Default to EGL for headless rendering (no DISPLAY required).
+# Override with MUJOCO_GL=osmesa if EGL is unavailable.
+os.environ.setdefault("MUJOCO_GL", "egl")
 
 import imageio
 import jax
