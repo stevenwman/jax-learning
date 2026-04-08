@@ -1,0 +1,398 @@
+"""SAC training script.
+
+Usage:
+    uv run python train_sac.py --env Go2WarpJoystickFlat
+    uv run python train_sac.py --env WalkerWalk --obs-norm
+    uv run python train_sac.py --env Go2WarpJoystickFlat --reset-mode per_step --wandb
+"""
+
+import os, sys
+os.environ.setdefault("XLA_FLAGS", "--xla_gpu_enable_command_buffer=")
+os.environ.setdefault("XLA_CLIENT_MEM_FRACTION", "0.7")
+sys.stdout.reconfigure(line_buffering=True)
+
+import argparse
+import dataclasses
+import time
+from datetime import datetime
+
+import jax
+import jax.numpy as jnp
+import numpy as np
+import optax
+
+from jax_rl.algos.sac import SAC
+from jax_rl.buffers.jax_replay_buffer import JaxReplayBuffer
+from jax_rl.configs.train_config import TrainConfig
+from jax_rl.configs.env_presets import get_sac_preset
+from jax_rl.training import (
+    make_envs, make_identity_norm_state,
+    EpisodeTracker, load_checkpoint,
+    log_training_step, make_metrics_row,
+    maybe_eval_and_checkpoint, final_eval_and_checkpoint,
+)
+from jax_rl.training.checkpointing import CheckpointManager
+from jax_rl.training.metrics_logger import wandb_init, wandb_setup_metrics, wandb_log, wandb_finish
+from jax_rl.utils.normalization import (
+    init as norm_init, update as norm_update, normalize as norm_normalize,
+    normalize_stacked as norm_normalize_stacked,
+)
+
+
+# ── Training ───────────────────────────────────────────────────────────────
+
+def train(cfg: TrainConfig, algo_cfg, seed: int = 0, resume: str | None = None,
+          use_wandb: bool = False, wandb_project: str = "jax-rl"):
+    algo_name = "sac"
+
+    # ── Environment ────────────────────────────────────────────────────────
+    env, env_step, env_state, eval_env, obs_dim, action_dim, key = make_envs(cfg, seed)
+
+    # Dict obs support (with optional privileged obs for asymmetric critic)
+    dict_obs = isinstance(env_state.obs, dict)
+    has_privileged = False
+    critic_obs_dim = None
+    if dict_obs:
+        obs_dim = env_state.obs["state"].shape[-1]
+        has_privileged = "privileged_state" in env_state.obs
+        if has_privileged:
+            critic_obs_dim = env_state.obs["privileged_state"].shape[-1]
+            print(f"  Dict obs detected: actor={obs_dim}d, critic={critic_obs_dim}d (asymmetric)")
+        else:
+            print(f"  Dict obs detected: using 'state' key ({obs_dim}d) for off-policy")
+
+    total_env_steps = cfg.total_timesteps
+
+    print("=" * 80)
+    print(f"{algo_name.upper()} — {cfg.env_name} (MuJoCo Playground)")
+    print("=" * 80)
+    print(f"  obs_dim={obs_dim}, action_dim={action_dim}")
+    print(f"  num_envs={cfg.num_envs}, episode_length={cfg.episode_length}")
+    print(f"  total_timesteps={total_env_steps:,}")
+    print(f"  buffer_size={algo_cfg.buffer_size:,}, min_buffer={algo_cfg.min_buffer_size:,}")
+    print(f"  batch_size={algo_cfg.batch_size}, grad_updates_per_step={algo_cfg.grad_updates_per_step}")
+    print(f"  tau={algo_cfg.tau}, lr={cfg.lr}, gamma={cfg.gamma}")
+    print(f"  reward_scaling={cfg.reward_scaling}")
+
+    # ── Timestamp (shared by checkpoint dir + W&B run name) ─────────────────
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    env_short = cfg.env_name.lower().replace(" ", "_")
+
+    # ── W&B (optional) ─────────────────────────────────────────────────────
+    if use_wandb:
+        wandb_init(
+            project=wandb_project,
+            name=f"{timestamp}_{algo_name}_{env_short}_seed{seed}",
+            config={
+                "algo": algo_name,
+                "env": cfg.env_name,
+                "seed": seed,
+                "timestamp": timestamp,
+                **{k: v for k, v in dataclasses.asdict(cfg).items() if k != "ppo"},
+                **{f"algo_{k}": v for k, v in dataclasses.asdict(algo_cfg).items()},
+            },
+        )
+        wandb_setup_metrics()
+
+    # ── Algo setup ─────────────────────────────────────────────────────────
+    if algo_cfg.grad_clip_norm is not None:
+        optimizer = optax.chain(optax.clip_by_global_norm(algo_cfg.grad_clip_norm), optax.adam(cfg.lr))
+    else:
+        optimizer = optax.adam(cfg.lr)
+    alpha_optimizer = optax.adam(algo_cfg.alpha_lr)
+    algo = SAC(config=algo_cfg, obs_dim=obs_dim, action_dim=action_dim,
+               optimizer=optimizer, alpha_optimizer=alpha_optimizer,
+               gamma=cfg.gamma, handle_truncation=cfg.handle_truncation,
+               critic_obs_dim=critic_obs_dim)
+
+    key, init_key = jax.random.split(key)
+    training_state = algo.init(init_key)
+
+    actor_param_count = sum(x.size for x in jax.tree.leaves(training_state.actor_params))
+    q_param_count = sum(x.size for x in jax.tree.leaves(training_state.q1_params))
+    print(f"  actor_params={actor_param_count:,}, Q_params (each)={q_param_count:,}")
+
+    use_obs_norm = algo_cfg.obs_normalization
+    obs_norm_eps = getattr(algo_cfg, 'obs_norm_eps', 1e-8)
+    n_frame_stack = cfg.n_frame_stack
+    extra_obs_dims = {"critic_obs": critic_obs_dim} if has_privileged else None
+    if n_frame_stack > 1:
+        from jax_rl.buffers.jax_replay_buffer import FrameStackConfig
+        raw_dim = obs_dim // n_frame_stack
+        fsc = FrameStackConfig(n_frames=n_frame_stack, raw_dim=raw_dim, num_envs=cfg.num_envs)
+        buffer = JaxReplayBuffer(raw_dim, action_dim, max_size=algo_cfg.buffer_size,
+                                 frame_stack_config=fsc, extra_obs_dims=extra_obs_dims)
+        # Per-frame normalization: track stats on single-frame obs (raw_dim),
+        # normalize each frame slice independently with shared stats.
+        norm_state = norm_init(raw_dim) if use_obs_norm else make_identity_norm_state(obs_dim)
+    else:
+        buffer = JaxReplayBuffer(obs_dim, action_dim, max_size=algo_cfg.buffer_size,
+                                 extra_obs_dims=extra_obs_dims)
+        norm_state = norm_init(obs_dim) if use_obs_norm else make_identity_norm_state(obs_dim)
+
+    # ── Exploration ────────────────────────────────────────────────────────
+    def explore(actor_params, obs, key):
+        return algo.select_action(actor_params, obs, key)
+    log_extra_fields = [("Ent", "entropy", ".3f"), ("Alpha", "alpha", ".4f")]
+    log_extra_keys = ["entropy", "alpha", "alpha_loss"]
+
+    # ── Resume ─────────────────────────────────────────────────────────────
+    start_step = 0
+    if resume is not None:
+        print(f"\n  Resuming from {resume}")
+        training_state, norm_state, start_step = load_checkpoint(resume, training_state, norm_state)
+        print(f"  Resuming from step {start_step:,}")
+
+    # ── Tracking + infra ───────────────────────────────────────────────────
+    tracker = EpisodeTracker(cfg.num_envs)
+    metrics_log: list[dict] = []
+    ckpt_dir = os.path.join("checkpoints", f"{timestamp}_{algo_name}_{env_short}_seed{seed}")
+    ckpt_mgr = CheckpointManager(ckpt_dir)
+
+    # ── Training loop ──────────────────────────────────────────────────────
+    print(f"\nCollecting {algo_cfg.min_buffer_size:,} samples before first gradient update...")
+    print("-" * 80)
+
+    t0 = time.time()
+    log_every = max(1, 10_000 // cfg.num_envs)
+    last_eval_eps = 0
+    last_metrics: dict = {}
+    total_gradient_steps = 0
+
+    # DR syncd mode: track waste + batch reset
+    reset_mode = getattr(cfg, 'reset_mode', 'legacy')
+    is_dr_syncd = reset_mode == "syncd"
+    is_dr = reset_mode in ("per_step", "syncd")
+    _prev_done = np.zeros(cfg.num_envs)  # CPU-side tracking for syncd
+    _cumul_wasted = 0
+    _cumul_raw = 0
+    if is_dr_syncd:
+        _jit_batch_reset = jax.jit(env.batch_reset)
+        # Warm up batch_reset JIT
+        _jit_batch_reset(env_state).reward.block_until_ready()
+
+    def _get_obs(obs):
+        """Extract flat obs from dict or flat."""
+        return obs["state"] if dict_obs else obs
+
+    def _get_critic_obs(obs):
+        """Extract privileged obs for critic (falls back to actor obs)."""
+        return obs["privileged_state"] if has_privileged else _get_obs(obs)
+
+    for outer_step in range(start_step // cfg.num_envs, total_env_steps // cfg.num_envs):
+        raw_steps = (outer_step + 1) * cfg.num_envs
+        total_steps = raw_steps
+        raw_obs = _get_obs(env_state.obs)
+        critic_raw_obs = _get_critic_obs(env_state.obs) if has_privileged else None
+
+        # ── Obs normalization ──────────────────────────────────────────
+        if use_obs_norm:
+            # When frame stacking, update stats with newest frame only (raw_dim)
+            update_obs = raw_obs[:, :raw_dim] if n_frame_stack > 1 else raw_obs
+            norm_state = norm_update(norm_state, update_obs)
+        if use_obs_norm:
+            obs_for_action = norm_normalize_stacked(norm_state, raw_obs, n_frame_stack, eps=obs_norm_eps) if n_frame_stack > 1 else norm_normalize(norm_state, raw_obs, eps=obs_norm_eps)
+        else:
+            obs_for_action = raw_obs
+
+        # ── Action selection ───────────────────────────────────────────
+        if len(buffer) < algo_cfg.min_buffer_size:
+            key, ak = jax.random.split(key)
+            action = jax.random.uniform(ak, (cfg.num_envs, action_dim), minval=-1.0, maxval=1.0)
+        else:
+            key, ak = jax.random.split(key)
+            action = explore(training_state.actor_params, obs_for_action, ak)
+
+        # ── Env step ───────────────────────────────────────────────────
+        env_state = env_step(env_state, action)
+
+        if is_dr_syncd:
+            # Batch reset when all envs done OR at episode_length (whichever first)
+            all_done = bool(_prev_done.all())
+            if all_done or (outer_step + 1) % cfg.episode_length == 0:
+                env_state = _jit_batch_reset(env_state)
+                _prev_done = np.zeros(cfg.num_envs)
+                tracker.episode_rewards[:] = 0.0
+
+        truncation = (env_state.info.get("truncation", jnp.zeros_like(env_state.done))
+                      if cfg.handle_truncation else jnp.zeros_like(env_state.done))
+
+        # ── Buffer ─────────────────────────────────────────────────────
+        next_raw_obs = _get_obs(env_state.obs)
+        extra_kwargs = {}
+        if has_privileged:
+            extra_kwargs["critic_obs"] = critic_raw_obs
+            extra_kwargs["critic_next_obs"] = _get_critic_obs(env_state.obs)
+        buffer.add_batch(obs=raw_obs, action=action,
+                         reward=env_state.reward * cfg.reward_scaling,
+                         next_obs=next_raw_obs, done=env_state.done,
+                         truncation=truncation, **extra_kwargs)
+
+        # For syncd: only count newly-done envs, not already-dead ones
+        _cur_done = np.asarray(env_state.done)
+        if is_dr_syncd:
+            _cumul_wasted += int(_prev_done.sum())
+            _cumul_raw += cfg.num_envs
+            _newly_done = _cur_done * (1.0 - _prev_done)
+            tracker.step(np.asarray(env_state.reward), _newly_done)
+            _prev_done = np.maximum(_prev_done, _cur_done)
+        else:
+            tracker.step(np.asarray(env_state.reward), _cur_done)
+
+        # ── Gradient updates ───────────────────────────────────────────
+        if len(buffer) >= algo_cfg.min_buffer_size:
+            for _ in range(algo_cfg.grad_updates_per_step):
+                key, sample_key = jax.random.split(key)
+                jax_batch = buffer.sample(algo_cfg.batch_size, key=sample_key)
+                if use_obs_norm:
+                    if n_frame_stack > 1:
+                        jax_batch["obs"] = norm_normalize_stacked(norm_state, jax_batch["obs"], n_frame_stack, eps=obs_norm_eps)
+                        jax_batch["next_obs"] = norm_normalize_stacked(norm_state, jax_batch["next_obs"], n_frame_stack, eps=obs_norm_eps)
+                    else:
+                        jax_batch["obs"] = norm_normalize(norm_state, jax_batch["obs"], eps=obs_norm_eps)
+                        jax_batch["next_obs"] = norm_normalize(norm_state, jax_batch["next_obs"], eps=obs_norm_eps)
+                # Algos always read batch["critic_obs"]. For non-privileged envs,
+                # critic sees the same obs as actor.
+                if not has_privileged:
+                    jax_batch["critic_obs"] = jax_batch["obs"]
+                    jax_batch["critic_next_obs"] = jax_batch["next_obs"]
+                training_state, step_metrics = algo.update(training_state, jax_batch)
+                total_gradient_steps += 1
+                last_metrics = step_metrics
+
+        # ── Logging ────────────────────────────────────────────────────
+        if outer_step % log_every == 0 or total_steps >= total_env_steps:
+            elapsed = time.time() - t0
+            sps = int(total_steps / elapsed) if elapsed > 0 else 0
+            is_training = last_metrics and len(buffer) >= algo_cfg.min_buffer_size
+
+            log_training_step(
+                total_steps, tracker, last_metrics, sps,
+                is_training=is_training,
+                buffer_size=len(buffer), min_buffer=algo_cfg.min_buffer_size,
+                extra_fields=log_extra_fields,
+                elapsed=elapsed,
+            )
+
+            if is_training:
+                row = make_metrics_row(
+                    total_steps, tracker, last_metrics, total_gradient_steps, sps, elapsed,
+                    extra_keys=log_extra_keys,
+                )
+
+                # DR waste metrics
+                if is_dr_syncd and _cumul_raw > 0:
+                    waste_frac = _cumul_wasted / _cumul_raw
+                    effective_steps = _cumul_raw - _cumul_wasted
+                    row["waste_fraction"] = round(waste_frac, 4)
+                    row["effective_steps"] = effective_steps
+                    row["effective_sps"] = int(effective_steps / elapsed) if elapsed > 0 else 0
+                    row["raw_sps"] = int(raw_steps / elapsed) if elapsed > 0 else 0
+
+                metrics_log.append(row)
+                wandb_log(row, step=raw_steps)
+
+        # ── Eval + checkpoint ──────────────────────────────────────────
+        if use_obs_norm:
+            obs_norm_fn = (lambda o: norm_normalize_stacked(norm_state, _get_obs(o), n_frame_stack, eps=obs_norm_eps)) if n_frame_stack > 1 else (lambda o: norm_normalize(norm_state, _get_obs(o), eps=obs_norm_eps))
+        else:
+            obs_norm_fn = (lambda o: _get_obs(o)) if dict_obs else None
+        _ts = training_state
+        last_eval_eps, key = maybe_eval_and_checkpoint(
+            algo.select_action, training_state.actor_params, eval_env, tracker,
+            cfg, algo_cfg, algo_name, ckpt_dir, training_state, norm_state,
+            obs_dim, action_dim, metrics_log, last_eval_eps, key, resume,
+            obs_normalize_fn=obs_norm_fn,
+            q_fn=lambda obs, action: algo.get_q_value(
+                _ts, _get_obs(obs), action,
+                critic_obs=obs["privileged_state"] if isinstance(obs, dict) and "privileged_state" in obs else None),
+            ckpt_mgr=ckpt_mgr,
+        )
+
+    # ── Final eval ─────────────────────────────────────────────────────────
+    if use_obs_norm:
+        obs_norm_fn = (lambda o: norm_normalize_stacked(norm_state, _get_obs(o), n_frame_stack, eps=obs_norm_eps)) if n_frame_stack > 1 else (lambda o: norm_normalize(norm_state, _get_obs(o), eps=obs_norm_eps))
+    else:
+        obs_norm_fn = (lambda o: _get_obs(o)) if dict_obs else None
+    final_eval_and_checkpoint(
+        algo.select_action, training_state.actor_params, eval_env, tracker,
+        cfg, algo_cfg, algo_name, ckpt_dir, training_state, norm_state,
+        obs_dim, action_dim, metrics_log, key, resume, total_gradient_steps,
+        obs_normalize_fn=obs_norm_fn,
+        q_fn=lambda obs, action: algo.get_q_value(
+            training_state, _get_obs(obs), action,
+            critic_obs=obs["privileged_state"] if isinstance(obs, dict) and "privileged_state" in obs else None),
+        ckpt_mgr=ckpt_mgr,
+    )
+
+    wandb_finish()
+
+
+# ── CLI ────────────────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--env", type=str, default="WalkerWalk",
+                        help="Environment name (e.g., CheetahRun, HumanoidRun, Go2WarpJoystickFlat)")
+    parser.add_argument("--seed", type=int, default=0, help="Random seed")
+    parser.add_argument("--resume", type=str, default=None,
+                        help="Resume from checkpoint directory path")
+    parser.add_argument("--num-envs", type=int, default=None,
+                        help="Number of parallel environments (default: from env preset)")
+    parser.add_argument("--total-timesteps", type=int, default=None,
+                        help="Total environment steps to train (default: from env preset)")
+    parser.add_argument("--lr", type=float, default=None,
+                        help="Learning rate for actor and critic (default: from algo config)")
+    parser.add_argument("--reward-scaling", type=float, default=None,
+                        help="Multiply rewards by this factor (default: 1.0)")
+    parser.add_argument("--episode-length", type=int, default=None,
+                        help="Max steps per episode (default: from env preset)")
+    parser.add_argument("--target-entropy-scale", type=float, default=None,
+                        help="target_entropy = -scale * action_dim (default: from algo config)")
+    parser.add_argument("--eval-every", type=int, default=None,
+                        help="Evaluate every N episodes (default: every 512 episodes)")
+    parser.add_argument("--obs-norm", action="store_true",
+                        help="Enable sample-time obs normalization (recommended for humanoid tasks)")
+    parser.add_argument("--domain-rand", action="store_true",
+                        help="Enable domain randomization (Go2 only: friction, mass, damping, etc.)")
+    parser.add_argument("--wandb", action="store_true",
+                        help="Enable W&B experiment tracking (requires wandb installed)")
+    parser.add_argument("--wandb-project", type=str, default="jax-rl",
+                        help="W&B project name (default: jax-rl)")
+    parser.add_argument("--frame-stack", type=int, default=None,
+                        help="Number of stacked observation frames (default: 1, use 3 for locomotion)")
+    parser.add_argument("--action-delay-ms", type=int, default=None,
+                        help="Fixed action delay in ms (e.g., 120 for Go2 sim2real)")
+    parser.add_argument("--action-delay-range-ms", type=int, nargs=2, default=None,
+                        metavar=("MIN", "MAX"),
+                        help="Randomized action delay range in ms (e.g., 40 120)")
+    parser.add_argument("--reset-mode", type=str, default=None,
+                        choices=["legacy", "per_step", "syncd"],
+                        help="Reset mode: legacy (AutoReset), per_step or syncd (DomainRandWrapper)")
+    args = parser.parse_args()
+
+    # Load preset
+    cfg, algo_cfg = get_sac_preset(args.env)
+
+    # Apply overrides
+    cfg_overrides = {}
+    algo_overrides = {}
+    if args.num_envs is not None: cfg_overrides["num_envs"] = args.num_envs
+    if args.total_timesteps is not None: cfg_overrides["total_timesteps"] = args.total_timesteps
+    if args.lr is not None: cfg_overrides["lr"] = args.lr
+    if args.reward_scaling is not None: cfg_overrides["reward_scaling"] = args.reward_scaling
+    if args.episode_length is not None: cfg_overrides["episode_length"] = args.episode_length
+    if args.eval_every is not None: cfg_overrides["eval_every_n_episodes"] = args.eval_every
+    if args.target_entropy_scale is not None: algo_overrides["target_entropy_scale"] = args.target_entropy_scale
+    if args.obs_norm: algo_overrides["obs_normalization"] = True
+    if args.domain_rand: cfg_overrides["domain_rand"] = True
+    if args.frame_stack is not None: cfg_overrides["n_frame_stack"] = args.frame_stack
+    if args.action_delay_ms is not None: cfg_overrides["action_delay_ms"] = args.action_delay_ms
+    if args.action_delay_range_ms is not None: cfg_overrides["action_delay_range_ms"] = tuple(args.action_delay_range_ms)
+    if args.reset_mode is not None: cfg_overrides["reset_mode"] = args.reset_mode
+
+    if cfg_overrides: cfg = dataclasses.replace(cfg, **cfg_overrides)
+    if algo_overrides: algo_cfg = dataclasses.replace(algo_cfg, **algo_overrides)
+
+    train(cfg, algo_cfg, seed=args.seed, resume=args.resume,
+          use_wandb=args.wandb, wandb_project=args.wandb_project)
