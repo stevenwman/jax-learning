@@ -217,8 +217,10 @@ def train(cfg: TrainConfig, algo_cfg: FlashSACConfig, seed: int = 0,
     ckpt_dir = os.path.join("checkpoints", f"{timestamp}_flash_sac_{env_short}_seed{seed}")
     ckpt_mgr = CheckpointManager(ckpt_dir)
 
-    log_extra_fields = [("Ent", "entropy", ".3f"), ("Alpha", "alpha", ".4f")]
-    log_extra_keys = ["entropy", "alpha", "alpha_loss"]
+    log_extra_fields = [("Ent", "entropy", ".3f"), ("Alpha", "alpha", ".4f"),
+                        ("RewScale", "reward_scale_denom", ".3f")]
+    log_extra_keys = ["entropy", "alpha", "alpha_loss",
+                      "reward_G_var", "reward_G_r_max", "reward_scale_denom"]
 
     print(f"\nCollecting {algo_cfg.min_buffer_size:,} samples before first gradient update...")
     print("-" * 80)
@@ -301,6 +303,19 @@ def train(cfg: TrainConfig, algo_cfg: FlashSACConfig, seed: int = 0,
 
                 training_state, step_metrics = algo.update(training_state, jax_batch)
                 total_gradient_steps += 1
+
+                # Inject reward scaling diagnostics
+                if algo_cfg.normalize_reward:
+                    G_var = float(reward_norm_state.G_var)
+                    G_r_max = float(reward_norm_state.G_r_max)
+                    denom = max(G_var ** 0.5, G_r_max / algo_cfg.G_max)
+                    step_metrics = {
+                        **step_metrics,
+                        "reward_G_var": G_var,
+                        "reward_G_r_max": G_r_max,
+                        "reward_scale_denom": denom,
+                    }
+
                 # Carry forward actor metrics on skip steps (policy_delay pattern)
                 if float(step_metrics.get("actor_loss", 0.0)) != 0.0:
                     last_metrics = step_metrics
