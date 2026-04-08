@@ -39,7 +39,7 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **Frame stacking doesn't help locomotion with proprioceptive obs** — A/B on Go2 FastSAC: 276.5 (48d) vs 271.3 (144d stacked). `last_action` already provides temporal context.
 - **Staged rewards need longer budgets** — gated rewards (box_target after reached_box) require 10M+ steps to discover full sequence; 2M plateau is stage 1, not convergence
 
-## [Distributional RL (C51 / FastTD3 / FastSAC / FlashSAC)](lessons/distributional.md) — 11 lessons
+## [Distributional RL (C51 / FastTD3 / FastSAC / FlashSAC)](lessons/distributional.md) — 12 lessons
 
 - **FastTD3 scale matters** — 285 eval at 128 envs/5M steps, **880** at 1024 envs/86M steps
 - **C51 V_min/V_max is critical** — distributional Q is hard-bounded, get it wrong and critic is blind
@@ -52,6 +52,7 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **FlashSAC weight norm axis** — Flax kernel `(in, out)` vs PyTorch `(out, in)` → normalize `axis=0` not `axis=-1`. Silent correctness bug.
 - **Target BN stats NOT copied from online** — target critics maintain own running stats via `train=True` forwards. EMA only updates learned params.
 - **Asymmetric done signals** — reward normalizer resets on `terminated|truncated`, C51 bootstrap uses `terminated` only. Mixing them causes value underestimation.
+- **BatchNorm running stats must follow training state** — Flax BN stats are separate pytrees. Eval with stale init stats → online 686, eval 26. Update before every eval call.
 
 ## [JAX Performance](lessons/jax_performance.md) — 8 lessons
 
@@ -102,6 +103,19 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **Asymmetric critic simplifies vision** — privileged critic skips images entirely. No shared encoder stop-grad, no frame stacking on critic. Actor CNN trains from policy gradients only.
 - **Pixel replay buffer: uint8 is non-negotiable** — 100K entries at 84×84×9: 6.3GB (uint8) vs 25GB (float32). Assemble stacks at sample time.
 - **MJWarp renderer: Warp-only, fixed nworld** — `mjx.render()` requires `impl="warp"`. nworld frozen at `create_render_context()` time.
+
+## [AutoReset & Domain Randomization](lessons/autoreset_and_dr.md) — 10 lessons
+
+- **Current DR is weak** — 256 frozen physics configs, never re-randomized. Same as Brax.
+- **full_reset=True is wildly inconsistent** — +24% Go2, -99% CheetahRun. Env-specific.
+- **JAX can't do selective reset** — vmap lowers cond→select. Both paths always execute. Isaac Lab avoids via PyTorch.
+- **Zeroed qpos on Go2 = 10-19x solver blowup** — always use keyframe/default pose.
+- **Dead envs don't slow physics** — constant throughput regardless of waste fraction.
+- **Cumulative SPS is misleading** — JIT warmup dominates early. Always compare converged SPS.
+- **Per-step GPU→CPU sync kills async execution** — one np.asarray() per step = 8x slowdown.
+- **Syncd mode: 2x raw throughput, impractical waste** — 60-95% waste, tracker/buffer integration nightmare.
+- **Per_step DRv2: 4% slower, better eval** — Go2 FastSAC 5M: eval 280 (per_step) vs 270 (legacy).
+- **DRv2 per_step is the path forward for Go2** — fresh ICs, clean state.info, per-episode DR foundation.
 
 ## [MuJoCo Warp](lessons/warp.md) — 6 lessons
 

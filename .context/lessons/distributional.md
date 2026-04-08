@@ -122,7 +122,7 @@ loss = mean(ratio * huber(q_mean, target_q, delta=50) + ...)
 
 ---
 
-## FlashSAC Port: Three Porting Gotchas
+## FlashSAC Port: Four Porting Gotchas
 
 **Context:** Porting FlashSAC from PyTorch to JAX/Flax. Five spec review passes caught 22 issues — three would have silently broken training.
 
@@ -145,3 +145,9 @@ In PyTorch, `ema_update_parameters()` naturally skips buffers. In JAX/Flax, wher
 - **C51 bootstrap** uses `terminated` ONLY (truncation should NOT zero out the value estimate)
 
 FastSAC uses `max(done, truncation)` for both. FlashSAC's asymmetry is deliberate — mixing them up causes value underestimation on long-horizon tasks.
+
+### 4. BatchNorm running stats must follow the training state
+
+In JAX/Flax, BatchNorm running stats (`mean`, `var`) are separate from learned params. When `select_action` is used for eval, it needs the *current* running stats — not the ones from `init()`. If batch_stats are captured once in a closure or stored as a default, eval will use all-zeros running stats → garbage actions.
+
+Symptom: online return 686 but eval return 26. Fix: explicitly update the batch_stats reference from `training_state.actor_batch_stats` before every eval call. This is a Flax-specific gotcha — PyTorch BatchNorm stores running stats as buffers on the module, so they update in-place automatically.
