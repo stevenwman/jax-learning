@@ -334,8 +334,8 @@ def train(cfg: TrainConfig, algo_cfg: FlashSACConfig, seed: int = 0,
                 wandb_log(row, step=total_steps)
 
         # ── Eval + checkpoint ──────────────────────────────────────────
-        # Pass actor_batch_stats via action_fn_kwargs so eval runner can use it.
-        _bs = training_state.actor_batch_stats
+        # Update actor batch_stats so select_action uses current BN running stats
+        algo._default_actor_bs = training_state.actor_batch_stats
         _ts = training_state
 
         last_eval_eps, key = maybe_eval_and_checkpoint(
@@ -355,6 +355,7 @@ def train(cfg: TrainConfig, algo_cfg: FlashSACConfig, seed: int = 0,
         )
 
     # ── Final eval ─────────────────────────────────────────────────────────
+    algo._default_actor_bs = training_state.actor_batch_stats
     _ts = training_state
     final_eval_and_checkpoint(
         algo.select_action,
