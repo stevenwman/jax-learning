@@ -14,6 +14,8 @@ Dataclass-based configuration system. `TrainConfig` is the top-level config shar
 
 ::: jax_rl.configs.fast_td3_config.FastTD3Config
 
+::: jax_rl.configs.flash_sac_config.FlashSACConfig
+
 ::: jax_rl.configs.networks_config.EncoderConfig
 
 ::: jax_rl.configs.networks_config.PolicyHeadConfig

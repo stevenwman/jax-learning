@@ -65,6 +65,31 @@ uv run python docs/scripts/gen_cli_reference.py
 
 ---
 
+## `train_flashsac.py`
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--env` | str | `CartpoleBalance` | Environment name (e.g., CartpoleBalance, CheetahRun, Go2WarpJoystickFlat) |
+| `--seed` | int | `0` | Random seed |
+| `--resume` | str | - | Resume from checkpoint directory path |
+| `--num-envs` | int | - | Number of parallel environments |
+| `--total-timesteps` | int | - | Total environment steps to train |
+| `--episode-length` | int | - | Max steps per episode |
+| `--batch-size` | int | - | Batch size for gradient updates |
+| `--gamma` | float | - | Discount factor |
+| `--lr` | float | from preset | Peak learning rate (overrides lr_peak in FlashSACConfig) |
+| `--lr-end` | float | - | End learning rate for cosine decay |
+| `--buffer-size` | int | - | Replay buffer capacity |
+| `--grad-updates-per-step` | int | - | Gradient updates per env step (UTD ratio) |
+| `--no-reward-norm` | flag | off | Disable adaptive reward normalization |
+| `--G-max` | float | - | Target max magnitude for discounted returns (reward norm) |
+| `--no-weight-norm` | flag | off | Disable weight normalization after optimizer steps |
+| `--eval-every` | int | - | Evaluate every N episodes |
+| `--wandb` | flag | off | Enable W&B experiment tracking |
+| `--wandb-project` | str | `jax-rl` | W&B project name |
+
+---
+
 ## `record_video.py`
 
 | Flag | Type | Default | Description |

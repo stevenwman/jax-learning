@@ -17,3 +17,5 @@ Modular neural network architecture with separate encoder, head, and builder lay
 ::: jax_rl.networks.heads.q_head.QHead
 
 ::: jax_rl.networks.heads.q_distributional.DistributionalQHead
+
+::: jax_rl.networks.flash_blocks

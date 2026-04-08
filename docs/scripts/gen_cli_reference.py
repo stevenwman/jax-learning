@@ -156,6 +156,47 @@ def build_ppo_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def build_flashsac_parser() -> argparse.ArgumentParser:
+    """Mirror of train_flashsac.py's argparse setup."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--env", type=str, default="CartpoleBalance",
+                        help="Environment name (e.g., CartpoleBalance, CheetahRun, Go2WarpJoystickFlat)")
+    parser.add_argument("--seed", type=int, default=0, help="Random seed")
+    parser.add_argument("--resume", type=str, default=None,
+                        help="Resume from checkpoint directory path")
+    parser.add_argument("--num-envs", type=int, default=None,
+                        help="Number of parallel environments")
+    parser.add_argument("--total-timesteps", type=int, default=None,
+                        help="Total environment steps to train")
+    parser.add_argument("--episode-length", type=int, default=None,
+                        help="Max steps per episode")
+    parser.add_argument("--batch-size", type=int, default=None,
+                        help="Batch size for gradient updates")
+    parser.add_argument("--gamma", type=float, default=None,
+                        help="Discount factor")
+    parser.add_argument("--lr", type=float, default=None,
+                        help="Peak learning rate (overrides lr_peak in FlashSACConfig)")
+    parser.add_argument("--lr-end", type=float, default=None,
+                        help="End learning rate for cosine decay")
+    parser.add_argument("--buffer-size", type=int, default=None,
+                        help="Replay buffer capacity")
+    parser.add_argument("--grad-updates-per-step", type=int, default=None,
+                        help="Gradient updates per env step (UTD ratio)")
+    parser.add_argument("--no-reward-norm", action="store_true",
+                        help="Disable adaptive reward normalization")
+    parser.add_argument("--G-max", type=float, default=None,
+                        help="Target max magnitude for discounted returns (reward norm)")
+    parser.add_argument("--no-weight-norm", action="store_true",
+                        help="Disable weight normalization after optimizer steps")
+    parser.add_argument("--eval-every", type=int, default=None,
+                        help="Evaluate every N episodes")
+    parser.add_argument("--wandb", action="store_true",
+                        help="Enable W&B experiment tracking")
+    parser.add_argument("--wandb-project", type=str, default="jax-rl",
+                        help="W&B project name")
+    return parser
+
+
 def build_record_parser() -> argparse.ArgumentParser:
     """Mirror of record_video.py's argparse setup."""
     parser = argparse.ArgumentParser()
@@ -191,6 +232,7 @@ uv run python docs/scripts/gen_cli_reference.py
     sections = [
         render_parser("train_ppo_fast.py", build_ppo_parser()),
         render_parser("train_offpolicy.py", build_offpolicy_parser()),
+        render_parser("train_flashsac.py", build_flashsac_parser()),
         render_parser("record_video.py", build_record_parser()),
     ]
     output = header + "\n---\n\n".join(sections)

@@ -41,7 +41,7 @@ For the Go2 quadruped, observations are dictionaries:
 
 ## Algorithms
 
-Five algorithms, each a self-contained class with no inheritance hierarchy:
+Six algorithms, each a self-contained class with no inheritance hierarchy:
 
 | Algorithm | Type | Key trait |
 |-----------|------|-----------|
@@ -50,6 +50,7 @@ Five algorithms, each a self-contained class with no inheritance hierarchy:
 | **TD3** | Off-policy | Twin critics, delayed policy updates |
 | **FastSAC** | Off-policy | Distributional C51 critic, large batch training |
 | **FastTD3** | Off-policy | Distributional C51 critic, large batch training |
+| **FlashSAC** | Off-policy | Inverted residual blocks, BatchNorm, weight norm, adaptive reward scaling |
 
 !!! note "On-policy vs off-policy"
     **On-policy** (PPO) collects fresh experience every iteration and discards it after one update. Simple and stable, but needs many environment steps. **Off-policy** (SAC, TD3, Fast variants) stores experience in a replay buffer and reuses it across many updates — more sample-efficient, but trickier to tune.

@@ -21,7 +21,7 @@ jax-learning is built around the [Unitree Go2](https://www.unitree.com/go2/) qua
 
 ## Key Features
 
-- **5 RL algorithms** — PPO, SAC, TD3, FastSAC, and FastTD3 (distributional critics with large-batch training)
+- **6 RL algorithms** — PPO, SAC, TD3, FastSAC, FastTD3, and FlashSAC (inverted residual blocks + BatchNorm + adaptive reward scaling)
 - **GPU-accelerated environments** — Two backends: MJX (JAX-native MuJoCo) and MuJoCo Warp (preferred for Go2 — supports cylinder collisions and the exact Unitree MJCF)
 - **Sim-to-real pipeline** — Train in simulation, deploy on the real Go2 over UDP
 - **Composable rewards and observations** — Swap reward terms and observation groups without touching environment internals

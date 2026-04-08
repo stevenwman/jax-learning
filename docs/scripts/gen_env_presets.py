@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from jax_rl.configs.env_presets import (
     PRESETS, SAC_PRESETS, TD3_PRESETS, FAST_TD3_PRESETS, FAST_SAC_PRESETS,
+    FLASH_SAC_PRESETS,
 )
 from jax_rl.configs.train_config import TrainConfig
 from jax_rl.configs.ppo_config import PPOConfig
@@ -22,6 +23,7 @@ from jax_rl.configs.sac_config import SACConfig
 from jax_rl.configs.td3_config import TD3Config
 from jax_rl.configs.fast_td3_config import FastTD3Config
 from jax_rl.configs.fast_sac_config import FastSACConfig
+from jax_rl.configs.flash_sac_config import FlashSACConfig
 
 
 def _fmt(v) -> str:
@@ -171,6 +173,7 @@ If an environment is not listed, a default config is used with the environment n
         render_offpolicy_presets("TD3 Presets", "get_td3_preset", TD3_PRESETS, TD3Config),
         render_offpolicy_presets("FastTD3 Presets", "get_fast_td3_preset", FAST_TD3_PRESETS, FastTD3Config),
         render_offpolicy_presets("FastSAC Presets", "get_fast_sac_preset", FAST_SAC_PRESETS, FastSACConfig),
+        render_offpolicy_presets("FlashSAC Presets", "get_flash_sac_preset", FLASH_SAC_PRESETS, FlashSACConfig),
     ]
     output = header + "\n---\n\n".join(sections)
 

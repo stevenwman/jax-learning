@@ -83,3 +83,18 @@ Used by `train_offpolicy.py --algo <name>`. Accessed via `get_fast_sac_preset(en
 | Go2WarpJoystickFlat | 1,024 | 100M | 3e-04 | 0.97 | 1 | 8,192 | 8 |  |
 
 FastSAC algo defaults: `tau=0.125`, `hidden_dim=(512, 256, 128)`, `activation=swish`, `batch_size=8,192`, `grad_updates_per_step=8`, `buffer_size=4M`, `min_buffer_size=8,192`, `q_layer_norm=True`.
+
+---
+
+## FlashSAC Presets
+
+Used by `train_offpolicy.py --algo <name>`. Accessed via `get_flash_sac_preset(env_name)`.
+
+| Environment | num_envs | timesteps | lr | gamma | reward_scaling | batch_size | UTD | Notes |
+|---|---|---|---|---|---|---|---|---|
+| CheetahRun | 1,024 | 100M | 3e-04 | 0.99 | 1 | 2,048 | 8 |  |
+| WalkerWalk | 1,024 | 100M | 3e-04 | 0.99 | 1 | 2,048 | 8 |  |
+| HumanoidRun | 1,024 | 100M | 3e-04 | 0.99 | 1 | 2,048 | 8 |  |
+| Go2WarpJoystickFlat | 1,024 | 100M | 3e-04 | 0.97 | 1 | 2,048 | 8 |  |
+
+FlashSAC algo defaults: `tau=0.01`, `batch_size=2,048`, `grad_updates_per_step=1`, `buffer_size=1M`, `min_buffer_size=10,000`.
