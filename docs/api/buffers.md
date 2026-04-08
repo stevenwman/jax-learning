@@ -21,11 +21,11 @@ GPU-resident circular FIFO replay buffer with uniform random sampling. Supports 
 
 ```python
 JaxReplayBuffer(
-    max_size: int,
     obs_dim: int,
     action_dim: int,
+    max_size: int = 1_000_000,
     frame_stack_config: FrameStackConfig | None = None,
-    critic_obs_dim: int | None = None,  # asymmetric critic
+    extra_obs_dims: dict[str, int] | None = None,  # asymmetric critic
 )
 ```
 

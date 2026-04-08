@@ -32,7 +32,7 @@ The env's `step()` method then applies weights from `reward_config.scales`:
 rewards = compute_rewards(self._reward_spec, data=data, action=action,
                           info=info, done=done)
 rewards = {k: v * self._config.reward_config.scales[k] for k, v in rewards.items()}
-reward = jp.clip(sum(rewards.values()) * self.dt, 0.0, 10000.0)
+reward = jp.clip(sum(rewards.values()) * self.dt, -10000.0, 10000.0)
 ```
 
 This separation means:
@@ -245,3 +245,9 @@ reward_config=config_dict.create(
     ),
 )
 ```
+
+## Next Steps
+
+- [**Asymmetric Critic**](asymmetric-critic.md) -- give the critic access to privileged observations for faster learning
+- [**Sim-to-Real**](sim2real.md) -- deploy your trained policy on real hardware
+- [**Glossary**](../glossary.md) -- definitions for reward shaping, domain randomization, and other terms

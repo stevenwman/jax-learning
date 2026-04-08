@@ -62,9 +62,9 @@ Every training run is defined by two config objects:
 **Presets** in `env_presets.py` return `(TrainConfig, AlgoConfig)` tuples with known-good hyperparameters:
 
 ```python
-from jax_rl.configs.env_presets import cheetah_fast_td3
+from jax_rl.configs.env_presets import get_fast_td3_preset
 
-train_cfg, algo_cfg = cheetah_fast_td3()
+train_cfg, algo_cfg = get_fast_td3_preset("CheetahRun")
 ```
 
 This keeps training scripts short — you pick a preset and override only what you need.

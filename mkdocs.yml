@@ -1,4 +1,5 @@
 site_name: jax-learning
+site_url: https://stevenwman.github.io/jax-learning/
 site_description: JAX-based reinforcement learning for robot learning
 repo_url: https://github.com/stevenwman/jax-learning
 repo_name: stevenwman/jax-learning
@@ -37,18 +38,6 @@ theme:
 
 plugins:
   - search
-  - mkdocstrings:
-      handlers:
-        python:
-          paths: [.]
-          options:
-            show_source: false
-            show_root_heading: true
-            heading_level: 3
-            members_order: source
-            docstring_style: google
-            docstring_options:
-              warn_unknown_params: false
 
 markdown_extensions:
   - admonition

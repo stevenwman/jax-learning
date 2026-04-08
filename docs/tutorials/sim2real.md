@@ -55,12 +55,13 @@ After training, the best checkpoint is saved automatically:
 
 ```
 checkpoints/<run-dir>/best/
-├── actor_params.npy    # policy weights (actor network only)
-├── critic_params.npy   # critic weights (not needed for deploy)
-└── config.json         # training configuration
+├── meta.json           # training config, algo type, obs/action dims
+├── actor_params.npy    # actor params + normalization stats (pickled dict)
+├── metrics.csv         # training curve
+└── orbax/              # full training state for resume
 ```
 
-Only `actor_params.npy` is needed for deployment. The deploy code loads these as numpy arrays and runs inference with pure matrix multiplication -- no JAX required.
+Only `meta.json` and `actor_params.npy` are needed for deployment. The `.npy` file is a pickled dict containing `actor_params`, `norm_mean`, `norm_mean_of_squares`, `norm_count`, and optionally `actor_batch_stats` (FlashSAC). The deploy code loads these as numpy arrays and runs inference with pure matrix multiplication -- no JAX required.
 
 ## Step 4: Sim2Sim Validation
 
@@ -140,3 +141,8 @@ ONNX export is not yet implemented. Numpy inference at 50Hz is sufficient for th
 3. **PD gains must match.** The same Kp/Kd values used during training must be used in deployment. Warp-trained policies use Kp=20, Kd=0.5 (Unitree's official gains).
 
 4. **Two venvs, zero conflicts.** Training (Python 3.13, JAX) and deploy (Python 3.12, CycloneDDS) are completely isolated. Neither can break the other.
+
+## Next Steps
+
+- [**Lessons Learned**](../reference/lessons-learned.md) -- hard-won insights from training and deployment
+- [**Glossary**](../glossary.md) -- definitions for domain randomization, PD gains, sim-to-real, and other terms

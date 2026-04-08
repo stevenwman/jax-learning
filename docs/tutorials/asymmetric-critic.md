@@ -89,3 +89,9 @@ Balance tasks require tracking velocity trends and oscillation patterns that a s
 
 !!! tip "Rule of thumb"
     If your task involves dynamic balance or requires estimating velocities/accelerations that aren't directly observed, try frame stacking. For locomotion with proprioceptive observations that already include velocities and last action, skip it.
+
+## Next Steps
+
+- [**Custom Rewards**](custom-rewards.md) -- swap reward terms and observation groups
+- [**Sim-to-Real**](sim2real.md) -- deploy your trained policy on real hardware
+- [**Glossary**](../glossary.md) -- definitions for actor-critic, privileged state, and other terms
