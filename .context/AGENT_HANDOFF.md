@@ -171,13 +171,15 @@ jax-learning/
 ├── jax_rl/utils/             # reward_scaling.py (adaptive reward normalization)
 ├── jax_rl/training/          # checkpointing, eval_runner, env_setup, metrics_logger
 ├── jax_rl/buffers/           # jax_replay_buffer.py, rollout_buffer.py
-├── jax_rl/envs/wrappers/     # FrameStackWrapper, vendored training wrappers (Vmap, Episode, AutoReset, DR)
+├── jax_rl/envs/wrappers/     # FrameStackWrapper, vendored training wrappers (Vmap, Episode, AutoReset, DR), DRv2 (dr_v2.py)
 ├── tests/                    # 243 tests (uv run python -m pytest tests/ -v)
 └── tools/brax_baselines/     # Brax PPO A/B test scripts
 ```
 
 ### Env framework coupling
-Training wrappers (Vmap, Episode, AutoReset, DR) are vendored in `jax_rl/envs/wrappers/training.py` — no Brax training wrapper dependency. `env_setup.py` still uses Playground's registry (`pg_registry.load()`) for env loading and `mjx_env.MjxEnv` as the env type. All other core infra (algos, networks, configs, buffers, utils) is pure JAX/Flax/Optax with zero env framework dependencies. To add ManiSkill/HumanoidBench, extract an env factory interface from env_setup.py — everything downstream works unchanged.
+Training wrappers (Vmap, Episode, AutoReset, DR) are vendored in `jax_rl/envs/wrappers/training.py` — no Brax training wrapper dependency. **DRv2 wrapper** (`jax_rl/envs/wrappers/dr_v2.py`) replaces the full wrapper stack for Go2 — handles vmap, episode tracking, auto-reset, and per-episode domain randomization in one wrapper. Activated via `--reset-mode per_step` on train scripts. Env declares DR specs via `get_domain_randomization_spec()`. See `.context/lessons/autoreset_and_dr.md` for the full investigation.
+
+`env_setup.py` still uses Playground's registry (`pg_registry.load()`) for env loading and `mjx_env.MjxEnv` as the env type. All other core infra (algos, networks, configs, buffers, utils) is pure JAX/Flax/Optax with zero env framework dependencies. To add ManiSkill/HumanoidBench, extract an env factory interface from env_setup.py — everything downstream works unchanged.
 
 ### Config system
 Each algo has its own config dataclass. Presets in `env_presets.py` return `(TrainConfig, AlgoConfig)` tuples. PPO-specific fields live in `PPOConfig`, not `TrainConfig`. CLI overrides via `dataclasses.replace(cfg, lr=args.lr)`.
@@ -203,7 +205,7 @@ Every checkpoint contains: `meta.json` (full config), `metrics.csv` (training cu
 | TD3 | `train_offpolicy.py --algo td3` | Off-policy, deterministic, delayed critic update, target noise | Vanilla TD3 |
 | FastTD3 | `train_offpolicy.py --algo fast_td3` | C51 distributional + TD3 | Eval **880** on CheetahRun (low-dim). Benchmark: 1024 envs, 86M steps |
 | FastSAC | `train_offpolicy.py --algo fast_sac` | C51 distributional + SAC + asymmetric critic (Go2) | Eval **892** on HumanoidRun, **279.2** on Go2. Benchmark: 1024 envs. |
-| **FlashSAC** | `train_flashsac.py` | Inverted residual blocks + BatchNorm + weight norm + adaptive reward scaling + Zeta noise | Standalone script (not in train_offpolicy.py). 22 tests passing. |
+| **FlashSAC** | `train_flashsac.py` | Inverted residual blocks + BatchNorm + weight norm + adaptive reward scaling + Zeta noise | Eval **282.4** on Go2 @ 10M steps (comparable to FastSAC 276.5 @ 18M). Presets in `env_presets.py`. |
 
 ---
 
@@ -261,7 +263,7 @@ See `TODO.md` for full prioritized list. Summary:
 # Training
 uv run python train_ppo_fast.py --env Go2WarpJoystickFlat --num-envs 1024 --total-timesteps 50000000  # Warp backend (unitree MJCF)
 uv run python train_offpolicy.py --algo fast_sac --env Go2WarpJoystickFlat --num-envs 1024 --total-timesteps 20000000 --domain-rand  # FastSAC + DR on Warp
-uv run python train_flashsac.py --env CheetahRun --total-timesteps 5000000 --seed 100  # FlashSAC (standalone)
+uv run python train_flashsac.py --env Go2WarpJoystickFlat --seed 100  # FlashSAC Go2 (uses preset: 1024 envs, UTD=8, gamma=0.97)
 
 # Monitoring
 nvidia-smi | grep python                    # Is it running?
