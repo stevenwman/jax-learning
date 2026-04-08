@@ -39,6 +39,7 @@ from jax_rl.training import (
 )
 from jax_rl.training.checkpointing import CheckpointManager
 from jax_rl.training.metrics_logger import wandb_init, wandb_setup_metrics, wandb_log, wandb_finish
+from jax_rl.configs.env_presets import get_flash_sac_preset
 from jax_rl.utils.reward_scaling import init_reward_norm, update_reward_stats, scale_reward
 
 
@@ -432,19 +433,8 @@ if __name__ == "__main__":
                         help="W&B project name")
     args = parser.parse_args()
 
-    # ── Base configs ───────────────────────────────────────────────────────
-    # Use sensible defaults; no separate preset registry for FlashSAC yet.
-    cfg = TrainConfig(
-        env_name=args.env,
-        total_timesteps=2_000_000,
-        num_envs=64,
-        gamma=0.99,
-        reward_scaling=1.0,  # raw rewards; FlashSAC normalizes adaptively
-        handle_truncation=True,
-        eval_every_n_episodes=2000,
-        num_eval_episodes=10,
-    )
-    algo_cfg = FlashSACConfig()
+    # ── Base configs (from presets, with env-specific defaults) ─────────────
+    cfg, algo_cfg = get_flash_sac_preset(args.env)
 
     # ── Apply CLI overrides ────────────────────────────────────────────────
     cfg_overrides = {}

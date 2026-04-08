@@ -7,6 +7,7 @@ from jax_rl.configs.sac_config import SACConfig
 from jax_rl.configs.td3_config import TD3Config
 from jax_rl.configs.fast_td3_config import FastTD3Config
 from jax_rl.configs.fast_sac_config import FastSACConfig
+from jax_rl.configs.flash_sac_config import FlashSACConfig
 from jax_rl.configs.train_config import TrainConfig
 
 PRESETS: dict[str, TrainConfig] = {
@@ -264,6 +265,54 @@ def get_fast_sac_preset(env_name: str) -> tuple[TrainConfig, FastSACConfig]:
         return FAST_SAC_PRESETS[env_name]
     return dataclasses.replace(_FAST_SAC_BASE_CFG, env_name=env_name), _FAST_SAC_BASE_ALGO
 
+
+
+# FlashSAC presets — Kim et al. 2026 (arXiv:2604.04539)
+# Key differences from FastSAC: inverted residual blocks, BatchNorm, weight norm,
+# adaptive reward scaling, unified entropy target (sigma=0.15), Zeta noise repetition.
+# Paper defaults: num_blocks=2, actor_hidden=128, critic_hidden=256, batch_size=2048,
+# tau=0.01, UTD=1 (single-env). For parallel envs, scale UTD to compensate.
+_FLASH_SAC_BASE_CFG = TrainConfig(
+    total_timesteps=100_000_000,
+    num_envs=1024,
+    episode_length=1000,
+    lr=3e-4,
+    reward_scaling=1.0,         # raw rewards; FlashSAC normalizes adaptively
+    gamma=0.97,                  # paper: 0.97 for locomotion
+    num_eval_episodes=5,
+    handle_truncation=True,
+)
+
+_FLASH_SAC_BASE_ALGO = FlashSACConfig(
+    # Paper defaults (unchanged from FlashSACConfig defaults except UTD)
+    grad_updates_per_step=8,     # compensate for 1024 parallel envs (paper uses UTD=1 @ 1 env)
+)
+
+FLASH_SAC_PRESETS: dict[str, tuple[TrainConfig, FlashSACConfig]] = {
+    "CheetahRun": (
+        dataclasses.replace(_FLASH_SAC_BASE_CFG, env_name="CheetahRun", gamma=0.99),
+        _FLASH_SAC_BASE_ALGO,
+    ),
+    "WalkerWalk": (
+        dataclasses.replace(_FLASH_SAC_BASE_CFG, env_name="WalkerWalk", gamma=0.99),
+        _FLASH_SAC_BASE_ALGO,
+    ),
+    "HumanoidRun": (
+        dataclasses.replace(_FLASH_SAC_BASE_CFG, env_name="HumanoidRun", gamma=0.99),
+        _FLASH_SAC_BASE_ALGO,
+    ),
+    "Go2WarpJoystickFlat": (
+        dataclasses.replace(_FLASH_SAC_BASE_CFG, env_name="Go2WarpJoystickFlat"),
+        _FLASH_SAC_BASE_ALGO,
+    ),
+}
+
+
+def get_flash_sac_preset(env_name: str) -> tuple[TrainConfig, FlashSACConfig]:
+    """Return FlashSAC preset (TrainConfig, FlashSACConfig) for env, or a default."""
+    if env_name in FLASH_SAC_PRESETS:
+        return FLASH_SAC_PRESETS[env_name]
+    return dataclasses.replace(_FLASH_SAC_BASE_CFG, env_name=env_name), _FLASH_SAC_BASE_ALGO
 
 
 def get_preset(env_name: str) -> TrainConfig:
