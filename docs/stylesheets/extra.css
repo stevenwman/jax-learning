@@ -84,6 +84,13 @@
   border-left: 3px solid var(--md-primary-fg-color--light);
 }
 
+/* ── Abbreviation inside links — keep pointer cursor ── */
+
+a abbr {
+  cursor: pointer;
+  text-decoration: none;
+}
+
 /* ── Video styling ── */
 
 .video-grid {
