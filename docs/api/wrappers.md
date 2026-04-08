@@ -137,6 +137,32 @@ DomainRandomizationVmapWrapper(env, randomization_fn)
 
 ---
 
+### DomainRandWrapper
+
+```python
+from jax_rl.envs.wrappers.domain_rand import DomainRandWrapper
+```
+
+Unified wrapper that replaces the `AutoResetWrapper + EpisodeWrapper + DomainRandomizationVmapWrapper` stack. Handles vectorization, episode length tracking, auto-reset, and per-episode domain randomization in a single wrapper.
+
+```python
+DomainRandWrapper(env, episode_length=1000, mode="syncd")
+```
+
+- `mode="syncd"` — batch-reset all envs at `episode_length` (faster, used for Go2 locomotion)
+- `mode="per_step"` — per-env reset every step when done (more flexible)
+
+`reset(rng) → State`
+: Initial reset; initializes wrapper keys in `state.info`.
+
+`step(state, action) → State`
+: Step all envs with auto-reset and DR.
+
+`batch_reset(state) → State`
+: Batch-reset all envs between rollouts (syncd mode).
+
+---
+
 ### wrap_for_training
 
 ```python

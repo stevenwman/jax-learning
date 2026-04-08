@@ -95,7 +95,7 @@ The video is saved to the checkpoint directory. It shows the Go2 following rando
 
 ## Step 6: What's Next
 
-- **Try FlashSAC:** `uv run python train_flashsac.py --env Go2WarpJoystickFlat --seed 100` — uses inverted residual blocks, BatchNorm, and adaptive reward scaling. Eval 282.4 on Go2 at 10M steps.
+- **Try FlashSAC:** `uv run python train_flashsac.py --env Go2WarpJoystickFlat --seed 100` — uses inverted residual blocks, BatchNorm, and adaptive reward scaling. Eval 282.4 on Go2 at 10M steps (single seed — variance across seeds not yet characterized).
 - **Deploy to real hardware:** See the [Sim-to-Real](sim2real.md) tutorial
 - **Add [domain randomization](../glossary.md#domain-randomization-dr):** Append `--domain-rand` to the training command for policies that transfer better to real robots
 - **Try a custom task:** See [Custom Environment](custom-env.md) to build your own Go2 task

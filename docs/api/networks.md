@@ -14,6 +14,7 @@ obs → Encoder → features → Head → output
 | [DeterministicActor](#deterministicactor) | Deterministic: encoder → tanh(action) | TD3, FastTD3 |
 | [VCritic](#vcritic) | Value: encoder → scalar V(s) | PPO |
 | [MlpEncoder](#mlpencoder) | Raw obs → feature vector | All |
+| [DeterministicHead](#deterministichead) | Features → tanh(action) | TD3, FastTD3 |
 | [GaussianHead](#gaussianhead) | Features → (mean, log_std) | Stochastic actors |
 | [ValueHead](#valuehead) | Features → scalar | PPO critic |
 | [QHead](#qhead) | (obs, action) → scalar Q | SAC, TD3 |
@@ -97,6 +98,22 @@ Multi-layer perceptron: `obs → [Dense → Norm? → activation] × N → featu
 ---
 
 ## Heads
+
+### DeterministicHead
+
+```python
+from jax_rl.networks.heads.deterministic import DeterministicHead
+```
+
+Deterministic policy: `features → Dense → tanh(action)`. Used by TD3 and FastTD3.
+
+| Field | Type |
+|-------|------|
+| `action_dim` | `int` |
+
+`__call__(features) → action`
+
+---
 
 ### GaussianHead
 
