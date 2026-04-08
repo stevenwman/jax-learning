@@ -1,32 +1,65 @@
 # Documentation Site — Agent Handoff
 
-The project has a public-facing docs site built with MkDocs + Material theme. This doc tells you everything you need to maintain or extend it.
+The project has a public docs site at **https://stevenwman.github.io/jax-learning/** built with MkDocs + Material theme. Deploys automatically on push to main via `.github/workflows/docs.yml`.
 
 ## Quick reference
 
 - **Config:** `mkdocs.yml` (root)
-- **Source files:** `docs/` — all website content
-- **Assets:** `docs/assets/videos/` (embedded MP4s), `docs/stylesheets/code.css` (syntax highlighting)
+- **Source files:** `docs/` — all website content (22 pages)
+- **Assets:** `docs/assets/videos/` (embedded MP4s), `docs/stylesheets/extra.css` (syntax highlighting + layout)
+- **Abbreviations:** `docs/includes/abbreviations.md` — global hover tooltips for jargon (UTD, GAE, MLP, etc.)
 - **Generators:** `docs/scripts/gen_cli_reference.py`, `docs/scripts/gen_env_presets.py`
-- **GH Actions:** `.github/workflows/docs.yml` (dormant — no repo yet)
-- **Deps:** `uv sync --group docs` installs mkdocs-material + mkdocstrings
-- **Superpowers specs/plans:** `.superpowers/` (NOT `docs/superpowers/` — override in CLAUDE.md)
+- **GH Actions:** `.github/workflows/docs.yml` — triggers on push to main for `docs/**`, `mkdocs.yml`, `jax_rl/**`
+- **Deps:** `uv sync --group docs` installs mkdocs-material
+- **Review pattern:** `.context/references/docs_review_pattern.md` — 4-persona parallel review
 
 ## Commands
 
 ```bash
 uv sync --group docs              # install docs deps
 uv run mkdocs serve               # live reload at localhost:8000
-uv run mkdocs build --strict      # build, warnings = errors
+uv run mkdocs build               # build site to site/
 uv run python docs/scripts/gen_cli_reference.py   # regenerate CLI flags table
 uv run python docs/scripts/gen_env_presets.py      # regenerate presets table
 ```
 
-## Site structure (20 pages)
+## Architecture decisions
+
+### Hand-crafted API pages (not mkdocstrings)
+
+All API pages (`docs/api/*.md`) are hand-written Markdown — **not** auto-generated from docstrings. This was deliberate: mkdocstrings dumped docstring prose as flat unstyled paragraphs with no visual separation. Hand-crafted pages use summary tables, structured sections, import lines, field tables, and definition-list methods.
+
+**Trade-off:** API pages can drift from source code. After changing a constructor signature, config field, or method, update the corresponding API page manually.
+
+The `mkdocstrings` plugin has been removed from `mkdocs.yml`.
+
+### Abbreviation tooltips
+
+`docs/includes/abbreviations.md` defines ~25 terms (UTD, GAE, MLP, MJCF, PD gains, etc.). Via the `abbr` + `pymdownx.snippets` extensions, every occurrence of these terms across the entire site gets a dotted underline and hover tooltip — zero per-page effort.
+
+**To add a new abbreviation:** Edit `docs/includes/abbreviations.md`, add a line like `*[TERM]: Definition here.`
+
+### Glossary cross-links
+
+Key pages (concepts, quickstart, train-locomotion) link first-use jargon to the glossary page (`docs/glossary.md`). Links use MkDocs anchor IDs from `###` headings (e.g., `../glossary.md#utd-ratio-update-to-data`). The glossary is grouped into 4 sections: JAX, RL Fundamentals, Algorithms & Architecture, Environments & Hardware.
+
+### CSS theming
+
+`docs/stylesheets/extra.css` provides:
+- **Syntax highlighting:** Separate One Dark (slate) and One Light (default) palettes using `[data-md-color-scheme]` selectors
+- **API doc separation:** Top borders between `.doc-object` siblings, left-border indentation for methods
+- **Video grid:** `.video-grid` flexbox class for homepage video embedding
+- **Table scroll:** `overflow-x: auto` for wide tables on mobile
+- **Contrast fixes:** Light-mode comments `#717580` (WCAG AA), video captions use theme-aware `var(--md-default-fg-color--light)`
+
+## Site structure (22 pages)
 
 ```
 docs/
-├── index.md                    # Landing page — features, videos, quick links
+├── index.md                    # Landing — features, videos, quick links (incl. glossary)
+├── glossary.md                 # 28 terms in 4 domain sections, TOC-navigable
+├── faq.md                      # Installation, training, recording troubleshooting
+├── contributing.md             # Dev setup, tests, code style
 ├── getting-started/
 │   ├── installation.md         # uv setup, GPU deps, verify
 │   ├── quickstart.md           # CartpoleBalance in 5 min
@@ -36,26 +69,24 @@ docs/
 │   ├── custom-env.md           # Adding a new env (BongoHandstand example)
 │   ├── custom-rewards.md       # RewardSpec + ObsSpec composability
 │   ├── sim2real.md             # Deploy pipeline: train → sim2sim → real robot
-│   └── asymmetric-critic.md   # Privileged observations, A/B results
-├── api/                        # All autodoc via mkdocstrings ::: directives
-│   ├── algos.md                # PPO, SAC, TD3, FastSAC, FastTD3, FlashSAC
+│   └── asymmetric-critic.md    # Privileged observations, A/B results, frame stacking
+├── api/                        # Hand-crafted API reference (NOT mkdocstrings)
+│   ├── algos.md                # Summary table + per-algo sections with constructor/methods
 │   ├── envs.md                 # WarpJoystick, BongoHandstand, reward_spec, obs_spec
-│   ├── configs.md              # TrainConfig, PPOConfig, SACConfig, TD3Config, FastSACConfig, FastTD3Config, FlashSACConfig, EncoderConfig, PolicyHeadConfig
-│   ├── buffers.md              # JaxReplayBuffer, FrameStackConfig, RolloutBuffer, compute_gae
-│   ├── wrappers.md             # FrameStack, ActionDelay, pipeline, training wrappers
-│   └── networks.md             # Actor, DeterministicActor, VCritic, MlpEncoder, heads, flash_blocks
+│   ├── configs.md              # 9 config classes as field tables with types/defaults
+│   ├── buffers.md              # JaxReplayBuffer, RolloutBuffer, compute_gae
+│   ├── wrappers.md             # Grouped: obs/action wrappers, pipeline, training wrappers
+│   └── networks.md             # Builders, encoders, heads, flash blocks
 ├── reference/
-│   ├── cli-flags.md            # AUTO-GENERATED — all CLI args for 4 train scripts + record_video
-│   ├── env-presets.md          # AUTO-GENERATED — all presets with HPs and eval scores
-│   ├── architecture.md         # Mermaid diagram, data flow, config system, checkpoint format
-│   └── lessons-learned.md      # Curated lessons (PPO, off-policy, distributional, JAX, sim2real)
-└── contributing.md             # Dev setup, tests, code style, PR process (placeholder)
+│   ├── cli-flags.md            # AUTO-GENERATED — all CLI args
+│   ├── env-presets.md          # AUTO-GENERATED — all presets with HPs
+│   ├── architecture.md         # Mermaid diagram, data flow, config, checkpoint format
+│   └── lessons-learned.md      # Curated lessons from training
+└── includes/
+    └── abbreviations.md        # Global tooltip definitions
 ```
 
 ## What auto-updates vs what's manual
-
-### Auto-updates from code (mkdocstrings at build time)
-All `docs/api/*.md` pages pull docstrings from `jax_rl/` source via `::: module.path` directives. Change a docstring, rebuild, docs update. `__init__` methods are filtered out.
 
 ### Auto-generated via scripts (run manually)
 | Page | Generator | When to re-run |
@@ -63,76 +94,78 @@ All `docs/api/*.md` pages pull docstrings from `jax_rl/` source via `::: module.
 | `docs/reference/cli-flags.md` | `gen_cli_reference.py` | Any argparse change in train scripts |
 | `docs/reference/env-presets.md` | `gen_env_presets.py` | Any change in `env_presets.py` |
 
-**Caveat:** The CLI generator mirrors argparse definitions (can't import them from `if __name__ == "__main__"` blocks). If you add a flag to a training script, update the matching `build_*_parser()` function in the generator too.
-
 ### Manual pages (edit the markdown directly)
 | Page | Goes stale when... |
 |---|---|
+| `api/*.md` | Constructor signatures, config fields, or methods change |
 | `index.md` | New features, new algos, benchmark scores change |
 | `concepts.md` | New algo, wrapper, or abstraction added |
 | `tutorials/*.md` | API changes, new env patterns, deploy workflow |
 | `architecture.md` | System architecture changes (rare) |
-| `lessons-learned.md` | New lessons in `.context/lessons/` |
+| `glossary.md` | New framework-specific terms introduced |
+| `abbreviations.md` | New jargon used in docs |
 
 ## How to add a new algorithm to the docs
 
-When a new algo is added (like FlashSAC was):
-
-1. **API autodoc:** Add `::: jax_rl.algos.new_algo.NewAlgo` to `docs/api/algos.md` with `filters: ["!__init__"]`
-2. **Config autodoc:** Add `::: jax_rl.configs.new_config.NewConfig` to `docs/api/configs.md`
-3. **Network blocks (if any):** Add `::: jax_rl.networks.new_module` to `docs/api/networks.md`
-4. **CLI flags:** Add `build_new_parser()` to `docs/scripts/gen_cli_reference.py`, add to `sections` list, regenerate
-5. **Presets:** Add `NEW_PRESETS` import + `render_offpolicy_presets(...)` call to `docs/scripts/gen_env_presets.py`, regenerate
-6. **Concepts page:** Update algo count and table in `docs/getting-started/concepts.md`
+1. **API page:** Add a new `## AlgoName` section in `docs/api/algos.md` with constructor, methods, and summary table row
+2. **Config page:** Add a new `## AlgoConfig` section in `docs/api/configs.md` with field table
+3. **Network blocks (if any):** Add to `docs/api/networks.md`
+4. **CLI flags:** Add `build_new_parser()` to `gen_cli_reference.py`, regenerate
+5. **Presets:** Add to `gen_env_presets.py`, regenerate
+6. **Concepts page:** Update algo count and table
 7. **Index page:** Update algo count in features list
-8. **Tutorials:** Mention in relevant tutorials (e.g., locomotion tutorial's "Next Steps")
-9. **Verify:** `uv run mkdocs build --strict`
+8. **Architecture page:** Add to mermaid diagram and config list
+9. **Abbreviations:** Add acronym to `docs/includes/abbreviations.md` if it uses new jargon
+10. **Verify:** `uv run mkdocs build`
 
 ## How to add a new environment to the docs
 
-1. **API autodoc:** Add `::: jax_rl.envs.locomotion.new_env.NewEnvClass` to `docs/api/envs.md`
+1. **API page:** Add section to `docs/api/envs.md` with methods and summary table row
 2. **Presets:** If presets exist, add to `gen_env_presets.py` and regenerate
-3. **Concepts page:** Mention in environments section if it's a major env
-4. **Tutorial:** Consider a tutorial if the env is instructive (like bongo board)
-5. **Video:** If a good rollout video exists, copy to `docs/assets/videos/` and embed
+3. **Concepts page:** Mention in environments section if major
+4. **Tutorial:** Consider a tutorial if instructive
+5. **Video:** Copy to `docs/assets/videos/` and embed
+
+## Review process
+
+Use the 4-persona parallel review pattern documented in `.context/references/docs_review_pattern.md`:
+1. High schooler (accessibility)
+2. Undergrad CS (factual accuracy — cross-references everything against code)
+3. PhD researcher (code correctness, benchmark rigor, adoption readiness)
+4. Frontend engineer (visual design, CSS, navigation, accessibility)
+
+Dispatch all 4 as background Opus agents. Compile into prioritized action list grouped by effort (quick/medium/large).
 
 ## Videos
 
-Two MP4s embedded (landing page + tutorials):
+Two MP4s embedded:
 - `docs/assets/videos/go2_joystick_walk.mp4` — FastSAC eval 276.5
 - `docs/assets/videos/go2_bongo_handstand.mp4` — PPO bongo board
 
-Embedded via `<video autoplay loop muted playsinline>` tags. Use absolute paths (`/assets/videos/...`) from pages in subdirectories to avoid 404s.
-
-Note: `.gitignore` has `*.mp4` but with exception `!docs/assets/videos/*.mp4`.
+Use relative paths from page location (e.g., `../../assets/videos/` from tutorial pages). `.gitignore` has `*.mp4` with exception `!docs/assets/videos/*.mp4`.
 
 ## Style guidelines
 
-- **Serious and concise.** No hype ("blazing fast"), no filler ("let's dive in"), no marketing ("from zero to X in N minutes").
-- Use mkdocs admonitions (`!!! note`, `!!! tip`, `!!! warning`) sparingly and for genuinely useful info.
+- **Serious and concise.** No hype, no filler, no marketing.
+- Use admonitions (`!!! note`, `!!! tip`, `!!! warning`) sparingly.
 - All commands use `uv run python` (never `python` or `python3`).
-- Syntax highlighting: custom CSS in `docs/stylesheets/code.css` (One Dark palette). All code blocks must have language tags (`python`, `bash`, `yaml`, etc.).
+- Code blocks must have language tags (`python`, `bash`, `yaml`, `text`).
+- API pages: summary table at top, structured sections, field tables, definition-list methods.
 
 ## mkdocs.yml key config
 
-- Material theme: dark/light toggle, nav tabs, search, code copy
-- `pymdownx.emoji` via `material.extensions.emoji` (not deprecated `materialx`)
+- Material theme: dark/light toggle, deep purple/amber, robot-industrial logo
+- `navigation.tabs`, `navigation.footer`, `navigation.instant`, `content.code.copy`
+- `abbr` + `pymdownx.snippets` with `auto_append` for global abbreviation tooltips
 - `pymdownx.superfences` with Mermaid fence support
-- `pymdownx.highlight` with Pygments
-- `mkdocstrings` python handler: `paths: [.]`, `show_source: true`, `docstring_style: google`, `warn_unknown_params: false`
-- Custom CSS: `extra_css: [stylesheets/code.css]`
-
-## Deployment (deferred)
-
-No GitHub repo yet. When one exists:
-1. Set `repo_url` in `mkdocs.yml`
-2. Uncomment the `on: push` trigger in `.github/workflows/docs.yml`
-3. Enable GitHub Pages (Settings → Pages → Source: GitHub Actions)
-4. Push to main
+- `pymdownx.highlight` with Pygments (One Dark / One Light in `extra.css`)
+- `site_url: https://stevenwman.github.io/jax-learning/`
+- **No mkdocstrings** — all API pages are hand-crafted
 
 ## Common gotchas
 
-- **Superpowers files leaking into `docs/`:** Other agents may ignore the CLAUDE.md override and write specs/plans to `docs/superpowers/`. Move them to `.superpowers/` and delete `docs/superpowers/`. The build warns about unnavigated files.
-- **mkdocstrings `Attributes:` vs `Args:`:** For Flax `nn.Module` classes, use `Attributes:` section header in docstrings (not `Args:`). Griffe doesn't recognize dataclass-style fields as constructor params.
-- **Video 404s in subdirectories:** Use absolute paths (`/assets/videos/file.mp4`) not relative (`../assets/videos/file.mp4`). MkDocs `use_directory_urls` makes relative paths resolve wrong.
-- **`*.mp4` gitignore:** Videos in `docs/assets/videos/` are tracked via `!docs/assets/videos/*.mp4` exception. New videos elsewhere will be ignored by git.
+- **API page drift:** Hand-crafted API pages can fall behind code changes. After modifying signatures or defaults, update the corresponding `docs/api/*.md` page.
+- **Superpowers files leaking into `docs/`:** Other agents may write to `docs/superpowers/`. Move to `.superpowers/`.
+- **Video 404s:** Use relative paths that go up from the page's directory (e.g., `../../assets/videos/` from `tutorials/page/`). Absolute paths break on GH Pages at `/jax-learning/`.
+- **`*.mp4` gitignore:** Videos in `docs/assets/videos/` are tracked via exception. New videos elsewhere will be ignored.
+- **Light-mode comment contrast:** Must be at least `#717580` to pass WCAG AA on white backgrounds.
