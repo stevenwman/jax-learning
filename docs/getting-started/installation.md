@@ -3,7 +3,8 @@
 ## Prerequisites
 
 - **Python 3.13+**
-- **NVIDIA GPU with CUDA** — JAX compiles and runs all training on GPU. CPU-only is not supported for training.
+- **NVIDIA GPU with CUDA** — JAX compiles and runs all training on GPU. CPU-only is not supported for training. RTX 3060 (12GB) or higher recommended. 1024 parallel envs requires ~8GB VRAM (DM Control) or ~12GB (Go2 Warp).
+- **Linux** — CUDA JAX does not support macOS or Windows.
 - **[uv](https://docs.astral.sh/uv/)** — Fast Python package manager. Install it with `curl -LsSf https://astral.sh/uv/install.sh | sh` if you don't have it.
 
 ## Install

@@ -103,14 +103,9 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
         self._soft_uppers = self._uppers * self._config.soft_joint_pos_limit_factor
 
         self._torso_body_id = self._mj_model.body(consts.WARP_ROOT_BODY).id
-        self._torso_mass = self._mj_model.body_subtreemass[self._torso_body_id]  # UNUSED — kept for potential mass-normalized rewards
 
         self._feet_site_id = np.array(
             [self._mj_model.site(name).id for name in consts.FEET_SITES]
-        )
-        self._floor_geom_id = self._mj_model.geom("floor").id  # UNUSED — contact detection uses sensors now
-        self._feet_geom_id = np.array(  # UNUSED — contact detection uses sensors now
-            [self._mj_model.geom(name).id for name in consts.FEET_GEOMS]
         )
 
         # Foot linear velocity sensor addresses.

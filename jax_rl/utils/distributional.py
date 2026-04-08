@@ -90,22 +90,3 @@ def project_distribution(
                 jnp.einsum('bs,bsd->bd', hi_contrib, hi_onehot)
 
     return projected
-
-
-def categorical_td_loss(
-    q_logits: jax.Array,
-    target_probs: jax.Array,
-) -> jax.Array:
-    """Cross-entropy loss between predicted logits and projected target distribution.
-
-    Args:
-        q_logits: (batch, num_atoms) predicted logits (unnormalized)
-        target_probs: (batch, num_atoms) projected target probabilities
-
-    Returns:
-        scalar loss (mean over batch)
-    """
-    # Cross-entropy: -Σ m_i * log(softmax(logits)_i)
-    log_probs = jax.nn.log_softmax(q_logits, axis=-1)
-    loss = -jnp.sum(target_probs * log_probs, axis=-1)
-    return jnp.mean(loss)

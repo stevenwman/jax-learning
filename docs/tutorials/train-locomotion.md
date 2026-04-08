@@ -9,7 +9,7 @@ This tutorial covers training a Unitree Go2 to follow velocity commands. Expect 
 A policy that takes joystick-style velocity commands (forward, lateral, yaw) and controls 12 joint motors to make the Go2 walk, turn, and stop on flat ground.
 
 <video autoplay loop muted playsinline style="width: 100%; max-width: 640px; border-radius: 8px;">
-  <source src="/assets/videos/go2_joystick_walk.mp4" type="video/mp4">
+  <source src="../../assets/videos/go2_joystick_walk.mp4" type="video/mp4">
 </video>
 
 ## Prerequisites

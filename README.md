@@ -2,6 +2,8 @@
 
 JAX-based reinforcement learning framework for robot learning research. Built for MuJoCo Playground environments, with a focus on locomotion and sim-to-real transfer.
 
+**[Documentation](https://stevenwman.github.io/jax-learning/)** | **[Quickstart](https://stevenwman.github.io/jax-learning/getting-started/quickstart/)** | **[API Reference](https://stevenwman.github.io/jax-learning/api/algos/)**
+
 ## Quick Start
 
 ```bash
@@ -27,6 +29,7 @@ MUJOCO_GL=egl uv run python record_video.py --checkpoint checkpoints/<your_check
 | **TD3** | Off-policy | `train_offpolicy.py --algo td3` | Low-dim action spaces |
 | **FastTD3** | Off-policy | `train_offpolicy.py --algo fast_td3` | Large-scale (1024 envs), C51 distributional |
 | **FastSAC** | Off-policy | `train_offpolicy.py --algo fast_sac` | Large-scale, high-dim actions (humanoid) |
+| **FlashSAC** | Off-policy | `train_flashsac.py` | Inverted residual blocks + BatchNorm + adaptive reward scaling |
 
 `train_ppo_fast.py` uses `jax.lax.scan` for the collection phase and is ~3x faster than `train_ppo.py`. Use it for real training runs.
 
@@ -120,6 +123,7 @@ uv run python live_viewer.py --checkpoint checkpoints/<go2_checkpoint>
 ├── train_ppo_fast.py          # PPO training (lax.scan collect, fastest)
 ├── train_ppo.py               # PPO training (Python loop, easier to read)
 ├── train_offpolicy.py         # Unified off-policy: SAC, TD3, FastTD3, FastSAC
+├── train_flashsac.py          # FlashSAC training (standalone)
 ├── record_video.py            # Record policy videos from checkpoints
 ├── live_viewer.py             # Interactive policy viewer (Go2)
 │
@@ -129,7 +133,8 @@ uv run python live_viewer.py --checkpoint checkpoints/<go2_checkpoint>
 │   │   ├── sac.py             #   Soft Actor-Critic
 │   │   ├── td3.py             #   Twin Delayed DDPG
 │   │   ├── fast_td3.py        #   TD3 + C51 distributional critic
-│   │   └── fast_sac.py        #   SAC + C51 distributional critic
+│   │   ├── fast_sac.py        #   SAC + C51 distributional critic
+│   │   └── flash_sac.py       #   Inverted residual + BatchNorm + weight norm
 │   │
 │   ├── networks/
 │   │   ├── builders.py        #   Composed modules (encoder + head, swappable)
@@ -160,15 +165,14 @@ uv run python live_viewer.py --checkpoint checkpoints/<go2_checkpoint>
 
 ## Benchmark Results
 
-| Environment | PPO | SAC | TD3 | FastTD3 | FastSAC |
-|-------------|-----|-----|-----|---------|---------|
-| CheetahRun | 826 | **771** | 749 | **880** | 582 |
-| WalkerWalk | 833 | **975** | 955 | — | — |
-| HumanoidRun | ~10 | 426 | 4.3 | 665 | **892** |
-| Go2 Joystick (MJX) | **244** | — | — | — | 226 |
-| Go2 Joystick (Warp) | 132 | — | — | — | **279** |
+| Environment | PPO | SAC | TD3 | FastTD3 | FastSAC | FlashSAC |
+|-------------|-----|-----|-----|---------|---------|----------|
+| CheetahRun | 826 | **771** | 749 | **880** | 582 | — |
+| WalkerWalk | 833 | **975** | 955 | — | — | — |
+| HumanoidRun | ~10 | 426 | 4.3 | 665 | **892** | — |
+| Go2 Joystick (Warp) | 132 | — | — | — | 279 | **282** |
 
-SAC dominates on general continuous control. FastSAC excels on high-dim action spaces (HumanoidRun). PPO works well for locomotion with Go2 on MJX. **FastSAC on Warp with asymmetric critic achieves highest Go2 eval (279)** — actor sees 48d noisy obs, critic sees 122d privileged state.
+FastSAC excels on high-dim action spaces (HumanoidRun). **FlashSAC achieves highest Go2 eval (282.4 @ 10M steps)** with inverted residual blocks and adaptive reward scaling. Go2 MJX env is archived — Warp is the primary backend.
 
 ## Key Design Decisions
 

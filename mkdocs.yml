@@ -92,4 +92,6 @@ nav:
     - Environment Presets: reference/env-presets.md
     - Architecture: reference/architecture.md
     - Lessons Learned: reference/lessons-learned.md
+    - Glossary: glossary.md
+  - FAQ: faq.md
   - Contributing: contributing.md
