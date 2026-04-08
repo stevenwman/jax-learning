@@ -4,10 +4,12 @@ repo_url: https://github.com/stevenwman/jax-learning
 repo_name: stevenwman/jax-learning
 
 extra_css:
-  - stylesheets/code.css
+  - stylesheets/extra.css
 
 theme:
   name: material
+  icon:
+    logo: material/robot-industrial
   palette:
     - scheme: default
       primary: deep purple
@@ -24,11 +26,13 @@ theme:
   features:
     - navigation.tabs
     - navigation.sections
-    - navigation.expand
     - navigation.top
+    - navigation.instant
+    - navigation.tracking
     - search.suggest
     - search.highlight
     - content.code.copy
+    - content.tabs.link
 
 plugins:
   - search
@@ -37,7 +41,7 @@ plugins:
         python:
           paths: [.]
           options:
-            show_source: true
+            show_source: false
             show_root_heading: true
             heading_level: 3
             members_order: source
@@ -64,6 +68,7 @@ markdown_extensions:
       permalink: true
   - attr_list
   - md_in_html
+  - def_list
   - pymdownx.emoji:
       emoji_index: !!python/name:material.extensions.emoji.twemoji
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
@@ -87,7 +92,7 @@ nav:
     - Buffers: api/buffers.md
     - Wrappers: api/wrappers.md
     - Networks: api/networks.md
-  - Reference:
+  - Background:
     - CLI Flags: reference/cli-flags.md
     - Environment Presets: reference/env-presets.md
     - Architecture: reference/architecture.md

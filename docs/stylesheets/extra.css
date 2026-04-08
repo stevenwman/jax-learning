@@ -1,0 +1,95 @@
+/* ── Dark mode syntax highlighting (One Dark) ── */
+
+[data-md-color-scheme="slate"] .highlight .k,
+[data-md-color-scheme="slate"] .highlight .kn,
+[data-md-color-scheme="slate"] .highlight .kd { color: #c678dd; font-weight: bold; }
+
+[data-md-color-scheme="slate"] .highlight .nf,
+[data-md-color-scheme="slate"] .highlight .fm { color: #61afef; }
+
+[data-md-color-scheme="slate"] .highlight .nc { color: #e5c07b; }
+
+[data-md-color-scheme="slate"] .highlight .s,
+[data-md-color-scheme="slate"] .highlight .s1,
+[data-md-color-scheme="slate"] .highlight .s2,
+[data-md-color-scheme="slate"] .highlight .sd,
+[data-md-color-scheme="slate"] .highlight .se { color: #98c379; }
+
+[data-md-color-scheme="slate"] .highlight .mi,
+[data-md-color-scheme="slate"] .highlight .mf,
+[data-md-color-scheme="slate"] .highlight .m { color: #d19a66; }
+
+[data-md-color-scheme="slate"] .highlight .nb,
+[data-md-color-scheme="slate"] .highlight .bp { color: #56b6c2; }
+
+[data-md-color-scheme="slate"] .highlight .nd { color: #e5c07b; }
+
+[data-md-color-scheme="slate"] .highlight .o,
+[data-md-color-scheme="slate"] .highlight .ow { color: #c678dd; }
+
+[data-md-color-scheme="slate"] .highlight .c,
+[data-md-color-scheme="slate"] .highlight .c1,
+[data-md-color-scheme="slate"] .highlight .cm { color: #7f848e; font-style: italic; }
+
+[data-md-color-scheme="slate"] .highlight .nv { color: #61afef; }
+
+/* ── Light mode syntax highlighting (One Light) ── */
+
+[data-md-color-scheme="default"] .highlight .k,
+[data-md-color-scheme="default"] .highlight .kn,
+[data-md-color-scheme="default"] .highlight .kd { color: #a626a4; font-weight: bold; }
+
+[data-md-color-scheme="default"] .highlight .nf,
+[data-md-color-scheme="default"] .highlight .fm { color: #4078f2; }
+
+[data-md-color-scheme="default"] .highlight .nc { color: #c18401; }
+
+[data-md-color-scheme="default"] .highlight .s,
+[data-md-color-scheme="default"] .highlight .s1,
+[data-md-color-scheme="default"] .highlight .s2,
+[data-md-color-scheme="default"] .highlight .sd,
+[data-md-color-scheme="default"] .highlight .se { color: #50a14f; }
+
+[data-md-color-scheme="default"] .highlight .mi,
+[data-md-color-scheme="default"] .highlight .mf,
+[data-md-color-scheme="default"] .highlight .m { color: #986801; }
+
+[data-md-color-scheme="default"] .highlight .nb,
+[data-md-color-scheme="default"] .highlight .bp { color: #0184bc; }
+
+[data-md-color-scheme="default"] .highlight .nd { color: #c18401; }
+
+[data-md-color-scheme="default"] .highlight .o,
+[data-md-color-scheme="default"] .highlight .ow { color: #a626a4; }
+
+[data-md-color-scheme="default"] .highlight .c,
+[data-md-color-scheme="default"] .highlight .c1,
+[data-md-color-scheme="default"] .highlight .cm { color: #a0a1a7; font-style: italic; }
+
+[data-md-color-scheme="default"] .highlight .nv { color: #4078f2; }
+
+/* ── Video styling ── */
+
+.video-grid {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.video-grid > div {
+  flex: 1;
+  min-width: 300px;
+  max-width: 640px;
+}
+
+.video-grid video {
+  width: 100%;
+  border-radius: 8px;
+}
+
+.video-grid .caption {
+  text-align: center;
+  font-size: 0.85em;
+  color: gray;
+}
