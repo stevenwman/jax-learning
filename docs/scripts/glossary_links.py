@@ -19,7 +19,7 @@ _TERMS: list[tuple[str, str, re.Pattern]] = []
 
 def _add_term(term: str, target: str):
     """Add a term with appropriate case-sensitivity."""
-    if len(term) <= 6 and term.isupper():
+    if len(term) <= 6 and term == term.upper() and term.isalpha():
         pattern = re.compile(r"(?<![`\[/\w])" + re.escape(term) + r"(?![`\]\w\(])")
     else:
         pattern = re.compile(
@@ -66,7 +66,8 @@ def on_startup(**kwargs):
         for term, target in extra.items():
             _add_term(str(term), str(target))
 
-    # Sort longest first so "MuJoCo Warp" matches before "MuJoCo"
+    # Sort longest first so "On-policy" matches before "Policy",
+    # "MuJoCo Warp" before "MuJoCo"
     _TERMS.sort(key=lambda t: -len(t[0]))
 
 
@@ -83,7 +84,8 @@ def on_page_markdown(markdown: str, page, config, files, **kwargs):
     parts = code_re.split(markdown)
 
     # First pass: find positions of first occurrence of each term
-    replacements = []  # (part_idx, start, end, text, rel_target)
+    # Store as (part_idx, start, end, text, rel_target)
+    replacements = []
     matched_targets = set()
 
     for i in range(0, len(parts), 2):  # only prose parts
@@ -100,6 +102,8 @@ def on_page_markdown(markdown: str, page, config, files, **kwargs):
 
             for m in pattern.finditer(part):
                 start = m.start()
+                end = m.end()
+
                 # Skip heading lines
                 line_start = part.rfind("\n", 0, start) + 1
                 line_end = part.find("\n", start)
@@ -108,19 +112,36 @@ def on_page_markdown(markdown: str, page, config, files, **kwargs):
                 line = part[line_start:line_end]
                 if line.lstrip().startswith("#"):
                     continue
-                # Skip if inside existing markdown link
+
+                # Skip if inside existing markdown link [text](url)
                 before = part[max(0, start - 80):start]
                 if re.search(r"\[[^\]]*$", before):
                     continue
+                # Skip if inside link URL portion ](...)
+                if re.search(r"\]\([^)]*$", before):
+                    continue
+
                 # Skip if inside HTML tag
                 if re.search(r"<[^>]*$", before):
                     continue
+
                 # Skip if inside bold markers
                 if before.endswith("**"):
                     continue
 
+                # Check for overlap with already-collected replacements
+                # in the same part
+                overlaps = False
+                for r in replacements:
+                    if r[0] == i:  # same part
+                        if not (end <= r[1] or start >= r[2]):
+                            overlaps = True
+                            break
+                if overlaps:
+                    continue
+
                 rel_target = prefix + target
-                replacements.append((i, m.start(), m.end(), m.group(0), rel_target))
+                replacements.append((i, start, end, m.group(0), rel_target))
                 matched_targets.add(target)
                 break
 
