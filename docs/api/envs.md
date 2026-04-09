@@ -27,7 +27,7 @@ Track a joystick velocity command (vx, vy, yaw rate) with the Unitree Go2. The p
 - Velocity command sampled via Bernoulli/Uniform process (changes mid-episode)
 - Domain randomization: friction, damping, mass, motor strength
 
-??? note "17 reward terms"
+???+ note "17 reward terms"
     | Term | What it does |
     |------|-------------|
     | `tracking_lin_vel` | Gaussian bonus for matching commanded forward/lateral velocity |
@@ -74,7 +74,7 @@ from jax_rl.envs.locomotion.go2_bongo_handstand import BongoHandstand
 
 Go2 handstand balance on a bongo board. Applies antagonistic pushes to the robot base and board during training for robustness.
 
-??? note "10 reward terms"
+???+ note "10 reward terms"
     | Term | What it does |
     |------|-------------|
     | `survival` | Constant +1.0 per step for staying alive |

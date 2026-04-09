@@ -4,7 +4,7 @@
 
 This tutorial walks through adding a new Go2 environment, using the **bongo board handstand** task as a worked example.
 
-<video autoplay loop muted playsinline style="width: 100%; max-width: 640px; border-radius: 8px;">
+<video class="tutorial-video" autoplay loop muted playsinline preload="metadata">
   <source src="../../assets/videos/go2_bongo_handstand.mp4" type="video/mp4">
 </video>
 

@@ -29,9 +29,10 @@
 
 [data-md-color-scheme="slate"] .highlight .c,
 [data-md-color-scheme="slate"] .highlight .c1,
-[data-md-color-scheme="slate"] .highlight .cm { color: #7f848e; font-style: italic; }
+[data-md-color-scheme="slate"] .highlight .cm { color: #8b9099; font-style: italic; }
 
-[data-md-color-scheme="slate"] .highlight .nv { color: #61afef; }
+/* Distinguish variables from functions (was both #61afef) */
+[data-md-color-scheme="slate"] .highlight .nv { color: #e06c75; }
 
 /* ── Light mode syntax highlighting (One Light) ── */
 
@@ -64,38 +65,81 @@
 
 [data-md-color-scheme="default"] .highlight .c,
 [data-md-color-scheme="default"] .highlight .c1,
-[data-md-color-scheme="default"] .highlight .cm { color: #717580; font-style: italic; }
+[data-md-color-scheme="default"] .highlight .cm { color: #636871; font-style: italic; }
 
-[data-md-color-scheme="default"] .highlight .nv { color: #4078f2; }
+/* Distinguish variables from functions (was both #4078f2) */
+[data-md-color-scheme="default"] .highlight .nv { color: #e45649; }
 
-/* ── Glossary auto-links — subtle, not flashy ── */
+/* ── Glossary auto-links — subtle, dotted underline (Wikipedia-style) ── */
 
 .gl {
   color: inherit;
   text-decoration: underline;
-  text-decoration-color: var(--md-default-fg-color--lighter);
-  text-underline-offset: 2px;
-  transition: text-decoration-color 0.15s;
+  text-decoration-style: dotted;
+  text-decoration-thickness: 1px;
+  text-decoration-color: var(--md-default-fg-color--light);
+  text-underline-offset: 3px;
+  transition: text-decoration-color 0.15s, color 0.15s;
 }
 
 .gl:hover {
+  color: var(--md-primary-fg-color);
+  text-decoration-style: solid;
   text-decoration-color: var(--md-primary-fg-color);
 }
 
-/* ── API reference — mkdocstrings visual separation ── */
+[data-md-color-scheme="slate"] .gl {
+  text-decoration-color: rgba(255, 255, 255, 0.5);
+}
 
-/* Separate each documented class/function with a top border */
+/* ── H2 section borders for long pages ── */
+
+.md-typeset h2 {
+  margin-top: 2.5em;
+  padding-top: 0.6em;
+  border-top: 1px solid var(--md-default-fg-color--lightest);
+}
+
+.md-typeset h2:first-of-type {
+  margin-top: 1em;
+  padding-top: 0;
+  border-top: 0;
+}
+
+/* ── Display math (block equations) ── */
+
+.md-typeset div.arithmatex {
+  margin: 0.75em 0;
+  overflow-x: auto;
+}
+
+/* ── API reference — visual separation ── */
+
 .doc-object + .doc-object {
   margin-top: 2rem;
   padding-top: 1.5rem;
   border-top: 1px solid var(--md-default-fg-color--lightest);
 }
 
-/* Indent methods inside a class */
 .doc-class > .doc-contents > .doc-object {
   margin-left: 1rem;
   padding-left: 1rem;
   border-left: 3px solid var(--md-primary-fg-color--light);
+}
+
+/* ── Definition list styling (method docs in API pages) ── */
+
+.md-typeset dl dt {
+  margin-top: 1em;
+  font-weight: 600;
+}
+
+.md-typeset dl dt + dd {
+  margin-top: 0.25em;
+}
+
+.md-typeset dl dd {
+  margin-left: 1.5em;
 }
 
 /* ── Video styling ── */
@@ -108,8 +152,8 @@
 }
 
 .video-grid > div {
-  flex: 1;
-  min-width: 300px;
+  flex: 1 1 280px;
+  min-width: 0;
   max-width: 640px;
 }
 
@@ -122,16 +166,44 @@
   text-align: center;
   font-size: 0.85em;
   color: var(--md-default-fg-color--light);
+  margin-top: 0.4em;
+}
+
+@media (max-width: 640px) {
+  .video-grid { flex-direction: column; }
+  .video-grid > div { max-width: 100%; }
+}
+
+.tutorial-video {
+  width: 100%;
+  max-width: 640px;
+  border-radius: 8px;
 }
 
 /* ── Table styling ── */
+/* Material already wraps tables in .md-typeset__scrollwrap, so don't fight it
+   with display: block. Use tabular-nums and selective wrapping instead. */
 
 .md-typeset table:not([class]) {
-  display: block;
-  overflow-x: auto;
   font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.md-typeset table:not([class]) th,
+.md-typeset table:not([class]) td {
+  padding: 0.5em 0.75em;
 }
 
 .md-typeset table:not([class]) tbody tr:nth-child(even) {
   background-color: var(--md-default-fg-color--lightest);
+}
+
+[data-md-color-scheme="slate"] .md-typeset table:not([class]) tbody tr:nth-child(even) {
+  background-color: rgba(255, 255, 255, 0.035);
+}
+
+/* Reward term tables inside collapsible details should fill width */
+.md-typeset details table:not([class]) {
+  display: table;
+  width: 100%;
 }

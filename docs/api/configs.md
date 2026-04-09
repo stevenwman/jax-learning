@@ -100,6 +100,7 @@ SAC algorithm parameters. Vanilla SAC defaults — for high-UTD training, use [F
 | `activation` | `str` | `"relu"` | Activation function |
 | `q_layer_norm` | `bool` | `True` | Layer norm in Q-networks |
 | `obs_normalization` | `bool` | `False` | Normalize observations |
+| `obs_norm_eps` | `float` | `1e-2` | Obs normalization epsilon |
 
 ---
 
@@ -126,6 +127,7 @@ from jax_rl.configs.td3_config import TD3Config
 | `q_layer_norm` | `bool` | `False` | Layer norm in Q-networks |
 | `grad_clip_norm` | `float | None` | `1.0` | Max gradient norm |
 | `obs_normalization` | `bool` | `False` | Normalize observations |
+| `obs_norm_eps` | `float` | `1e-2` | Obs normalization epsilon |
 
 ---
 
@@ -175,18 +177,24 @@ TD3 + C51 distributional critic. Same distributional approach as FastSAC with de
 |-------|------|---------|-------------|
 | `tau` | `float` | `0.125` | Fast target update |
 | `policy_delay` | `int` | `2` | Actor update frequency |
+| `target_noise_std` | `float` | `0.2` | Target policy noise |
+| `noise_clip` | `float` | `0.5` | Noise clipping range |
 | `exploration_noise_std` | `float` | `0.2` | Exploration noise |
 | `noise_min` / `noise_max` | `float | None` | `None` | Mixed noise range (overrides exploration_noise_std) |
+| `buffer_size` | `int` | `1_000_000` | Replay buffer size |
+| `min_buffer_size` | `int` | `25_000` | Steps before first update |
 | `batch_size` | `int` | `8_192` | Gradient batch size |
 | `grad_updates_per_step` | `int` | `8` | UTD 8 |
-| `min_buffer_size` | `int` | `25_000` | Steps before first update |
 | `hidden_dim` | `tuple` | `(512, 256, 128)` | Tapered actor |
 | `critic_hidden_dim` | `tuple | None` | `(768, 384, 192)` | Wider critic |
 | `activation` | `str` | `"swish"` | SiLU activation |
+| `q_layer_norm` | `bool` | `True` | Layer norm in Q-networks |
 | `num_atoms` | `int` | `101` | C51 atoms |
 | `v_min` / `v_max` | `float` | `-20.0` / `20.0` | Value distribution range |
 | `q_aggregation` | `str` | `"avg"` | Avg of twin critics |
 | `lr_end` | `float` | `3e-4` | Constant (no decay) |
+| `obs_normalization` | `bool` | `False` | Normalize observations |
+| `obs_norm_eps` | `float` | `1e-2` | Obs normalization epsilon |
 
 ---
 
@@ -270,3 +278,4 @@ Configuration for Gaussian policy heads.
 | `init_noise_std` | `float` | `1.0` | Initial std (state-independent) |
 | `min_std` | `float` | `0.001` | Floor std (state-dependent) |
 | `squash` | `bool` | `True` | Tanh output squashing |
+| `dem` | `bool` | `False` | Dimension-wise entropy modulation (FastDSAC) |

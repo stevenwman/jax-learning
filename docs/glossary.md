@@ -26,7 +26,7 @@ Vectorized map: transforms a function that operates on a single example into one
 The set of valid actions at each timestep. All environments in this framework use continuous action spaces bounded to [-1, 1]. The Go2 quadruped has a 12-dimensional action space (3 joints per leg x 4 legs), scaled by `action_scale` before converting to motor targets.
 
 ### Entropy (in RL)
-The differential entropy of the policy's action distribution, \(H(\pi(\cdot|s))\). SAC and its variants add an entropy bonus \(\alpha H\) to the objective, encouraging exploration. The temperature \(\alpha\) is auto-tuned by optimizing toward a target entropy (see Target entropy).
+The differential entropy of the policy's action distribution, \(H(\pi(\cdot|s))\). SAC and its variants add an entropy bonus \(\alpha H\) to the objective, encouraging exploration. The temperature \(\alpha\) is auto-tuned by optimizing toward a [target entropy](#target-entropy).
 
 ### Episode
 A trajectory from environment reset to termination or truncation. The undiscounted sum of rewards over an episode (the return) is the primary evaluation metric.
@@ -110,7 +110,7 @@ Proportional and derivative gains for the joint-level PD controller that convert
 Go2 Warp defaults are \(K_p = 20.0\), \(K_d = 0.5\). These gains are tightly coupled to the simulation timestep (`sim_dt=0.004`) and solver iterations; changing one without adjusting the others causes instability. Domain randomization applies per-episode scale factors to both.
 
 ### Privileged state
-Simulator-only observations available to the critic but not the deployed actor. For Go2, this includes clean (noise-free) sensor readings, actuator forces, foot contact states, foot velocities, air time, and external forces applied to the torso. See Asymmetric critic.
+Simulator-only observations available to the critic but not the deployed actor. For Go2, this includes clean (noise-free) sensor readings, actuator forces, foot contact states, foot velocities, air time, and external forces applied to the torso. See [Asymmetric critic](#asymmetric-critic).
 
 ### Sim-to-real
 Transferring a simulation-trained policy to a physical robot. Requires domain randomization for robustness, matched PD gains and action scaling between sim and real, and an actor that depends only on deployable observations (not privileged state). See the [Sim-to-Real tutorial](tutorials/sim2real.md).
