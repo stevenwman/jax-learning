@@ -24,9 +24,31 @@ Track a joystick velocity command (vx, vy, yaw rate) with the Unitree Go2. The p
 
 **Key properties:**
 
-- 17 reward terms (tracking, stability, regularization, feet contact)
 - Velocity command sampled via Bernoulli/Uniform process (changes mid-episode)
 - Domain randomization: friction, damping, mass, motor strength
+
+??? note "17 reward terms"
+    | Term | Category |
+    |------|----------|
+    | `tracking_lin_vel` | Tracking |
+    | `tracking_ang_vel` | Tracking |
+    | `lin_vel_z` | Stability |
+    | `ang_vel_xy` | Stability |
+    | `orientation` | Stability |
+    | `base_height` | Stability |
+    | `torques` | Regularization |
+    | `action_rate` | Regularization |
+    | `energy` | Regularization |
+    | `dof_pos_limits` | Regularization |
+    | `pose` | Regularization |
+    | `stand_still` | Regularization |
+    | `feet_air_time` | Gait |
+    | `feet_slip` | Gait |
+    | `feet_clearance` | Gait |
+    | `feet_height` | Gait |
+    | `termination` | Penalty |
+
+    Weights are configured separately in the env's reward config — see [Custom Rewards](../tutorials/custom-rewards.md).
 
 **Methods**
 
@@ -51,6 +73,20 @@ from jax_rl.envs.locomotion.go2_bongo_handstand import BongoHandstand
 ```
 
 Go2 handstand balance on a bongo board. Applies antagonistic pushes to the robot base and board during training for robustness.
+
+??? note "10 reward terms"
+    | Term | Category |
+    |------|----------|
+    | `survival` | Reward |
+    | `height_cost` | Stability |
+    | `orientation_cost` | Stability |
+    | `board_tilt_cost` | Stability |
+    | `roller_cost` | Stability |
+    | `com_offset_cost` | Stability |
+    | `action_rate_cost` | Regularization |
+    | `joint_vel_cost` | Regularization |
+    | `torque_cost` | Regularization |
+    | `termination` | Penalty |
 
 **Methods**
 
