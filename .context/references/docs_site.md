@@ -7,7 +7,7 @@ The project has a public docs site at **https://stevenwman.github.io/jax-learnin
 - **Config:** `mkdocs.yml` (root)
 - **Source files:** `docs/` — all website content (22 pages)
 - **Assets:** `docs/assets/videos/` (embedded MP4s), `docs/stylesheets/extra.css` (syntax highlighting + layout)
-- **Abbreviations:** `docs/includes/abbreviations.md` — global hover tooltips for jargon (UTD, GAE, MLP, etc.)
+- **Auto-links:** `docs/scripts/glossary_links.py` (hook) + `docs/includes/term_links.yml` (non-glossary terms)
 - **Generators:** `docs/scripts/gen_cli_reference.py`, `docs/scripts/gen_env_presets.py`
 - **GH Actions:** `.github/workflows/docs.yml` — triggers on push to main for `docs/**`, `mkdocs.yml`, `jax_rl/**`
 - **Deps:** `uv sync --group docs` installs mkdocs-material
@@ -33,11 +33,15 @@ All API pages (`docs/api/*.md`) are hand-written Markdown — **not** auto-gener
 
 The `mkdocstrings` plugin has been removed from `mkdocs.yml`.
 
-### Abbreviation tooltips
+### Glossary auto-linking
 
-`docs/includes/abbreviations.md` defines ~25 terms (UTD, GAE, MLP, MJCF, PD gains, etc.). Via the `abbr` + `pymdownx.snippets` extensions, every occurrence of these terms across the entire site gets a dotted underline and hover tooltip — zero per-page effort.
+A mkdocs hook (`docs/scripts/glossary_links.py`) auto-links first occurrence of glossary terms on every page. Two sources:
+1. `docs/glossary.md` headings → links to glossary anchors
+2. `docs/includes/term_links.yml` → links to arbitrary pages (e.g., PPO → `api/algos.md#ppo`)
 
-**To add a new abbreviation:** Edit `docs/includes/abbreviations.md`, add a line like `*[TERM]: Definition here.`
+Links use `.gl` CSS class — inherits text color with subtle underline, highlights on hover. Skips code blocks, headings, existing links, and target pages.
+
+**To add a new auto-linked term:** Add a `### Heading` to `docs/glossary.md` (auto-links everywhere), or add a line to `docs/includes/term_links.yml` for non-glossary targets.
 
 ### Glossary cross-links
 
