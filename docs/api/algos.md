@@ -14,8 +14,8 @@ Six RL algorithms, each self-contained with no shared base class.
 | [PPO](#ppo) | On-policy | Clipped surrogate + GAE |
 | [SAC](#sac) | Off-policy | Auto-tuned entropy, Gaussian policy |
 | [TD3](#td3) | Off-policy | Deterministic policy, twin critics, delayed actor |
-| [FastSAC](#fastsac) | Off-policy | C51 distributional critics, UTD 8–20 |
-| [FastTD3](#fasttd3) | Off-policy | C51 distributional critics, UTD 8–20 |
+| [FastSAC](#fastsac) | Off-policy | C51 distributional critics, UTD 8 |
+| [FastTD3](#fasttd3) | Off-policy | C51 distributional critics, UTD 8 |
 | [FlashSAC](#flashsac) | Off-policy | Inverted residual blocks + BatchNorm + adaptive reward scaling |
 
 ---

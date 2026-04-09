@@ -51,7 +51,6 @@ markdown_extensions:
           class: mermaid
           format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.highlight:
-      anchor_linenums: true
       use_pygments: true
       pygments_lang_class: true
   - pymdownx.inlinehilite
@@ -85,11 +84,11 @@ nav:
     - Buffers: api/buffers.md
     - Wrappers: api/wrappers.md
     - Networks: api/networks.md
-  - Background:
+  - Reference:
     - CLI Flags: reference/cli-flags.md
     - Environment Presets: reference/env-presets.md
     - Architecture: reference/architecture.md
     - Lessons Learned: reference/lessons-learned.md
     - Glossary: glossary.md
-  - FAQ: faq.md
-  - Contributing: contributing.md
+    - FAQ: faq.md
+    - Contributing: contributing.md

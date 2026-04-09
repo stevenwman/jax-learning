@@ -151,8 +151,15 @@ SAC + C51 distributional critic. Defaults from the paper (Seo et al. 2025) — d
 | `activation` | `str` | `"swish"` | SiLU activation |
 | `num_atoms` | `int` | `101` | C51 atoms |
 | `v_min` / `v_max` | `float` | `-20.0` / `20.0` | Value distribution range |
+| `alpha_lr` | `float` | `3e-4` | Temperature optimizer LR |
+| `grad_clip_norm` | `float | None` | `None` | Max gradient norm |
+| `buffer_size` | `int` | `4_194_304` | Replay buffer size (4M) |
+| `min_buffer_size` | `int` | `8_192` | Steps before first update |
+| `q_layer_norm` | `bool` | `True` | Layer norm in Q-networks |
 | `q_aggregation` | `str` | `"avg"` | Avg (not min) of twin critics |
 | `lr_end` | `float` | `3e-5` | Cosine decay target |
+| `obs_normalization` | `bool` | `False` | Normalize observations |
+| `obs_norm_eps` | `float` | `1e-2` | Obs normalization epsilon |
 
 ---
 
@@ -216,6 +223,14 @@ Inverted residual blocks + BatchNorm + weight normalization + adaptive reward sc
 | **Noise** | | | |
 | `noise_zeta_mu` | `float` | `2.0` | Zeta noise repetition mean |
 | `noise_zeta_max` | `int` | `16` | Max repetitions |
+| **Misc** | | | |
+| `gamma` | `float` | `0.99` | Discount factor |
+| `n_step` | `int` | `1` | n-step returns |
+| `bc_alpha` | `float` | `0.0` | Behavior cloning regularization |
+| `buffer_size` | `int` | `1_000_000` | Replay buffer size |
+| `min_buffer_size` | `int` | `10_000` | Steps before first update |
+| `lr_warmup_frac` | `float` | `1e-6` | LR warmup fraction |
+| `lr_decay_frac` | `float` | `1.0` | LR decay fraction |
 
 ---
 

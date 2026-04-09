@@ -33,9 +33,10 @@ MJX-trained policies required an additional sim2sim transfer step and frequently
 Domain randomization is critical for real-world robustness. It randomizes physical parameters during training so the policy learns to handle uncertainty:
 
 - **Friction:** floor and foot friction coefficients
-- **Mass:** body mass perturbations
-- **Center of mass:** COM offset randomization
-- **Motor strength:** PD gain scaling (Kp x0.8-1.3, Kd x0.5-1.5)
+- **Mass:** per-link body mass perturbations
+- **Damping / armature / friction loss:** joint-level mechanical properties
+- **Motor strength:** per-actuator gain heterogeneity
+- **PD gain scaling:** Kp x0.8-1.3, Kd x0.5-1.5
 
 ```bash
 uv run python train_offpolicy.py \

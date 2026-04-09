@@ -124,9 +124,14 @@
   color: var(--md-default-fg-color--light);
 }
 
-/* ── Table scroll on mobile ── */
+/* ── Table styling ── */
 
 .md-typeset table:not([class]) {
   display: block;
   overflow-x: auto;
+  font-size: 0.82rem;
+}
+
+.md-typeset table:not([class]) tbody tr:nth-child(even) {
+  background-color: var(--md-default-fg-color--lightest);
 }

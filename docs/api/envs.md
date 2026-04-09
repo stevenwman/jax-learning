@@ -9,6 +9,9 @@ MuJoCo-based environments for quadruped locomotion. All environments use MuJoCo 
 
 Reward and observation specs are data-driven — swap terms without touching environment internals.
 
+!!! note "Class names vs registered names"
+    The class `WarpJoystick` is registered as environment `Go2WarpJoystickFlat` (flat terrain variant). Use the registered name in CLI flags (`--env Go2WarpJoystickFlat`) and the class name for imports.
+
 ---
 
 ## WarpJoystick

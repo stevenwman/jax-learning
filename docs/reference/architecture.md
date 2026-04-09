@@ -108,4 +108,4 @@ Raw env (MuJoCo Playground)
 
 Action-modifying wrappers are applied first, then observation-modifying wrappers, then the training wrappers.
 
-Wrappers are configured from `TrainConfig` fields. The pipeline is built by `build_wrapper_pipeline()` and applied by `apply_wrapper_pipeline()` in `jax_rl/envs/wrappers.py`.
+Wrappers are configured from `TrainConfig` fields. The pipeline is built by `build_wrapper_pipeline()` and applied by `apply_wrapper_pipeline()` in `jax_rl/envs/wrappers/pipeline.py`.

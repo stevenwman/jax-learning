@@ -35,7 +35,7 @@ A trajectory from environment reset to termination or truncation. The undiscount
 The mean undiscounted episodic return averaged over `num_eval_episodes` (default 10) rollouts using the deterministic policy. Reported periodically during training and used for algorithm comparison.
 
 ### GAE (Generalized Advantage Estimation)
-Computes advantage estimates for PPO by exponentially weighting n-step TD errors with parameter lambda, interpolating between TD(0) (lambda=0, low variance, high bias) and Monte Carlo (lambda=1, high variance, low bias). Default `gae_lambda=0.95`. Implemented via backward `lax.scan` in `buffers/rollout.py`, with truncation steps zeroed out to prevent cross-episode leakage.
+Estimates how much better an action was compared to the average. GAE blends short-horizon estimates (low variance, may be biased) with long-horizon estimates (high variance, less biased) via a parameter lambda. Default `gae_lambda=0.95`. Used by PPO; implemented via backward `lax.scan` in `buffers/rollout.py`.
 
 ### Observation (obs)
 The input vector the agent receives at each timestep. Go2 environments return a dictionary with `"state"` (48-dimensional deployable sensor readings: local velocity, gyro, gravity, joint positions/velocities, last action, command) and `"privileged_state"` (122-dimensional, adding clean sensor values, actuator forces, foot contacts/velocities, and external forces).
@@ -72,7 +72,7 @@ An architecture pairing an actor (policy network) that selects actions with a cr
 A training configuration where the critic receives a superset of the actor's observations. The actor sees only the 48d deployable `"state"` observations, while the critic additionally receives simulator-only information (122d `"privileged_state"`: clean sensor readings, contact forces, actuator torques). This enables sim-to-real transfer since the deployed actor never depends on privileged data. See the [Asymmetric Critic tutorial](tutorials/asymmetric-critic.md).
 
 ### C51
-A distributional RL method that represents Q(s,a) as a categorical distribution over a fixed set of evenly spaced atoms. Used by FastSAC and FastTD3 with 101 atoms over [-20, 20] by default, and by FlashSAC with 101 atoms over [-5, 5]. The critic is trained with categorical cross-entropy loss against Bellman-projected target distributions.
+Instead of predicting a single expected return, C51 predicts a histogram (distribution) of possible returns using a fixed set of bins ("atoms"). This gives the critic richer learning signal. Used by FastSAC and FastTD3 with 101 atoms over [-20, 20], and by FlashSAC with 101 atoms over [-5, 5].
 
 ### Distributional RL
 A family of methods that learn the full distribution of returns Z(s,a) rather than only the expected value Q(s,a) = E[Z(s,a)]. In this framework, C51 is the distributional method, implemented via `DistributionalQHead`. Distributional critics can improve learning stability, particularly in high-UTD regimes.
@@ -109,4 +109,4 @@ Simulator-only observations available to the critic but not the deployed actor. 
 Transferring a simulation-trained policy to a physical robot. Requires domain randomization for robustness, matched PD gains and action scaling between sim and real, and an actor that depends only on deployable observations (not privileged state). See the [Sim-to-Real tutorial](tutorials/sim2real.md).
 
 ### Target entropy
-The entropy setpoint for SAC's automatic temperature tuning. Computed as `-target_entropy_scale * action_dim`. SAC defaults to `target_entropy_scale=0.5` (moderate exploration). FastSAC defaults to `target_entropy_scale=0.0` (target entropy = 0), which prevents entropy collapse at large batch sizes. FlashSAC uses a different formulation: `0.5 * action_dim * log(2*pi*e*sigma_target^2)` with `sigma_target=0.15`.
+How random the policy should be. SAC auto-tunes a temperature parameter to maintain this target — higher target entropy means more exploration, lower means more exploitation. Computed as `-target_entropy_scale * action_dim`. SAC defaults to scale `0.5`; FastSAC uses `0.0` (minimal exploration, stable at large batch sizes). FlashSAC uses a Gaussian entropy formula with `sigma_target=0.15`.

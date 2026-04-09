@@ -172,7 +172,7 @@ C51 categorical Q-network: `concat(obs, action) → (batch, num_atoms) logits`.
 | Field | Type | Default |
 |-------|------|---------|
 | `hidden_dim` | `tuple` | — |
-| `num_atoms` | `int` | `51` |
+| `num_atoms` | `int` | `51` (all algo configs override to `101`) |
 | `activation` | `str` | `"relu"` |
 | `layer_norm` | `bool` | `True` |
 
