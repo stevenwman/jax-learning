@@ -58,6 +58,9 @@ Designing the reward function to guide learning toward desired behavior. Go2 loc
 ### Truncation
 An episode ending due to a time limit rather than a terminal state (e.g., falling). The framework handles truncation distinctly from termination: in PPO's GAE, truncated timesteps have their TD error zeroed out; in off-policy algorithms, a truncation mask prevents learning from invalid bootstrap targets at episode boundaries.
 
+### Target entropy
+How random the policy should be. SAC auto-tunes a temperature parameter to maintain this target — higher means more exploration, lower means more exploitation. Computed as \(\mathcal{H}_{\text{target}} = -\texttt{scale} \times \dim(\mathcal{A})\). SAC defaults to scale 0.5; FastSAC uses 0.0 (minimal exploration, stable at large batch sizes). FlashSAC uses a Gaussian entropy formula: \(\frac{1}{2} \dim(\mathcal{A}) \ln(2\pi e \, \sigma_{\text{target}}^2)\) with \(\sigma_{\text{target}} = 0.15\).
+
 ### UTD ratio (Update-to-Data)
 The number of gradient updates performed per environment step collected. Higher UTD improves sample efficiency but increases compute per step. SAC defaults to `grad_updates_per_step=8`; TD3 defaults to 1; FastSAC and FastTD3 default to 8.
 
@@ -111,6 +114,3 @@ Simulator-only observations available to the critic but not the deployed actor. 
 
 ### Sim-to-real
 Transferring a simulation-trained policy to a physical robot. Requires domain randomization for robustness, matched PD gains and action scaling between sim and real, and an actor that depends only on deployable observations (not privileged state). See the [Sim-to-Real tutorial](tutorials/sim2real.md).
-
-### Target entropy
-How random the policy should be. SAC auto-tunes a temperature parameter to maintain this target — higher means more exploration, lower means more exploitation. Computed as \(\mathcal{H}_{\text{target}} = -\texttt{scale} \times \dim(\mathcal{A})\). SAC defaults to scale 0.5; FastSAC uses 0.0 (minimal exploration, stable at large batch sizes). FlashSAC uses a Gaussian entropy formula: \(\frac{1}{2} \dim(\mathcal{A}) \ln(2\pi e \, \sigma_{\text{target}}^2)\) with \(\sigma_{\text{target}} = 0.15\).
