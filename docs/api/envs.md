@@ -28,25 +28,25 @@ Track a joystick velocity command (vx, vy, yaw rate) with the Unitree Go2. The p
 - Domain randomization: friction, damping, mass, motor strength
 
 ??? note "17 reward terms"
-    | Term | Category |
-    |------|----------|
-    | `tracking_lin_vel` | Tracking |
-    | `tracking_ang_vel` | Tracking |
-    | `lin_vel_z` | Stability |
-    | `ang_vel_xy` | Stability |
-    | `orientation` | Stability |
-    | `base_height` | Stability |
-    | `torques` | Regularization |
-    | `action_rate` | Regularization |
-    | `energy` | Regularization |
-    | `dof_pos_limits` | Regularization |
-    | `pose` | Regularization |
-    | `stand_still` | Regularization |
-    | `feet_air_time` | Gait |
-    | `feet_slip` | Gait |
-    | `feet_clearance` | Gait |
-    | `feet_height` | Gait |
-    | `termination` | Penalty |
+    | Term | What it does |
+    |------|-------------|
+    | `tracking_lin_vel` | Gaussian bonus for matching commanded forward/lateral velocity |
+    | `tracking_ang_vel` | Gaussian bonus for matching commanded yaw rate |
+    | `lin_vel_z` | Penalizes vertical base velocity |
+    | `ang_vel_xy` | Penalizes roll/pitch rotation |
+    | `orientation` | Penalizes body tilt from upright |
+    | `base_height` | Penalizes deviation from target standing height (0.27m) |
+    | `torques` | Penalizes motor effort (L2 + L1) |
+    | `action_rate` | Penalizes consecutive action changes (smoothness) |
+    | `energy` | Penalizes joint velocity × actuator force |
+    | `dof_pos_limits` | Penalizes joint positions near soft limits |
+    | `pose` | Rewards proximity to default stance pose |
+    | `stand_still` | Penalizes pose deviation when command is zero |
+    | `feet_air_time` | Rewards swing phase >0.1s during locomotion |
+    | `feet_slip` | Penalizes foot horizontal velocity during ground contact |
+    | `feet_clearance` | Penalizes deviation from target swing height |
+    | `feet_height` | Penalizes peak foot height error during swing |
+    | `termination` | Fixed penalty on early termination |
 
     Weights are configured separately in the env's reward config — see [Custom Rewards](../tutorials/custom-rewards.md).
 
@@ -75,18 +75,18 @@ from jax_rl.envs.locomotion.go2_bongo_handstand import BongoHandstand
 Go2 handstand balance on a bongo board. Applies antagonistic pushes to the robot base and board during training for robustness.
 
 ??? note "10 reward terms"
-    | Term | Category |
-    |------|----------|
-    | `survival` | Reward |
-    | `height_cost` | Stability |
-    | `orientation_cost` | Stability |
-    | `board_tilt_cost` | Stability |
-    | `roller_cost` | Stability |
-    | `com_offset_cost` | Stability |
-    | `action_rate_cost` | Regularization |
-    | `joint_vel_cost` | Regularization |
-    | `torque_cost` | Regularization |
-    | `termination` | Penalty |
+    | Term | What it does |
+    |------|-------------|
+    | `survival` | Constant +1.0 per step for staying alive |
+    | `orientation_cost` | Penalizes gravity vector error from inverted stance |
+    | `board_tilt_cost` | Penalizes bongo board tilt magnitude |
+    | `com_offset_cost` | Penalizes COM horizontal distance from board center |
+    | `height_cost` | Penalizes COM height error from target (0.55m) |
+    | `roller_cost` | Penalizes roller slider displacement |
+    | `torque_cost` | Penalizes motor effort relative to max torque |
+    | `action_rate_cost` | Penalizes consecutive action changes |
+    | `joint_vel_cost` | Penalizes joint velocity magnitude |
+    | `termination` | Fixed penalty on early termination |
 
 **Methods**
 
