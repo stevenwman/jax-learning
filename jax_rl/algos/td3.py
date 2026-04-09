@@ -37,6 +37,7 @@ class TrainingState:
     target_q2_params: Any
     key: jax.Array
     update_count: jnp.ndarray  # scalar int — tracks critic updates for policy_delay
+    last_actor_loss: jnp.ndarray  # carried forward on critic-only steps
 
 
 class TD3:
@@ -164,7 +165,7 @@ class TD3:
 
             # ── Actor update (delayed — every policy_delay steps) ─────────
             def _do_actor_update(args):
-                actor_params, actor_opt_state, q1_p, nq1, nq2, ta, tq1, tq2 = args
+                actor_params, actor_opt_state, q1_p, nq1, nq2, ta, tq1, tq2, _ = args
                 obs = batch["obs"]
                 critic_obs = batch["critic_obs"]
                 (_, actor_metrics), actor_grads = jax.value_and_grad(
@@ -182,10 +183,10 @@ class TD3:
                         new_ta, new_tq1, new_tq2, actor_metrics)
 
             def _skip_actor_update(args):
-                actor_params, actor_opt_state, _, _, _, ta, tq1, tq2 = args
-                dummy_metrics = {"actor_loss": jnp.float32(0.0)}
+                actor_params, actor_opt_state, _, _, _, ta, tq1, tq2, prev_actor_loss = args
+                carried_metrics = {"actor_loss": prev_actor_loss}
                 return (actor_params, actor_opt_state,
-                        ta, tq1, tq2, dummy_metrics)
+                        ta, tq1, tq2, carried_metrics)
 
             do_update = (new_count % policy_delay) == 0
             (new_actor_params, new_actor_opt_state,
@@ -198,7 +199,8 @@ class TD3:
                  state.q1_params,  # use pre-update Q1 for actor gradient
                  new_q1_params, new_q2_params,
                  state.target_actor_params, state.target_q1_params,
-                 state.target_q2_params),
+                 state.target_q2_params,
+                 state.last_actor_loss),
             )
 
             new_state = state.replace(
@@ -212,6 +214,7 @@ class TD3:
                 target_q2_params=new_tq2,
                 key=key,
                 update_count=new_count,
+                last_actor_loss=actor_metrics["actor_loss"],
             )
             metrics = {**critic_metrics, **actor_metrics}
             return new_state, metrics
@@ -271,4 +274,5 @@ class TD3:
             target_q2_params=q2_params,
             key=key,
             update_count=jnp.int32(0),
+            last_actor_loss=jnp.float32(0.0),
         )

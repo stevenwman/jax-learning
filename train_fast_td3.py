@@ -267,10 +267,7 @@ def train(cfg: TrainConfig, algo_cfg, seed: int = 0, resume: str | None = None,
                     jax_batch["critic_next_obs"] = jax_batch["next_obs"]
                 training_state, step_metrics = algo.update(training_state, jax_batch)
                 total_gradient_steps += 1
-                if float(step_metrics.get("actor_loss", 0.0)) != 0.0:
-                    last_metrics = step_metrics
-                else:
-                    last_metrics = {**step_metrics, "actor_loss": last_metrics.get("actor_loss", 0.0)}
+                last_metrics = step_metrics
 
         # ── Logging ────────────────────────────────────────────────────
         if outer_step % log_every == 0 or total_steps >= total_env_steps:
