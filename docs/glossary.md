@@ -26,7 +26,7 @@ Vectorized map: transforms a function that operates on a single example into one
 The set of valid actions at each timestep. All environments in this framework use continuous action spaces bounded to [-1, 1]. The Go2 quadruped has a 12-dimensional action space (3 joints per leg x 4 legs), scaled by `action_scale` before converting to motor targets.
 
 ### Entropy (in RL)
-The differential entropy of the policy's action distribution, H(pi(.|s)). SAC and its variants add an entropy bonus alpha * H to the objective, encouraging exploration. The temperature alpha is auto-tuned by optimizing toward a target entropy (see Target entropy).
+The differential entropy of the policy's action distribution, \(H(\pi(\cdot|s))\). SAC and its variants add an entropy bonus \(\alpha H\) to the objective, encouraging exploration. The temperature \(\alpha\) is auto-tuned by optimizing toward a target entropy (see Target entropy).
 
 ### Episode
 A trajectory from environment reset to termination or truncation. The undiscounted sum of rewards over an episode (the return) is the primary evaluation metric.
@@ -75,7 +75,7 @@ A training configuration where the critic receives a superset of the actor's obs
 Instead of predicting a single expected return, C51 predicts a histogram (distribution) of possible returns using a fixed set of bins ("atoms"). This gives the critic richer learning signal. Used by FastSAC and FastTD3 with 101 atoms over [-20, 20], and by FlashSAC with 101 atoms over [-5, 5].
 
 ### Distributional RL
-A family of methods that learn the full distribution of returns Z(s,a) rather than only the expected value Q(s,a) = E[Z(s,a)]. In this framework, C51 is the distributional method, implemented via `DistributionalQHead`. Distributional critics can improve learning stability, particularly in high-UTD regimes.
+A family of methods that learn the full distribution of returns \(Z(s,a)\) rather than only the expected value \(Q(s,a) = \mathbb{E}[Z(s,a)]\). In this framework, C51 is the distributional method, implemented via `DistributionalQHead`. Distributional critics can improve learning stability, particularly in high-UTD regimes.
 
 ### MLP (Multi-Layer Perceptron)
 A fully connected feedforward network. The default architecture for all actors and critics in this framework, implemented as `MlpEncoder`. FlashSAC is the exception, using inverted residual blocks with BatchNorm (`FlashSACBlock`) instead of plain MLPs.
@@ -100,7 +100,11 @@ A contact-rich physics simulator for robotics and RL. All environments in this f
 GPU-accelerated MuJoCo backend using NVIDIA Warp kernels (`impl="warp"`). The primary backend for Go2 locomotion, supporting full collision geometry (cylinders + boxes) that MJX's convex-only pipeline cannot handle efficiently.
 
 ### PD gains (Kp, Kd)
-Proportional and derivative gains for the joint-level PD controller that converts policy actions to motor torques: `tau = Kp * (target - q) + Kd * (0 - dq)`. Go2 Warp defaults are `Kp=20.0`, `Kd=0.5`. These gains are tightly coupled to the simulation timestep (`sim_dt=0.004`) and solver iterations; changing one without adjusting the others causes instability. Domain randomization applies per-episode scale factors to both.
+Proportional and derivative gains for the joint-level PD controller that converts policy actions to motor torques:
+
+\[\tau = K_p(q^* - q) + K_d(0 - \dot{q})\]
+
+Go2 Warp defaults are \(K_p = 20.0\), \(K_d = 0.5\). These gains are tightly coupled to the simulation timestep (`sim_dt=0.004`) and solver iterations; changing one without adjusting the others causes instability. Domain randomization applies per-episode scale factors to both.
 
 ### Privileged state
 Simulator-only observations available to the critic but not the deployed actor. For Go2, this includes clean (noise-free) sensor readings, actuator forces, foot contact states, foot velocities, air time, and external forces applied to the torso. See Asymmetric critic.
@@ -109,4 +113,4 @@ Simulator-only observations available to the critic but not the deployed actor. 
 Transferring a simulation-trained policy to a physical robot. Requires domain randomization for robustness, matched PD gains and action scaling between sim and real, and an actor that depends only on deployable observations (not privileged state). See the [Sim-to-Real tutorial](tutorials/sim2real.md).
 
 ### Target entropy
-How random the policy should be. SAC auto-tunes a temperature parameter to maintain this target — higher target entropy means more exploration, lower means more exploitation. Computed as `-target_entropy_scale * action_dim`. SAC defaults to scale `0.5`; FastSAC uses `0.0` (minimal exploration, stable at large batch sizes). FlashSAC uses a Gaussian entropy formula with `sigma_target=0.15`.
+How random the policy should be. SAC auto-tunes a temperature parameter to maintain this target — higher means more exploration, lower means more exploitation. Computed as \(\mathcal{H}_{\text{target}} = -\texttt{scale} \times \dim(\mathcal{A})\). SAC defaults to scale 0.5; FastSAC uses 0.0 (minimal exploration, stable at large batch sizes). FlashSAC uses a Gaussian entropy formula: \(\frac{1}{2} \dim(\mathcal{A}) \ln(2\pi e \, \sigma_{\text{target}}^2)\) with \(\sigma_{\text{target}} = 0.15\).
