@@ -22,21 +22,17 @@ import numpy as np
 import optax
 
 from jax_rl.algos.sac import SAC
-from jax_rl.buffers.jax_replay_buffer import JaxReplayBuffer
 from jax_rl.configs.train_config import TrainConfig
 from jax_rl.configs.env_presets import get_sac_preset
 from jax_rl.training import (
-    make_envs, make_identity_norm_state,
+    make_envs,
     EpisodeTracker, load_checkpoint,
     log_training_step, make_metrics_row,
     maybe_eval_and_checkpoint, final_eval_and_checkpoint,
+    ObsPipeline, TrainContext, apply_cli_overrides,
 )
 from jax_rl.training.checkpointing import CheckpointManager
 from jax_rl.training.metrics_logger import wandb_init, wandb_setup_metrics, wandb_log, wandb_finish
-from jax_rl.utils.normalization import (
-    init as norm_init, update as norm_update, normalize as norm_normalize,
-    normalize_stacked as norm_normalize_stacked,
-)
 
 
 # ── Training ───────────────────────────────────────────────────────────────
@@ -115,20 +111,14 @@ def train(cfg: TrainConfig, algo_cfg, seed: int = 0, resume: str | None = None,
     use_obs_norm = algo_cfg.obs_normalization
     obs_norm_eps = getattr(algo_cfg, 'obs_norm_eps', 1e-8)
     n_frame_stack = cfg.n_frame_stack
-    extra_obs_dims = {"critic_obs": critic_obs_dim} if has_privileged else None
-    if n_frame_stack > 1:
-        from jax_rl.buffers.jax_replay_buffer import FrameStackConfig
-        raw_dim = obs_dim // n_frame_stack
-        fsc = FrameStackConfig(n_frames=n_frame_stack, raw_dim=raw_dim, num_envs=cfg.num_envs)
-        buffer = JaxReplayBuffer(raw_dim, action_dim, max_size=algo_cfg.buffer_size,
-                                 frame_stack_config=fsc, extra_obs_dims=extra_obs_dims)
-        # Per-frame normalization: track stats on single-frame obs (raw_dim),
-        # normalize each frame slice independently with shared stats.
-        norm_state = norm_init(raw_dim) if use_obs_norm else make_identity_norm_state(obs_dim)
+
+    pipe = ObsPipeline(dict_obs, has_privileged, use_obs_norm, n_frame_stack, obs_norm_eps)
+    if has_privileged:
+        buffer = pipe.make_buffer_with_critic(obs_dim, action_dim, algo_cfg.buffer_size,
+                                              critic_obs_dim, num_envs=cfg.num_envs)
     else:
-        buffer = JaxReplayBuffer(obs_dim, action_dim, max_size=algo_cfg.buffer_size,
-                                 extra_obs_dims=extra_obs_dims)
-        norm_state = norm_init(obs_dim) if use_obs_norm else make_identity_norm_state(obs_dim)
+        buffer = pipe.make_buffer(obs_dim, action_dim, algo_cfg.buffer_size, num_envs=cfg.num_envs)
+    norm_state = pipe.init_norm_state(obs_dim)
 
     # ── Exploration ────────────────────────────────────────────────────────
     def explore(actor_params, obs, key):
@@ -148,6 +138,11 @@ def train(cfg: TrainConfig, algo_cfg, seed: int = 0, resume: str | None = None,
     metrics_log: list[dict] = []
     ckpt_dir = os.path.join("checkpoints", f"{timestamp}_{algo_name}_{env_short}_seed{seed}")
     ckpt_mgr = CheckpointManager(ckpt_dir)
+    ctx = TrainContext(
+        cfg=cfg, algo_cfg=algo_cfg, algo_name=algo_name,
+        ckpt_dir=ckpt_dir, obs_dim=obs_dim, action_dim=action_dim,
+        metrics_log=metrics_log, ckpt_mgr=ckpt_mgr, resume=resume,
+    )
 
     # ── Training loop ──────────────────────────────────────────────────────
     print(f"\nCollecting {algo_cfg.min_buffer_size:,} samples before first gradient update...")
@@ -171,29 +166,15 @@ def train(cfg: TrainConfig, algo_cfg, seed: int = 0, resume: str | None = None,
         # Warm up batch_reset JIT
         _jit_batch_reset(env_state).reward.block_until_ready()
 
-    def _get_obs(obs):
-        """Extract flat obs from dict or flat."""
-        return obs["state"] if dict_obs else obs
-
-    def _get_critic_obs(obs):
-        """Extract privileged obs for critic (falls back to actor obs)."""
-        return obs["privileged_state"] if has_privileged else _get_obs(obs)
-
     for outer_step in range(start_step // cfg.num_envs, total_env_steps // cfg.num_envs):
         raw_steps = (outer_step + 1) * cfg.num_envs
         total_steps = raw_steps
-        raw_obs = _get_obs(env_state.obs)
-        critic_raw_obs = _get_critic_obs(env_state.obs) if has_privileged else None
+        raw_obs = pipe.get_obs(env_state.obs)
+        critic_raw_obs = pipe.get_critic_obs(env_state.obs) if has_privileged else None
 
         # ── Obs normalization ──────────────────────────────────────────
-        if use_obs_norm:
-            # When frame stacking, update stats with newest frame only (raw_dim)
-            update_obs = raw_obs[:, :raw_dim] if n_frame_stack > 1 else raw_obs
-            norm_state = norm_update(norm_state, update_obs)
-        if use_obs_norm:
-            obs_for_action = norm_normalize_stacked(norm_state, raw_obs, n_frame_stack, eps=obs_norm_eps) if n_frame_stack > 1 else norm_normalize(norm_state, raw_obs, eps=obs_norm_eps)
-        else:
-            obs_for_action = raw_obs
+        norm_state = pipe.update_stats(raw_obs, norm_state)
+        obs_for_action = pipe.normalize_for_action(raw_obs, norm_state)
 
         # ── Action selection ───────────────────────────────────────────
         if len(buffer) < algo_cfg.min_buffer_size:
@@ -218,11 +199,11 @@ def train(cfg: TrainConfig, algo_cfg, seed: int = 0, resume: str | None = None,
                       if cfg.handle_truncation else jnp.zeros_like(env_state.done))
 
         # ── Buffer ─────────────────────────────────────────────────────
-        next_raw_obs = _get_obs(env_state.obs)
+        next_raw_obs = pipe.get_obs(env_state.obs)
         extra_kwargs = {}
         if has_privileged:
             extra_kwargs["critic_obs"] = critic_raw_obs
-            extra_kwargs["critic_next_obs"] = _get_critic_obs(env_state.obs)
+            extra_kwargs["critic_next_obs"] = pipe.get_critic_obs(env_state.obs)
         buffer.add_batch(obs=raw_obs, action=action,
                          reward=env_state.reward * cfg.reward_scaling,
                          next_obs=next_raw_obs, done=env_state.done,
@@ -244,18 +225,7 @@ def train(cfg: TrainConfig, algo_cfg, seed: int = 0, resume: str | None = None,
             for _ in range(algo_cfg.grad_updates_per_step):
                 key, sample_key = jax.random.split(key)
                 jax_batch = buffer.sample(algo_cfg.batch_size, key=sample_key)
-                if use_obs_norm:
-                    if n_frame_stack > 1:
-                        jax_batch["obs"] = norm_normalize_stacked(norm_state, jax_batch["obs"], n_frame_stack, eps=obs_norm_eps)
-                        jax_batch["next_obs"] = norm_normalize_stacked(norm_state, jax_batch["next_obs"], n_frame_stack, eps=obs_norm_eps)
-                    else:
-                        jax_batch["obs"] = norm_normalize(norm_state, jax_batch["obs"], eps=obs_norm_eps)
-                        jax_batch["next_obs"] = norm_normalize(norm_state, jax_batch["next_obs"], eps=obs_norm_eps)
-                # Algos always read batch["critic_obs"]. For non-privileged envs,
-                # critic sees the same obs as actor.
-                if not has_privileged:
-                    jax_batch["critic_obs"] = jax_batch["obs"]
-                    jax_batch["critic_next_obs"] = jax_batch["next_obs"]
+                jax_batch = pipe.normalize_batch(jax_batch, norm_state)
                 training_state, step_metrics = algo.update(training_state, jax_batch)
                 total_gradient_steps += 1
                 last_metrics = step_metrics
@@ -293,36 +263,26 @@ def train(cfg: TrainConfig, algo_cfg, seed: int = 0, resume: str | None = None,
                 wandb_log(row, step=raw_steps)
 
         # ── Eval + checkpoint ──────────────────────────────────────────
-        if use_obs_norm:
-            obs_norm_fn = (lambda o: norm_normalize_stacked(norm_state, _get_obs(o), n_frame_stack, eps=obs_norm_eps)) if n_frame_stack > 1 else (lambda o: norm_normalize(norm_state, _get_obs(o), eps=obs_norm_eps))
-        else:
-            obs_norm_fn = (lambda o: _get_obs(o)) if dict_obs else None
+        obs_norm_fn = pipe.make_obs_norm_fn(norm_state)
         _ts = training_state
         last_eval_eps, key = maybe_eval_and_checkpoint(
             algo.select_action, training_state.actor_params, eval_env, tracker,
-            cfg, algo_cfg, algo_name, ckpt_dir, training_state, norm_state,
-            obs_dim, action_dim, metrics_log, last_eval_eps, key, resume,
+            ctx, training_state, norm_state, last_eval_eps, key,
             obs_normalize_fn=obs_norm_fn,
             q_fn=lambda obs, action: algo.get_q_value(
-                _ts, _get_obs(obs), action,
+                _ts, pipe.get_obs(obs), action,
                 critic_obs=obs["privileged_state"] if isinstance(obs, dict) and "privileged_state" in obs else None),
-            ckpt_mgr=ckpt_mgr,
         )
 
     # ── Final eval ─────────────────────────────────────────────────────────
-    if use_obs_norm:
-        obs_norm_fn = (lambda o: norm_normalize_stacked(norm_state, _get_obs(o), n_frame_stack, eps=obs_norm_eps)) if n_frame_stack > 1 else (lambda o: norm_normalize(norm_state, _get_obs(o), eps=obs_norm_eps))
-    else:
-        obs_norm_fn = (lambda o: _get_obs(o)) if dict_obs else None
+    obs_norm_fn = pipe.make_obs_norm_fn(norm_state)
     final_eval_and_checkpoint(
         algo.select_action, training_state.actor_params, eval_env, tracker,
-        cfg, algo_cfg, algo_name, ckpt_dir, training_state, norm_state,
-        obs_dim, action_dim, metrics_log, key, resume, total_gradient_steps,
+        ctx, training_state, norm_state, key, total_gradient_steps,
         obs_normalize_fn=obs_norm_fn,
         q_fn=lambda obs, action: algo.get_q_value(
-            training_state, _get_obs(obs), action,
+            training_state, pipe.get_obs(obs), action,
             critic_obs=obs["privileged_state"] if isinstance(obs, dict) and "privileged_state" in obs else None),
-        ckpt_mgr=ckpt_mgr,
     )
 
     wandb_finish()
@@ -375,24 +335,7 @@ if __name__ == "__main__":
     cfg, algo_cfg = get_sac_preset(args.env)
 
     # Apply overrides
-    cfg_overrides = {}
-    algo_overrides = {}
-    if args.num_envs is not None: cfg_overrides["num_envs"] = args.num_envs
-    if args.total_timesteps is not None: cfg_overrides["total_timesteps"] = args.total_timesteps
-    if args.lr is not None: cfg_overrides["lr"] = args.lr
-    if args.reward_scaling is not None: cfg_overrides["reward_scaling"] = args.reward_scaling
-    if args.episode_length is not None: cfg_overrides["episode_length"] = args.episode_length
-    if args.eval_every is not None: cfg_overrides["eval_every_n_episodes"] = args.eval_every
-    if args.target_entropy_scale is not None: algo_overrides["target_entropy_scale"] = args.target_entropy_scale
-    if args.obs_norm: algo_overrides["obs_normalization"] = True
-    if args.domain_rand: cfg_overrides["domain_rand"] = True
-    if args.frame_stack is not None: cfg_overrides["n_frame_stack"] = args.frame_stack
-    if args.action_delay_ms is not None: cfg_overrides["action_delay_ms"] = args.action_delay_ms
-    if args.action_delay_range_ms is not None: cfg_overrides["action_delay_range_ms"] = tuple(args.action_delay_range_ms)
-    if args.reset_mode is not None: cfg_overrides["reset_mode"] = args.reset_mode
-
-    if cfg_overrides: cfg = dataclasses.replace(cfg, **cfg_overrides)
-    if algo_overrides: algo_cfg = dataclasses.replace(algo_cfg, **algo_overrides)
+    cfg, algo_cfg = apply_cli_overrides(args, cfg, algo_cfg)
 
     train(cfg, algo_cfg, seed=args.seed, resume=args.resume,
           use_wandb=args.wandb, wandb_project=args.wandb_project)
