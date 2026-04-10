@@ -92,8 +92,6 @@ def build_offpolicy_parser() -> argparse.ArgumentParser:
                         help="Evaluate every N episodes (default: every 512 episodes)")
     parser.add_argument("--obs-norm", action="store_true",
                         help="Enable sample-time obs normalization (recommended for humanoid tasks)")
-    parser.add_argument("--domain-rand", action="store_true",
-                        help="Enable domain randomization (Go2 only: friction, mass, damping, etc.)")
     parser.add_argument("--wandb", action="store_true",
                         help="Enable W&B experiment tracking (requires wandb installed)")
     parser.add_argument("--wandb-project", type=str, default="jax-rl",
@@ -140,8 +138,6 @@ def build_ppo_parser() -> argparse.ArgumentParser:
                         help="Max steps per episode (default: from env preset)")
     parser.add_argument("--log-interval", type=int, default=10,
                         help="Print training stats every N iterations")
-    parser.add_argument("--domain-rand", action="store_true",
-                        help="Enable domain randomization (Go2 only)")
     parser.add_argument("--wandb", action="store_true",
                         help="Enable W&B experiment tracking")
     parser.add_argument("--wandb-project", type=str, default="jax-rl",

@@ -40,7 +40,7 @@ flowchart TD
 
 Two-level configuration using dataclasses:
 
-- **`TrainConfig`** -- shared fields: `env_name`, `num_envs`, `total_timesteps`, `lr`, `gamma`, `reward_scaling`, `episode_length`, `domain_rand`, `n_frame_stack`, `action_delay_ms`
+- **`TrainConfig`** -- shared fields: `env_name`, `num_envs`, `total_timesteps`, `lr`, `gamma`, `reward_scaling`, `episode_length`, `reset_mode`, `n_frame_stack`, `action_delay_ms`
 - **Algo configs** -- algorithm-specific: `PPOConfig`, `SACConfig`, `TD3Config`, `FastSACConfig`, `FastTD3Config`, `FlashSACConfig`
 
 Presets return fully-configured tuples:
@@ -100,10 +100,11 @@ Raw environments are wrapped in a fixed order:
 Raw env (MuJoCo Playground)
   → ActionDelayWrapper      (if action_delay_ms > 0 or action_delay_range_ms set)
   → FrameStackWrapper       (if n_frame_stack > 1)
-  → VmapWrapper             (vectorize across num_envs)
-  → EpisodeWrapper          (episode length tracking)
-  → AutoResetWrapper        (auto-reset on done/truncation)
-    or DomainRandWrapper           (if domain_rand=True)
+  → VmapWrapper             (vectorize across num_envs)       ┐
+  → EpisodeWrapper          (episode length tracking)         │  reset_mode="legacy"
+  → AutoResetWrapper        (auto-reset, cached initial data) ┘
+    or
+  → DomainRandWrapper       (fresh reset + per-episode DR)    ┐  reset_mode="per_step"
 ```
 
 Action-modifying wrappers are applied first, then observation-modifying wrappers, then the training wrappers.

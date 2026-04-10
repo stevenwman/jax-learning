@@ -34,14 +34,13 @@ Shared training config — environment, evaluation, and wrapper settings.
 | `gamma` | `float` | `0.99` | Discount factor |
 | `reward_scaling` | `float` | `1.0` | Reward multiplier |
 | `handle_truncation` | `bool` | `True` | Bootstrap at truncation |
-| `domain_rand` | `bool` | `False` | Enable domain randomization |
 | `n_frame_stack` | `int` | `1` | Frame stacking (1 = disabled) |
 | `action_delay_ms` | `int` | `0` | Fixed action latency (0 = disabled) |
 | `action_delay_range_ms` | `tuple | None` | `None` | Random delay range per-episode |
 | `eval_every_n_episodes` | `int` | `5000` | Evaluation frequency |
 | `num_eval_episodes` | `int` | `10` | Episodes per eval |
 | `log_interval` | `int` | `1` | Logging frequency |
-| `reset_mode` | `str` | `"legacy"` | `"legacy"`, `"per_step"`, or `"syncd"` |
+| `reset_mode` | `str` | `"legacy"` | `"legacy"` (AutoReset) or `"per_step"` (DomainRandWrapper) |
 | `ppo` | `PPOConfig | None` | `PPOConfig()` | PPO-specific config |
 
 ---

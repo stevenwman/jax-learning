@@ -44,11 +44,11 @@ uv run python train_offpolicy.py \
     --env Go2WarpJoystickFlat \
     --num-envs 1024 \
     --total-timesteps 20000000 \
-    --domain-rand
+    --reset-mode per_step
 ```
 
 !!! warning
-    Without domain randomization, policies tend to exploit specific physics parameters and fail on real hardware. Always use `--domain-rand` for policies intended for deployment.
+    Without domain randomization, policies tend to exploit specific physics parameters and fail on real hardware. Always use `--reset-mode per_step` for policies intended for deployment — it enables `DomainRandWrapper`, which applies the env's declared DR specs (friction, mass, motor strength, etc.) per episode.
 
 ## Step 3: Locate the Checkpoint
 

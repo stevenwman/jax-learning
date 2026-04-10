@@ -121,45 +121,25 @@ AutoResetWrapper(env, full_reset=False)
 
 ---
 
-### DomainRandomizationVmapWrapper
-
-```python
-from jax_rl.envs.wrappers.training import DomainRandomizationVmapWrapper
-```
-
-Vectorized env where each instance gets a different randomized physics model (mass, friction, etc.).
-
-```python
-DomainRandomizationVmapWrapper(env, randomization_fn)
-```
-
-- `randomization_fn(mjx_model) → (randomized_model_vmap, in_axes)` — returns vmappable randomized models
-
----
-
 ### DomainRandWrapper
 
 ```python
 from jax_rl.envs.wrappers.domain_rand import DomainRandWrapper
 ```
 
-Unified wrapper that replaces the `AutoResetWrapper + EpisodeWrapper + DomainRandomizationVmapWrapper` stack. Handles vectorization, episode length tracking, auto-reset, and per-episode domain randomization in a single wrapper.
+Unified wrapper that replaces the `AutoResetWrapper + EpisodeWrapper` stack for envs that need fresh resets and per-episode domain randomization. Handles vectorization, episode length tracking, auto-reset, and DR in a single wrapper. DR parameters are declared by the env via `get_domain_randomization_spec()`.
 
 ```python
-DomainRandWrapper(env, episode_length=1000, mode="syncd")
+DomainRandWrapper(env, episode_length=1000, mode="per_step")
 ```
 
-- `mode="syncd"` — batch-reset all envs at `episode_length` (faster, used for Go2 locomotion)
-- `mode="per_step"` — per-env reset every step when done (more flexible)
+- `mode="per_step"` — per-env reset every step when done; fresh IC and per-episode DR.
 
 `reset(rng) → State`
 : Initial reset; initializes wrapper keys in `state.info`.
 
 `step(state, action) → State`
 : Step all envs with auto-reset and DR.
-
-`batch_reset(state) → State`
-: Batch-reset all envs between rollouts (syncd mode).
 
 ---
 
@@ -172,11 +152,11 @@ from jax_rl.envs.wrappers.training import wrap_for_training
 Composes the full training wrapper stack in one call:
 
 ```python
-wrap_for_training(env, episode_length=1000, action_repeat=1, randomization_fn=None)
+wrap_for_training(env, episode_length=1000, action_repeat=1)
 ```
 
 **Stack order:**
 
-1. **VmapWrapper** (or **DomainRandomizationVmapWrapper** if `randomization_fn` provided)
+1. **VmapWrapper**
 2. **EpisodeWrapper**
 3. **AutoResetWrapper**

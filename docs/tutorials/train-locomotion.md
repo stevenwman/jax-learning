@@ -60,7 +60,7 @@ This runs 20 million timesteps across 1024 parallel environments. On an RTX 4090
 
 !!! tip "Useful flags"
     - `--wandb` — log metrics to Weights & Biases for experiment tracking
-    - `--domain-rand` — randomize friction, mass, center-of-mass, and motor strength for sim-to-real robustness
+    - `--reset-mode per_step` — use `DomainRandWrapper` for per-episode domain randomization (randomized friction, mass, center-of-mass, motor strength, and more) declared by the env
     - `--seed 42` — set the random seed for reproducibility
 
 ## Step 4: Monitor Training
@@ -97,7 +97,7 @@ The video is saved to the checkpoint directory. It shows the Go2 following rando
 
 - **Try FlashSAC:** `uv run python train_flashsac.py --env Go2WarpJoystickFlat --seed 100` — uses inverted residual blocks, BatchNorm, and adaptive reward scaling. Eval 282.4 on Go2 at 10M steps (single seed — variance across seeds not yet characterized).
 - **Deploy to real hardware:** See the [Sim-to-Real](sim2real.md) tutorial
-- **Add domain randomization:** Append `--domain-rand` to the training command for policies that transfer better to real robots
+- **Add domain randomization:** Append `--reset-mode per_step` to the training command — `DomainRandWrapper` applies the env's declared DR specs per episode, which transfers better to real robots
 - **Try a custom task:** See [Custom Environment](custom-env.md) to build your own Go2 task
 - **Understand the reward function:** See [Custom Rewards](custom-rewards.md) for how the 17 reward terms work together
 

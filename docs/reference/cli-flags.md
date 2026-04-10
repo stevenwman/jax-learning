@@ -27,7 +27,6 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--reward-scaling` | float | from preset | Multiply rewards by this factor (default: from preset) |
 | `--episode-length` | int | from preset | Max steps per episode (default: from env preset) |
 | `--log-interval` | int | `10` | Print training stats every N iterations |
-| `--domain-rand` | flag | off | Enable domain randomization (Go2 only) |
 | `--wandb` | flag | off | Enable W&B experiment tracking |
 | `--wandb-project` | str | `jax-rl` | W&B project name |
 | `--frame-stack` | int | - | Number of stacked observation frames |
@@ -56,7 +55,6 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--target-entropy-scale` | float | from preset | target_entropy = -scale * action_dim (default: from algo config) |
 | `--eval-every` | int | - | Evaluate every N episodes (default: every 512 episodes) |
 | `--obs-norm` | flag | off | Enable sample-time obs normalization (recommended for humanoid tasks) |
-| `--domain-rand` | flag | off | Enable domain randomization (Go2 only: friction, mass, damping, etc.) |
 | `--wandb` | flag | off | Enable W&B experiment tracking (requires wandb installed) |
 | `--wandb-project` | str | `jax-rl` | W&B project name (default: jax-rl) |
 | `--frame-stack` | int | - | Number of stacked observation frames (default: 1, use 3 for locomotion) |
