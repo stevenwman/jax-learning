@@ -94,11 +94,13 @@ def test_run_offpolicy_loop_stub_env_cpu(tmp_path, monkeypatch):
 
     # ── Mock eval/checkpoint to no-ops ─────────────────────────────────────
     # The eval runner is fully tested elsewhere; here we want to exercise
-    # only the loop body. Mocks are positional-arg-aware.
+    # only the loop body. The mock pulls last_eval_eps + key from kwargs
+    # first, falling back to positional args 7/8 — that way the test still
+    # works if the helper switches to keyword arguments later.
     def _noop_maybe_eval(*args, **kwargs):
-        # Returns (last_eval_eps, key). Args are positional in the helper.
-        # Position 7 = last_eval_eps, position 8 = key.
-        return args[7], args[8]
+        last_eval_eps = kwargs.get("last_eval_eps", args[7] if len(args) > 7 else 0)
+        key = kwargs.get("key", args[8] if len(args) > 8 else None)
+        return last_eval_eps, key
 
     def _noop_final_eval(*args, **kwargs):
         return None

@@ -216,18 +216,17 @@ def run_offpolicy_loop(
                 metrics_log.append(row)
                 wandb_log(row, step=raw_steps)
 
-        # Eval + checkpoint
+        # Eval + checkpoint. q_fn closes over training_state directly: the
+        # lambda is called synchronously inside maybe_eval_and_checkpoint
+        # → evaluate() → q_fn(obs, action), so there is no cross-iteration
+        # capture risk.
         obs_norm_fn = pipe.make_obs_norm_fn(norm_state)
-        # Rebind training_state into _ts to avoid Python loop-variable capture
-        # in the q_fn lambda below. The lambda is called later (from inside
-        # eval_runner) and must see the CURRENT state, not a later iteration's.
-        _ts = training_state
         last_eval_eps, key = maybe_eval_and_checkpoint(
             algo.select_action, training_state.actor_params, eval_env, tracker,
             ctx, training_state, norm_state, last_eval_eps, key,
             obs_normalize_fn=obs_norm_fn,
             q_fn=lambda obs, action: algo.get_q_value(
-                _ts, pipe.get_obs(obs), action,
+                training_state, pipe.get_obs(obs), action,
                 critic_obs=obs["privileged_state"]
                            if isinstance(obs, dict) and "privileged_state" in obs else None),
         )
