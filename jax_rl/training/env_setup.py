@@ -1,6 +1,8 @@
 """Environment creation — replaces the 6-line block duplicated across all train scripts."""
 
 import functools
+from dataclasses import dataclass
+from typing import Any, Callable
 
 import jax
 import jax.numpy as jnp
@@ -133,6 +135,62 @@ def make_envs(cfg: TrainConfig, seed: int):
     action_dim = env.action_size
 
     return env, env_step, env_state, eval_env, obs_dim, action_dim, key
+
+
+@dataclass
+class EnvBundle:
+    """Env setup bundle for off-policy training scripts.
+
+    Wraps make_envs output with dict-obs detection so training scripts don't
+    need to re-detect asymmetric critic structure.
+    """
+    env: Any
+    env_step: Callable
+    env_state: Any
+    eval_env: Any
+    obs_dim: int
+    action_dim: int
+    critic_obs_dim: int | None  # None if symmetric
+    has_privileged: bool
+    dict_obs: bool
+    key: Any  # jax.Array
+
+
+def make_env_bundle(cfg: TrainConfig, seed: int) -> EnvBundle:
+    """Wrap make_envs + dict obs detection. For off-policy training scripts.
+
+    Returns EnvBundle with dict_obs / has_privileged / critic_obs_dim populated.
+    When dict obs with privileged_state is present, obs_dim (already set
+    correctly by make_envs) refers to the actor ("state") dim and
+    critic_obs_dim refers to the privileged dim.
+
+    Prints a one-line summary when dict obs is detected (matches existing
+    per-script print behavior).
+    """
+    env, env_step, env_state, eval_env, obs_dim, action_dim, key = make_envs(cfg, seed)
+
+    dict_obs = isinstance(env_state.obs, dict)
+    has_privileged = False
+    critic_obs_dim = None
+
+    if dict_obs:
+        # NOTE: make_envs already set obs_dim = env_state.obs["state"].shape[-1]
+        # for dict obs (see env_setup.py:128-132). We don't re-extract.
+        has_privileged = "privileged_state" in env_state.obs
+        if has_privileged:
+            critic_obs_dim = env_state.obs["privileged_state"].shape[-1]
+            print(f"  Dict obs detected: actor={obs_dim}d, critic={critic_obs_dim}d (asymmetric)")
+        else:
+            print(f"  Dict obs detected: using 'state' key ({obs_dim}d) for off-policy")
+
+    return EnvBundle(
+        env=env, env_step=env_step, env_state=env_state, eval_env=eval_env,
+        obs_dim=obs_dim, action_dim=action_dim,
+        critic_obs_dim=critic_obs_dim,
+        has_privileged=has_privileged,
+        dict_obs=dict_obs,
+        key=key,
+    )
 
 
 def make_identity_norm_state(obs_dim: int) -> NormalizationState:
