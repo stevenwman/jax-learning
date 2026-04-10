@@ -65,8 +65,9 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **lax.scan carry cost** — 4M-entry buffer in carry = 30% slower than Python loop
 - **Faster component ≠ faster training** — 4.8x buffer speedup = 1.5% end-to-end improvement
 
-## [Infrastructure](lessons/infrastructure.md) — 14 lessons
+## [Infrastructure](lessons/infrastructure.md) — 15 lessons
 
+- **Complete your migrations** — don't "archive" the old path. Archive ≠ delete. Validated new path? Same-day deletion, same PR. Otherwise you end up with 2 entry points for 1 feature.
 - **Orbax checkpointing** — must call `wait_until_finished()`, save meta.json alongside
 - **Orbax restore needs exact pytree match** — separate inference artifacts (numpy) from training (orbax)
 - **Checkpoint should be self-describing** — store full `dataclasses.asdict(cfg)` in meta.json

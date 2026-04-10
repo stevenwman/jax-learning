@@ -2,6 +2,20 @@
 
 ---
 
+## Complete Your Migrations
+
+**What happened:** We built `DomainRandWrapper` to replace the legacy DR stack (`go2_randomize.py` + `DomainRandomizationVmapWrapper` + `--domain-rand` flag). But instead of deleting the old path, we archived it "just in case" and kept `env_setup.py` dispatching to both. Three days later, 11 files still had legacy DR references, new engineers had two ways to enable DR with unclear differences, and the CLI had a dead flag.
+
+**Root cause:** Archive ≠ delete. "Keeping the old path alive during migration" is correct — but finishing the migration means removing it once the new path is validated. We validated per_step DR weeks ago and never went back to delete.
+
+**Symptom of incomplete migration:** the new feature has 2+ entry points, config fields, or CLI flags coexisting for the same purpose. If you see `if reset_mode in ("legacy", "per_step")` alongside `if getattr(cfg, 'domain_rand', False)`, that's two DR switches for one feature. Delete one.
+
+**Rule:** When introducing a replacement, put a deadline on the old path. Once the new one works: same-day deletion, same PR as the last validation. Do NOT "archive" production code — archive is for things with uncertain future, not legacy.
+
+**Counter-example (good):** After the train_offpolicy.py → per-algo script split, train_offpolicy.py was *kept* as reference because the user explicitly requested it. But that decision was explicit and documented, not a default "just in case."
+
+---
+
 ## Orbax Checkpointing
 
 - `ocp.StandardCheckpointer()` saves/restores arbitrary pytrees (Linen or NNX)

@@ -161,8 +161,12 @@ The algo **never** knows about the env. The training script decides how to colle
 jax-learning/
 ├── train_ppo.py              # PPO (Python loop, ~32k sps, all envs)
 ├── train_ppo_fast.py         # PPO (lax.scan, ~110k sps, JIT-able envs only)
-├── train_offpolicy.py        # SAC/TD3/FastTD3/FastSAC via --algo flag
-├── train_flashsac.py         # FlashSAC (standalone script, not integrated in train_offpolicy.py)
+├── train_sac.py              # SAC (vanilla)
+├── train_td3.py              # TD3 (vanilla)
+├── train_fast_sac.py         # FastSAC (C51 + SAC)
+├── train_fast_td3.py         # FastTD3 (C51 + TD3)
+├── train_flashsac.py         # FlashSAC (inverted residual + BatchNorm + Zeta noise)
+├── train_offpolicy.py        # LEGACY: unified dispatcher, kept as reference only
 ├── record_video.py           # Loads any checkpoint, renders rollout + _traj.npz
 ├── jax_rl/algos/             # ppo.py, sac.py, td3.py, fast_td3.py, fast_sac.py, flash_sac.py
 ├── jax_rl/envs/locomotion/   # go2_warp_base.py, go2_warp_joystick.py, go2_bongo_handstand.py (MJX files archived in archive/)
@@ -201,10 +205,10 @@ Every checkpoint contains: `meta.json` (full config), `metrics.csv` (training cu
 | Algo | Training script | Key features | Notes |
 |------|-----------------|--------------|-------|
 | PPO | `train_ppo.py` / `train_ppo_fast.py` | On-policy, policy gradient, asymmetric AC for Go2 | Fast scan version; frozen obs norm; CheckpointManager |
-| SAC | `train_offpolicy.py --algo sac` | Off-policy, entropy regularization, symmetric AC | Vanilla SAC, 128 envs |
-| TD3 | `train_offpolicy.py --algo td3` | Off-policy, deterministic, delayed critic update, target noise | Vanilla TD3 |
-| FastTD3 | `train_offpolicy.py --algo fast_td3` | C51 distributional + TD3 | Eval **880** on CheetahRun (low-dim). Benchmark: 1024 envs, 86M steps |
-| FastSAC | `train_offpolicy.py --algo fast_sac` | C51 distributional + SAC + asymmetric critic (Go2) | Eval **892** on HumanoidRun, **279.2** on Go2. Benchmark: 1024 envs. |
+| SAC | `train_sac.py` | Off-policy, entropy regularization, symmetric AC | Vanilla SAC, 128 envs |
+| TD3 | `train_td3.py` | Off-policy, deterministic, delayed critic update, target noise | Vanilla TD3 |
+| FastTD3 | `train_fast_td3.py` | C51 distributional + TD3 | Eval **880** on CheetahRun (low-dim). Benchmark: 1024 envs, 86M steps |
+| FastSAC | `train_fast_sac.py` | C51 distributional + SAC + asymmetric critic (Go2) | Eval **892** on HumanoidRun, **279.2** on Go2. Benchmark: 1024 envs. |
 | **FlashSAC** | `train_flashsac.py` | Inverted residual blocks + BatchNorm + weight norm + adaptive reward scaling + Zeta noise | Eval **282.4** on Go2 @ 10M steps (comparable to FastSAC 276.5 @ 18M). Presets in `env_presets.py`. |
 
 ---
@@ -262,7 +266,7 @@ See `TODO.md` for full prioritized list. Summary:
 ```bash
 # Training
 uv run python train_ppo_fast.py --env Go2WarpJoystickFlat --num-envs 1024 --total-timesteps 50000000  # Warp backend (unitree MJCF)
-uv run python train_offpolicy.py --algo fast_sac --env Go2WarpJoystickFlat --num-envs 1024 --total-timesteps 20000000 --reset-mode per_step  # FastSAC + DR on Warp
+uv run python train_fast_sac.py --env Go2WarpJoystickFlat --num-envs 1024 --total-timesteps 20000000 --reset-mode per_step  # FastSAC + per-episode DR on Warp
 uv run python train_flashsac.py --env Go2WarpJoystickFlat --seed 100  # FlashSAC Go2 (uses preset: 1024 envs, UTD=8, gamma=0.97)
 
 # Monitoring
