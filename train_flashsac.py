@@ -37,6 +37,7 @@ from jax_rl.training import (
     log_training_step, make_metrics_row,
     maybe_eval_and_checkpoint, final_eval_and_checkpoint,
 )
+from jax_rl.training.train_context import TrainContext
 from jax_rl.training.checkpointing import CheckpointManager
 from jax_rl.training.metrics_logger import wandb_init, wandb_setup_metrics, wandb_log, wandb_finish
 from jax_rl.configs.env_presets import get_flash_sac_preset
@@ -217,6 +218,11 @@ def train(cfg: TrainConfig, algo_cfg: FlashSACConfig, seed: int = 0,
     metrics_log: list[dict] = []
     ckpt_dir = os.path.join("checkpoints", f"{timestamp}_flash_sac_{env_short}_seed{seed}")
     ckpt_mgr = CheckpointManager(ckpt_dir)
+    ctx = TrainContext(
+        cfg=cfg, algo_cfg=algo_cfg, algo_name="flash_sac",
+        ckpt_dir=ckpt_dir, obs_dim=obs_dim, action_dim=action_dim,
+        metrics_log=metrics_log, ckpt_mgr=ckpt_mgr, resume=resume,
+    )
 
     log_extra_fields = [("Ent", "entropy", ".3f"), ("Alpha", "alpha", ".4f"),
                         ("RewScale", "reward_scale_denom", ".3f")]
@@ -358,8 +364,7 @@ def train(cfg: TrainConfig, algo_cfg: FlashSACConfig, seed: int = 0,
             algo.select_action,
             training_state.actor_params,
             eval_env, tracker,
-            cfg, algo_cfg, "flash_sac", ckpt_dir, training_state, dummy_norm_state,
-            obs_dim, action_dim, metrics_log, last_eval_eps, key, resume,
+            ctx, training_state, dummy_norm_state, last_eval_eps, key,
             obs_normalize_fn=(lambda o: _get_obs(o)) if dict_obs else None,
             q_fn=lambda obs, action: algo.get_q_value(
                 _ts, _get_obs(obs), action,
@@ -367,7 +372,6 @@ def train(cfg: TrainConfig, algo_cfg: FlashSACConfig, seed: int = 0,
                             if isinstance(obs, dict) and "privileged_state" in obs
                             else None),
             ),
-            ckpt_mgr=ckpt_mgr,
         )
 
     # ── Final eval ─────────────────────────────────────────────────────────
@@ -377,8 +381,7 @@ def train(cfg: TrainConfig, algo_cfg: FlashSACConfig, seed: int = 0,
         algo.select_action,
         training_state.actor_params,
         eval_env, tracker,
-        cfg, algo_cfg, "flash_sac", ckpt_dir, training_state, dummy_norm_state,
-        obs_dim, action_dim, metrics_log, key, resume, total_gradient_steps,
+        ctx, training_state, dummy_norm_state, key, total_gradient_steps,
         obs_normalize_fn=(lambda o: _get_obs(o)) if dict_obs else None,
         q_fn=lambda obs, action: algo.get_q_value(
             _ts, _get_obs(obs), action,
@@ -386,7 +389,6 @@ def train(cfg: TrainConfig, algo_cfg: FlashSACConfig, seed: int = 0,
                         if isinstance(obs, dict) and "privileged_state" in obs
                         else None),
         ),
-        ckpt_mgr=ckpt_mgr,
     )
 
     wandb_finish()

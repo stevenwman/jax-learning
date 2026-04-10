@@ -35,6 +35,7 @@ from jax_rl.training import (
     log_training_step, make_metrics_row,
     maybe_eval_and_checkpoint, final_eval_and_checkpoint,
 )
+from jax_rl.training.train_context import TrainContext
 from jax_rl.training.checkpointing import CheckpointManager
 from jax_rl.training.metrics_logger import wandb_init, wandb_setup_metrics, wandb_log, wandb_finish
 from jax_rl.utils.normalization import (
@@ -225,6 +226,11 @@ def train(cfg: TrainConfig, algo_cfg, algo_name: str, seed: int = 0, resume: str
     metrics_log: list[dict] = []
     ckpt_dir = os.path.join("checkpoints", f"{timestamp}_{algo_name}_{env_short}_seed{seed}")
     ckpt_mgr = CheckpointManager(ckpt_dir)
+    ctx = TrainContext(
+        cfg=cfg, algo_cfg=algo_cfg, algo_name=algo_name,
+        ckpt_dir=ckpt_dir, obs_dim=obs_dim, action_dim=action_dim,
+        metrics_log=metrics_log, ckpt_mgr=ckpt_mgr, resume=resume,
+    )
 
     # ── Training loop ──────────────────────────────────────────────────────
     print(f"\nCollecting {algo_cfg.min_buffer_size:,} samples before first gradient update...")
@@ -385,13 +391,11 @@ def train(cfg: TrainConfig, algo_cfg, algo_name: str, seed: int = 0, resume: str
         _ts = training_state
         last_eval_eps, key = maybe_eval_and_checkpoint(
             algo.select_action, training_state.actor_params, eval_env, tracker,
-            cfg, algo_cfg, algo_name, ckpt_dir, training_state, norm_state,
-            obs_dim, action_dim, metrics_log, last_eval_eps, key, resume,
+            ctx, training_state, norm_state, last_eval_eps, key,
             obs_normalize_fn=obs_norm_fn,
             q_fn=lambda obs, action: algo.get_q_value(
                 _ts, _get_obs(obs), action,
                 critic_obs=obs["privileged_state"] if isinstance(obs, dict) and "privileged_state" in obs else None),
-            ckpt_mgr=ckpt_mgr,
         )
 
     # ── Final eval ─────────────────────────────────────────────────────────
@@ -401,13 +405,11 @@ def train(cfg: TrainConfig, algo_cfg, algo_name: str, seed: int = 0, resume: str
         obs_norm_fn = (lambda o: _get_obs(o)) if dict_obs else None
     final_eval_and_checkpoint(
         algo.select_action, training_state.actor_params, eval_env, tracker,
-        cfg, algo_cfg, algo_name, ckpt_dir, training_state, norm_state,
-        obs_dim, action_dim, metrics_log, key, resume, total_gradient_steps,
+        ctx, training_state, norm_state, key, total_gradient_steps,
         obs_normalize_fn=obs_norm_fn,
         q_fn=lambda obs, action: algo.get_q_value(
             training_state, _get_obs(obs), action,
             critic_obs=obs["privileged_state"] if isinstance(obs, dict) and "privileged_state" in obs else None),
-        ckpt_mgr=ckpt_mgr,
     )
 
     wandb_finish()
