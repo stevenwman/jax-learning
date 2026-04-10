@@ -175,7 +175,7 @@ def make_env_bundle(cfg: TrainConfig, seed: int) -> EnvBundle:
 
     if dict_obs:
         # NOTE: make_envs already set obs_dim = env_state.obs["state"].shape[-1]
-        # for dict obs (see env_setup.py:128-132). We don't re-extract.
+        # for dict obs (see make_envs above). We don't re-extract.
         has_privileged = "privileged_state" in env_state.obs
         if has_privileged:
             critic_obs_dim = env_state.obs["privileged_state"].shape[-1]
