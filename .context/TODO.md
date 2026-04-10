@@ -66,7 +66,7 @@
 - [ ] Add more training videos if available (e.g., CartpoleBalance, PandaPickCube)
 
 ## Short-term — Go2 robustness (ACTIVE)
-- [x] Domain rand (Tier 1) — friction, mass, COM, armature, frictionloss. `go2_randomize.py` + `--domain-rand` flag.
+- [x] Domain rand (Tier 1) — friction, mass, COM, armature, frictionloss. Now declared via `get_domain_randomization_spec()` on the env, applied by `DomainRandWrapper` when `--reset-mode per_step`. (Legacy `go2_randomize.py` + `--domain-rand` path removed 2026-04-09.)
 - [x] CPU sister env — `go2_cpu.py`, same MJCF + overrides, CPU mj_step. Policy walks 3s.
 - [x] Velocity kicks — ±0.75 m/s every 350 steps, already in go2_joystick.py step()
 - [x] Motor strength DR — ×U(0.9, 1.1) via actuator_gainprm scaling
@@ -120,6 +120,12 @@
 - [ ] Push force curriculum — antagonistic pushes after stable balance converges
 - [ ] Phase 1B: full approach + mount + handstand (future)
 
+## Short-term — New Environments
+- [ ] Split belt walking env
+- [ ] Push-T env
+- [ ] Multi-mass manipulation env
+- [ ] Multi-leg-length ant env
+
 ## Mid-term (Vision RL)
 - [ ] Verify MJWarp GPU renderer on RTX 5080 (`mjx.create_render_context` + `mjx.render`). Madrona MJX is gone — replaced by built-in Warp ray-tracer in mujoco>=3.6.0.
 - [ ] Add render context to Go2WarpJoystick env (follow Playground CartpoleBalance vision pattern)
@@ -160,23 +166,24 @@
 
 ## Mid-term — DR wrapper v2
 
-`DomainRandWrapper` (formerly DRv2, in `jax_rl/envs/wrappers/domain_rand.py`), integrated into training pipeline. Per_step mode validated on Go2: 6% throughput cost, better sample efficiency. Syncd mode works but waste kills effective efficiency — parked.
+`DomainRandWrapper` (in `jax_rl/envs/wrappers/domain_rand.py`), integrated into training pipeline. Per_step mode validated on Go2: 6% throughput cost, better sample efficiency.
 
 ### Completed
-- [x] DomainRandWrapper (formerly DRv2) with per_step + syncd modes
+- [x] DomainRandWrapper with per_step reset mode (syncd mode dropped 2026-04-09)
 - [x] Training pipeline integration (`--reset-mode` flag)
 - [x] Benchmarked across 5 envs (Go2, Bongo, Cartpole, CheetahRun, Walker)
 - [x] Per_step vs legacy training comparison on Go2 FastSAC (5M steps, wandb: drv2-comparison). Per_step: 6% slower throughput, ~19% better return at same wall clock.
-
-### Next
 - [x] **Wire DR specs into Go2** — `get_domain_randomization_spec()` on Go2WarpJoystick: 6 model specs (friction, damping, armature, frictionloss, mass, motor strength) + 2 runtime (kp_scale, kd_scale). Smoke tested on 4 envs.
 - [x] **Clean up benchmark scripts** — deleted 10 bench/profile scripts from repo root.
+- [x] **Remove legacy DR path + syncd mode** (2026-04-09) — deleted `go2_randomize.py`, `bongo_randomize.py`, `DomainRandomizationVmapWrapper`, `--domain-rand` flag, `_step_syncd`/`batch_reset`.
+
+### Next
 - [ ] **Validate DR in full training** — runs on wandb `drv2-comparison`:
   1. Go2 per_step + DR specs, seed 0, 5M — main test
   2. Go2 per_step + DR specs, seed 1, 5M — seed robustness
   3. CheetahRun per_step (no DR), seed 0, 5M — already showed 6,309 sps (not catastrophic!), but killed before first episode completed at step 1000. Need full run to confirm.
   Compare against: per_step-no-DR (eval 280) and legacy (eval 270).
-- [ ] **Archive old DR files** — after training validation: delete `go2_randomize.py`, `bongo_randomize.py`. Add DR specs to Bongo env.
+- [ ] **Add DR specs to Bongo env** — mirror Go2's `get_domain_randomization_spec()`.
 - [ ] **Investigate CheetahRun full_reset catastrophe** — 99% slowdown, not explained by forward() cost. Low priority.
 
 ## Mid-term — Env composability (from MJLab audit, prereq for DIAYN)

@@ -27,8 +27,8 @@ def default_config() -> config_dict.ConfigDict:
         ctrl_dt=0.02,
         sim_dt=0.004,
         episode_length=1000,
-        Kp=20.0,   # unitree_rl_gym value (was 35 from Playground Go1)
-        Kd=0.5,    # unitree_rl_gym value (was 0.1 — too low for 100-iter solver)
+        Kp=10.0,
+        Kd=1.0,
         action_repeat=1,
         action_scale=0.5,
         soft_joint_pos_limit_factor=0.95,
@@ -126,8 +126,6 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
         noise = self._config.noise_config.scales
         self._obs_groups = {
             "state": [
-                ObsTerm("linvel", lambda data, **kw: self.get_local_linvel(data),
-                        noise_scale=noise.linvel),
                 ObsTerm("gyro", lambda data, **kw: self.get_gyro(data),
                         noise_scale=noise.gyro),
                 ObsTerm("gravity", lambda data, **kw: self.get_gravity(data),

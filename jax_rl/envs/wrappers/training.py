@@ -9,8 +9,7 @@ per-episode DR + fresh ICs. These wrappers remain for lightweight envs
 Activate via: --reset-mode legacy (default) vs --reset-mode per_step (DomainRandWrapper).
 """
 
-import contextlib
-from typing import Any, Callable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, List, Optional, Sequence
 
 import jax
 from jax import numpy as jp
@@ -210,55 +209,13 @@ class AutoResetWrapper(Wrapper):
         return state.replace(data=data, obs=obs, info=next_info)
 
 
-class DomainRandomizationVmapWrapper(Wrapper):
-    """Vectorized env with per-env domain randomization."""
-
-    def __init__(
-        self,
-        env: Any,
-        randomization_fn: Callable[[mjx.Model], Tuple[mjx.Model, mjx.Model]],
-    ):
-        super().__init__(env)
-        self._mjx_model_v, self._in_axes = randomization_fn(self.mjx_model)
-
-    @contextlib.contextmanager
-    def _v_env_fn(self, mjx_model: mjx.Model):
-        env = self.env.unwrapped
-        old_mjx_model = env._mjx_model
-        try:
-            env.unwrapped._mjx_model = mjx_model
-            yield env
-        finally:
-            env.unwrapped._mjx_model = old_mjx_model
-
-    def reset(self, rng: jax.Array) -> mjx_env.State:
-        def reset(mjx_model, rng):
-            with self._v_env_fn(mjx_model) as v_env:
-                return v_env.reset(rng)
-        return jax.vmap(reset, in_axes=[self._in_axes, 0])(self._mjx_model_v, rng)
-
-    def step(self, state: mjx_env.State, action: jax.Array) -> mjx_env.State:
-        def step(mjx_model, s, a):
-            with self._v_env_fn(mjx_model) as v_env:
-                return v_env.step(s, a)
-        return jax.vmap(step, in_axes=[self._in_axes, 0, 0])(
-            self._mjx_model_v, state, action
-        )
-
-
 def wrap_for_training(
     env: Any,
     episode_length: int = 1000,
     action_repeat: int = 1,
-    randomization_fn: Optional[
-        Callable[[mjx.Model], Tuple[mjx.Model, mjx.Model]]
-    ] = None,
 ) -> Wrapper:
     """Wrap a raw env for training: vmap + episode management + auto-reset."""
-    if randomization_fn is None:
-        env = VmapWrapper(env)
-    else:
-        env = DomainRandomizationVmapWrapper(env, randomization_fn)
+    env = VmapWrapper(env)
     env = EpisodeWrapper(env, episode_length, action_repeat)
     env = AutoResetWrapper(env)
     return env

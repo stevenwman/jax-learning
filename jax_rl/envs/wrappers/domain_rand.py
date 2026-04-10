@@ -1,26 +1,23 @@
 """Domain Randomization wrapper — unified episode boundary + DR.
 
-Replaces AutoResetWrapper + EpisodeWrapper + DomainRandomizationVmapWrapper
-with a single wrapper that handles:
+A single wrapper that replaces the legacy AutoResetWrapper + EpisodeWrapper
+stack for envs that need fresh-reset + per-episode DR. Handles:
   - Vectorization (vmap)
   - Episode length tracking + truncation
-  - Auto-reset on done (two modes: per_step or syncd)
+  - Auto-reset on done (per_step mode)
   - Per-episode domain randomization (model + runtime)
   - Clean state.info reset on episode boundary
 
-Two reset modes:
+Reset mode:
   - "per_step": compute reset for all envs every step, select via where_done.
     Fresh IC + clean state every episode. Pays O(N) reset cost per step.
-  - "syncd": all envs step for episode_length, mask post-done rewards,
-    batch-reset all envs together. No per-step reset overhead. Wastes
-    compute on post-done envs but consistently faster throughput.
 
 With no DR spec: behaves as an improved AutoResetWrapper.
 With DR spec: adds per-episode physics randomization.
 """
 
 import contextlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Literal, Optional
 
 import jax
@@ -85,7 +82,7 @@ class DomainRandWrapper(Wrapper):
     Args:
         env: Unwrapped environment (not vmapped).
         episode_length: Max steps per episode (truncation).
-        mode: "per_step" or "syncd".
+        mode: "per_step" (only supported mode).
     """
 
     _KEY = '_dr'
@@ -94,7 +91,7 @@ class DomainRandWrapper(Wrapper):
         self,
         env: Any,
         episode_length: int = 1000,
-        mode: Literal["per_step", "syncd"] = "syncd",
+        mode: Literal["per_step"] = "per_step",
     ):
         super().__init__(env)
         self.episode_length = episode_length
@@ -148,17 +145,9 @@ class DomainRandWrapper(Wrapper):
 
         return state
 
-    # ── Step (dispatches to mode) ───────────────────────────────
+    # ── Step ─────────────────────────────────────────────────────
 
     def step(self, state: mjx_env.State, action: jax.Array) -> mjx_env.State:
-        if self.mode == "per_step":
-            return self._step_per_step(state, action)
-        else:
-            return self._step_syncd(state, action)
-
-    # ── Per-step reset mode ─────────────────────────────────────
-
-    def _step_per_step(self, state: mjx_env.State, action: jax.Array) -> mjx_env.State:
         # Save and strip wrapper state so tree_map doesn't see mismatched keys
         drv2_rng = state.info.pop(f'{self._KEY}_rng')
         drv2_steps = state.info.pop(f'{self._KEY}_steps')
@@ -242,68 +231,6 @@ class DomainRandWrapper(Wrapper):
         info['truncation'] = truncation
 
         return state.replace(data=data, obs=obs, done=done, info=info)
-
-    # ── Sync'd reset mode ───────────────────────────────────────
-
-    def _step_syncd(self, state: mjx_env.State, action: jax.Array) -> mjx_env.State:
-        was_done = state.info[f'{self._KEY}_episode_done']
-
-        # Step all envs (even done ones)
-        state = jax.vmap(self.env.step)(state, action)
-
-        # Update step count and done status
-        steps = state.info[f'{self._KEY}_steps'] + 1
-        truncation = (steps >= self.episode_length).astype(float)
-        episode_done = jp.maximum(jp.maximum(was_done, state.done), truncation)
-
-        # Mask reward for post-done steps
-        reward = jp.where(was_done, 0.0, state.reward)
-
-        # Update episode metrics (only for non-done steps)
-        metrics = state.info[f'{self._KEY}_episode_metrics']
-        metrics['sum_reward'] += jp.where(was_done, 0.0, state.reward)
-        metrics['length'] += jp.where(was_done, 0.0, 1.0)
-
-        # Truncation: done by episode length, not by env termination
-        trunc_flag = jp.where(
-            truncation > 0, 1.0 - state.done, jp.zeros_like(episode_done)
-        ) * (1.0 - was_done)  # only count first truncation
-
-        state.info[f'{self._KEY}_steps'] = steps
-        state.info[f'{self._KEY}_episode_done'] = episode_done
-        state.info[f'{self._KEY}_done_count'] = (
-            state.info[f'{self._KEY}_done_count'] +
-            jp.maximum(state.done, truncation) * (1.0 - was_done)
-        )
-        state.info[f'{self._KEY}_episode_metrics'] = metrics
-        state.info['steps'] = steps
-        state.info['truncation'] = trunc_flag
-
-        return state.replace(reward=reward, done=episode_done)
-
-    def batch_reset(self, state: mjx_env.State) -> mjx_env.State:
-        """Batch-reset all envs. Call between rollouts in syncd mode."""
-        rng_key = jax.vmap(jax.random.split)(state.info[f'{self._KEY}_rng'])
-        rng, key = rng_key[:, 0], rng_key[:, 1]
-        new_state = jax.vmap(self.env.reset)(key)
-
-        if self._runtime_specs:
-            new_state = self._apply_runtime_dr(new_state, key)
-
-        # Preserve episode metrics from completed rollout
-        prev_metrics = state.info[f'{self._KEY}_episode_metrics']
-
-        new_state.info[f'{self._KEY}_rng'] = rng
-        new_state.info[f'{self._KEY}_steps'] = jp.zeros(rng.shape[0])
-        new_state.info[f'{self._KEY}_episode_done'] = jp.zeros(rng.shape[0])
-        new_state.info[f'{self._KEY}_done_count'] = jp.zeros(rng.shape[0])
-        new_state.info[f'{self._KEY}_episode_metrics'] = {
-            k: jp.zeros_like(v) for k, v in prev_metrics.items()
-        }
-        new_state.info['steps'] = jp.zeros(rng.shape[0])
-        new_state.info['truncation'] = jp.zeros(rng.shape[0])
-
-        return new_state
 
     # ── Model DR helpers ─────────────────────────────────────────
 

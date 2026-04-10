@@ -18,10 +18,6 @@ ALGO_RENAMES = {
     "exploration_noise": "exploration_noise_std",
 }
 
-# Bool flags that set cfg fields to True
-# If the set entry is a plain string, CLI name == cfg field name.
-BOOL_CFG = {"domain_rand"}
-
 # Bool algo flags: CLI name -> algo config field name
 BOOL_ALGO = {
     "obs_norm": "obs_normalization",
@@ -61,11 +57,6 @@ def apply_cli_overrides(args, cfg, algo_cfg):
         val = args_dict.get(cli_name)
         if val is not None:
             algo_ov[cfg_name] = val
-
-    # Bool cfg flags
-    for cli_name in BOOL_CFG:
-        if args_dict.get(cli_name):
-            cfg_ov[cli_name] = True
 
     # Bool algo flags
     for cli_name, cfg_name in BOOL_ALGO.items():

@@ -24,7 +24,6 @@ def _base_args(**overrides):
         target_entropy_scale=None,
         exploration_noise=None,
         obs_norm=False,
-        domain_rand=False,
         frame_stack=None,
         eval_every=None,
         action_delay_range_ms=None,
@@ -136,21 +135,6 @@ def test_exploration_noise_maps_to_exploration_noise_std():
 # ── Bool flags ───────────────────────────────────────────────────────────
 
 
-def test_domain_rand_sets_cfg_flag():
-    args = _base_args(domain_rand=True)
-    cfg = TrainConfig()
-    assert cfg.domain_rand is False
-    new_cfg, _ = apply_cli_overrides(args, cfg, FastSACConfig())
-    assert new_cfg.domain_rand is True
-
-
-def test_domain_rand_false_leaves_cfg_unchanged():
-    args = _base_args(domain_rand=False)
-    cfg = TrainConfig()
-    new_cfg, _ = apply_cli_overrides(args, cfg, FastSACConfig())
-    assert new_cfg.domain_rand is False
-
-
 def test_obs_norm_sets_algo_flag():
     args = _base_args(obs_norm=True)
     algo_cfg = FastSACConfig()
@@ -223,7 +207,6 @@ def test_multiple_overrides_applied():
         frame_stack=3,
         eval_every=1000,
         batch_size=2048,
-        domain_rand=True,
         obs_norm=True,
     )
     cfg = TrainConfig()
@@ -235,7 +218,6 @@ def test_multiple_overrides_applied():
     assert new_cfg.lr == 3e-4
     assert new_cfg.n_frame_stack == 3
     assert new_cfg.eval_every_n_episodes == 1000
-    assert new_cfg.domain_rand is True
     assert new_algo.batch_size == 2048
     assert new_algo.obs_normalization is True
 

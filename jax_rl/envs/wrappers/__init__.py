@@ -6,7 +6,6 @@ from jax_rl.envs.wrappers.training import (
     VmapWrapper,
     EpisodeWrapper,
     AutoResetWrapper,
-    DomainRandomizationVmapWrapper,
     wrap_for_training,
 )
 
@@ -19,6 +18,5 @@ __all__ = [
     "VmapWrapper",
     "EpisodeWrapper",
     "AutoResetWrapper",
-    "DomainRandomizationVmapWrapper",
     "wrap_for_training",
 ]

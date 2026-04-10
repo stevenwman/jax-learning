@@ -2,6 +2,11 @@
 
 **Date:** 2026-04-07 to 2026-04-08
 
+> **Historical note:** The legacy DR v1 path (`go2_randomize.py`, `bongo_randomize.py`,
+> `DomainRandomizationVmapWrapper`, `--domain-rand` flag) and the `syncd` reset mode
+> in `DomainRandWrapper` were removed on 2026-04-09. Only `per_step` mode remains.
+> This doc is preserved as historical context for the design decisions.
+
 ## TL;DR
 
 Built DRv2Wrapper (now renamed to `DomainRandWrapper` in `domain_rand.py`) to replace AutoResetWrapper + DomainRandomizationVmapWrapper. Two modes: per_step and syncd. **Per_step is the winner for Go2** — 6% throughput cost but better sample efficiency (199 vs 167 avg_return at same wall clock). Syncd has 2x raw throughput but waste from dead envs kills effective sample efficiency and integrating it with the training loop (tracker, buffer, logging) is a nightmare.

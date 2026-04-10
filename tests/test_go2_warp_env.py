@@ -29,8 +29,8 @@ class TestWarpGo2Loads:
         assert "privileged_state" in state.obs
 
     def test_obs_dims(self, state):
-        assert state.obs["state"].shape == (48,)
-        assert state.obs["privileged_state"].shape == (122,)
+        assert state.obs["state"].shape == (45,)
+        assert state.obs["privileged_state"].shape == (119,)
 
     def test_reset_shapes(self, state):
         assert state.reward.shape == ()
@@ -51,7 +51,7 @@ class TestWarpGo2Steps:
         action = jnp.zeros(12)
         next_state = env.step(state, action)
         assert isinstance(next_state.obs, dict)
-        assert next_state.obs["state"].shape == (48,)
+        assert next_state.obs["state"].shape == (45,)
         assert not jnp.any(jnp.isnan(next_state.obs["state"]))
         assert not jnp.any(jnp.isnan(next_state.reward))
 
@@ -59,7 +59,7 @@ class TestWarpGo2Steps:
         key = jax.random.PRNGKey(42)
         action = jax.random.uniform(key, (12,), minval=-1.0, maxval=1.0)
         next_state = env.step(state, action)
-        assert next_state.obs["state"].shape == (48,)
+        assert next_state.obs["state"].shape == (45,)
 
     def test_reward_nonzero_after_steps(self, env, state):
         action = jnp.zeros(12)
@@ -69,15 +69,6 @@ class TestWarpGo2Steps:
 
 
 class TestWarpDomainRand:
-    def test_legacy_domain_randomize_with_warp_body_id(self, env):
-        from jax_rl.envs.locomotion.archive.go2_randomize import domain_randomize
-        model, in_axes = domain_randomize(
-            env.mjx_model,
-            jax.random.split(jax.random.PRNGKey(0), 2),
-            torso_body_id=env._torso_body_id,
-        )
-        assert model is not None
-
     def test_dr_specs_declared(self, env):
         specs = env.get_domain_randomization_spec()
         model_specs = [s for s in specs if s.type == "model"]
@@ -115,10 +106,10 @@ class TestWarpBatched:
         env, env_step, env_state, eval_env, obs_dim, action_dim, key = make_envs(
             cfg, seed=0
         )
-        assert obs_dim == 48
+        assert obs_dim == 45
         assert action_dim == 12
         assert isinstance(env_state.obs, dict)
-        assert env_state.obs["state"].shape == (4, 48)
+        assert env_state.obs["state"].shape == (4, 45)
 
         # Test batched step
         action = jnp.zeros((4, 12))
@@ -133,4 +124,4 @@ class TestWarpBatched:
 
         cfg = TrainConfig(env_name="Go2WarpJoystickFlat", num_envs=2, total_timesteps=1000)
         _, _, env_state, _, obs_dim, _, _ = make_envs(cfg, seed=0)
-        assert obs_dim == 48
+        assert obs_dim == 45

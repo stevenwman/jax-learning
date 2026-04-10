@@ -163,18 +163,6 @@ def train(cfg: TrainConfig, algo_cfg, seed: int = 0, resume: str | None = None,
     last_metrics: dict = {}
     total_gradient_steps = 0
 
-    # DR syncd mode: track waste + batch reset
-    reset_mode = getattr(cfg, 'reset_mode', 'legacy')
-    is_dr_syncd = reset_mode == "syncd"
-    is_dr = reset_mode in ("per_step", "syncd")
-    _prev_done = np.zeros(cfg.num_envs)  # CPU-side tracking for syncd
-    _cumul_wasted = 0
-    _cumul_raw = 0
-    if is_dr_syncd:
-        _jit_batch_reset = jax.jit(env.batch_reset)
-        # Warm up batch_reset JIT
-        _jit_batch_reset(env_state).reward.block_until_ready()
-
     for outer_step in range(start_step // cfg.num_envs, total_env_steps // cfg.num_envs):
         raw_steps = (outer_step + 1) * cfg.num_envs
         total_steps = raw_steps
@@ -196,14 +184,6 @@ def train(cfg: TrainConfig, algo_cfg, seed: int = 0, resume: str | None = None,
         # ── Env step ───────────────────────────────────────────────────
         env_state = env_step(env_state, action)
 
-        if is_dr_syncd:
-            # Batch reset when all envs done OR at episode_length (whichever first)
-            all_done = bool(_prev_done.all())
-            if all_done or (outer_step + 1) % cfg.episode_length == 0:
-                env_state = _jit_batch_reset(env_state)
-                _prev_done = np.zeros(cfg.num_envs)
-                tracker.episode_rewards[:] = 0.0
-
         truncation = (env_state.info.get("truncation", jnp.zeros_like(env_state.done))
                       if cfg.handle_truncation else jnp.zeros_like(env_state.done))
 
@@ -218,16 +198,7 @@ def train(cfg: TrainConfig, algo_cfg, seed: int = 0, resume: str | None = None,
                          next_obs=next_raw_obs, done=env_state.done,
                          truncation=truncation, **extra_kwargs)
 
-        # For syncd: only count newly-done envs, not already-dead ones
-        _cur_done = np.asarray(env_state.done)
-        if is_dr_syncd:
-            _cumul_wasted += int(_prev_done.sum())
-            _cumul_raw += cfg.num_envs
-            _newly_done = _cur_done * (1.0 - _prev_done)
-            tracker.step(np.asarray(env_state.reward), _newly_done)
-            _prev_done = np.maximum(_prev_done, _cur_done)
-        else:
-            tracker.step(np.asarray(env_state.reward), _cur_done)
+        tracker.step(np.asarray(env_state.reward), np.asarray(env_state.done))
 
         # ── Gradient updates ───────────────────────────────────────────
         if len(buffer) >= algo_cfg.min_buffer_size:
@@ -258,16 +229,6 @@ def train(cfg: TrainConfig, algo_cfg, seed: int = 0, resume: str | None = None,
                     total_steps, tracker, last_metrics, total_gradient_steps, sps, elapsed,
                     extra_keys=log_extra_keys,
                 )
-
-                # DR waste metrics
-                if is_dr_syncd and _cumul_raw > 0:
-                    waste_frac = _cumul_wasted / _cumul_raw
-                    effective_steps = _cumul_raw - _cumul_wasted
-                    row["waste_fraction"] = round(waste_frac, 4)
-                    row["effective_steps"] = effective_steps
-                    row["effective_sps"] = int(effective_steps / elapsed) if elapsed > 0 else 0
-                    row["raw_sps"] = int(raw_steps / elapsed) if elapsed > 0 else 0
-
                 metrics_log.append(row)
                 wandb_log(row, step=raw_steps)
 
@@ -322,8 +283,6 @@ if __name__ == "__main__":
                         help="Evaluate every N episodes (default: every 512 episodes)")
     parser.add_argument("--obs-norm", action="store_true",
                         help="Enable sample-time obs normalization (recommended for humanoid tasks)")
-    parser.add_argument("--domain-rand", action="store_true",
-                        help="Enable domain randomization (Go2 only: friction, mass, damping, etc.)")
     parser.add_argument("--wandb", action="store_true",
                         help="Enable W&B experiment tracking (requires wandb installed)")
     parser.add_argument("--wandb-project", type=str, default="jax-rl",
@@ -336,8 +295,8 @@ if __name__ == "__main__":
                         metavar=("MIN", "MAX"),
                         help="Randomized action delay range in ms (e.g., 40 120)")
     parser.add_argument("--reset-mode", type=str, default=None,
-                        choices=["legacy", "per_step", "syncd"],
-                        help="Reset mode: legacy (AutoReset), per_step or syncd (DomainRandWrapper)")
+                        choices=["legacy", "per_step"],
+                        help="Reset mode: legacy (AutoReset) or per_step (DomainRandWrapper)")
     parser.add_argument("--batch-size", type=int, default=None,
                         help="Batch size for gradient updates (default: from algo config)")
     parser.add_argument("--grad-updates-per-step", type=int, default=None,

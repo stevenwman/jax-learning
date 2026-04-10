@@ -262,7 +262,7 @@ See `TODO.md` for full prioritized list. Summary:
 ```bash
 # Training
 uv run python train_ppo_fast.py --env Go2WarpJoystickFlat --num-envs 1024 --total-timesteps 50000000  # Warp backend (unitree MJCF)
-uv run python train_offpolicy.py --algo fast_sac --env Go2WarpJoystickFlat --num-envs 1024 --total-timesteps 20000000 --domain-rand  # FastSAC + DR on Warp
+uv run python train_offpolicy.py --algo fast_sac --env Go2WarpJoystickFlat --num-envs 1024 --total-timesteps 20000000 --reset-mode per_step  # FastSAC + DR on Warp
 uv run python train_flashsac.py --env Go2WarpJoystickFlat --seed 100  # FlashSAC Go2 (uses preset: 1024 envs, UTD=8, gamma=0.97)
 
 # Monitoring

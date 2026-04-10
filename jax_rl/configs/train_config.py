@@ -39,10 +39,8 @@ class TrainConfig:
     eval_every_n_episodes: int = 5000  # ~5M steps at 1024 envs
     num_eval_episodes: int = 10
 
-    # Domain randomization
-    domain_rand: bool = False
-
-    # Reset mode: "legacy" (AutoResetWrapper), "per_step" or "syncd" (DomainRandWrapper)
+    # Reset mode: "legacy" (AutoResetWrapper, cached reset, no DR)
+    #          or "per_step" (DomainRandWrapper, fresh reset + env-declared DR)
     reset_mode: str = "legacy"
 
     # Observation preprocessing
