@@ -17,15 +17,63 @@
 
 ## Task ordering rationale
 
-1. **Task 1** (EnvBundle) creates a prerequisite that Tasks 4-8 depend on.
-2. **Task 2** (metrics fmt bug) and **Task 3** (non-breaking ObsPipeline extension) are independent cheap wins — done early while context is fresh.
-3. **Task 4** (run_offpolicy_loop helper) is the main event. Uses the new `make_buffer(..., critic_obs_dim=...)` signature added in Task 3.
-4. **Tasks 5-8** (thin each script) each depend on 1 + 4 but are independent of each other. They switch from the old `make_buffer_with_critic` to the new unified `make_buffer` as a side effect.
-5. **Task 9** (delete `make_buffer_with_critic`) is the cleanup half of the ObsPipeline merge — safe now that Tasks 4-8 have migrated all callers.
-6. **Tasks 10-11** are documentation + verification.
-7. **Smoke tests** are deferred to a "Tomorrow morning TODO" section because the GPU is in use today (10.3 / 16.3 GiB, 86% util, two python processes).
+- **Task 0** (preflight) registers the `pytest.mark.slow` marker so subsequent tasks can use it correctly.
+- **Task 1** (EnvBundle) creates a prerequisite that Tasks 4-8 depend on.
+- **Task 2** (metrics fmt bug) and **Task 3** (non-breaking ObsPipeline extension) are independent cheap wins — done early while context is fresh.
+- **Task 4** (run_offpolicy_loop helper) is the main event. Uses the new `make_buffer(..., critic_obs_dim=...)` signature added in Task 3. Includes a CPU-only stub-env smoke test that validates the helper end-to-end before commit (no GPU needed).
+- **Tasks 5-8** (thin each script) each depend on 1 + 4 but are independent of each other. They switch from the old `make_buffer_with_critic` to the new unified `make_buffer` as a side effect. Each one re-runs the stub test as a regression check.
+- **Task 9** (delete `make_buffer_with_critic`) is the cleanup half of the ObsPipeline merge — safe now that Tasks 4-8 have migrated all callers.
+- **Tasks 10-11** are documentation + verification.
+- **Smoke tests against real envs** are deferred to a "Tomorrow morning TODO" section because the GPU is in use today (10.3 / 16.3 GiB, 86% util, two python processes). The CPU stub-env test in Task 4 catches glue bugs without needing the GPU.
 
 **No broken window:** Task 3 is deliberately non-breaking — it adds the new `critic_obs_dim` parameter without removing `make_buffer_with_critic`. The old method is deleted in Task 9 only after every caller has been migrated. Scripts remain runnable at every intermediate commit.
+
+---
+
+## Task 0: Register `pytest.mark.slow` marker (preflight)
+
+**Files:**
+- Modify: `pyproject.toml`
+
+**Background:** This plan introduces `@pytest.mark.slow` to defer GPU-heavy tests (Task 1's Go2Warp test, Task 4's end-to-end SAC test). Pytest does NOT automatically skip unregistered markers — they just emit a `PytestUnknownMarkWarning` and the test runs anyway. Without registration, Task 11's `pytest tests/ -x` would run the Go2Warp slow test against a busy GPU, contradicting the plan's stated intent.
+
+We register the marker AND configure `addopts` to deselect slow tests by default. Slow tests run only with `pytest -m slow` or `pytest -m "slow or not slow"`.
+
+- [ ] **Step 1: Read current `pyproject.toml`**
+
+Read `pyproject.toml` and confirm there is NO existing `[tool.pytest.ini_options]` section. If one exists, this task adapts to it (add the `markers` and `addopts` keys to the existing section). Otherwise create a new section.
+
+- [ ] **Step 2: Add the pytest config section**
+
+Append to `pyproject.toml`:
+
+```toml
+[tool.pytest.ini_options]
+markers = [
+    "slow: marks tests as slow / GPU-bound (deselected by default; run with -m slow)",
+]
+addopts = "-m 'not slow'"
+```
+
+- [ ] **Step 3: Verify the marker is registered**
+
+Run: `uv run python -m pytest tests/test_obs_pipeline.py -v --collect-only -q 2>&1 | head -20`
+Expected: tests are collected, no `PytestUnknownMarkWarning`. (No slow tests exist yet, so behavior is identical — this is a sanity check that pytest is reading the new config without complaint.)
+
+Run: `uv run python -m pytest --markers 2>&1 | grep slow`
+Expected: line `@pytest.mark.slow: marks tests as slow / GPU-bound (deselected by default; run with -m slow)`.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add pyproject.toml
+git commit -m "test: register pytest.mark.slow marker, deselect slow tests by default
+
+Subsequent tasks add @pytest.mark.slow to GPU-heavy tests. Without
+registration pytest would run them anyway (unknown markers don't skip,
+they just warn). addopts='-m not slow' makes the default test sweep skip
+them; CI / manual runs can opt in with 'pytest -m slow'."
+```
 
 ---
 
@@ -88,15 +136,20 @@ def test_env_bundle_dict_obs_go2warp():
 Run: `uv run python -m pytest tests/test_env_bundle.py -v`
 Expected: FAIL with `ImportError: cannot import name 'make_env_bundle'` or similar.
 
-- [ ] **Step 3: Implement `EnvBundle` + `make_env_bundle` in `env_setup.py`**
+- [ ] **Step 3: Add module-level imports for `EnvBundle` to `env_setup.py`**
 
-Add to `jax_rl/training/env_setup.py` (after `make_envs`, before `make_identity_norm_state`):
+At the top of `jax_rl/training/env_setup.py`, **add to the existing module-level import block** (do not put these inline mid-file). The current top of the file imports `functools`, `jax`, `jnp`, `pg_registry`, etc. Add:
 
 ```python
 from dataclasses import dataclass
 from typing import Any, Callable
+```
 
+- [ ] **Step 4: Implement `EnvBundle` + `make_env_bundle` in `env_setup.py`**
 
+Add to `jax_rl/training/env_setup.py` (after `make_envs`, before `make_identity_norm_state`):
+
+```python
 @dataclass
 class EnvBundle:
     """Env setup bundle for off-policy training scripts.
@@ -120,8 +173,9 @@ def make_env_bundle(cfg: TrainConfig, seed: int) -> EnvBundle:
     """Wrap make_envs + dict obs detection. For off-policy training scripts.
 
     Returns EnvBundle with dict_obs / has_privileged / critic_obs_dim populated.
-    When dict obs with privileged_state is present, obs_dim is the actor
-    ("state") dim and critic_obs_dim is the privileged dim.
+    When dict obs with privileged_state is present, obs_dim (already set
+    correctly by make_envs) refers to the actor ("state") dim and
+    critic_obs_dim refers to the privileged dim.
 
     Prints a one-line summary when dict obs is detected (matches existing
     per-script print behavior).
@@ -133,7 +187,8 @@ def make_env_bundle(cfg: TrainConfig, seed: int) -> EnvBundle:
     critic_obs_dim = None
 
     if dict_obs:
-        obs_dim = env_state.obs["state"].shape[-1]
+        # NOTE: make_envs already set obs_dim = env_state.obs["state"].shape[-1]
+        # for dict obs (see env_setup.py:128-132). We don't re-extract.
         has_privileged = "privileged_state" in env_state.obs
         if has_privileged:
             critic_obs_dim = env_state.obs["privileged_state"].shape[-1]
@@ -151,9 +206,9 @@ def make_env_bundle(cfg: TrainConfig, seed: int) -> EnvBundle:
     )
 ```
 
-- [ ] **Step 4: Export new symbols from `jax_rl/training/__init__.py`**
+- [ ] **Step 5: Export new symbols from `jax_rl/training/__init__.py`**
 
-Change line 10 from:
+Change the existing line:
 ```python
 from jax_rl.training.env_setup import make_envs, make_identity_norm_state
 ```
@@ -162,14 +217,14 @@ to:
 from jax_rl.training.env_setup import make_envs, make_env_bundle, EnvBundle, make_identity_norm_state
 ```
 
-- [ ] **Step 5: Run the test to verify it passes**
+- [ ] **Step 6: Run the test to verify it passes**
 
 Run: `uv run python -m pytest tests/test_env_bundle.py::test_env_bundle_flat_obs_cheetahrun -v`
 Expected: PASS.
 
-(The `@pytest.mark.slow` test for Go2Warp is skipped unless `-m slow` is passed — don't run it now, it's validated during smoke tests tomorrow.)
+The `@pytest.mark.slow` test for Go2Warp is skipped by default thanks to Task 0's `addopts = "-m 'not slow'"`. To run it manually (when GPU is free): `pytest tests/test_env_bundle.py -v -m slow`.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add jax_rl/training/env_setup.py jax_rl/training/__init__.py tests/test_env_bundle.py
@@ -410,18 +465,154 @@ signature."
 
 The helper is a function, not a class. No inheritance. No hook callbacks beyond `explore_fn`.
 
-- [ ] **Step 1: Write the skeleton test**
+- [ ] **Step 1: Write two tests — one fast CPU stub-env test (the actual gate), and one slow real-env test (deferred to GPU availability)**
 
 Create `tests/test_offpolicy_loop.py`:
 
 ```python
-"""Smoke test for run_offpolicy_loop — runs SAC on CheetahRun for a handful of steps."""
+"""Smoke tests for run_offpolicy_loop.
+
+The CPU stub-env test (test_run_offpolicy_loop_stub_env_cpu) is the GATE
+for committing the helper — it runs in <5s without GPU, exercises the
+full training loop body (env step → buffer → gradient updates → logging),
+and catches copy-paste / glue bugs that would otherwise survive until
+the deferred GPU smoke tests.
+
+The slow real-env test (test_run_offpolicy_loop_sac_cheetah) is the
+end-to-end validation, deferred to when GPU is free.
+"""
 import os
 import sys
 
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+
+def test_run_offpolicy_loop_stub_env_cpu(tmp_path, monkeypatch):
+    """CPU-only smoke test with a stub env. <5s. No GPU. The Task 4 commit gate.
+
+    Constructs an EnvBundle manually with stub env callables that return JAX
+    arrays of the right shape. SAC is real (exercises init/update/
+    select_action/get_q_value), env is fake. eval_runner functions are
+    monkeypatched to no-ops so we test ONLY the helper's loop body.
+
+    What this catches:
+        - Wrong arg order / missing kwargs in run_offpolicy_loop call sites
+        - Broken closure / explore_fn signature mismatch
+        - Incorrect dict-obs/has_privileged branching
+        - Buffer add_batch shape mismatch
+        - Truncation handling regression
+        - JAX leak / tracer error
+        - Field name typos in TrainContext / EnvBundle construction
+    """
+    import dataclasses
+    from dataclasses import dataclass
+
+    import jax
+    import jax.numpy as jnp
+    import numpy as np
+    import optax
+
+    from jax_rl.algos.sac import SAC
+    from jax_rl.configs.sac_config import SACConfig
+    from jax_rl.configs.train_config import TrainConfig
+    from jax_rl.training import EnvBundle, run_offpolicy_loop
+    import jax_rl.training.offpolicy_loop as ol_module
+
+    # ── Tiny dimensions ────────────────────────────────────────────────────
+    NUM_ENVS = 2
+    OBS_DIM = 4
+    ACTION_DIM = 2
+
+    # ── Stub env state + step ──────────────────────────────────────────────
+    @dataclass
+    class StubEnvState:
+        obs: jnp.ndarray
+        reward: jnp.ndarray
+        done: jnp.ndarray
+        info: dict
+
+    def stub_step(state, action):
+        # Drift obs slightly each step so update_stats sees variation
+        new_obs = state.obs + 0.01 * jnp.ones_like(state.obs)
+        return StubEnvState(
+            obs=new_obs,
+            reward=jnp.ones((NUM_ENVS,)) * 0.5,
+            done=jnp.zeros((NUM_ENVS,)),
+            info={"truncation": jnp.zeros((NUM_ENVS,))},
+        )
+
+    initial_state = StubEnvState(
+        obs=jnp.zeros((NUM_ENVS, OBS_DIM)),
+        reward=jnp.zeros((NUM_ENVS,)),
+        done=jnp.zeros((NUM_ENVS,)),
+        info={"truncation": jnp.zeros((NUM_ENVS,))},
+    )
+
+    # eval_env is unused (eval runner is mocked) but must be a non-None object
+    class StubEnv:
+        action_size = ACTION_DIM
+        def reset(self, keys): return initial_state
+        def step(self, state, action): return stub_step(state, action)
+
+    env = StubEnv()
+    bundle = EnvBundle(
+        env=env, env_step=stub_step, env_state=initial_state,
+        eval_env=env, obs_dim=OBS_DIM, action_dim=ACTION_DIM,
+        critic_obs_dim=None, has_privileged=False, dict_obs=False,
+        key=jax.random.PRNGKey(0),
+    )
+
+    # ── Mock eval/checkpoint to no-ops ─────────────────────────────────────
+    # The eval runner is fully tested elsewhere; here we want to exercise
+    # only the loop body. Mocks are positional-arg-aware.
+    def _noop_maybe_eval(*args, **kwargs):
+        # Returns (last_eval_eps, key). Args are positional in the helper.
+        # Position 7 = last_eval_eps, position 8 = key.
+        return args[7], args[8]
+
+    def _noop_final_eval(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(ol_module, "maybe_eval_and_checkpoint", _noop_maybe_eval)
+    monkeypatch.setattr(ol_module, "final_eval_and_checkpoint", _noop_final_eval)
+
+    # ── Configs (intentionally tiny) ───────────────────────────────────────
+    cfg = TrainConfig(
+        env_name="StubEnv", num_envs=NUM_ENVS, total_timesteps=40,
+        episode_length=100, eval_every_n_episodes=10**9,  # eval never fires
+        gamma=0.99, lr=3e-4, reward_scaling=1.0, n_frame_stack=1,
+        handle_truncation=True,
+    )
+    algo_cfg = SACConfig(
+        hidden_dim=(32, 32), batch_size=8,
+        min_buffer_size=10, buffer_size=100,
+        grad_updates_per_step=1,
+    )
+
+    optimizer = optax.adam(cfg.lr)
+    alpha_opt = optax.adam(algo_cfg.alpha_lr)
+    algo = SAC(
+        config=algo_cfg, obs_dim=OBS_DIM, action_dim=ACTION_DIM,
+        optimizer=optimizer, alpha_optimizer=alpha_opt,
+        gamma=cfg.gamma, handle_truncation=cfg.handle_truncation,
+        critic_obs_dim=None,
+    )
+
+    def explore(actor_params, obs, key):
+        return algo.select_action(actor_params, obs, key)
+
+    monkeypatch.chdir(tmp_path)
+
+    # Should complete without exception. Catches the bugs listed in docstring.
+    run_offpolicy_loop(
+        cfg=cfg, algo_cfg=algo_cfg, algo=algo, algo_name="sac",
+        env_bundle=bundle, explore_fn=explore,
+        log_extra_fields=[("Ent", "entropy", ".3f"), ("Alpha", "alpha", ".4f")],
+        log_extra_keys=["entropy", "alpha", "alpha_loss"],
+        seed=0, resume=None, use_wandb=False,
+    )
 
 
 @pytest.mark.slow
@@ -472,10 +663,12 @@ def test_run_offpolicy_loop_sac_cheetah(tmp_path, monkeypatch):
     )
 ```
 
-- [ ] **Step 2: Run the test — expect failure (helper doesn't exist)**
+- [ ] **Step 2: Run the CPU stub test — expect failure (helper doesn't exist)**
 
-Run: `uv run python -m pytest tests/test_offpolicy_loop.py -v -m slow`
-Expected: FAIL with `ImportError` or `cannot import name 'run_offpolicy_loop'`.
+Run: `uv run python -m pytest tests/test_offpolicy_loop.py::test_run_offpolicy_loop_stub_env_cpu -v`
+Expected: FAIL with `ImportError: cannot import name 'run_offpolicy_loop'` (or similar).
+
+Note: this is an `import` failure at the test module level — both tests in the file will fail to collect. That's fine.
 
 - [ ] **Step 3: Implement `run_offpolicy_loop` in `jax_rl/training/offpolicy_loop.py`**
 
@@ -750,14 +943,25 @@ Add at the end of the import block:
 from jax_rl.training.offpolicy_loop import run_offpolicy_loop
 ```
 
-- [ ] **Step 5: Run the test to verify the helper works (DEFERRED if GPU busy)**
+- [ ] **Step 5: Run the CPU stub test — this is the commit gate**
+
+Run: `uv run python -m pytest tests/test_offpolicy_loop.py::test_run_offpolicy_loop_stub_env_cpu -v`
+Expected: PASS in <5s. **If this fails, do NOT commit Task 4.** Debug the helper or the test until it passes.
+
+Common failure modes and fixes:
+- `AttributeError: 'StubEnvState' object has no attribute 'replace'` — the helper doesn't call `.replace()`, so this shouldn't happen. If it does, something in the loop body changed.
+- `TypeError` on `mock_maybe_eval` positional args — the helper changed the order of args passed to `maybe_eval_and_checkpoint`. Update the mock's `args[7]`/`args[8]` indices to match.
+- Buffer shape mismatch — the stub env returns `reward` and `done` of shape `(NUM_ENVS,)`. If the buffer expects `(NUM_ENVS, 1)`, fix the stub (or fix the helper if production env shape changed).
+- `KeyError: 'truncation'` — stub `info` dict missing. Already populated; if this fires, the stub got corrupted in editing.
+
+- [ ] **Step 6: Run the slow real-env test (DEFERRED if GPU busy)**
 
 Check GPU: `nvidia-smi --query-gpu=memory.used,memory.total,utilization.gpu --format=csv`
 
-- **If GPU is free or below 50% util**: run `uv run python -m pytest tests/test_offpolicy_loop.py::test_run_offpolicy_loop_sac_cheetah -v -m slow`. Expected: PASS (takes ~1-2 min for JIT + loop).
-- **If GPU is busy**: skip this step. Add a TODO to the "Tomorrow morning" section to run the test.
+- **If GPU is free or below 50% util**: run `uv run python -m pytest tests/test_offpolicy_loop.py::test_run_offpolicy_loop_sac_cheetah -v -m slow`. Expected: PASS in ~1-2 min (JIT compile dominates).
+- **If GPU is busy**: skip this step. The CPU stub test in Step 5 is the commit gate; the real-env test is just additional confidence and gets run from the "Tomorrow morning TODO" section.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add jax_rl/training/offpolicy_loop.py jax_rl/training/__init__.py tests/test_offpolicy_loop.py
@@ -766,7 +970,11 @@ git commit -m "feat: run_offpolicy_loop — shared training loop for 4 non-flash
 Extracts the full training loop (env setup prints, W&B, buffer, resume,
 tracker, main loop, eval, checkpoint) into a single function. Takes an
 already-constructed algo + EnvBundle + explore_fn. FlashSAC stays
-standalone (Zeta noise + BN state + reward norm don't fit)."
+standalone (Zeta noise + BN state + reward norm don't fit).
+
+Includes CPU-only stub-env smoke test (test_run_offpolicy_loop_stub_env_cpu)
+that runs in <5s without GPU and is the commit gate. The real-env slow
+test is deferred until GPU is available."
 ```
 
 ---
@@ -847,10 +1055,10 @@ Expected: no error.
 Run: `uv run python train_sac.py --help`
 Expected: prints help text, no error.
 
-- [ ] **Step 4: Run the existing off-policy algo tests to make sure SAC is still healthy**
+- [ ] **Step 4: Run the existing off-policy algo tests + the stub-env smoke test**
 
-Run: `uv run python -m pytest tests/test_offpolicy_algos.py -v -k sac`
-Expected: all PASS.
+Run: `uv run python -m pytest tests/test_offpolicy_algos.py tests/test_offpolicy_loop.py::test_run_offpolicy_loop_stub_env_cpu -v -k "sac or stub"`
+Expected: all PASS. The stub test re-validates the helper end-to-end with the same shape as the thinned script's call.
 
 - [ ] **Step 5: Commit**
 
@@ -940,10 +1148,10 @@ Expected: no error.
 Run: `uv run python train_td3.py --help`
 Expected: prints help.
 
-- [ ] **Step 4: Run existing TD3 tests**
+- [ ] **Step 4: Run existing TD3 tests + the stub-env smoke test**
 
-Run: `uv run python -m pytest tests/test_offpolicy_algos.py -v -k td3`
-Expected: PASS.
+Run: `uv run python -m pytest tests/test_offpolicy_algos.py tests/test_offpolicy_loop.py::test_run_offpolicy_loop_stub_env_cpu -v -k "td3 or stub"`
+Expected: PASS. (The stub test uses SAC, but it re-runs cheaply and confirms the shared helper still works after each thinning.)
 
 - [ ] **Step 5: Commit**
 
@@ -1031,9 +1239,9 @@ Run: `uv run python -c "import train_fast_sac"`
 
 Run: `uv run python train_fast_sac.py --help`
 
-- [ ] **Step 4: Run FastSAC tests**
+- [ ] **Step 4: Run FastSAC tests + the stub-env smoke test**
 
-Run: `uv run python -m pytest tests/test_offpolicy_algos.py -v -k fast_sac`
+Run: `uv run python -m pytest tests/test_offpolicy_algos.py tests/test_offpolicy_loop.py::test_run_offpolicy_loop_stub_env_cpu -v -k "fast_sac or stub"`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -1131,9 +1339,9 @@ Run: `uv run python -c "import train_fast_td3"`
 
 Run: `uv run python train_fast_td3.py --help`
 
-- [ ] **Step 4: Run FastTD3 tests**
+- [ ] **Step 4: Run FastTD3 tests + the stub-env smoke test**
 
-Run: `uv run python -m pytest tests/test_offpolicy_algos.py -v -k fast_td3`
+Run: `uv run python -m pytest tests/test_offpolicy_algos.py tests/test_offpolicy_loop.py::test_run_offpolicy_loop_stub_env_cpu -v -k "fast_td3 or stub"`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -1226,22 +1434,25 @@ git commit -m "docs: update AGENT_HANDOFF for thinned off-policy scripts + run_o
 
 **Files:** none (verification only)
 
-- [ ] **Step 1: Run the full test suite**
+- [ ] **Step 1: Run the full test suite (slow tests deselected by default thanks to Task 0)**
 
-Run: `uv run python -m pytest tests/ -v --ignore=tests/test_offpolicy_loop.py -x`
-Expected: all PASS. (Skip the slow loop test unless GPU is free.)
+Run: `uv run python -m pytest tests/ -v -x`
+Expected: all PASS. The Task 0 `addopts = "-m 'not slow'"` automatically excludes `@pytest.mark.slow` tests, so `test_run_offpolicy_loop_sac_cheetah` and `test_env_bundle_dict_obs_go2warp` are skipped (collected but not run). The CPU stub test `test_run_offpolicy_loop_stub_env_cpu` runs and must pass.
 
 If anything fails that isn't pre-existing, diagnose before continuing. Common culprits:
-- A test calling `make_buffer_with_critic` (removed in Task 3)
-- A test calling `make_envs` unpacking that changed (shouldn't happen — `make_envs` unchanged)
+- A test calling `make_buffer_with_critic` (removed in Task 9)
+- A test calling `make_envs` unpacking that changed (shouldn't happen — `make_envs` is unchanged)
+- The stub test failing because a thinned script silently broke the helper
 
-- [ ] **Step 2: Run the slow loop test (if GPU available)**
+- [ ] **Step 2: Run the slow real-env loop test (if GPU available)**
 
-Check GPU again. If free:
+Check GPU: `nvidia-smi --query-gpu=memory.used,memory.total,utilization.gpu --format=csv`
+
+If free:
 Run: `uv run python -m pytest tests/test_offpolicy_loop.py -v -m slow`
 Expected: PASS in ~1-2 min.
 
-If GPU busy, skip and add to Tomorrow TODO.
+If GPU busy, skip and add to Tomorrow TODO. The CPU stub test from Step 1 already validated the helper.
 
 - [ ] **Step 3: Verify git status is clean**
 
