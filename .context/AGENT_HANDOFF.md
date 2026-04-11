@@ -180,6 +180,8 @@ jax-learning/
 └── tools/brax_baselines/     # Brax PPO A/B test scripts
 ```
 
+**Off-policy training delegation:** The 4 non-FlashSAC off-policy scripts (`train_sac.py`, `train_td3.py`, `train_fast_sac.py`, `train_fast_td3.py`) delegate to `jax_rl/training/offpolicy_loop.py::run_offpolicy_loop` for the shared training loop and only contain algo-specific optimizer/explore decisions (~60 lines each). FlashSAC stays standalone (it has algo-specific BatchNorm state, Zeta noise, and adaptive reward scaling that don't fit the shared shape).
+
 ### Env framework coupling
 Training wrappers (Vmap, Episode, AutoReset, DR) are vendored in `jax_rl/envs/wrappers/training.py` — no Brax training wrapper dependency. **`DomainRandWrapper`** (`jax_rl/envs/wrappers/domain_rand.py`, formerly DRv2) replaces the full wrapper stack for Go2 — handles vmap, episode tracking, auto-reset, and per-episode domain randomization in one wrapper. Activated via `--reset-mode per_step` on train scripts. Env declares DR specs via `get_domain_randomization_spec()`. See `.context/lessons/autoreset_and_dr.md` for the full investigation.
 
