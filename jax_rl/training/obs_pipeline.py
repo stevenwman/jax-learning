@@ -149,44 +149,6 @@ class ObsPipeline:
             extra_obs_dims=extra_obs_dims,
         )
 
-    def make_buffer_with_critic(self, obs_dim, action_dim, buffer_size,
-                                critic_obs_dim, num_envs=None):
-        """Create JaxReplayBuffer with privileged critic obs support.
-
-        Like make_buffer, but also allocates extra buffers for critic_obs when
-        has_privileged is True.
-
-        Args:
-            obs_dim: Actor observation dim (stacked if frame stacking).
-            action_dim: Action dimensionality.
-            buffer_size: Maximum number of transitions.
-            critic_obs_dim: Privileged critic obs dim (used only if has_privileged).
-            num_envs: Number of parallel envs (required when n_frame_stack > 1).
-
-        Returns:
-            JaxReplayBuffer configured for this pipeline.
-        """
-        extra_obs_dims = {"critic_obs": critic_obs_dim} if self.has_privileged else None
-        frame_stack_config = None
-
-        if self.n_frame_stack > 1:
-            if num_envs is None:
-                raise ValueError("num_envs required when n_frame_stack > 1")
-            raw_dim = obs_dim // self.n_frame_stack
-            frame_stack_config = FrameStackConfig(
-                n_frames=self.n_frame_stack, raw_dim=raw_dim, num_envs=num_envs
-            )
-            return JaxReplayBuffer(
-                raw_dim, action_dim, max_size=buffer_size,
-                frame_stack_config=frame_stack_config,
-                extra_obs_dims=extra_obs_dims,
-            )
-
-        return JaxReplayBuffer(
-            obs_dim, action_dim, max_size=buffer_size,
-            extra_obs_dims=extra_obs_dims,
-        )
-
     # ── Eval helper ───────────────────────────────────────────────────────
 
     def make_obs_norm_fn(self, norm_state):
