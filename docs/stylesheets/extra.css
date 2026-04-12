@@ -92,6 +92,10 @@
   text-decoration-color: rgba(255, 255, 255, 0.5);
 }
 
+.gl:visited {
+  text-decoration-color: var(--md-default-fg-color--lighter);
+}
+
 /* ── H2 section borders for long pages ── */
 
 .md-typeset h2 {
@@ -116,8 +120,16 @@
 /* ── Definition list styling (method docs in API pages) ── */
 
 .md-typeset dl dt {
-  margin-top: 1em;
+  margin-top: 1.25em;
+  padding-top: 0.5em;
   font-weight: 600;
+  border-top: 1px dashed var(--md-default-fg-color--lightest);
+}
+
+.md-typeset dl dt:first-child {
+  border-top: 0;
+  padding-top: 0;
+  margin-top: 0;
 }
 
 .md-typeset dl dt + dd {
@@ -181,7 +193,13 @@
 }
 
 .md-typeset table:not([class]) tbody tr:nth-child(even) {
-  background-color: var(--md-default-fg-color--lightest);
+  background-color: rgba(0, 0, 0, 0.035);
+}
+
+/* Allow long descriptions in table cells to wrap on any character */
+.md-typeset table:not([class]) td {
+  word-break: normal;
+  overflow-wrap: anywhere;
 }
 
 [data-md-color-scheme="slate"] .md-typeset table:not([class]) tbody tr:nth-child(even) {
@@ -192,4 +210,26 @@
 .md-typeset details table:not([class]) {
   display: table;
   width: 100%;
+}
+
+/* ── Code block max-height ── */
+/* Cap very long code blocks so they don't dominate the viewport */
+.md-typeset .highlight pre > code {
+  max-height: 32rem;
+  overflow-y: auto;
+}
+
+/* ── Wider content area for dense API/reference pages with wide tables ── */
+.md-grid {
+  max-width: 68rem;
+}
+@media (min-width: 76.25em) {
+  .md-grid {
+    max-width: 72rem;
+  }
+}
+
+/* ── MathJax dark-mode color fix ── */
+[data-md-color-scheme="slate"] .md-typeset mjx-container {
+  color: var(--md-default-fg-color);
 }

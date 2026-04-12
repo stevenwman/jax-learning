@@ -3,6 +3,7 @@ site_url: https://stevenwman.github.io/jax-learning/
 site_description: JAX-based reinforcement learning for robot learning
 repo_url: https://github.com/stevenwman/jax-learning
 repo_name: stevenwman/jax-learning
+edit_uri: edit/main/docs/
 
 extra_css:
   - stylesheets/extra.css
@@ -16,13 +17,15 @@ theme:
   icon:
     logo: material/robot-industrial
   palette:
-    - scheme: default
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
       primary: deep purple
       accent: amber
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
-    - scheme: slate
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
       primary: deep purple
       accent: amber
       toggle:
@@ -30,6 +33,7 @@ theme:
         name: Switch to light mode
   features:
     - navigation.tabs
+    - navigation.tabs.sticky
     - navigation.sections
     - navigation.top
     - navigation.instant
@@ -37,8 +41,18 @@ theme:
     - search.suggest
     - search.highlight
     - content.code.copy
+    - content.code.annotate
     - content.tabs.link
+    - content.action.edit
     - navigation.footer
+    - toc.follow
+
+validation:
+  links:
+    absolute_links: warn
+    unrecognized_links: warn
+  nav:
+    omitted_files: warn
 
 hooks:
   - docs/scripts/glossary_links.py
