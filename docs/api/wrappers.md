@@ -119,6 +119,9 @@ AutoResetWrapper(env, full_reset=False)
 - `full_reset=False` (default) — replays cached initial data (fast)
 - `full_reset=True` — calls `env.reset()` per done env (slower, resets all info)
 
+!!! warning
+    With `full_reset=False` (the default), every episode starts from the same cached initial state. This works fine **with domain randomization enabled** (e.g., `--reset-mode per_step`), where physical parameters vary per episode. However, without domain randomization, the policy exploits the fixed initial conditions and fails catastrophically on real hardware or varied simulation settings. Always pair cached initial state with domain randomization for policies intended for deployment.
+
 ---
 
 ### DomainRandWrapper

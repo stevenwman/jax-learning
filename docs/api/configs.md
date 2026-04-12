@@ -36,12 +36,12 @@ Shared training config — environment, evaluation, and wrapper settings.
 | `handle_truncation` | `bool` | `True` | Bootstrap at truncation |
 | `n_frame_stack` | `int` | `1` | Frame stacking (1 = disabled) |
 | `action_delay_ms` | `int` | `0` | Fixed action latency (0 = disabled) |
-| `action_delay_range_ms` | `tuple | None` | `None` | Random delay range per-episode |
+| `action_delay_range_ms` | `tuple \| None` | `None` | Random delay range per-episode |
 | `eval_every_n_episodes` | `int` | `5000` | Evaluation frequency |
 | `num_eval_episodes` | `int` | `10` | Episodes per eval |
 | `log_interval` | `int` | `1` | Logging frequency |
 | `reset_mode` | `str` | `"legacy"` | `"legacy"` (AutoReset) or `"per_step"` (DomainRandWrapper) |
-| `ppo` | `PPOConfig | None` | `PPOConfig()` | PPO-specific config |
+| `ppo` | `PPOConfig \| None` | `PPOConfig()` | PPO-specific config |
 
 ---
 
@@ -68,7 +68,7 @@ PPO algorithm parameters. Optimizer config (LR, schedule) is external — optimi
 | `squash` | `bool` | `True` | Tanh output squashing |
 | `state_dependent_std` | `bool` | `False` | State-dependent policy std |
 | `normalize_advantage` | `bool` | `True` | Normalize advantages |
-| `max_grad_norm` | `float | None` | `None` | Gradient clipping |
+| `max_grad_norm` | `float \| None` | `None` | Gradient clipping |
 | `anneal_lr` | `bool` | `True` | Learning rate annealing |
 
 ---
@@ -87,15 +87,15 @@ SAC algorithm parameters. Vanilla SAC defaults — for high-UTD training, use [F
 | `target_entropy_scale` | `float` | `0.5` | `target_entropy = -scale * action_dim` |
 | `alpha_lr` | `float` | `1e-3` | Temperature optimizer LR |
 | `alpha_init` | `float` | `1.0` | Initial temperature |
-| `max_std` | `float | None` | `None` | Cap on pre-tanh std |
+| `max_std` | `float \| None` | `None` | Cap on pre-tanh std |
 | `policy_delay` | `int` | `1` | Actor update frequency |
-| `grad_clip_norm` | `float | None` | `None` | Max gradient norm |
+| `grad_clip_norm` | `float \| None` | `None` | Max gradient norm |
 | `buffer_size` | `int` | `4_194_304` | Replay buffer size (4M) |
 | `min_buffer_size` | `int` | `8_192` | Steps before first update |
 | `batch_size` | `int` | `512` | Gradient batch size |
 | `grad_updates_per_step` | `int` | `8` | UTD ratio |
 | `hidden_dim` | `tuple` | `(256, 256)` | Actor MLP dims |
-| `critic_hidden_dim` | `tuple | None` | `None` | Critic dims (None = same as actor) |
+| `critic_hidden_dim` | `tuple \| None` | `None` | Critic dims (None = same as actor) |
 | `activation` | `str` | `"relu"` | Activation function |
 | `q_layer_norm` | `bool` | `True` | Layer norm in Q-networks |
 | `obs_normalization` | `bool` | `False` | Normalize observations |
@@ -121,10 +121,10 @@ from jax_rl.configs.td3_config import TD3Config
 | `batch_size` | `int` | `256` | Gradient batch size |
 | `grad_updates_per_step` | `int` | `1` | UTD ratio |
 | `hidden_dim` | `tuple` | `(256, 256)` | Actor MLP dims |
-| `critic_hidden_dim` | `tuple | None` | `None` | Critic dims (None = same as actor) |
+| `critic_hidden_dim` | `tuple \| None` | `None` | Critic dims (None = same as actor) |
 | `activation` | `str` | `"relu"` | Activation function |
 | `q_layer_norm` | `bool` | `False` | Layer norm in Q-networks |
-| `grad_clip_norm` | `float | None` | `1.0` | Max gradient norm |
+| `grad_clip_norm` | `float \| None` | `1.0` | Max gradient norm |
 | `obs_normalization` | `bool` | `False` | Normalize observations |
 | `obs_norm_eps` | `float` | `1e-2` | Obs normalization epsilon |
 
@@ -143,17 +143,17 @@ SAC + C51 distributional critic. Defaults from the paper (Seo et al. 2025) — d
 | `tau` | `float` | `0.125` | 25x faster than SAC |
 | `target_entropy_scale` | `float` | `0.0` | Prevents alpha collapse |
 | `alpha_init` | `float` | `0.001` | Near-zero start |
-| `max_std` | `float | None` | `1.0` | Caps pre-tanh std |
+| `max_std` | `float \| None` | `1.0` | Caps pre-tanh std |
 | `policy_delay` | `int` | `4` | Actor every 4th critic step |
 | `batch_size` | `int` | `8_192` | 16x larger than SAC |
 | `grad_updates_per_step` | `int` | `8` | UTD 8 |
 | `hidden_dim` | `tuple` | `(512, 256, 128)` | Tapered actor |
-| `critic_hidden_dim` | `tuple | None` | `(768, 384, 192)` | Wider critic |
+| `critic_hidden_dim` | `tuple \| None` | `(768, 384, 192)` | Wider critic |
 | `activation` | `str` | `"swish"` | SiLU activation |
 | `num_atoms` | `int` | `101` | C51 atoms |
 | `v_min` / `v_max` | `float` | `-20.0` / `20.0` | Value distribution range |
 | `alpha_lr` | `float` | `3e-4` | Temperature optimizer LR |
-| `grad_clip_norm` | `float | None` | `None` | Max gradient norm |
+| `grad_clip_norm` | `float \| None` | `None` | Max gradient norm |
 | `buffer_size` | `int` | `4_194_304` | Replay buffer size (4M) |
 | `min_buffer_size` | `int` | `8_192` | Steps before first update |
 | `q_layer_norm` | `bool` | `True` | Layer norm in Q-networks |
@@ -179,13 +179,13 @@ TD3 + C51 distributional critic. Same distributional approach as FastSAC with de
 | `target_noise_std` | `float` | `0.2` | Target policy noise |
 | `noise_clip` | `float` | `0.5` | Noise clipping range |
 | `exploration_noise_std` | `float` | `0.2` | Exploration noise |
-| `noise_min` / `noise_max` | `float | None` | `None` | Mixed noise range (overrides exploration_noise_std) |
+| `noise_min` / `noise_max` | `float \| None` | `None` | Mixed noise range (overrides exploration_noise_std) |
 | `buffer_size` | `int` | `1_000_000` | Replay buffer size |
 | `min_buffer_size` | `int` | `25_000` | Steps before first update |
 | `batch_size` | `int` | `8_192` | Gradient batch size |
 | `grad_updates_per_step` | `int` | `8` | UTD 8 |
 | `hidden_dim` | `tuple` | `(512, 256, 128)` | Tapered actor |
-| `critic_hidden_dim` | `tuple | None` | `(768, 384, 192)` | Wider critic |
+| `critic_hidden_dim` | `tuple \| None` | `(768, 384, 192)` | Wider critic |
 | `activation` | `str` | `"swish"` | SiLU activation |
 | `q_layer_norm` | `bool` | `True` | Layer norm in Q-networks |
 | `num_atoms` | `int` | `101` | C51 atoms |
@@ -254,9 +254,9 @@ Configuration for MLP encoders.
 | `obs_dim` | `int` | *required* | Observation dimension |
 | `hidden_dim` | `tuple` | `(256, 256)` | Hidden layer dimensions |
 | `activation` | `str` | `"relu"` | Activation function |
-| `norm` | `str | None` | `None` | `"layer"` or `"spectral"` |
+| `norm` | `str \| None` | `None` | `"layer"` or `"spectral"` |
 | `norm_placement` | `str` | `"pre"` | `"pre"` or `"post"` activation |
-| `context_dim` | `int | None` | `None` | For goal-conditioned policies |
+| `context_dim` | `int \| None` | `None` | For goal-conditioned policies |
 | `context_fusion` | `str` | `"concat"` | `"concat"`, `"film"`, or `"cross_attn"` |
 
 ---
