@@ -51,6 +51,21 @@ TD3 with `grad_updates_per_step=1` and 128 parallel envs collects 128 samples pe
 
 With the standard `target_entropy = -dim(A)` heuristic at large scale, the policy easily achieves that entropy level, alpha decays to zero, and exploration pressure is lost. Setting `target_entropy=0` keeps alpha active throughout training. FastSAC with `target_entropy=-3`: alpha collapsed to 0.012, eval peaked at 401. With `target_entropy=0`: alpha stayed at 0.65, eval 509.
 
+### Truncation handling: mask the loss, zero the bootstrap
+
+`EpisodeWrapper` from Brax/Playground sets `done = terminated OR truncated` and `truncation = truncated AND NOT terminated`. `done` already includes timeouts — `truncation` is the extra bit you need to distinguish real termination from pure timeout.
+
+**Correct convention (SAC/TD3 here, matches Brax):**
+```python
+target = r + gamma * (1 - done) * V_next       # zero bootstrap on both
+mask = 1.0 - truncation                        # drop pure-timeout rows from loss
+loss = jnp.mean(per_sample_loss * mask)
+```
+
+Pure terminations contribute their `r`-only target (correct). Pure timeouts are dropped (next_obs is corrupted by AutoReset, bootstrap can't be trusted, and the `r`-only target would teach `Q = r` at timeout, which is wrong).
+
+**The bug we had until 2026-04-12:** FastSAC/FastTD3/FlashSAC omitted the loss mask. On long-horizon tasks (Go2, Humanoid) this caused systematic Q underestimation proportional to `(timeout_rate × true_tail_value)`. Fixed in commit `82c9fe5`. Pre-fix benchmark numbers on long-horizon tasks may not be reproducible.
+
 ---
 
 ## Distributional RL (C51, FastTD3, FastSAC)

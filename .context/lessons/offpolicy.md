@@ -151,3 +151,31 @@ PPO shouldn't own optimizer construction. Optimizers are external concerns.
 **Fix:** 10M steps. Cube lifted to z=0.25, reward ~1386.
 
 **Lesson:** When rewards are staged/gated (reward B only available after achieving condition A), training budget must be long enough to discover the full sequence. The first plateau is not convergence — it's the policy stalling at the first reward stage.
+
+---
+
+## Truncation Handling: Brax Convention Across All Off-Policy Algos (2026-04-12)
+
+**Problem:** FastSAC/FastTD3/FlashSAC silently underestimated Q at near-timeout states on long-horizon tasks (Go2, Humanoid). SAC/TD3 handled truncation correctly; the three Fast*/Flash* algos did not.
+
+**Wrapper semantics** (from `EpisodeWrapper` in `jax_rl/envs/wrappers/training.py`):
+- `batch["done"] = terminated OR truncated`
+- `batch["truncation"] = truncated AND NOT terminated`
+
+These are NOT independent flags. `truncation=1` implies `done=1`.
+
+**The bug:** Fast*/Flash* used `effective_done = jnp.maximum(done, truncation)` (a no-op — `done` already equals `term OR trunc`) in the C51 target, with no loss mask. On a pure-timeout row, `target = r + γ(1-done)V_next = r + 0 = r`, and the cross-entropy loss trained on this `r`-only target — teaching the network that `Q = r` at timeout steps. On infinite-horizon locomotion where timeouts dominate, this causes systematic underestimation proportional to `(timeout_rate × true_tail_value)`.
+
+**Correct convention** (Brax, matches SAC/TD3, matches GAE pattern in `.context/lessons/ppo.md`):
+```python
+target = reward + gamma * (1 - done) * V_next    # zero bootstrap on both (next_obs is corrupted by AutoReset either way)
+mask = 1.0 - truncation                          # drop pure-timeout rows from loss
+loss = jnp.mean(per_sample_loss * mask)          # so r-only target doesn't train the net
+```
+Pure terminations still contribute their `r`-only target (it's genuinely correct there). Pure timeouts are dropped (next_obs is garbage, bootstrap can't be trusted).
+
+**Fixed** in commit `82c9fe5`: `jax_rl/algos/fast_sac.py`, `fast_td3.py`, `flash_sac.py`. FlashSAC docstring also fixed — it said `done: terminated only` but the code passed `batch["done"]` (term-OR-truncated).
+
+**Dead code also removed** (`39c7ddc`): the `handle_truncation` constructor arg on all 5 off-policy algos was stored on `self` but never read. The real switch is `cfg.handle_truncation` in the training loop — controls whether `truncation` gets populated in the buffer at all (when False, zeros are stored and the mask becomes a no-op).
+
+**Rule of thumb:** Any off-policy algo that trains on `batch["done"]` from a Brax/Playground-style auto-reset wrapper needs `mask = 1 - truncation` on the loss. This is not optional.

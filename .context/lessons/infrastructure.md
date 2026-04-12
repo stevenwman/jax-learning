@@ -255,3 +255,15 @@ def test_frame_stack_with_dr_and_critic():
 3. **In reviews, one persona should be an "undergrad CS cross-referencer"** whose explicit job is to check every claim in the docs against the actual source code. The other personas (high schooler, frontend, even PhD) tend to trust the docs as ground truth.
 
 **Applies to:** Any claim about code behavior in AGENT_HANDOFF, README, NEW_AGENT_PROMPT, or any doc that doesn't auto-generate from source. The higher the doc in the "authoritative reference" hierarchy, the more dangerous a ghost ref becomes — downstream docs will copy it.
+
+**Recurrence (2026-04-12, same day):** Found another ghost ref in `docs/tutorials/train-locomotion.md` — claimed "~18,000 steps/second on RTX 4090" for FastSAC on Go2. Actual Go2WarpJoystickFlat FastSAC runs at 3.4-3.95k sps per journal entries. The 18k number was a real measurement, but from CheetahRun (a DM Control benchmark), not Go2. A writer cited it generically on the Go2 page. Same pattern as the obs dims bug: real number measured in context A, carried over to context B without the context. Fix: replaced with "~3-4k sps" + note that DM Control benchmarks run much faster. Lesson reinforced: **treat every specific number in docs as a citation requirement**. When copying a benchmark figure, copy the env name with it.
+
+---
+
+## Validation Blocks Catch Cross-Agent Drift
+
+**What happened:** Two parallel subagents were dispatched — one adding docs content, one applying frontend polish. Frontend agent added a `validation:` block to `mkdocs.yml` with `unrecognized_links: warn`. During its own build, it caught a broken link (`api/algos.md` → `reference/training-loop.md`) — a file the OTHER agent was still writing. Without the validation block, the broken link would have shipped and only surfaced when a user clicked it.
+
+**Prevention:** `validation.links.unrecognized_links: warn` (and `validation.nav.omitted_files: warn`) in `mkdocs.yml` should be enabled by default for any MkDocs site. They don't break the build (warn, not error) but surface drift immediately — especially useful when multiple agents or contributors are editing in parallel.
+
+**Applies to:** Any static site generator with link-validation support. The cost is zero (warnings only appear when something is actually broken); the benefit is catching problems before deployment.

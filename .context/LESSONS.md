@@ -38,6 +38,7 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **Asymmetric critic: faster early learning, same ceiling** — A/B on Go2 FastSAC: ~2x faster to 270+ but final 276 vs 279 (noise). Actor obs bottlenecks convergence.
 - **Frame stacking doesn't help locomotion with proprioceptive obs** — A/B on Go2 FastSAC: 276.5 (48d) vs 271.3 (144d stacked). `last_action` already provides temporal context.
 - **Staged rewards need longer budgets** — gated rewards (box_target after reached_box) require 10M+ steps to discover full sequence; 2M plateau is stage 1, not convergence
+- **Truncation: mask the loss, zero the bootstrap** — Brax convention (SAC/TD3). `target = r + γ(1-done)V_next`, `loss *= (1 - truncation)`. Fast*/Flash* were missing the mask — teaching Q=r at timeout steps, systematic underestimation on long-horizon.
 
 ## [Distributional RL (C51 / FastTD3 / FastSAC / FlashSAC)](lessons/distributional.md) — 12 lessons
 
@@ -87,6 +88,8 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **Extract shared loops as functions, not classes** — 4 scripts shared 85% code. A Trainer ABC or re-unification both add noise. A shared helper function with 4 variation-point parameters keeps each script readable.
 - **Ghost refs in docs propagate silently** — AGENT_HANDOFF updated in anticipation of a code change that got reverted. Every downstream doc update propagated stale info from that ghost. Always cross-reference docs against code before trusting internal handoff docs as authoritative.
 - **4-persona docs review: undergrad catches factual drift** — high schooler finds jargon, PhD finds algo bugs, frontend finds CSS issues, but only the undergrad systematically cross-references every claim against code. That's where ghost refs get caught.
+- **Treat every specific number in docs as a citation requirement** — the 18k sps claim was a real CheetahRun number cited on the Go2 page. Same failure mode as the obs dims ghost-ref. When copying a benchmark figure, copy the env name with it.
+- **Validation blocks catch cross-agent drift** — `validation.links.unrecognized_links: warn` in mkdocs.yml caught a broken link between two parallel subagents before it shipped. Cost: zero. Benefit: catches cross-cutting breakage.
 
 ## [MuJoCo Engine](lessons/mujoco.md) — 4 lessons
 

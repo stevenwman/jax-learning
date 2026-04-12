@@ -43,6 +43,7 @@
 - [x] Manipulation benchmark survey — MuJoCo Playground already has 10 tasks (PandaPickCube, LeapCubeReorient, AlohaSinglePegInsertion, etc.)
 
 ## Active
+- [ ] **Re-benchmark Fast*/Flash* post-truncation-fix** — All pre-2026-04-12 benchmarks on long-horizon tasks (Go2, Humanoid) were affected by the truncation bug (commit `82c9fe5`). Ceiling may be higher now. Run: FastSAC Go2 @ 20M, FastTD3 CheetahRun @ 5M, FlashSAC Go2 @ 10M. Tag results clearly as "post truncation fix".
 
 ## Completed (2026-04-06)
 - [x] Documentation site — MkDocs + Material theme, 20 pages, mkdocstrings autodoc, videos embedded
@@ -79,6 +80,8 @@
 ## Short-term — Cleanup
 - [x] Consolidate off-policy train scripts → `train_offpolicy.py --algo sac|td3|fast_td3|fast_sac` (commit 14a17df)
 - [x] Extract shared loop → `run_offpolicy_loop` helper (2026-04-12). Per-algo scripts (`train_sac.py`, `train_td3.py`, `train_fast_sac.py`, `train_fast_td3.py`) are now ~60-line thin wrappers. `train_offpolicy.py` archived. FlashSAC stays standalone.
+- [x] **Truncation bug fix (2026-04-12)** — FastSAC/FastTD3/FlashSAC were teaching `Q=r` at timeout steps (no loss mask). Now matches SAC/TD3 Brax convention: `target = r + γ(1-done)V_next`, `loss *= (1 - truncation)`. Systematic underestimation on long-horizon tasks should be gone. See `lessons/offpolicy.md` and `lessons/distributional.md` §3.
+- [x] Drop dead `handle_truncation` constructor arg from 5 off-policy algos (was stored on `self`, never read). The real switch is `cfg.handle_truncation` in the training loop.
 - [x] Integration debt — 7/7 resolved (select_action_eval, asymmetric PPO test, etc.)
 - [x] `lax.scan` for gradient loops — benchmarked: 1.03x (no speedup)
 - [x] MJX recompilation — root cause found, upstream issue, MEM_FRACTION=0.7 mitigates
