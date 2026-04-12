@@ -169,6 +169,46 @@ Spent hours debugging Go2 PPO at eval ~17. Playground paper shows Go1 reaching ~
 
 ---
 
+## Wrapper Composition: New Features Are Untested Until Combined (2026-04-10)
+
+**Two bugs caught in one session, same root cause:** features that worked in isolation broke silently when combined with another feature nobody had paired them with before.
+
+### Bug 1: JaxReplayBuffer dropped extra obs in frame-stack JIT path
+
+`_make_jit_sample_fs` (frame-stack sampler) returned only `batch`, while `_make_jit_sample_with_idx` (asymmetric critic sampler) returned `(batch, idx)` so `_gather_extra` could fetch `critic_obs` for the sampled indices. The frame-stack path had a comment: *"For now, extra obs with frame-stack is not supported."* Six months later, somebody (us) tried frame-stack + asymmetric critic. The comment was load-bearing, not a TODO. KeyError on first gradient step.
+
+**Fix:** Make the frame-stack JIT fn return `(batch, idx)` and call `_gather_extra` in the outer `sample()`. ~10 lines.
+
+### Bug 2: DomainRandWrapper bypassed intermediate wrappers
+
+`_swap_model` was implemented as:
+```python
+env = self.env.unwrapped
+old = env._mjx_model
+env._mjx_model = mjx_model
+yield env  # ← bypasses every wrapper between DomainRand and base env
+```
+
+When `DomainRandWrapper(FrameStackWrapper(WarpJoystick))` ran, `_reset_with_model` called `v_env.reset()` on the *unwrapped* base env, skipping FrameStackWrapper entirely. The actor was built with `obs_dim=51` instead of 153. Crash on first eval. Worse: the bypass also breaks ActionDelay, any future obs/action wrappers.
+
+**Fix:** Mutate `_mjx_model` on `self.env.unwrapped` (where the field lives), but **yield `self.env`** (the wrapped chain) so reset/step still goes through every wrapper.
+
+### Lesson
+
+Wrapper compositions are a combinatorial test surface. If feature A and feature B both work alone but were never tested together, **assume they don't compose**. Both bugs would have been caught by a single 5-line integration test:
+
+```python
+def test_frame_stack_with_dr_and_critic():
+    cfg = TrainConfig(env_name=..., n_frame_stack=3, reset_mode="per_step")
+    env, _, env_state, *_, obs_dim, _, _ = make_envs(cfg, seed=0)
+    assert obs_dim == raw_dim * 3  # bug 2 catches this
+    # train one step → bug 1 catches the buffer KeyError
+```
+
+**Pattern to enforce:** when adding a new wrapper, write at least one test combining it with every other wrapper that's already in the codebase. Not crossable: O(N²) tests for N wrappers, but N is small (≤5) and the test is cheap.
+
+---
+
 ## mkdocstrings requires Google-style docstrings with correct section headers
 
 **Symptom:** `mkdocs build --strict` fails with warnings about unresolvable parameters or unknown params on Flax `nn.Module` classes.

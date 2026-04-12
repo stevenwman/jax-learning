@@ -174,6 +174,7 @@
 - [x] Benchmarked across 5 envs (Go2, Bongo, Cartpole, CheetahRun, Walker)
 - [x] Per_step vs legacy training comparison on Go2 FastSAC (5M steps, wandb: drv2-comparison). Per_step: 6% slower throughput, ~19% better return at same wall clock.
 - [x] **Wire DR specs into Go2** — `get_domain_randomization_spec()` on Go2WarpJoystick: 6 model specs (friction, damping, armature, frictionloss, mass, motor strength) + 2 runtime (kp_scale, kd_scale). Smoke tested on 4 envs.
+- [x] **Go2 DR refresh (2026-04-10)** — removed `kp_scale`/`kd_scale` runtime DR (per_step PD gain DR was redundant with motor_strength DR), added `torso_com_jitter` (`body_ipos`) + `body_inertia` model DR. Now 8 model specs, 0 runtime.
 - [x] **Clean up benchmark scripts** — deleted 10 bench/profile scripts from repo root.
 - [x] **Remove legacy DR path + syncd mode** (2026-04-09) — deleted `go2_randomize.py`, `bongo_randomize.py`, `DomainRandomizationVmapWrapper`, `--domain-rand` flag, `_step_syncd`/`batch_reset`.
 

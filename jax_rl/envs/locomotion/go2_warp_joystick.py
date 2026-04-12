@@ -3,7 +3,7 @@
 Parallel to go2_joystick.py but uses unitree_mujoco's go2.xml via Warp.
 Full collision geometry (cylinders + boxes) -- no MJX simplifications.
 
-Returns dict obs: {"state": 48d policy obs, "privileged_state": 122d critic obs}.
+Returns dict obs: {"state": 51d policy obs, "privileged_state": 122d critic obs}.
 """
 
 from typing import Any, Dict, Optional, Union
@@ -27,8 +27,8 @@ def default_config() -> config_dict.ConfigDict:
         ctrl_dt=0.02,
         sim_dt=0.004,
         episode_length=1000,
-        Kp=10.0,
-        Kd=1.0,
+        Kp=20.0,
+        Kd=0.5,
         action_repeat=1,
         action_scale=0.5,
         soft_joint_pos_limit_factor=0.95,
@@ -40,6 +40,7 @@ def default_config() -> config_dict.ConfigDict:
                 gyro=0.2,
                 gravity=0.05,
                 linvel=0.1,
+                accelerometer=0.1,
             ),
         ),
         reward_config=config_dict.create(
@@ -128,6 +129,8 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
             "state": [
                 ObsTerm("gyro", lambda data, **kw: self.get_gyro(data),
                         noise_scale=noise.gyro),
+                ObsTerm("accelerometer", lambda data, **kw: self.get_accelerometer(data),
+                        noise_scale=noise.accelerometer),
                 ObsTerm("gravity", lambda data, **kw: self.get_gravity(data),
                         noise_scale=noise.gravity),
                 ObsTerm("joint_pos_offset", lambda data, **kw: data.qpos[7:] - self._default_pose,
@@ -140,7 +143,7 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
             "privileged_state": [
                 IncludeGroup("state"),
                 ObsTerm("gyro_clean", lambda data, **kw: self.get_gyro(data)),
-                ObsTerm("accelerometer", lambda data, **kw: self.get_accelerometer(data)),
+                ObsTerm("accelerometer_clean", lambda data, **kw: self.get_accelerometer(data)),
                 ObsTerm("gravity_clean", lambda data, **kw: self.get_gravity(data)),
                 ObsTerm("linvel_clean", lambda data, **kw: self.get_local_linvel(data)),
                 ObsTerm("angvel", lambda data, **kw: self.get_global_angvel(data)),
@@ -216,11 +219,15 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
             DRSpec(name="motor_strength", type="model", field="actuator_gainprm",
                    column=0, min=0.9, max=1.1, per_element=True,
                    description="Per-actuator motor heterogeneity"),
-            # Runtime DR
-            DRSpec(name="kp_scale", type="runtime",
-                   min=0.8, max=1.3, description="PD Kp gain scale"),
-            DRSpec(name="kd_scale", type="runtime",
-                   min=0.5, max=1.5, description="PD Kd gain scale"),
+            # Torso COM jitter (x, y offset of body inertia center)
+            DRSpec(name="torso_com_jitter", type="model", field="body_ipos",
+                   indices=(1, 2), min=-0.03, max=0.03,
+                   per_element=True, operation="add",
+                   description="Torso COM offset (x, y)"),
+            # Per-link inertia tensor scale
+            DRSpec(name="body_inertia", type="model", field="body_inertia",
+                   min=0.85, max=1.15, per_element=True,
+                   description="Per-link inertia tensor variation"),
         ]
 
     # ── Core env methods ────────────────────────────────────────────────
@@ -267,12 +274,6 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
             key2, shape=(3,), minval=-self._cmd_a, maxval=self._cmd_a
         )
 
-        # Per-env PD gain randomization (for domain rand robustness).
-        # Kp: ×U(0.8, 1.3), Kd: ×U(0.5, 1.5) — ranges from walk-these-ways.
-        rng, kp_key, kd_key = jax.random.split(rng, 3)
-        kp_scale = jax.random.uniform(kp_key, (), minval=0.8, maxval=1.3)
-        kd_scale = jax.random.uniform(kd_key, (), minval=0.5, maxval=1.5)
-
         info = {
             "rng": rng,
             "command": cmd,
@@ -283,8 +284,6 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
             "last_contact": jp.zeros(4, dtype=bool),
             "swing_peak": jp.zeros(4),
             "step_count": jp.int32(0),
-            "kp_scale": kp_scale,
-            "kd_scale": kd_scale,
             "reward_components": {
                 k: jp.zeros(()) for k in self._config.reward_config.scales.keys()
             },
@@ -317,8 +316,8 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
         # External PD at physics rate.
         # qpos[7:] is in joint order (FL,FR,RL,RR) but ctrl is in actuator
         # order (FR,FL,RR,RL). Remap torques before writing to ctrl.
-        kp = self._kp * state.info["kp_scale"]
-        kd = self._kd * state.info["kd_scale"]
+        kp = self._kp
+        kd = self._kd
         model = self.mjx_model
         a2j = self._act_to_joint
 

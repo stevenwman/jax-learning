@@ -236,14 +236,20 @@ class DomainRandWrapper(Wrapper):
 
     @contextlib.contextmanager
     def _swap_model(self, mjx_model: mjx.Model):
-        """Temporarily replace the env's mjx_model."""
-        env = self.env.unwrapped
-        old = env._mjx_model
+        """Temporarily replace the env's mjx_model.
+
+        Mutates the *base* env's `_mjx_model` field (since that's where the
+        model lives), but yields `self.env` — the wrapped env directly below
+        DomainRandWrapper — so that intermediate wrappers (FrameStack,
+        ActionDelay, etc.) still apply during reset/step.
+        """
+        base = self.env.unwrapped
+        old = base._mjx_model
         try:
-            env._mjx_model = mjx_model
-            yield env
+            base._mjx_model = mjx_model
+            yield self.env
         finally:
-            env._mjx_model = old
+            base._mjx_model = old
 
     def _build_dr_model(self, rng: jax.Array):
         """Sample model DR and return (batched_model, in_axes).

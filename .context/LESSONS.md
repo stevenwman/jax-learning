@@ -65,7 +65,7 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **lax.scan carry cost** — 4M-entry buffer in carry = 30% slower than Python loop
 - **Faster component ≠ faster training** — 4.8x buffer speedup = 1.5% end-to-end improvement
 
-## [Infrastructure](lessons/infrastructure.md) — 15 lessons
+## [Infrastructure](lessons/infrastructure.md) — 16 lessons
 
 - **Complete your migrations** — don't "archive" the old path. Archive ≠ delete. Validated new path? Same-day deletion, same PR. Otherwise you end up with 2 entry points for 1 feature.
 - **Orbax checkpointing** — must call `wait_until_finished()`, save meta.json alongside
@@ -83,6 +83,7 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **Brax auto-reset does NOT reset state.info** — only pipeline_state and obs are reset. Any FIFO/history in state.info must use `jp.where(done, ...)` to self-reset
 - **Inference artifacts must include ALL model state** — FlashSAC `actor_params.npy` missing BN batch_stats → eval 26 vs training 282. Orbax had it, inference artifact didn't.
 - **mkdocstrings requires `Attributes:` for nn.Module** — `Args:` doesn't work for Flax dataclass fields; untyped params fail `--strict`
+- **Wrapper composition is untested until combined** — JaxReplayBuffer dropped critic_obs in frame-stack JIT path; DomainRandWrapper bypassed FrameStackWrapper via `_swap_model`. Both worked alone, broke when combined.
 
 ## [MuJoCo Engine](lessons/mujoco.md) — 4 lessons
 
@@ -127,6 +128,7 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **Inherits XML solver settings** — unitree's iterations=100, elliptic cone, eulerdamp=on vs MJX's 1/pyramidal/off. Audit `<option>` block when porting envs.
 - **PD gains must match solver stiffness** — Kp=35/Kd=0.1 (MJX, 1-iter) collapsed on Warp (100-iter). Use Kp=20/Kd=0.5 (unitree_rl_gym). PD gains are coupled to solver config.
 - **Joint order ≠ actuator order — THE root cause** — unitree qpos is FL-first, ctrl is FR-first. PD applied FL torque to FR actuator. Robot fought itself. Hours of debugging PD/solver/entropy were all red herrings. ALWAYS verify ordering when using third-party MJCFs.
+- **"Stable" PD gains ≠ "trainable" PD gains** — Kp=10/Kd=1.0 holds the robot fine but trains 7x slower than Kp=20/Kd=0.5. Sluggish joint dynamics suppress the leg swings RL needs to find walking. Validate new PD gains with a training run, not a static hold test.
 
 ## [Bongo Board Handstand](lessons/bongo.md) — 10 lessons
 

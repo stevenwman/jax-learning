@@ -18,15 +18,16 @@ We hand-build the ONNX graph via onnx.helper (4 Gemm nodes, 3 swish = Sigmoid+Mu
 1 Tanh). No tensorflow / jax2tf dependency at export time.
 
 ─────────────────────────────────────────────────────────────────────────────
-Observation layout (45-dim, Go2WarpJoystickFlat) — embed in deploy code:
+Observation layout (48-dim, Go2WarpJoystickFlat) — embed in deploy code:
 
     Idx      Name              Dim  Description
     [0:3]    gyro              3    IMU angular velocity (rad/s)
-    [3:6]    gravity           3    Projected gravity in base frame (your state estimator provides this)
-    [6:18]   joint_pos_offset  12   qpos - default_pose, policy order
-    [18:30]  joint_vel         12   Joint velocities, policy order
-    [30:42]  last_act          12   Previous raw policy action (post-tanh, pre-scale)
-    [42:45]  command           3    [vx, vy, yaw_rate] joystick
+    [3:6]    accelerometer     3    IMU linear acceleration (m/s²)
+    [6:9]    gravity           3    Projected gravity in base frame (state estimator)
+    [9:21]   joint_pos_offset  12   qpos - default_pose, policy order
+    [21:33]  joint_vel         12   Joint velocities, policy order
+    [33:45]  last_act          12   Previous raw policy action (post-tanh, pre-scale)
+    [45:48]  command           3    [vx, vy, yaw_rate] joystick
 
 Joint order (policy):
     [FL_hip, FL_thigh, FL_calf, FR_hip, FR_thigh, FR_calf,

@@ -242,15 +242,12 @@ class JaxReplayBuffer:
                 self._jit_cache[batch_size] = self._make_jit_sample(batch_size)
 
         if self._fsc is not None:
-            batch = self._jit_cache[batch_size](
+            batch, idx = self._jit_cache[batch_size](
                 self.obs, self.actions, self.rewards,
                 self.dones, self.truncations,
                 self.size, key,
             )
-            # Frame-stack JIT returns a dict with indices baked in — no idx available.
-            # For now, extra obs with frame-stack is not supported (would need
-            # the JIT fn to also return idx). No current use case requires both.
-            return batch
+            return self._gather_extra(batch, idx) if has_extra else batch
         if has_extra:
             batch, idx = self._jit_cache[batch_size](
                 self.obs, self.actions, self.rewards,
@@ -348,7 +345,7 @@ class JaxReplayBuffer:
             next_idx = (idx + num_envs) % max_size
             stacked_next_obs = reconstruct(next_idx)
 
-            return {
+            batch = {
                 "obs":        stacked_obs,
                 "action":     actions[idx],
                 "reward":     rewards[idx],
@@ -356,6 +353,7 @@ class JaxReplayBuffer:
                 "done":       dones[idx],
                 "truncation": truncations[idx],
             }
+            return batch, idx
         return _sample
 
     def __len__(self) -> int:

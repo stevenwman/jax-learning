@@ -113,3 +113,24 @@ data = data.replace(ctrl=tau_act)
 - Torque near limits = Kp too low for the error magnitude
 
 **Lesson:** PD gains are tightly coupled to solver settings. Kp/Kd tuned on a 1-iteration pyramidal solver (MJX) cannot be reused on a 100-iteration elliptic solver (Warp/unitree). Always use PD gains from the same physics configuration. For Go2: Kp=35/Kd=0.1 for MJX, Kp=20/Kd=0.5 for Warp/unitree.
+
+---
+
+## "Stable" PD Gains ≠ "Trainable" PD Gains (2026-04-10)
+
+**What happened:** Tried Kp=10/Kd=1.0 on Warp Go2 (vs the validated Kp=20/Kd=0.5). Robot could *stand* fine with these gains — no instant collapse, no oscillation. So they passed the static check. But three FastSAC training runs (20M each) all plateaued at avg return ~30-90 instead of seed 8001's ~218 at the same step count. **7x worse return at 3.3M steps**, despite identical hyperparameters and (slightly richer) observation space.
+
+**Root cause (confirmed):** With Kp halved and Kd doubled, the joint dynamics are sluggish. At max policy command (target = default ± 0.5 rad), peak torque drops from 10 Nm → 5 Nm. At typical walking velocities (~5 rad/s), damping torque rises from 2.5 Nm → 5 Nm. The robot has half the restoring force AND twice the drag. It can hold a pose, but it can't *swing* a leg fast enough for ballistic walking gaits to emerge from random exploration. The reward landscape is geometrically the same, but the policy can't reach the high-return states with the gimped dynamics.
+
+**Confirmation (same day):** Reverting to Kp=20/Kd=0.5 with everything else identical (linvel+accel obs, frame_stack=3, DR 8 specs, buffer 2M) recovered to **eval 285.1 ± 3.2** at 20M steps — beating seed 8001's 276.5. A second control without frame stacking hit 280.1 ± 3.0. A third without linvel hit 276.6 ± 3.2. All three Kp=20 runs converged near baseline; the only failed runs were Kp=10/Kd=1.0. PD gains were the sole regression cause.
+
+**Cross-pipeline check:** Every validated sim2real Go2 RL pipeline uses Kd=0.5: unitree_rl_gym Kp=20/Kd=0.5, unitree_rl_lab Kp=25/Kd=0.5, walk-these-ways Kp=20/Kd=0.5, mujoco_playground Go1 Kp=35/Kd=0.5. **Nobody anywhere uses Kd≥1.0.** Diverging from this consensus on a guess wasted ~3 hours of training and 4 failed runs.
+
+**Diagnostic signature:**
+- Online return curve climbs *very* slowly (<10/M steps) but doesn't NaN or collapse
+- Episodes sometimes hit 200+ (so it's not death-spiral broken — the policy can survive)
+- Q values track returns reasonably (no critic blowup)
+- Entropy at target — actor is exploring fine
+- → It looks like "needs more data" but more data doesn't help
+
+**Lesson:** "The robot can stand under PD" is necessary but NOT sufficient for "the policy can learn to walk." Validating new PD gains requires a *training* run, not just a static hold test. Locomotion is fundamentally about *fast* leg swings; if PD gains reduce the achievable joint acceleration, RL learning slows by a multiplier, not a constant. **Default to the validated working gains (Kp=20/Kd=0.5 for Go2/Warp) unless there's a specific deploy reason to change.** Even then, A/B against the baseline before doing other experiments on top, and **check the upstream consensus first** — if no major pipeline uses your proposed values, that's a strong signal not to proceed without justification.

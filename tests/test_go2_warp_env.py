@@ -29,8 +29,8 @@ class TestWarpGo2Loads:
         assert "privileged_state" in state.obs
 
     def test_obs_dims(self, state):
-        assert state.obs["state"].shape == (45,)
-        assert state.obs["privileged_state"].shape == (119,)
+        assert state.obs["state"].shape == (51,)
+        assert state.obs["privileged_state"].shape == (125,)
 
     def test_reset_shapes(self, state):
         assert state.reward.shape == ()
@@ -51,7 +51,7 @@ class TestWarpGo2Steps:
         action = jnp.zeros(12)
         next_state = env.step(state, action)
         assert isinstance(next_state.obs, dict)
-        assert next_state.obs["state"].shape == (45,)
+        assert next_state.obs["state"].shape == (51,)
         assert not jnp.any(jnp.isnan(next_state.obs["state"]))
         assert not jnp.any(jnp.isnan(next_state.reward))
 
@@ -59,7 +59,7 @@ class TestWarpGo2Steps:
         key = jax.random.PRNGKey(42)
         action = jax.random.uniform(key, (12,), minval=-1.0, maxval=1.0)
         next_state = env.step(state, action)
-        assert next_state.obs["state"].shape == (45,)
+        assert next_state.obs["state"].shape == (51,)
 
     def test_reward_nonzero_after_steps(self, env, state):
         action = jnp.zeros(12)
@@ -73,9 +73,11 @@ class TestWarpDomainRand:
         specs = env.get_domain_randomization_spec()
         model_specs = [s for s in specs if s.type == "model"]
         runtime_specs = [s for s in specs if s.type == "runtime"]
-        assert len(model_specs) == 6
-        assert len(runtime_specs) == 2
-        assert {s.name for s in runtime_specs} == {"kp_scale", "kd_scale"}
+        assert len(model_specs) == 8
+        assert len(runtime_specs) == 0
+        names = {s.name for s in model_specs}
+        assert "torso_com_jitter" in names
+        assert "body_inertia" in names
 
 
 class TestWarpContactModes:
