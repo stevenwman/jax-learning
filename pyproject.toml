@@ -26,6 +26,7 @@ dev = [
 docs = [
     "mkdocs-material>=9.6",
     "mkdocstrings[python]>=0.29",
+    "mkdocs-git-revision-date-localized-plugin>=1.2.0",
 ]
 
 [tool.pytest.ini_options]

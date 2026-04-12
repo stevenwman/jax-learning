@@ -113,20 +113,6 @@
   overflow-x: auto;
 }
 
-/* ── API reference — visual separation ── */
-
-.doc-object + .doc-object {
-  margin-top: 2rem;
-  padding-top: 1.5rem;
-  border-top: 1px solid var(--md-default-fg-color--lightest);
-}
-
-.doc-class > .doc-contents > .doc-object {
-  margin-left: 1rem;
-  padding-left: 1rem;
-  border-left: 3px solid var(--md-primary-fg-color--light);
-}
-
 /* ── Definition list styling (method docs in API pages) ── */
 
 .md-typeset dl dt {
