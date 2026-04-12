@@ -157,7 +157,7 @@ class FlashSAC:
 
             target_log_probs: (B, num_atoms) log probabilities from min-Q target
             reward: (B,)
-            done: (B,) terminated only (NOT truncated)
+            done: (B,) terminated OR truncated (Brax convention from EpisodeWrapper)
             alpha_log_prob: (B,) = alpha * next_log_prob
             """
             delta_z = (v_max - v_min) / (num_atoms - 1)
@@ -260,7 +260,8 @@ class FlashSAC:
             reward = batch["reward"].squeeze(-1)
             next_obs = batch["critic_next_obs"]
             actor_next_obs = batch["next_obs"]
-            done = batch["done"].squeeze(-1)  # terminated only
+            done = batch["done"].squeeze(-1)  # terminated OR truncated
+            truncation = batch["truncation"].squeeze(-1)  # pure-timeout mask
 
             alpha = jnp.exp(log_alpha)
 
@@ -331,8 +332,15 @@ class FlashSAC:
             q2_log_probs = jnp.maximum(
                 jax.nn.log_softmax(q2_logits, axis=-1), -30.0
             )
-            q1_loss = -jnp.mean(jnp.sum(projected * q1_log_probs, axis=-1))
-            q2_loss = -jnp.mean(jnp.sum(projected * q2_log_probs, axis=-1))
+            # Truncation mask: drop pure-timeout rows (matches SAC/TD3 Brax
+            # convention). target used done = term|trunc to zero bootstrap on
+            # both; the mask here prevents the r-only target from teaching
+            # Q=r at timeout.
+            mask = 1.0 - truncation
+            q1_per_sample = -jnp.sum(projected * q1_log_probs, axis=-1)
+            q2_per_sample = -jnp.sum(projected * q2_log_probs, axis=-1)
+            q1_loss = jnp.mean(q1_per_sample * mask)
+            q2_loss = jnp.mean(q2_per_sample * mask)
 
             q1_val = logits_to_q(q1_logits, support)
             q2_val = logits_to_q(q2_logits, support)

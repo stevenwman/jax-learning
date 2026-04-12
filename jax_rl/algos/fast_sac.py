@@ -144,11 +144,14 @@ class FastSAC:
 
             # SAC entropy-adjusted reward: r - alpha * log_prob
             adjusted_reward = reward - alpha * next_log_prob
-            effective_done = jnp.maximum(done, truncation)
 
-            # C51 projection with entropy-adjusted reward
+            # Brax/Playground truncation convention (matches SAC/TD3):
+            # - done = terminated OR truncated (from EpisodeWrapper)
+            # - truncation = truncated AND NOT terminated
+            # Target zeros bootstrap on both (via done). Loss mask drops pure-
+            # timeout rows so the r-only target doesn't teach Q=r at timeout.
             projected = jax.lax.stop_gradient(
-                project_distribution(target_probs, adjusted_reward, effective_done,
+                project_distribution(target_probs, adjusted_reward, done,
                                      self.gamma, support)
             )
 
@@ -156,13 +159,16 @@ class FastSAC:
             q1_logits = q1.apply(q1_params_, critic_obs, action)
             q2_logits = q2.apply(q2_params_, critic_obs, action)
 
-            # Cross-entropy loss
+            # Cross-entropy loss with truncation mask.
             # Clamp log_probs to prevent -inf * 0 = NaN in cross-entropy
-            # See fast_td3.py for why this clamp is critical (C51 -inf * 0 = NaN).
+            # (see fast_td3.py for why this clamp is critical).
             q1_log_probs = jnp.maximum(jax.nn.log_softmax(q1_logits, axis=-1), -30.0)
             q2_log_probs = jnp.maximum(jax.nn.log_softmax(q2_logits, axis=-1), -30.0)
-            q1_loss = -jnp.mean(jnp.sum(projected * q1_log_probs, axis=-1))
-            q2_loss = -jnp.mean(jnp.sum(projected * q2_log_probs, axis=-1))
+            mask = 1.0 - truncation
+            q1_per_sample = -jnp.sum(projected * q1_log_probs, axis=-1)
+            q2_per_sample = -jnp.sum(projected * q2_log_probs, axis=-1)
+            q1_loss = jnp.mean(q1_per_sample * mask)
+            q2_loss = jnp.mean(q2_per_sample * mask)
 
             # Metrics
             q1_val = logits_to_q(q1_logits, support)

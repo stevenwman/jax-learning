@@ -139,12 +139,22 @@ FlashSAC's target critics run with `train=True` to maintain their OWN BatchNorm 
 
 In PyTorch, `ema_update_parameters()` naturally skips buffers. In JAX/Flax, where params and batch_stats are separate pytrees, you must be deliberate about which pytrees get Polyak'd.
 
-### 3. Asymmetric `done` signals
+### 3. Truncation handling — Brax convention is correct
 
-- **Reward normalizer** resets running return on `terminated | truncated` (both end the return estimate)
-- **C51 bootstrap** uses `terminated` ONLY (truncation should NOT zero out the value estimate)
+**Fixed 2026-04-12.** FastSAC/FastTD3/FlashSAC originally used `effective_done = max(done, truncation)` to zero bootstrap at truncation, with no TD mask on the loss. This was wrong given the wrapper semantics:
 
-FastSAC uses `max(done, truncation)` for both. FlashSAC's asymmetry is deliberate — mixing them up causes value underestimation on long-horizon tasks.
+- `batch["done"]` from `EpisodeWrapper` = `terminated OR truncated`
+- `batch["truncation"]` = `truncated AND NOT terminated`
+
+Since `done` already includes timeouts, the `max(done, truncation)` line was a no-op. The real bug was the missing loss mask: on a pure-timeout row, the target is `r + 0` (reward only, no bootstrap because done=1), and the cross-entropy loss trains on it, teaching the network that `Q = r` at timeout steps. On long-horizon locomotion (Go2, Humanoid) this causes systematic Q underestimation proportional to (timeout rate × true tail value).
+
+**Correct convention (Brax, matches SAC/TD3):**
+- Target: `r + gamma * (1 - done) * V_next` — zero bootstrap on both term and timeout (next_obs is corrupted by AutoReset either way).
+- Loss mask: `mask = 1 - truncation` — drop pure-timeout rows so the `r`-only target doesn't train the network. Term rows still contribute (their `r`-only target is genuinely correct).
+
+This mirrors the PPO GAE fix in `.context/lessons/ppo.md` (zero deltas at timeouts).
+
+**Related:** the `handle_truncation` constructor arg on all 5 off-policy algos is stored on `self` but never read. The real switch is `cfg.handle_truncation` in the training loop — when False, it stores zeros for truncation, making the mask a no-op.
 
 ### 4. BatchNorm running stats must follow the training state
 

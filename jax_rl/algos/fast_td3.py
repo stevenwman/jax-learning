@@ -140,19 +140,20 @@ class FastTD3:
                 use_q1 = (tq1_val < tq2_val)[:, None]  # (batch, 1)
                 target_probs = jnp.where(use_q1, tq1_probs, tq2_probs)
 
-            # Effective done: treat truncation as terminal (next_obs is wrong)
-            effective_done = jnp.maximum(done, truncation)
-
-            # C51 projection: shift target atoms by Bellman operator
+            # Brax/Playground truncation convention (matches SAC/TD3):
+            # - done = terminated OR truncated (from EpisodeWrapper)
+            # - truncation = truncated AND NOT terminated
+            # Target zeros bootstrap on both (via done). Loss mask drops pure-
+            # timeout rows so the r-only target doesn't teach Q=r at timeout.
             projected = jax.lax.stop_gradient(
-                project_distribution(target_probs, reward, effective_done, self.gamma, support)
+                project_distribution(target_probs, reward, done, self.gamma, support)
             )
 
             # Online Q logits (critic sees privileged obs)
             q1_logits = q1.apply(q1_params_, critic_obs, action)
             q2_logits = q2.apply(q2_params_, critic_obs, action)
 
-            # Cross-entropy loss for C51: -sum(target_probs * log(predicted_probs))
+            # Cross-entropy loss for C51 with truncation mask.
             # CRITICAL: log_softmax produces -inf for zero-probability atoms.
             # In cross-entropy, target_prob * log_pred can be 0 * (-inf) = NaN.
             # Clamping to -30 (≈ prob 1e-13) prevents this while preserving
@@ -160,8 +161,11 @@ class FastTD3:
             # See LESSONS.md "C51 log_prob NaN" for the debugging trail.
             q1_log_probs = jnp.maximum(jax.nn.log_softmax(q1_logits, axis=-1), -30.0)
             q2_log_probs = jnp.maximum(jax.nn.log_softmax(q2_logits, axis=-1), -30.0)
-            q1_loss = -jnp.mean(jnp.sum(projected * q1_log_probs, axis=-1))
-            q2_loss = -jnp.mean(jnp.sum(projected * q2_log_probs, axis=-1))
+            mask = 1.0 - truncation
+            q1_per_sample = -jnp.sum(projected * q1_log_probs, axis=-1)
+            q2_per_sample = -jnp.sum(projected * q2_log_probs, axis=-1)
+            q1_loss = jnp.mean(q1_per_sample * mask)
+            q2_loss = jnp.mean(q2_per_sample * mask)
 
             # Metrics (expected Q for logging)
             q1_val = logits_to_q(q1_logits, support)
