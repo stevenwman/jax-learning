@@ -174,3 +174,49 @@ def test_make_obs_norm_fn_extracts_dict():
     state_obs = jnp.ones((4, 4))
     result = fn({"state": state_obs})
     assert jnp.allclose(result, state_obs)
+
+
+def test_make_buffer_without_critic_obs_dim():
+    """make_buffer with critic_obs_dim=None → no extra critic buffer."""
+    from jax_rl.training import ObsPipeline
+    pipe = ObsPipeline(dict_obs=False, has_privileged=False, use_obs_norm=False)
+    buffer = pipe.make_buffer(obs_dim=17, action_dim=6, buffer_size=1000)
+    assert buffer is not None
+    assert buffer._extra_obs_dims is None or buffer._extra_obs_dims == {}
+
+
+def test_make_buffer_with_critic_obs_dim():
+    """make_buffer with critic_obs_dim=64 → allocates critic_obs buffer."""
+    from jax_rl.training import ObsPipeline
+    pipe = ObsPipeline(dict_obs=True, has_privileged=True, use_obs_norm=False)
+    buffer = pipe.make_buffer(obs_dim=17, action_dim=6, buffer_size=1000,
+                              critic_obs_dim=64)
+    assert buffer is not None
+    assert "critic_obs" in buffer._extra_obs_dims
+    assert buffer._extra_obs_dims["critic_obs"] == 64
+
+
+def test_make_buffer_frame_stack_with_critic_obs_dim():
+    """Frame stacking × privileged critic — this is the Go2Warp production path."""
+    from jax_rl.training import ObsPipeline
+    pipe = ObsPipeline(dict_obs=True, has_privileged=True, use_obs_norm=False,
+                       n_frame_stack=3)
+    # obs_dim = raw_dim * n_frame_stack = 16 * 3 = 48 (mimics Go2Warp)
+    buffer = pipe.make_buffer(obs_dim=48, action_dim=12, buffer_size=1000,
+                              critic_obs_dim=120, num_envs=4)
+    assert buffer is not None
+    assert "critic_obs" in buffer._extra_obs_dims
+    assert buffer._extra_obs_dims["critic_obs"] == 120
+    # Frame stack config should be populated.
+    assert buffer._fsc is not None
+    assert buffer._fsc.n_frames == 3
+    assert buffer._fsc.raw_dim == 16
+
+
+def test_make_buffer_privileged_without_critic_obs_dim_raises():
+    """has_privileged=True with critic_obs_dim=None should raise ValueError."""
+    import pytest
+    from jax_rl.training import ObsPipeline
+    pipe = ObsPipeline(dict_obs=True, has_privileged=True, use_obs_norm=False)
+    with pytest.raises(ValueError, match="critic_obs_dim required"):
+        pipe.make_buffer(obs_dim=17, action_dim=6, buffer_size=1000)

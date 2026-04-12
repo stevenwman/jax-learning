@@ -27,3 +27,9 @@ docs = [
     "mkdocs-material>=9.6",
     "mkdocstrings[python]>=0.29",
 ]
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: marks tests as slow / GPU-bound (deselected by default; run with -m slow)",
+]
+addopts = "-m 'not slow'"

@@ -86,3 +86,32 @@ def test_eval_metrics_remapped():
     assert "perf/eval_std" in remapped
     assert "eval/q_bias" in remapped
     assert "eval/q_corr" in remapped
+
+
+def test_log_training_step_respects_extra_field_fmt(capsys):
+    """log_training_step must use the fmt from extra_fields, not hardcoded .3e."""
+    from jax_rl.training import log_training_step, EpisodeTracker
+
+    tracker = EpisodeTracker(num_envs=1)
+    # Seed a fake episode so tracker.recent_stats() has values.
+    import numpy as np
+    tracker.step(np.array([1.0]), np.array([1.0]))
+
+    last_metrics = {"entropy": 1.2345, "alpha": 0.98765}
+    log_training_step(
+        total_steps=100,
+        tracker=tracker,
+        last_metrics=last_metrics,
+        sps=1000,
+        is_training=True,
+        buffer_size=100,
+        min_buffer=50,
+        extra_fields=[("Ent", "entropy", ".3f"), ("Alpha", "alpha", ".4f")],
+        elapsed=1.0,
+    )
+    captured = capsys.readouterr()
+    # ".3f" format on 1.2345 → "1.234" or "1.235", NOT scientific notation
+    assert "Ent 1.234" in captured.out or "Ent 1.235" in captured.out, \
+        f"Expected Ent in .3f format, got: {captured.out}"
+    assert "Alpha 0.9877" in captured.out or "Alpha 0.9876" in captured.out, \
+        f"Expected Alpha in .4f format, got: {captured.out}"

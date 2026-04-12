@@ -96,7 +96,7 @@ def log_training_step(
     if extra_fields:
         for label, key, fmt in extra_fields:
             val = float(last_metrics.get(key, 0))
-            parts.append(f"{label} {val:.3e}")
+            parts.append(f"{label} {val:{fmt}}")
 
     parts.append(f"{sps:>6,} sps")
     if elapsed is not None:
