@@ -2,14 +2,14 @@
 
 **A modular, JAX-native reinforcement learning framework for robot learning research.**
 
-jax-learning is a learning vehicle and lab tool — every algorithm is implemented from fundamentals with clear mappings to the papers. It provides GPU-accelerated environments via MuJoCo Playground, 6 RL algorithms, composable reward/observation specs, and a sim-to-real deployment pipeline. Current focus: [Unitree Go2](https://www.unitree.com/go2/) quadruped locomotion.
+jax-learning is a learning vehicle and lab tool — every algorithm is implemented from fundamentals with clear mappings to the papers. It provides GPU-accelerated simulation environments via MuJoCo Playground, 6 RL algorithms, composable reward/observation specs, and a sim-to-real deployment pipeline (training in simulation, then running the policy on real hardware). Current focus: [Unitree Go2](https://www.unitree.com/go2/) quadruped locomotion. If a term below is unfamiliar, the [Glossary](glossary.md) has one-liner definitions.
 
 <div class="video-grid" markdown>
 <div>
 <video autoplay loop muted playsinline preload="metadata">
   <source src="assets/videos/go2_joystick_walk.mp4" type="video/mp4">
 </video>
-<p class="caption">Go2 locomotion — FastSAC, eval 285.1</p>
+<p class="caption">Go2 locomotion — FastSAC, eval 276.5</p>
 </div>
 <div>
 <video autoplay loop muted playsinline preload="metadata">
@@ -21,7 +21,7 @@ jax-learning is a learning vehicle and lab tool — every algorithm is implement
 
 ## Key Features
 
-- **6 RL algorithms** — PPO, SAC, TD3, FastSAC, FastTD3, and FlashSAC (inverted residual blocks + BatchNorm + adaptive reward scaling)
+- **6 RL algorithms** — PPO, SAC, TD3, FastSAC, FastTD3, and FlashSAC (a recent SAC variant with learned feature extractors; see [algorithms reference](api/algos.md) for architectural details)
 - **GPU-accelerated environments** — MuJoCo Warp backend (primary — supports cylinder collisions and the exact Unitree MJCF). MJX (JAX-native) available for DM Control benchmarks.
 - **Sim-to-real pipeline** — Train in simulation, deploy on the real Go2 over UDP
 - **Composable rewards and observations** — Swap reward terms and observation groups without touching environment internals

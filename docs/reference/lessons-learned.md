@@ -2,6 +2,9 @@
 
 Practical lessons from building and tuning RL algorithms in JAX. These are non-obvious findings that cost hours or days to discover.
 
+!!! note "Note on benchmark numbers"
+    All eval scores in these docs and in `.context/AGENT_HANDOFF.md` are from single training runs (one seed each). This is sufficient for "did it work?" but not for publication-quality comparisons. Treat benchmark numbers as approximate — seed variance on these algorithms is typically 10-20% at the step counts reported.
+
 ---
 
 ## PPO
@@ -135,4 +138,4 @@ Training with `general` actuators (Menagerie default) and deploying to real `mot
 
 Sim-to-sim between different MJCFs of the "same" robot is nearly as hard as sim-to-real. Different solver defaults, collision geometry types, and geom counts create irreducible dynamics differences that domain randomization cannot bridge.
 
-A policy trained on Menagerie's Go2 (walks 10s+) failed within 2s on unitree's Go2 despite matching all overridable parameters. Training directly on the unitree MJCF via Warp: eval 276.5, walks 20s+. This was the initial validation result. Further refinements (observation expansion, reward tuning, domain randomization) have since achieved eval 285.1.
+A policy trained on Menagerie's Go2 (walks 10s+) failed within 2s on unitree's Go2 despite matching all overridable parameters. Training directly on the unitree MJCF via Warp: eval 276.5, walks 20s+.

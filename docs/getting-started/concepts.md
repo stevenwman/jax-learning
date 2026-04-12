@@ -32,6 +32,8 @@ For the Go2 quadruped, observations are dictionaries:
 }
 ```
 
+Privileged observations include extra information the real robot can't measure (like ground-truth contact forces or friction coefficients) — useful for training a stronger critic, but invisible at deployment. See [Asymmetric Critic](../tutorials/asymmetric-critic.md) for how this is used.
+
 ### Physics backends
 
 | Backend | Engine | Status | Used for |
@@ -41,7 +43,13 @@ For the Go2 quadruped, observations are dictionaries:
 
 ## Algorithms
 
-Six algorithms, each a self-contained class with no inheritance hierarchy:
+Six algorithms, each a self-contained class with no inheritance hierarchy.
+
+!!! tip "Which should I use?"
+    - **New to RL?** Start with **PPO** on `CartpoleBalance` — it's the most forgiving and trains in under a minute.
+    - **Training a robot (e.g. Go2 locomotion)?** Use **FastSAC**. It's the current default for Go2 and reaches a working policy in ~8 minutes.
+    - **Want maximum sample efficiency at large scale?** Try **FlashSAC** or **FastTD3** (1000+ parallel envs, tens of millions of steps).
+    - **Everything else** (SAC, TD3) is useful for algorithm comparisons and smaller-scale experiments.
 
 | Algorithm | Type | Key trait |
 |-----------|------|-----------|
