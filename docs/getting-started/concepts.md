@@ -27,8 +27,8 @@ For the Go2 quadruped, observations are dictionaries:
 
 ```python
 {
-    "state": jnp.array(shape=(48,)),              # what the real robot can see
-    "privileged_state": jnp.array(shape=(122,)),   # extra sim info (friction, contacts, etc.)
+    "state": jnp.array(shape=(51,)),              # what the real robot can see
+    "privileged_state": jnp.array(shape=(125,)),   # extra sim info (friction, contacts, etc.)
 }
 ```
 
