@@ -220,3 +220,21 @@ def test_frame_stack_with_dr_and_critic():
 **Fix:** Use `Attributes:` (not `Args:`) for `nn.Module` dataclass-style fields. Add type annotations to public API functions. If warnings persist, `warn_unknown_params: false` in mkdocs.yml as a last resort.
 
 **Applies to:** Any new `nn.Module` class or public function that should appear in API docs.
+
+---
+
+## Extract Shared Loops as Functions, Not Classes
+
+**What happened:** 4 off-policy training scripts (SAC, TD3, FastSAC, FastTD3) shared 85-90% identical code (~200 of 250 lines each). A code review identified the duplication and initially recommended re-unifying them into a single `train_offpolicy.py` with `if family == "sac"` branches. That was rejected — it would trade duplication noise for dispatcher noise. A Trainer base class was also explicitly rejected (project philosophy: no ABCs, no inheritance).
+
+**Fix:** Extract the shared loop body into a single function `run_offpolicy_loop()` in `jax_rl/training/offpolicy_loop.py`. The 4 per-algo scripts call it after building their algo-specific pieces (optimizer, explore closure, log fields). Each script went from ~300 lines to ~115. FlashSAC stays standalone because its loop has genuinely different state management (BN stats, Zeta noise, adaptive reward scaling).
+
+**The pattern:**
+1. Identify the variation points (what differs between the N scripts)
+2. Make those variation points function parameters
+3. Copy the shared body into a function — verbatim, not "improved"
+4. Thin each script to: build variation-point values → call the function
+
+**When NOT to use this:** When the "shared" code has hidden divergence that will require `if algo_name == "sac"` branches inside the helper. That's re-unification in disguise. The helper should be branch-free. If an algo doesn't fit, it stays standalone (FlashSAC).
+
+**Applies to:** Any time N > 2 scripts share > 70% identical code with well-defined variation points. The variation points must be narrow (≤ 5 parameters) or the function signature becomes its own complexity.

@@ -84,6 +84,7 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **Inference artifacts must include ALL model state** — FlashSAC `actor_params.npy` missing BN batch_stats → eval 26 vs training 282. Orbax had it, inference artifact didn't.
 - **mkdocstrings requires `Attributes:` for nn.Module** — `Args:` doesn't work for Flax dataclass fields; untyped params fail `--strict`
 - **Wrapper composition is untested until combined** — JaxReplayBuffer dropped critic_obs in frame-stack JIT path; DomainRandWrapper bypassed FrameStackWrapper via `_swap_model`. Both worked alone, broke when combined.
+- **Extract shared loops as functions, not classes** — 4 scripts shared 85% code. A Trainer ABC or re-unification both add noise. A shared helper function with 4 variation-point parameters keeps each script readable.
 
 ## [MuJoCo Engine](lessons/mujoco.md) — 4 lessons
 

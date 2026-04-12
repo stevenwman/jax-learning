@@ -57,7 +57,7 @@
 - [ ] A/B benchmark FlashSAC vs FastSAC on CheetahRun (5M steps) and Go2WarpJoystickFlat (100M steps)
   ```
   uv run python train_flashsac.py --env CheetahRun --total-timesteps 5000000 --seed 100
-  uv run python train_offpolicy.py --env CheetahRun --algo fast_sac --total-timesteps 5000000 --seed 100
+  uv run python train_fast_sac.py --env CheetahRun --total-timesteps 5000000 --seed 100
   ```
 
 ## Short-term — Documentation
@@ -78,6 +78,7 @@
 
 ## Short-term — Cleanup
 - [x] Consolidate off-policy train scripts → `train_offpolicy.py --algo sac|td3|fast_td3|fast_sac` (commit 14a17df)
+- [x] Extract shared loop → `run_offpolicy_loop` helper (2026-04-12). Per-algo scripts (`train_sac.py`, `train_td3.py`, `train_fast_sac.py`, `train_fast_td3.py`) are now ~60-line thin wrappers. `train_offpolicy.py` archived. FlashSAC stays standalone.
 - [x] Integration debt — 7/7 resolved (select_action_eval, asymmetric PPO test, etc.)
 - [x] `lax.scan` for gradient loops — benchmarked: 1.03x (no speedup)
 - [x] MJX recompilation — root cause found, upstream issue, MEM_FRACTION=0.7 mitigates
@@ -144,7 +145,7 @@
 - [x] Sim2sim pipeline — sim2sim_direct.py (no DDS, PD per physics step) + DDS version
 - [x] Sim2sim diagnosis complete — MJCF diff (collision geometry, solver) is the gap. MJX→CPU works (3s walking). MJX→unitree needs robustness. See `.context/go2/mjcf_comparison.md`.
 - [x] **Sim2sim to unitree** — SOLVED by training on Warp (unitree MJCF directly). FastSAC 276.5 walks 20s+ on CPU. MJX→unitree gap was irreducible MJCF difference.
-- [ ] ONNX export utility (`jax_rl/utils/export.py`) — JAX weights → ONNX for Jetson (deferred — numpy inference at 50Hz is fine for now)
+- [x] ONNX export utility (`jax_rl/utils/export.py`) — JAX weights → ONNX for Jetson. Hand-builds ONNX graph via onnx.helper (no jax2tf). Deterministic inference only.
 - [ ] DC motor model (`jax_rl/envs/actuators.py`) — Tier 2, add if sim-to-real gap > threshold
 - [ ] Confirm Go2 EDU edition in lab (ask Steven)
 
@@ -152,8 +153,8 @@
 - [x] **Per-frame obs normalization** — `normalize_stacked()` tracks stats on single-frame obs, normalizes each frame slice with shared stats. Wired into both train scripts. 3 new tests pass.
 - [ ] **Frame-stack + obs-norm A/B** — CheetahRun FastSAC 5M steps: `--frame-stack 3` vs `--frame-stack 3 --obs-norm`. Tests whether per-frame normalization helps with stacked proprioceptive obs.
   ```
-  uv run python train_offpolicy.py --env CheetahRun --algo fast_sac --frame-stack 3 --total-timesteps 5000000 --seed 100
-  uv run python train_offpolicy.py --env CheetahRun --algo fast_sac --frame-stack 3 --obs-norm --total-timesteps 5000000 --seed 100
+  uv run python train_fast_sac.py --env CheetahRun --frame-stack 3 --total-timesteps 5000000 --seed 100
+  uv run python train_fast_sac.py --env CheetahRun --frame-stack 3 --obs-norm --total-timesteps 5000000 --seed 100
   ```
 - [ ] **obs_normalization A/B** — FastSAC on Go2WarpJoystickFlat with `--obs-norm` vs without. Paper uses True (DM Control benchmarks), we default False. Quick 20M run each.
 
