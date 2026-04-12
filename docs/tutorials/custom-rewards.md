@@ -174,7 +174,7 @@ self._obs_groups = {
         # ...
     ],
     "privileged_state": [
-        IncludeGroup("state"),  # paste the full 51d state vector here
+        IncludeGroup("state"),  # paste the full 48d state vector here
         ObsTerm("actuator_force", lambda data, **kw: data.actuator_force),
         ObsTerm("contact_forces", ...),
         # ...

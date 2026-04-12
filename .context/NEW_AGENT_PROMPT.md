@@ -29,10 +29,10 @@ AGENT_HANDOFF.md          ← START HERE (project overview, codebase map)
 ## Quick facts (always true)
 - `uv run python` (not python3)
 - No Co-Authored-By in commits
-- Go2 dict obs: {"state": (51,), "privileged_state": (125,)} (as of 2026-04-10 — added linvel + accelerometer)
+- Go2 dict obs: {"state": (48,), "privileged_state": (122,)}
 - PPO: asymmetric (critic sees privileged_state). SAC/TD3: both see state. FastSAC uses asymmetric automatically when dict obs detected.
 - 7 root scripts: `train_ppo_fast.py`, `train_ppo.py`, `train_sac.py`, `train_td3.py`, `train_fast_sac.py`, `train_fast_td3.py`, `train_flashsac.py`. The 4 non-FlashSAC off-policy scripts are thin wrappers (~60 lines) that delegate to `jax_rl/training/offpolicy_loop.py::run_offpolicy_loop`. Also `record_video.py`, `live_viewer.py`.
-- **Go2 envs:** `Go2WarpJoystickFlat` (Warp backend, unitree MJCF, Kp=20/Kd=0.5) is the sole active Go2 locomotion env — eliminates sim2sim gap, best result **eval 285.1** (frame_stack=3, DR, 2026-04-10). Also `Go2BongoHandstand` (Warp, bongo board task). MJX env archived in `jax_rl/envs/locomotion/archive/`.
+- **Go2 envs:** `Go2WarpJoystickFlat` (Warp backend, unitree MJCF, Kp=20/Kd=0.5) is the sole active Go2 locomotion env — eliminates sim2sim gap, best reproducible result **eval 276.6** (48d state, DR). Also `Go2BongoHandstand` (Warp, bongo board task). MJX env archived in `jax_rl/envs/locomotion/archive/`.
 - **CRITICAL:** Warp env has joint→actuator ordering mismatch. `_act_to_joint` remap is essential. See `lessons/warp.md`.
 
 Say "Ready" and wait for instructions.

@@ -39,14 +39,14 @@ With nuclio running, max ~1024 envs for training. Without nuclio, can push to 20
 ## Buffer + Asymmetric Critic + Frame Stack = OOM (2026-04-10)
 
 FastSAC default `buffer_size=4_194_304` is sized for symmetric critic with small obs. With:
-- frame_stack=3 (raw 51d obs stored, but stacked 153d at sample time)
-- asymmetric critic (extra `critic_obs` 125d + `critic_next_obs` 125d buffers)
+- frame_stack=3 (raw 48d obs stored, but stacked 144d at sample time)
+- asymmetric critic (extra `critic_obs` 122d + `critic_next_obs` 122d buffers)
 - 1024 envs
 
 The buffer alone consumes ~5 GB:
-- raw obs: 4M × 51 × 4 = 816 MB
-- critic_obs: 4M × 125 × 4 = 2 GB
-- critic_next_obs: 4M × 125 × 4 = 2 GB
+- raw obs: 4M × 48 × 4 = 768 MB
+- critic_obs: 4M × 122 × 4 = ~1.95 GB
+- critic_next_obs: 4M × 122 × 4 = ~1.95 GB
 - + actions/rewards/dones (~250 MB)
 
 Plus FastSAC C51 critic activations during the gradient step (8K × 768 × 101 atoms × 12 actions ≈ ~30 MB peak per Q × 4 Qs = ~120 MB), Warp simulation buffers (~3 GB), XLA scratch space.

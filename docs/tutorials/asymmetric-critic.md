@@ -10,10 +10,10 @@ The environment returns two observation groups:
 
 | Group | Dims | Contents | Used by |
 |-------|------|----------|---------|
-| `"state"` | 51d | Noisy joint positions, velocities, gyro, gravity, linear velocity, accelerometer, commands, last action | Actor (policy) |
-| `"privileged_state"` | 125d | Everything in "state" + clean sensors, actuator forces, contacts, foot velocities, air times, external forces | Critic (value/Q function) |
+| `"state"` | 48d | Noisy gyro, accelerometer, gravity, joint positions, velocities, last action, commands | Actor (policy) |
+| `"privileged_state"` | 122d | Everything in "state" + clean sensors, linear/angular velocity, actuator forces, contacts, foot velocities, air times, external forces | Critic (value/Q function) |
 
-The actor learns to map 51d noisy observations to actions. The critic learns to evaluate state-action pairs using 125d privileged observations. Because the critic is only used during training (to compute TD targets or advantages), the extra information improves learning speed without affecting what the deployed policy needs.
+The actor learns to map 48d noisy observations to actions. The critic learns to evaluate state-action pairs using 122d privileged observations. Because the critic is only used during training (to compute TD targets or advantages), the extra information improves learning speed without affecting what the deployed policy needs.
 
 ## Algorithm Support
 
@@ -21,8 +21,8 @@ The actor learns to map 51d noisy observations to actions. The critic learns to 
 
 PPO has built-in asymmetric support. The actor and critic are separate networks with separate observation paths:
 
-- Actor: `obs["state"]` (51d) --> action
-- Critic: `obs["privileged_state"]` (125d) --> value estimate
+- Actor: `obs["state"]` (48d) --> action
+- Critic: `obs["privileged_state"]` (122d) --> value estimate
 
 This is automatic when the environment returns dict observations.
 
@@ -30,8 +30,8 @@ This is automatic when the environment returns dict observations.
 
 Off-policy algorithms also support asymmetric observations:
 
-- Actor network: receives 51d `"state"` observations
-- Critic network: receives 125d `"privileged_state"` observations
+- Actor network: receives 48d `"state"` observations
+- Critic network: receives 122d `"privileged_state"` observations
 
 The config handles the routing -- the training loop passes the correct observation slice to each network.
 
@@ -39,16 +39,16 @@ The config handles the routing -- the training loop passes the correct observati
 
 We tested asymmetric vs symmetric critics on `Go2WarpJoystickFlat` with FastSAC:
 
-| Metric | Symmetric (51d/51d) | Asymmetric (51d/125d) |
+| Metric | Symmetric (48d/48d) | Asymmetric (48d/122d) |
 |--------|---------------------|-----------------------|
 | Steps to 270+ eval | ~9M | ~5M |
 | Final eval score | 276 | 279 |
 | Training wall time | ~8 min | ~8 min |
 
-The asymmetric critic reaches the 270+ performance threshold roughly **2x faster** (5M vs 9M steps). These results use the original observation space. With recent updates (linvel + accelerometer → 51d), the final performance ceiling has improved; the current best eval score is **285.1** (FastSAC with frame_stack=3 and domain randomization applied). The asymmetric critic still provides the 2x training speed benefit.
+The asymmetric critic reaches the 270+ performance threshold roughly **2x faster** (5M vs 9M steps). The asymmetric critic still provides the 2x training speed benefit.
 
 !!! note "Why the same ceiling (in the original test)?"
-    The critic helps the actor learn faster by providing better value estimates early in training. But the actor can only learn behaviors that are achievable with its observation space. Once the actor has extracted all useful information from its inputs, additional critic information doesn't help. The expanded observation space (51d) and enhanced reward shaping have since pushed the performance ceiling higher (285.1).
+    The critic helps the actor learn faster by providing better value estimates early in training. But the actor can only learn behaviors that are achievable with its observation space. Once the actor has extracted all useful information from its inputs, additional critic information doesn't help.
 
 ## When to Use Asymmetric Critics
 
@@ -74,7 +74,7 @@ Frame stacking (3 frames) did **not** help:
 | No stacking (baseline) | 276.5 |
 | 3-frame stacking | 271.3 |
 
-The `last_action` term in the observation already provides sufficient temporal context for locomotion. Stacking triples the actor's input dimensionality (51d to 153d) without adding useful information, slightly hurting performance.
+The `last_action` term in the observation already provides sufficient temporal context for locomotion. Stacking triples the actor's input dimensionality (48d to 144d) without adding useful information, slightly hurting performance.
 
 ### Balance Tasks (Bongo Board)
 

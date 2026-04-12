@@ -38,7 +38,7 @@ The mean undiscounted episodic return averaged over `num_eval_episodes` (default
 Estimates how much better an action was compared to the average. GAE blends short-horizon estimates (low variance, may be biased) with long-horizon estimates (high variance, less biased) via a parameter lambda. Default `gae_lambda=0.95`. Used by PPO; implemented via backward `lax.scan` in `buffers/rollout.py`.
 
 ### Observation (obs)
-The input vector the agent receives at each timestep. Go2 environments return a dictionary with `"state"` (51-dimensional deployable sensor readings: local velocity, gyro, gravity, linear velocity, accelerometer, joint positions/velocities, last action, command) and `"privileged_state"` (125-dimensional, adding clean sensor values, actuator forces, foot contacts/velocities, and external forces).
+The input vector the agent receives at each timestep. Go2 environments return a dictionary with `"state"` (48-dimensional deployable sensor readings: gyro, accelerometer, gravity, joint positions/velocities, last action, command) and `"privileged_state"` (122-dimensional, adding clean sensor values, actuator forces, foot contacts/velocities, and external forces).
 
 ### Off-policy
 Algorithms that learn from transitions stored in a replay buffer, decoupling data collection from optimization. SAC, TD3, FastSAC, FastTD3, and FlashSAC are all off-policy in this framework.
@@ -72,7 +72,7 @@ The number of gradient updates performed per environment step collected. Higher 
 An architecture pairing an actor (policy network) that selects actions with a critic (value network) that estimates expected returns. PPO uses a V-function critic (`VCritic`); SAC and its variants use twin Q-function critics (`QHead` or `DistributionalQHead`). Actor and critic are separate networks with independent parameters.
 
 ### Asymmetric critic
-A training configuration where the critic receives a superset of the actor's observations. The actor sees only the 51d deployable `"state"` observations, while the critic additionally receives simulator-only information (125d `"privileged_state"`: clean sensor readings, contact forces, actuator torques). This enables sim-to-real transfer since the deployed actor never depends on privileged data. See the [Asymmetric Critic tutorial](tutorials/asymmetric-critic.md).
+A training configuration where the critic receives a superset of the actor's observations. The actor sees only the 48d deployable `"state"` observations, while the critic additionally receives simulator-only information (122d `"privileged_state"`: clean sensor readings, contact forces, actuator torques). This enables sim-to-real transfer since the deployed actor never depends on privileged data. See the [Asymmetric Critic tutorial](tutorials/asymmetric-critic.md).
 
 ### C51
 Instead of predicting a single expected return, C51 predicts a histogram (distribution) of possible returns using a fixed set of bins ("atoms"). This gives the critic richer learning signal. Used by FastSAC and FastTD3 with 101 atoms over [-20, 20], and by FlashSAC with 101 atoms over [-5, 5].

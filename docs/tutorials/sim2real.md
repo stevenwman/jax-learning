@@ -131,7 +131,7 @@ The deploy script runs a 50Hz finite state machine (FSM):
 
 ## ONNX Export
 
-ONNX export is not yet implemented. Numpy inference at 50Hz is sufficient for the Go2's control loop -- the actor network (512-256-128 MLP) evaluates in <1ms on a laptop CPU.
+ONNX export is available via `jax_rl/utils/export.py`. It builds a standalone ONNX graph of the actor MLP (512-256-128) with no JAX dependency at runtime, targeting Jetson deployment with `onnxruntime`. Numpy inference at 50Hz is also sufficient for the Go2's control loop -- the actor network evaluates in <1ms on a laptop CPU.
 
 ## Key Insights
 

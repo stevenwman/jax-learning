@@ -194,13 +194,13 @@ Each algo has its own config dataclass. Presets in `env_presets.py` return `(Tra
 Every checkpoint contains: `meta.json` (full config), `metrics.csv` (training curve), `actor_params.npy` (inference), `orbax/` (training resume). `load_actor_for_inference()` loads just actor_params.npy — no orbax needed.
 
 ### Go2 env key facts
-- **Dict obs**: `{"state": (51,), "privileged_state": (125,)}` (as of 2026-04-10 — added linvel + accelerometer to state)
+- **Dict obs**: `{"state": (48,), "privileged_state": (122,)}`
 - **PPO**: asymmetric AC — actor sees "state", critic sees "privileged_state"
 - **SAC/TD3**: both actor AND critic see "state" — no asymmetric (FastSAC uses asymmetric automatically when dict obs detected)
 - **Actuator model**: `motor` (direct torque) + external PD per substep. Matches unitree_mujoco and real robot. (Was `general` with built-in PD — switched 2026-03-26.)
 - **Working PPO config**: tracking_lin_vel=10.0, tracking_ang_vel=5.0, height_termination=True, Kp=35, Kd=0.1, calf_torque=45.43Nm
 - **Best PPO**: eval 244 @ 50M steps (seed 4000, motor actuators)
-- **Warp env**: `Go2WarpJoystickFlat` — uses unitree_mujoco's go2.xml (full cylinder collision geometry) via MuJoCo Warp backend. Eliminates sim2sim gap. `contact_mode` flag: `"training"` (firm contacts) / `"deploy"` (unitree-native physics). **Kp=20, Kd=0.5** (matches unitree_rl_gym; reverted from a brief Kp=10/Kd=1.0 detour 2026-04-10 that caused 7x worse training). Best results (2026-04-10, all per_step DR 8 specs): **eval 285.1** with frame_stack=3, **eval 280.1** no frame stack, **eval 276.6** no linvel (deploy obs space). Sim2sim to CPU MuJoCo validated.
+- **Warp env**: `Go2WarpJoystickFlat` — uses unitree_mujoco's go2.xml (full cylinder collision geometry) via MuJoCo Warp backend. Eliminates sim2sim gap. `contact_mode` flag: `"training"` (firm contacts) / `"deploy"` (unitree-native physics). **Kp=20, Kd=0.5** (matches unitree_rl_gym; reverted from a brief Kp=10/Kd=1.0 detour 2026-04-10 that caused 7x worse training). Best reproducible result on current 48d env: **eval 276.6** (no linvel, deploy obs space, DR). Prior 285.1/280.1 results were on a 51d obs space that was reverted. Sim2sim to CPU MuJoCo validated.
 - **CRITICAL:** Warp env has joint→actuator remapping (`_act_to_joint`). Unitree XML has different qpos vs ctrl ordering. Without remap, PD applies torques to wrong legs.
 
 ### Algorithm quick reference
@@ -244,8 +244,8 @@ Every checkpoint contains: `meta.json` (full config), `metrics.csv` (training cu
 **Go2 Joystick — Warp** (unitree go2.xml, full collision geometry):
 | Algo | Eval | Steps | Notes |
 |------|------|-------|-------|
-| **FastSAC (frame_stack=3, +linvel +accel, DR)** | **285.1** | 20M | New best 2026-04-10. State 153d, priv 125d. |
-| FastSAC (no stack, +linvel +accel, DR) | 280.1 | 20M | State 51d. Frame stacking buys ~2%. |
+| **FastSAC (frame_stack=3, +linvel +accel, DR)** | **285.1** | 20M | 2026-04-10 (trained on prior 51d obs space, not reproducible with current 48d env). |
+| FastSAC (no stack, +linvel +accel, DR) | 280.1 | 20M | 2026-04-10 (trained on prior 51d obs space, not reproducible with current 48d env). |
 | **FastSAC (no stack, no linvel, DR — deploy obs)** | **276.6** | 20M | State 48d, deploy-realistic. ONNX exported. |
 | FastSAC (asym critic) | 279.2 | 20M | Older config, no DR. |
 | FastSAC (symmetric) | 276.5 | 18M | Older config (seed 8001), no DR, sim2sim to CPU validated |
