@@ -30,7 +30,7 @@ PPO algo defaults: `clip_eps=0.3`, `entropy_coef=0.01`, `gae_lambda=0.95`, `num_
 
 ## SAC Presets
 
-Used by `train_offpolicy.py --algo <name>`. Accessed via `get_sac_preset(env_name)`.
+Used by `train_sac.py`. Accessed via `get_sac_preset(env_name)`.
 
 | Environment | num_envs | timesteps | lr | gamma | reward_scaling | batch_size | UTD | Notes |
 |---|---|---|---|---|---|---|---|---|
@@ -45,7 +45,7 @@ SAC algo defaults: `tau=0.005`, `hidden_dim=(256, 256)`, `activation=relu`, `bat
 
 ## TD3 Presets
 
-Used by `train_offpolicy.py --algo <name>`. Accessed via `get_td3_preset(env_name)`.
+Used by `train_td3.py`. Accessed via `get_td3_preset(env_name)`.
 
 | Environment | num_envs | timesteps | lr | gamma | reward_scaling | batch_size | UTD | Notes |
 |---|---|---|---|---|---|---|---|---|
@@ -59,7 +59,7 @@ TD3 algo defaults: `tau=0.005`, `hidden_dim=(256, 256)`, `activation=relu`, `bat
 
 ## FastTD3 Presets
 
-Used by `train_offpolicy.py --algo <name>`. Accessed via `get_fast_td3_preset(env_name)`.
+Used by `train_fast_td3.py`. Accessed via `get_fast_td3_preset(env_name)`.
 
 | Environment | num_envs | timesteps | lr | gamma | reward_scaling | batch_size | UTD | Notes |
 |---|---|---|---|---|---|---|---|---|
@@ -73,7 +73,7 @@ FastTD3 algo defaults: `tau=0.125`, `hidden_dim=(512, 256, 128)`, `activation=sw
 
 ## FastSAC Presets
 
-Used by `train_offpolicy.py --algo <name>`. Accessed via `get_fast_sac_preset(env_name)`.
+Used by `train_fast_sac.py`. Accessed via `get_fast_sac_preset(env_name)`.
 
 | Environment | num_envs | timesteps | lr | gamma | reward_scaling | batch_size | UTD | Notes |
 |---|---|---|---|---|---|---|---|---|

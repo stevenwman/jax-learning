@@ -135,4 +135,4 @@ Training with `general` actuators (Menagerie default) and deploying to real `mot
 
 Sim-to-sim between different MJCFs of the "same" robot is nearly as hard as sim-to-real. Different solver defaults, collision geometry types, and geom counts create irreducible dynamics differences that domain randomization cannot bridge.
 
-A policy trained on Menagerie's Go2 (walks 10s+) failed within 2s on unitree's Go2 despite matching all overridable parameters. Training directly on the unitree MJCF via Warp: eval 276.5, walks 20s+.
+A policy trained on Menagerie's Go2 (walks 10s+) failed within 2s on unitree's Go2 despite matching all overridable parameters. Training directly on the unitree MJCF via Warp: eval 276.5, walks 20s+. This was the initial validation result. Further refinements (observation expansion, reward tuning, domain randomization) have since achieved eval 285.1.

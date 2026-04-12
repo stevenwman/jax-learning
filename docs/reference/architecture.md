@@ -7,7 +7,7 @@ The codebase follows a strict three-layer separation:
 ```mermaid
 flowchart TD
     ENV["<b>Environment Layer</b><br/>MuJoCo Playground<br/>Warp backend (primary), MJX for benchmarks<br/>Produces: obs, reward, done, info"]
-    TRAIN["<b>Training Script</b><br/>train_ppo_fast.py / train_offpolicy.py<br/>Owns the loop, batches data, manages state<br/>Handles: env creation, normalization,<br/>logging, checkpointing, W&B, eval"]
+    TRAIN["<b>Training Scripts</b><br/>train_ppo_fast.py / train_sac.py / train_fast_sac.py<br/>Owns the loop, batches data, manages state<br/>Handles: env creation, normalization,<br/>logging, checkpointing, W&B, eval"]
     ALGO["<b>Algorithm Layer</b><br/>jax_rl/algos/*.py<br/>Pure math — no env knowledge<br/>PPO, SAC, TD3, FastSAC, FastTD3, FlashSAC<br/>Computes: gradients, loss, updated params"]
 
     ENV -->|"obs, reward, done"| TRAIN

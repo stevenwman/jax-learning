@@ -4,7 +4,7 @@ MuJoCo-based environments for quadruped locomotion. All environments use MuJoCo 
 
 | Environment | Task | Obs (state) | Obs (privileged) | Actions |
 |-------------|------|-------------|-------------------|---------|
-| [WarpJoystick](#warpjoystick) | Track velocity command | 48d | 122d | 12 (joint targets) |
+| [WarpJoystick](#warpjoystick) | Track velocity command | 51d | 125d | 12 (joint targets) |
 | [BongoHandstand](#bongohandstand) | Handstand on bongo board | 42–46d | ~96d | 12 (joint targets) |
 
 Reward and observation specs are data-driven — swap terms without touching environment internals.

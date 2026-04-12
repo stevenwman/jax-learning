@@ -49,8 +49,7 @@ The preset configures everything:
 ## Step 3: Train
 
 ```bash
-uv run python train_offpolicy.py \
-    --algo fast_sac \
+uv run python train_fast_sac.py \
     --env Go2WarpJoystickFlat \
     --num-envs 1024 \
     --total-timesteps 20000000

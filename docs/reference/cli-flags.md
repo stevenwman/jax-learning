@@ -35,11 +35,10 @@ uv run python docs/scripts/gen_cli_reference.py
 
 ---
 
-## `train_offpolicy.py`
+## `train_sac.py`
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--algo` | str | - | RL algorithm: sac, td3, fast_td3, fast_sac |
 | `--env` | str | `WalkerWalk` | Environment name (e.g., CheetahRun, HumanoidRun, Go2WarpJoystickFlat) |
 | `--seed` | int | `0` | Random seed |
 | `--resume` | str | - | Resume from checkpoint directory path |
@@ -51,8 +50,85 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--buffer-size` | int | from preset | Replay buffer capacity (default: from algo config) |
 | `--reward-scaling` | float | - | Multiply rewards by this factor (default: 1.0) |
 | `--episode-length` | int | from preset | Max steps per episode (default: from env preset) |
-| `--exploration-noise` | float | - | Exploration noise std for TD3-family (SAC uses entropy instead) |
 | `--target-entropy-scale` | float | from preset | target_entropy = -scale * action_dim (default: from algo config) |
+| `--eval-every` | int | - | Evaluate every N episodes (default: every 512 episodes) |
+| `--obs-norm` | flag | off | Enable sample-time obs normalization (recommended for humanoid tasks) |
+| `--wandb` | flag | off | Enable W&B experiment tracking (requires wandb installed) |
+| `--wandb-project` | str | `jax-rl` | W&B project name (default: jax-rl) |
+| `--frame-stack` | int | - | Number of stacked observation frames (default: 1, use 3 for locomotion) |
+| `--action-delay-ms` | int | - | Fixed action delay in ms (e.g., 120 for Go2 sim2real) |
+| `--action-delay-range-ms` | int int | - | Randomized action delay range in ms (e.g., 40 120) |
+
+---
+
+## `train_td3.py`
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--env` | str | `WalkerWalk` | Environment name (e.g., CheetahRun, HumanoidRun, Go2WarpJoystickFlat) |
+| `--seed` | int | `0` | Random seed |
+| `--resume` | str | - | Resume from checkpoint directory path |
+| `--num-envs` | int | from preset | Number of parallel environments (default: from env preset) |
+| `--total-timesteps` | int | from preset | Total environment steps to train (default: from env preset) |
+| `--lr` | float | from preset | Learning rate for actor and critic (default: from algo config) |
+| `--batch-size` | int | from preset | Batch size for gradient updates (default: from algo config) |
+| `--grad-updates-per-step` | int | from preset | Gradient updates per env step (UTD ratio, default: from config) |
+| `--buffer-size` | int | from preset | Replay buffer capacity (default: from algo config) |
+| `--reward-scaling` | float | - | Multiply rewards by this factor (default: 1.0) |
+| `--episode-length` | int | from preset | Max steps per episode (default: from env preset) |
+| `--exploration-noise` | float | - | Exploration noise std for TD3-family |
+| `--eval-every` | int | - | Evaluate every N episodes (default: every 512 episodes) |
+| `--obs-norm` | flag | off | Enable sample-time obs normalization (recommended for humanoid tasks) |
+| `--wandb` | flag | off | Enable W&B experiment tracking (requires wandb installed) |
+| `--wandb-project` | str | `jax-rl` | W&B project name (default: jax-rl) |
+| `--frame-stack` | int | - | Number of stacked observation frames (default: 1, use 3 for locomotion) |
+| `--action-delay-ms` | int | - | Fixed action delay in ms (e.g., 120 for Go2 sim2real) |
+| `--action-delay-range-ms` | int int | - | Randomized action delay range in ms (e.g., 40 120) |
+
+---
+
+## `train_fast_sac.py`
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--env` | str | `WalkerWalk` | Environment name (e.g., CheetahRun, HumanoidRun, Go2WarpJoystickFlat) |
+| `--seed` | int | `0` | Random seed |
+| `--resume` | str | - | Resume from checkpoint directory path |
+| `--num-envs` | int | from preset | Number of parallel environments (default: from env preset) |
+| `--total-timesteps` | int | from preset | Total environment steps to train (default: from env preset) |
+| `--lr` | float | from preset | Learning rate for actor and critic (default: from algo config) |
+| `--batch-size` | int | from preset | Batch size for gradient updates (default: from algo config) |
+| `--grad-updates-per-step` | int | from preset | Gradient updates per env step (UTD ratio, default: from config) |
+| `--buffer-size` | int | from preset | Replay buffer capacity (default: from algo config) |
+| `--reward-scaling` | float | - | Multiply rewards by this factor (default: 1.0) |
+| `--episode-length` | int | from preset | Max steps per episode (default: from env preset) |
+| `--target-entropy-scale` | float | from preset | target_entropy = -scale * action_dim (default: from algo config) |
+| `--eval-every` | int | - | Evaluate every N episodes (default: every 512 episodes) |
+| `--obs-norm` | flag | off | Enable sample-time obs normalization (recommended for humanoid tasks) |
+| `--wandb` | flag | off | Enable W&B experiment tracking (requires wandb installed) |
+| `--wandb-project` | str | `jax-rl` | W&B project name (default: jax-rl) |
+| `--frame-stack` | int | - | Number of stacked observation frames (default: 1, use 3 for locomotion) |
+| `--action-delay-ms` | int | - | Fixed action delay in ms (e.g., 120 for Go2 sim2real) |
+| `--action-delay-range-ms` | int int | - | Randomized action delay range in ms (e.g., 40 120) |
+
+---
+
+## `train_fast_td3.py`
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--env` | str | `WalkerWalk` | Environment name (e.g., CheetahRun, HumanoidRun, Go2WarpJoystickFlat) |
+| `--seed` | int | `0` | Random seed |
+| `--resume` | str | - | Resume from checkpoint directory path |
+| `--num-envs` | int | from preset | Number of parallel environments (default: from env preset) |
+| `--total-timesteps` | int | from preset | Total environment steps to train (default: from env preset) |
+| `--lr` | float | from preset | Learning rate for actor and critic (default: from algo config) |
+| `--batch-size` | int | from preset | Batch size for gradient updates (default: from algo config) |
+| `--grad-updates-per-step` | int | from preset | Gradient updates per env step (UTD ratio, default: from config) |
+| `--buffer-size` | int | from preset | Replay buffer capacity (default: from algo config) |
+| `--reward-scaling` | float | - | Multiply rewards by this factor (default: 1.0) |
+| `--episode-length` | int | from preset | Max steps per episode (default: from env preset) |
+| `--exploration-noise` | float | - | Exploration noise std for TD3-family |
 | `--eval-every` | int | - | Evaluate every N episodes (default: every 512 episodes) |
 | `--obs-norm` | flag | off | Enable sample-time obs normalization (recommended for humanoid tasks) |
 | `--wandb` | flag | off | Enable W&B experiment tracking (requires wandb installed) |

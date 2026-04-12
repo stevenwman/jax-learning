@@ -106,12 +106,13 @@ def render_ppo_presets(presets: dict[str, TrainConfig]) -> str:
 
 
 def render_offpolicy_presets(title: str, getter_name: str,
-                              presets: dict[str, tuple], algo_config_cls) -> str:
+                              presets: dict[str, tuple], algo_config_cls, script_name: str = "") -> str:
     """Render an off-policy preset table."""
+    script_ref = f"Used by `{script_name}`." if script_name else "Off-policy algorithm presets."
     lines = [
         f"## {title}",
         "",
-        f"Used by `train_offpolicy.py --algo <name>`. Accessed via `{getter_name}(env_name)`.",
+        f"{script_ref} Accessed via `{getter_name}(env_name)`.",
         "",
         "| Environment | num_envs | timesteps | lr | gamma | reward_scaling | batch_size | UTD | Notes |",
         "|---|---|---|---|---|---|---|---|---|",
@@ -169,11 +170,11 @@ If an environment is not listed, a default config is used with the environment n
 """
     sections = [
         render_ppo_presets(PRESETS),
-        render_offpolicy_presets("SAC Presets", "get_sac_preset", SAC_PRESETS, SACConfig),
-        render_offpolicy_presets("TD3 Presets", "get_td3_preset", TD3_PRESETS, TD3Config),
-        render_offpolicy_presets("FastTD3 Presets", "get_fast_td3_preset", FAST_TD3_PRESETS, FastTD3Config),
-        render_offpolicy_presets("FastSAC Presets", "get_fast_sac_preset", FAST_SAC_PRESETS, FastSACConfig),
-        render_offpolicy_presets("FlashSAC Presets", "get_flash_sac_preset", FLASH_SAC_PRESETS, FlashSACConfig),
+        render_offpolicy_presets("SAC Presets", "get_sac_preset", SAC_PRESETS, SACConfig, "train_sac.py"),
+        render_offpolicy_presets("TD3 Presets", "get_td3_preset", TD3_PRESETS, TD3Config, "train_td3.py"),
+        render_offpolicy_presets("FastTD3 Presets", "get_fast_td3_preset", FAST_TD3_PRESETS, FastTD3Config, "train_fast_td3.py"),
+        render_offpolicy_presets("FastSAC Presets", "get_fast_sac_preset", FAST_SAC_PRESETS, FastSACConfig, "train_fast_sac.py"),
+        render_offpolicy_presets("FlashSAC Presets", "get_flash_sac_preset", FLASH_SAC_PRESETS, FlashSACConfig, "train_flashsac.py"),
     ]
     output = header + "\n---\n\n".join(sections)
 

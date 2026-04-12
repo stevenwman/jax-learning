@@ -231,8 +231,7 @@ FAST_SAC_PRESETS: dict[str, tuple[TrainConfig, FastSACConfig]] = {
 Run a short training to verify everything works:
 
 ```bash
-uv run python train_offpolicy.py \
-    --algo fast_sac \
+uv run python train_fast_sac.py \
     --env Go2BongoHandstand \
     --num-envs 64 \
     --total-timesteps 200000

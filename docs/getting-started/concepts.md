@@ -110,7 +110,7 @@ Each environment defines lists of these terms. Weights are applied separately in
 |--------|-----|
 | `train_ppo_fast.py` | On-policy training (PPO) with `lax.scan` |
 | `train_ppo.py` | On-policy training (PPO) with Python loop — slower, supports non-JIT envs |
-| `train_offpolicy.py --algo sac\|td3\|fast_sac\|fast_td3` | Off-policy training |
+| `train_sac.py`, `train_td3.py`, `train_fast_sac.py`, `train_fast_td3.py` | Off-policy training (per-algorithm scripts) |
 | `train_flashsac.py` | FlashSAC training (standalone script) |
 | `record_video.py` | Load a checkpoint and render a video |
 

@@ -58,11 +58,53 @@ def render_parser(name: str, parser: argparse.ArgumentParser) -> str:
     return "\n".join(lines)
 
 
-def build_offpolicy_parser() -> argparse.ArgumentParser:
-    """Mirror of train_offpolicy.py's argparse setup."""
+def build_sac_parser() -> argparse.ArgumentParser:
+    """Mirror of train_sac.py's argparse setup."""
     parser = argparse.ArgumentParser()
-    parser.add_argument("--algo", type=str, required=True, choices=["sac", "td3", "fast_td3", "fast_sac"],
-                        help="RL algorithm: sac, td3, fast_td3, fast_sac")
+    parser.add_argument("--env", type=str, default="WalkerWalk",
+                        help="Environment name (e.g., CheetahRun, HumanoidRun, Go2WarpJoystickFlat)")
+    parser.add_argument("--seed", type=int, default=0, help="Random seed")
+    parser.add_argument("--resume", type=str, default=None,
+                        help="Resume from checkpoint directory path")
+    parser.add_argument("--num-envs", type=int, default=None,
+                        help="Number of parallel environments (default: from env preset)")
+    parser.add_argument("--total-timesteps", type=int, default=None,
+                        help="Total environment steps to train (default: from env preset)")
+    parser.add_argument("--lr", type=float, default=None,
+                        help="Learning rate for actor and critic (default: from algo config)")
+    parser.add_argument("--batch-size", type=int, default=None,
+                        help="Batch size for gradient updates (default: from algo config)")
+    parser.add_argument("--grad-updates-per-step", type=int, default=None,
+                        help="Gradient updates per env step (UTD ratio, default: from config)")
+    parser.add_argument("--buffer-size", type=int, default=None,
+                        help="Replay buffer capacity (default: from algo config)")
+    parser.add_argument("--reward-scaling", type=float, default=None,
+                        help="Multiply rewards by this factor (default: 1.0)")
+    parser.add_argument("--episode-length", type=int, default=None,
+                        help="Max steps per episode (default: from env preset)")
+    parser.add_argument("--target-entropy-scale", type=float, default=None,
+                        help="target_entropy = -scale * action_dim (default: from algo config)")
+    parser.add_argument("--eval-every", type=int, default=None,
+                        help="Evaluate every N episodes (default: every 512 episodes)")
+    parser.add_argument("--obs-norm", action="store_true",
+                        help="Enable sample-time obs normalization (recommended for humanoid tasks)")
+    parser.add_argument("--wandb", action="store_true",
+                        help="Enable W&B experiment tracking (requires wandb installed)")
+    parser.add_argument("--wandb-project", type=str, default="jax-rl",
+                        help="W&B project name (default: jax-rl)")
+    parser.add_argument("--frame-stack", type=int, default=None,
+                        help="Number of stacked observation frames (default: 1, use 3 for locomotion)")
+    parser.add_argument("--action-delay-ms", type=int, default=None,
+                        help="Fixed action delay in ms (e.g., 120 for Go2 sim2real)")
+    parser.add_argument("--action-delay-range-ms", type=int, nargs=2, default=None,
+                        metavar=("MIN", "MAX"),
+                        help="Randomized action delay range in ms (e.g., 40 120)")
+    return parser
+
+
+def build_td3_parser() -> argparse.ArgumentParser:
+    """Mirror of train_td3.py's argparse setup."""
+    parser = argparse.ArgumentParser()
     parser.add_argument("--env", type=str, default="WalkerWalk",
                         help="Environment name (e.g., CheetahRun, HumanoidRun, Go2WarpJoystickFlat)")
     parser.add_argument("--seed", type=int, default=0, help="Random seed")
@@ -85,9 +127,95 @@ def build_offpolicy_parser() -> argparse.ArgumentParser:
     parser.add_argument("--episode-length", type=int, default=None,
                         help="Max steps per episode (default: from env preset)")
     parser.add_argument("--exploration-noise", type=float, default=None,
-                        help="Exploration noise std for TD3-family (SAC uses entropy instead)")
+                        help="Exploration noise std for TD3-family")
+    parser.add_argument("--eval-every", type=int, default=None,
+                        help="Evaluate every N episodes (default: every 512 episodes)")
+    parser.add_argument("--obs-norm", action="store_true",
+                        help="Enable sample-time obs normalization (recommended for humanoid tasks)")
+    parser.add_argument("--wandb", action="store_true",
+                        help="Enable W&B experiment tracking (requires wandb installed)")
+    parser.add_argument("--wandb-project", type=str, default="jax-rl",
+                        help="W&B project name (default: jax-rl)")
+    parser.add_argument("--frame-stack", type=int, default=None,
+                        help="Number of stacked observation frames (default: 1, use 3 for locomotion)")
+    parser.add_argument("--action-delay-ms", type=int, default=None,
+                        help="Fixed action delay in ms (e.g., 120 for Go2 sim2real)")
+    parser.add_argument("--action-delay-range-ms", type=int, nargs=2, default=None,
+                        metavar=("MIN", "MAX"),
+                        help="Randomized action delay range in ms (e.g., 40 120)")
+    return parser
+
+
+def build_fast_sac_parser() -> argparse.ArgumentParser:
+    """Mirror of train_fast_sac.py's argparse setup."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--env", type=str, default="WalkerWalk",
+                        help="Environment name (e.g., CheetahRun, HumanoidRun, Go2WarpJoystickFlat)")
+    parser.add_argument("--seed", type=int, default=0, help="Random seed")
+    parser.add_argument("--resume", type=str, default=None,
+                        help="Resume from checkpoint directory path")
+    parser.add_argument("--num-envs", type=int, default=None,
+                        help="Number of parallel environments (default: from env preset)")
+    parser.add_argument("--total-timesteps", type=int, default=None,
+                        help="Total environment steps to train (default: from env preset)")
+    parser.add_argument("--lr", type=float, default=None,
+                        help="Learning rate for actor and critic (default: from algo config)")
+    parser.add_argument("--batch-size", type=int, default=None,
+                        help="Batch size for gradient updates (default: from algo config)")
+    parser.add_argument("--grad-updates-per-step", type=int, default=None,
+                        help="Gradient updates per env step (UTD ratio, default: from config)")
+    parser.add_argument("--buffer-size", type=int, default=None,
+                        help="Replay buffer capacity (default: from algo config)")
+    parser.add_argument("--reward-scaling", type=float, default=None,
+                        help="Multiply rewards by this factor (default: 1.0)")
+    parser.add_argument("--episode-length", type=int, default=None,
+                        help="Max steps per episode (default: from env preset)")
     parser.add_argument("--target-entropy-scale", type=float, default=None,
                         help="target_entropy = -scale * action_dim (default: from algo config)")
+    parser.add_argument("--eval-every", type=int, default=None,
+                        help="Evaluate every N episodes (default: every 512 episodes)")
+    parser.add_argument("--obs-norm", action="store_true",
+                        help="Enable sample-time obs normalization (recommended for humanoid tasks)")
+    parser.add_argument("--wandb", action="store_true",
+                        help="Enable W&B experiment tracking (requires wandb installed)")
+    parser.add_argument("--wandb-project", type=str, default="jax-rl",
+                        help="W&B project name (default: jax-rl)")
+    parser.add_argument("--frame-stack", type=int, default=None,
+                        help="Number of stacked observation frames (default: 1, use 3 for locomotion)")
+    parser.add_argument("--action-delay-ms", type=int, default=None,
+                        help="Fixed action delay in ms (e.g., 120 for Go2 sim2real)")
+    parser.add_argument("--action-delay-range-ms", type=int, nargs=2, default=None,
+                        metavar=("MIN", "MAX"),
+                        help="Randomized action delay range in ms (e.g., 40 120)")
+    return parser
+
+
+def build_fast_td3_parser() -> argparse.ArgumentParser:
+    """Mirror of train_fast_td3.py's argparse setup."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--env", type=str, default="WalkerWalk",
+                        help="Environment name (e.g., CheetahRun, HumanoidRun, Go2WarpJoystickFlat)")
+    parser.add_argument("--seed", type=int, default=0, help="Random seed")
+    parser.add_argument("--resume", type=str, default=None,
+                        help="Resume from checkpoint directory path")
+    parser.add_argument("--num-envs", type=int, default=None,
+                        help="Number of parallel environments (default: from env preset)")
+    parser.add_argument("--total-timesteps", type=int, default=None,
+                        help="Total environment steps to train (default: from env preset)")
+    parser.add_argument("--lr", type=float, default=None,
+                        help="Learning rate for actor and critic (default: from algo config)")
+    parser.add_argument("--batch-size", type=int, default=None,
+                        help="Batch size for gradient updates (default: from algo config)")
+    parser.add_argument("--grad-updates-per-step", type=int, default=None,
+                        help="Gradient updates per env step (UTD ratio, default: from config)")
+    parser.add_argument("--buffer-size", type=int, default=None,
+                        help="Replay buffer capacity (default: from algo config)")
+    parser.add_argument("--reward-scaling", type=float, default=None,
+                        help="Multiply rewards by this factor (default: 1.0)")
+    parser.add_argument("--episode-length", type=int, default=None,
+                        help="Max steps per episode (default: from env preset)")
+    parser.add_argument("--exploration-noise", type=float, default=None,
+                        help="Exploration noise std for TD3-family")
     parser.add_argument("--eval-every", type=int, default=None,
                         help="Evaluate every N episodes (default: every 512 episodes)")
     parser.add_argument("--obs-norm", action="store_true",
@@ -227,7 +355,10 @@ uv run python docs/scripts/gen_cli_reference.py
 """
     sections = [
         render_parser("train_ppo_fast.py", build_ppo_parser()),
-        render_parser("train_offpolicy.py", build_offpolicy_parser()),
+        render_parser("train_sac.py", build_sac_parser()),
+        render_parser("train_td3.py", build_td3_parser()),
+        render_parser("train_fast_sac.py", build_fast_sac_parser()),
+        render_parser("train_fast_td3.py", build_fast_td3_parser()),
         render_parser("train_flashsac.py", build_flashsac_parser()),
         render_parser("record_video.py", build_record_parser()),
     ]
