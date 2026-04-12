@@ -55,7 +55,7 @@ uv run python train_fast_sac.py \
     --total-timesteps 20000000
 ```
 
-This runs 20 million timesteps across 1024 parallel environments. On an RTX 4090, expect ~18,000 steps/second.
+This runs 20 million timesteps across 1024 parallel environments. On an RTX 4090, expect roughly 3-4k steps/second after JIT warmup for FastSAC on Go2 Warp (full collision geometry + UTD 8 dominate the per-step cost). DM Control benchmarks like CheetahRun run much faster (~18k sps) because their physics is cheaper.
 
 !!! tip "Useful flags"
     - `--wandb` — log metrics to Weights & Biases for experiment tracking
@@ -67,6 +67,10 @@ This runs 20 million timesteps across 1024 parallel environments. On an RTX 4090
 The training script prints evaluation results to stdout periodically. Look for lines starting with `EVAL`:
 
 You should see the eval score climbing over time:
+
+!!! tip "What does the eval score mean?"
+    Eval score = average return over eval episodes. Reward scales differ per env, so scores aren't comparable across envs (CartpoleBalance maxes ~1000, CheetahRun ~900). For Go2 joystick, the score depends on episode length and reward weights — see the deeper note below.
+
 
 ```
 EVAL | steps=2000000  | mean=85.3  | std=12.1

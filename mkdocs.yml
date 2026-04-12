@@ -111,7 +111,8 @@ nav:
     - CLI Flags: reference/cli-flags.md
     - Environment Presets: reference/env-presets.md
     - Architecture: reference/architecture.md
+    - Training Loop: reference/training-loop.md
     - Lessons Learned: reference/lessons-learned.md
-    - Glossary: glossary.md
     - FAQ: faq.md
     - Contributing: contributing.md
+  - Glossary: glossary.md

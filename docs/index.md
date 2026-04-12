@@ -19,6 +19,8 @@ jax-learning is a learning vehicle and lab tool — every algorithm is implement
 </div>
 </div>
 
+<small>*All eval scores throughout the docs are single-seed results. Treat as approximate — see [Lessons Learned](reference/lessons-learned.md) for seed variance notes.*</small>
+
 ## Key Features
 
 - **6 RL algorithms** — PPO, SAC, TD3, FastSAC, FastTD3, and FlashSAC (a recent SAC variant with learned feature extractors; see [algorithms reference](api/algos.md) for architectural details)

@@ -219,7 +219,9 @@ FastTD3(
 from jax_rl.algos.flash_sac import FlashSAC
 ```
 
-Highest-performing algorithm in this framework (eval **282.4** on Go2 joystick, single seed). Combines inverted residual blocks, BatchNorm, weight normalization, and adaptive reward scaling. Requires more tuning than FastSAC but achieves better asymptotic performance.
+Recent SAC variant combining inverted residual blocks, BatchNorm, weight normalization, and adaptive reward scaling. Eval **282.4** on Go2 joystick at one seed — within seed variance of FastSAC's 276.5; A/B not yet established. Requires more tuning than FastSAC.
+
+See the annotated end-to-end loop in [Reference → Training Loop](../reference/training-loop.md) for how these algorithms plug into the off-policy training script.
 
 **Constructor**
 

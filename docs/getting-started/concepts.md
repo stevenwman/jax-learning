@@ -126,4 +126,5 @@ Each environment defines lists of these terms. Weights are applied separately in
 
 - [Quickstart](quickstart.md) — Train your first policy
 - [Train Locomotion](../tutorials/train-locomotion.md) — Train a Go2 quadruped to walk
+- [Annotated Training Loop](../reference/training-loop.md) — End-to-end off-policy loop showing how env, buffer, and algo connect
 - [API Reference](../api/algos.md) — Detailed algorithm documentation

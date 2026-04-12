@@ -19,6 +19,9 @@ uv run python train_ppo_fast.py \
 
 Eval scores are printed periodically. Expect **~950+** by end of training.
 
+!!! tip "What does the eval score mean?"
+    Eval score = average return over eval episodes. Each env defines its own reward scale, so scores aren't comparable across envs. CartpoleBalance maxes around 1000; CheetahRun around 900; Go2 joystick depends on episode length + reward weights.
+
 ```
 eval/episode_reward: 342.1  (step 50000)
 eval/episode_reward: 687.4  (step 150000)

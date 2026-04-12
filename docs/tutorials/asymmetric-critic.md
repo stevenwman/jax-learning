@@ -45,7 +45,10 @@ We tested asymmetric vs symmetric critics on `Go2WarpJoystickFlat` with FastSAC:
 | Final eval score | 276 | 279 |
 | Training wall time | ~8 min | ~8 min |
 
-The asymmetric critic reaches the 270+ performance threshold roughly **2x faster** (5M vs 9M steps). The asymmetric critic still provides the 2x training speed benefit.
+The asymmetric critic reaches the 270+ performance threshold roughly **~2x faster at one seed** (5M vs 9M steps). Seed variance across this comparison hasn't been characterized.
+
+!!! tip "What does the eval score mean?"
+    Eval score = average undiscounted return over eval episodes. Each env defines its own reward scale, so scores aren't comparable across envs. For Go2 joystick, scores depend on episode length and reward weights — 270+ indicates reliable locomotion.
 
 !!! note "Why the same ceiling (in the original test)?"
     The critic helps the actor learn faster by providing better value estimates early in training. But the actor can only learn behaviors that are achievable with its observation space. Once the actor has extracted all useful information from its inputs, additional critic information doesn't help.
@@ -59,7 +62,7 @@ The asymmetric critic reaches the 270+ performance threshold roughly **2x faster
 **Use when privileged information is available.** If your environment has information that's available in simulation but not on hardware (terrain maps, contact forces, object poses), put it in the privileged observations. The critic uses it during training; the actor learns to infer what it can from limited sensors.
 
 !!! tip
-    There is no observed downside to using asymmetric critics.
+    No downside observed at one seed.
 
 ## Frame Stacking
 
