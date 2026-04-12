@@ -27,7 +27,7 @@ Go2WarpJoystickFlat
 ├── Backend: MuJoCo Warp (GPU-accelerated parallel simulation)
 ├── MJCF: unitree_mujoco's go2.xml (exact robot model from Unitree)
 ├── Collision: Full cylinder + box geometry (no simplifications)
-├── Obs: dict with "state" (48d) and "privileged_state" (122d)
+├── Obs: dict with "state" (51d) and "privileged_state" (125d)
 └── Action: 12d joint position targets (PD controller computes torques)
 ```
 
@@ -106,11 +106,11 @@ The environment returns observations as a Python dict, not a flat array:
 
 ```python
 obs = {
-    "state": jax.Array,           # 48d — what the actor (policy) sees
-    "privileged_state": jax.Array  # 122d — what the critic sees during training
+    "state": jax.Array,           # 51d — what the actor (policy) sees
+    "privileged_state": jax.Array  # 125d — what the critic sees during training
 }
 ```
 
-The **"state"** group contains: local linear velocity (3d), gyroscope (3d), gravity vector (3d), joint position offsets from default pose (12d), joint velocities (12d), last action (12d), and velocity command (3d).
+The **"state"** group contains: local linear velocity (3d), gyroscope (3d), gravity vector (3d), linear velocity (3d), accelerometer (3d), joint position offsets from default pose (12d), joint velocities (12d), last action (12d), and velocity command (3d).
 
-The **"privileged_state"** group includes everything in "state" plus: clean (noise-free) sensor readings, actuator forces, contact states, foot velocities, foot air times, and external forces. The critic uses this extra information during training, but only the 48d "state" is needed at deployment. See [Asymmetric Critic](asymmetric-critic.md) for details.
+The **"privileged_state"** group includes everything in "state" plus: clean (noise-free) sensor readings, actuator forces, contact states, foot velocities, foot air times, and external forces. The critic uses this extra information during training, but only the 51d "state" is needed at deployment. See [Asymmetric Critic](asymmetric-critic.md) for details.
