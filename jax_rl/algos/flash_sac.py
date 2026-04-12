@@ -70,7 +70,6 @@ class FlashSAC:
         optimizer: optax.GradientTransformation,
         alpha_optimizer: optax.GradientTransformation,
         gamma: float = 0.99,
-        handle_truncation: bool = True,
         critic_obs_dim: int | None = None,
         num_envs: int = 1,
     ) -> None:
@@ -79,7 +78,6 @@ class FlashSAC:
         self.critic_obs_dim = critic_obs_dim or obs_dim
         self.action_dim = action_dim
         self.gamma = gamma
-        self.handle_truncation = handle_truncation
         self.num_envs = num_envs
 
         # Entropy target: 0.5 * D * log(2*pi*e*sigma^2)

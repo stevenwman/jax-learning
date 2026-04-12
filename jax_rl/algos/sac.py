@@ -49,7 +49,6 @@ class SAC:
         optimizer: optax.GradientTransformation,  # shared lr for actor + Q
         alpha_optimizer: optax.GradientTransformation,
         gamma: float = 0.99,
-        handle_truncation: bool = True,
         critic_obs_dim: int | None = None,
     ) -> None:
         self.config = config
@@ -57,7 +56,6 @@ class SAC:
         self.critic_obs_dim = critic_obs_dim or obs_dim
         self.action_dim = action_dim
         self.gamma = gamma
-        self.handle_truncation = handle_truncation
         self.target_entropy = -config.target_entropy_scale * action_dim
 
         # Networks — use builders for actor (encoder swappable), QHead directly for critics

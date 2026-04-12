@@ -57,7 +57,6 @@ class FastTD3:
         actor_optimizer: optax.GradientTransformation,
         critic_optimizer: optax.GradientTransformation,
         gamma: float = 0.99,
-        handle_truncation: bool = True,
         critic_obs_dim: int | None = None,
     ) -> None:
         self.config = config
@@ -65,7 +64,6 @@ class FastTD3:
         self.critic_obs_dim = critic_obs_dim or obs_dim
         self.action_dim = action_dim
         self.gamma = gamma
-        self.handle_truncation = handle_truncation
 
         # Networks — DeterministicActor via builder, DistributionalQHead directly
         enc_cfg = EncoderConfig(

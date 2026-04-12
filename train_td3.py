@@ -35,7 +35,6 @@ def train(cfg: TrainConfig, algo_cfg, seed: int = 0, resume: str | None = None,
         actor_optimizer=optax.adam(cfg.lr),
         critic_optimizer=optax.adam(cfg.lr),
         gamma=cfg.gamma,
-        handle_truncation=cfg.handle_truncation,
         critic_obs_dim=env_bundle.critic_obs_dim,
     )
 

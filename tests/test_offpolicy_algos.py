@@ -56,7 +56,7 @@ def _make_sac():
     cfg = SACConfig(hidden_dim=(64, 64), batch_size=BATCH_SIZE)
     opt = optax.adam(3e-4)
     alpha_opt = optax.adam(3e-4)
-    return SAC(cfg, OBS_DIM, ACTION_DIM, opt, alpha_opt, gamma=0.99, handle_truncation=True)
+    return SAC(cfg, OBS_DIM, ACTION_DIM, opt, alpha_opt, gamma=0.99)
 
 
 def test_sac_init():
@@ -125,7 +125,7 @@ def _make_td3():
     cfg = TD3Config(hidden_dim=(64, 64), batch_size=BATCH_SIZE)
     opt = optax.adam(3e-4)
     return TD3(cfg, OBS_DIM, ACTION_DIM, actor_optimizer=opt, critic_optimizer=opt,
-               gamma=0.99, handle_truncation=True)
+               gamma=0.99)
 
 
 def test_td3_init():
@@ -186,7 +186,7 @@ def _make_fast_td3():
     cfg = FastTD3Config(hidden_dim=(64, 64), batch_size=BATCH_SIZE, num_atoms=11)
     opt = optax.adam(3e-4)
     return FastTD3(cfg, OBS_DIM, ACTION_DIM, actor_optimizer=opt, critic_optimizer=opt,
-                   gamma=0.99, handle_truncation=True)
+                   gamma=0.99)
 
 
 def test_fast_td3_init():
@@ -236,10 +236,7 @@ def _make_fast_sac():
                         num_atoms=11, v_min=-10.0, v_max=10.0)
     opt = optax.adamw(3e-4, b1=0.9, b2=0.95, weight_decay=0.001)
     alpha_opt = optax.adamw(3e-4, b1=0.9, b2=0.95, weight_decay=0.001)
-    return FastSAC(
-        cfg, OBS_DIM, ACTION_DIM, opt, alpha_opt,
-        gamma=0.97, handle_truncation=True,
-    )
+    return FastSAC(cfg, OBS_DIM, ACTION_DIM, opt, alpha_opt, gamma=0.97)
 
 
 def test_fast_sac_init():

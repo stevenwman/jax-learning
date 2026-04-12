@@ -126,8 +126,7 @@ def test_run_offpolicy_loop_stub_env_cpu(tmp_path, monkeypatch):
     algo = SAC(
         config=algo_cfg, obs_dim=OBS_DIM, action_dim=ACTION_DIM,
         optimizer=optimizer, alpha_optimizer=alpha_opt,
-        gamma=cfg.gamma, handle_truncation=cfg.handle_truncation,
-        critic_obs_dim=None,
+        gamma=cfg.gamma, critic_obs_dim=None,
     )
 
     def explore(actor_params, obs, key):
@@ -176,8 +175,7 @@ def test_run_offpolicy_loop_sac_cheetah(tmp_path, monkeypatch):
     algo = SAC(
         config=algo_cfg, obs_dim=bundle.obs_dim, action_dim=bundle.action_dim,
         optimizer=optimizer, alpha_optimizer=alpha_opt,
-        gamma=cfg.gamma, handle_truncation=cfg.handle_truncation,
-        critic_obs_dim=bundle.critic_obs_dim,
+        gamma=cfg.gamma, critic_obs_dim=bundle.critic_obs_dim,
     )
 
     def explore(actor_params, obs, key):

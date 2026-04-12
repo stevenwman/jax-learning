@@ -136,7 +136,6 @@ def train(cfg: TrainConfig, algo_cfg: FlashSACConfig, seed: int = 0,
         optimizer=optimizer,
         alpha_optimizer=alpha_optimizer,
         gamma=cfg.gamma,
-        handle_truncation=cfg.handle_truncation,
         critic_obs_dim=critic_obs_dim,
         num_envs=cfg.num_envs,
     )
