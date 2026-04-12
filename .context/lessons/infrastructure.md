@@ -238,3 +238,20 @@ def test_frame_stack_with_dr_and_critic():
 **When NOT to use this:** When the "shared" code has hidden divergence that will require `if algo_name == "sac"` branches inside the helper. That's re-unification in disguise. The helper should be branch-free. If an algo doesn't fit, it stays standalone (FlashSAC).
 
 **Applies to:** Any time N > 2 scripts share > 70% identical code with well-defined variation points. The variation points must be narrow (≤ 5 parameters) or the function signature becomes its own complexity.
+
+---
+
+## Ghost Refs: Docs Reflecting Uncommitted Code
+
+**What happened:** `.context/AGENT_HANDOFF.md` was updated during a 2026-04-10 experiment to claim `Go2 dict obs: {"state": (51,), "privileged_state": (125,)}` — reflecting an uncommitted branch that added linvel + accelerometer to the state group. The experiment was reverted (kept 48d for sim2real obs alignment), but AGENT_HANDOFF was never reverted. Two days later, a docs-site sweep propagated 51/125 to 10+ files. Nothing was technically broken — the code still worked — but every obs-dim claim in the public docs was a lie. A user running `make_env_bundle(cfg)` and printing `bundle.obs_dim` would see 48, not 51.
+
+**Root cause:** AGENT_HANDOFF was treated as authoritative for obs dim claims. It wasn't — it was a snapshot of an aspirational state. The subagents doing the doc sweep trusted it. Three reviewers trusted it. The fourth (undergrad CS persona) cross-referenced against `jax_rl/envs/locomotion/go2_warp_joystick.py` and found the gap.
+
+**Fix:** Revert docs to 48/122. Add a note to the benchmark table that 285.1/280.1 results came from the reverted 51d experiment and are **not reproducible with current code**.
+
+**Prevention:**
+1. **Don't update AGENT_HANDOFF based on uncommitted changes.** Write "target dim: 51d, current: 48d (in progress)" if you must capture the plan. Or don't capture it in AGENT_HANDOFF at all — use a journal entry.
+2. **When doing doc sweeps, cross-reference against code, not against internal handoff docs.** Grep the env file, don't trust the handoff.
+3. **In reviews, one persona should be an "undergrad CS cross-referencer"** whose explicit job is to check every claim in the docs against the actual source code. The other personas (high schooler, frontend, even PhD) tend to trust the docs as ground truth.
+
+**Applies to:** Any claim about code behavior in AGENT_HANDOFF, README, NEW_AGENT_PROMPT, or any doc that doesn't auto-generate from source. The higher the doc in the "authoritative reference" hierarchy, the more dangerous a ghost ref becomes — downstream docs will copy it.

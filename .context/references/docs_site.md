@@ -9,8 +9,8 @@ The project has a public docs site at **https://stevenwman.github.io/jax-learnin
 - **Assets:** `docs/assets/videos/` (embedded MP4s), `docs/stylesheets/extra.css` (syntax highlighting + layout)
 - **Auto-links:** `docs/scripts/glossary_links.py` (hook) + `docs/includes/term_links.yml` (non-glossary terms)
 - **Generators:** `docs/scripts/gen_cli_reference.py`, `docs/scripts/gen_env_presets.py`
-- **GH Actions:** `.github/workflows/docs.yml` — triggers on push to main for `docs/**`, `mkdocs.yml`, `jax_rl/**`
-- **Deps:** `uv sync --group docs` installs mkdocs-material
+- **GH Actions:** `.github/workflows/docs.yml` — triggers on push to main for `docs/**`, `mkdocs.yml`, `jax_rl/**`. **Must use `fetch-depth: 0`** for git-revision-date plugin to read full history.
+- **Deps:** `uv sync --group docs` installs mkdocs-material + git-revision-date-localized-plugin
 - **Review pattern:** `.context/references/docs_review_pattern.md` — 4-persona parallel review
 
 ## Commands
@@ -51,10 +51,13 @@ Key pages (concepts, quickstart, train-locomotion) link first-use jargon to the 
 
 `docs/stylesheets/extra.css` provides:
 - **Syntax highlighting:** Separate One Dark (slate) and One Light (default) palettes using `[data-md-color-scheme]` selectors
-- **API doc separation:** Top borders between `.doc-object` siblings, left-border indentation for methods
-- **Video grid:** `.video-grid` flexbox class for homepage video embedding
-- **Table scroll:** `overflow-x: auto` for wide tables on mobile
+- **H2 section borders:** `border-top` separator on `h2:not(:first-of-type)` for long-page scannability
+- **Video grid:** `.video-grid` flexbox class with 640px mobile breakpoint for homepage video embedding
+- **Table styling:** Zebra striping, tabular-nums, `font-size: 0.82rem`. Material already provides horizontal scroll wrap for wide tables
+- **Glossary auto-links:** `.gl` class — dotted underline, inherit color, scheme-aware
 - **Contrast fixes:** Light-mode comments `#717580` (WCAG AA), video captions use theme-aware `var(--md-default-fg-color--light)`
+
+**Note:** Previously had dead `.doc-object` / `.doc-class` rules targeting mkdocstrings classes — removed 2026-04-12 since mkdocstrings is not in the plugin list.
 
 ## Site structure (22 pages)
 
@@ -143,7 +146,7 @@ Dispatch all 4 as background Opus agents. Compile into prioritized action list g
 ## Videos
 
 Two MP4s embedded:
-- `docs/assets/videos/go2_joystick_walk.mp4` — FastSAC eval 276.5
+- `docs/assets/videos/go2_joystick_walk.mp4` — FastSAC on Go2 Warp (eval ~276)
 - `docs/assets/videos/go2_bongo_handstand.mp4` — PPO bongo board
 
 Use relative paths from page location (e.g., `../../assets/videos/` from tutorial pages). `.gitignore` has `*.mp4` with exception `!docs/assets/videos/*.mp4`.
@@ -163,6 +166,8 @@ Use relative paths from page location (e.g., `../../assets/videos/` from tutoria
 - `abbr` + `pymdownx.snippets` with `auto_append` for global abbreviation tooltips
 - `pymdownx.superfences` with Mermaid fence support
 - `pymdownx.highlight` with Pygments (One Dark / One Light in `extra.css`)
+- `pymdownx.tabbed` — used for mobile-friendly layout in `env-presets.md` (one tab per algo)
+- `git-revision-date-localized` plugin with `type: timeago`, `enable_creation_date: true` — shows "Last updated X days ago" in page footer. Requires full git history (CI must set `fetch-depth: 0`).
 - `site_url: https://stevenwman.github.io/jax-learning/`
 - **No mkdocstrings** — all API pages are hand-crafted
 

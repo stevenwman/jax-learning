@@ -85,6 +85,8 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **mkdocstrings requires `Attributes:` for nn.Module** — `Args:` doesn't work for Flax dataclass fields; untyped params fail `--strict`
 - **Wrapper composition is untested until combined** — JaxReplayBuffer dropped critic_obs in frame-stack JIT path; DomainRandWrapper bypassed FrameStackWrapper via `_swap_model`. Both worked alone, broke when combined.
 - **Extract shared loops as functions, not classes** — 4 scripts shared 85% code. A Trainer ABC or re-unification both add noise. A shared helper function with 4 variation-point parameters keeps each script readable.
+- **Ghost refs in docs propagate silently** — AGENT_HANDOFF updated in anticipation of a code change that got reverted. Every downstream doc update propagated stale info from that ghost. Always cross-reference docs against code before trusting internal handoff docs as authoritative.
+- **4-persona docs review: undergrad catches factual drift** — high schooler finds jargon, PhD finds algo bugs, frontend finds CSS issues, but only the undergrad systematically cross-references every claim against code. That's where ghost refs get caught.
 
 ## [MuJoCo Engine](lessons/mujoco.md) — 4 lessons
 
