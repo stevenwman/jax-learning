@@ -248,9 +248,9 @@ Every checkpoint contains: `meta.json` (full config), `metrics.csv` (training cu
 *Post-truncation-fix runs (2026-04-13, commit `82c9fe5`+, 48d state, all single seed):*
 | Algo | Eval | Steps | Notes |
 |------|------|-------|-------|
-| **FlashSAC (DR off, preset)** | **284.5 ± 4.6** | 10M | New best reproducible. seed 100. wandb: `20c1pcge`. |
-| **FastSAC (DR per_step)** | **283.8** (best in-loop) / 283.5 final | 20M | seed 100. wandb: `w47hu6a5`. Q bias 0.10 (well-calibrated). |
-| FastTD3 (DR per_step) | _running_ | 20M | seed 100. wandb run pending. First TD3-family Go2 result. |
+| **FlashSAC (DR off, preset)** | **284.5 ± 4.6** final | 10M | seed 100. wandb: `20c1pcge`. (Best in-loop 279.5; final beat best because final eval is a separate code path.) |
+| **FastSAC (DR per_step)** | **283.8** best in-loop / 283.5 final | 20M | seed 100. wandb: `w47hu6a5`. Q bias 0.10 (well-calibrated). |
+| **FastTD3 (DR per_step)** | **273.1** best in-loop / 272.2 ± 9.6 final | 20M | seed 100. **First TD3-family Go2 result.** Q bias 0.29. Within seed variance of FastSAC. |
 
 *Pre-truncation-fix runs (kept for context, NOT directly comparable to above):*
 | Algo | Eval | Steps | Notes |
@@ -264,7 +264,10 @@ Every checkpoint contains: `meta.json` (full config), `metrics.csv` (training cu
 
 **Post-fix improvement:** FastSAC went from 279.2 (best pre-fix reproducible, asymmetric/no DR) to 283.8 (per_step DR). FlashSAC went from 282.4-claimed (on reverted 51d obs, not reproducible) to 284.5 reproducible. Modest gains consistent with the truncation fix removing a small bias on long-horizon tasks. **All fix-era results trustworthy; all pre-fix results suspect on Go2/Humanoid scale tasks.**
 
-**Key takeaways:** Low-dim → FastTD3. High-dim → FastSAC. gamma=0.97 for locomotion. C51 helps at scale. Vanilla algos at 128 envs are competitive for sample efficiency. Use `motor` actuators for sim2sim/sim2real transfer. **Warp + unitree MJCF eliminates sim2sim gap** — FastSAC on Warp surpasses MJX PPO.
+**Key takeaways (updated 2026-04-13 post-truncation-fix):**
+- ~~Low-dim → FastTD3, High-dim → FastSAC~~ — pre-fix advice. Post-fix on Go2 (48d state, locomotion): FastTD3 273.1 vs FastSAC 283.8 vs FlashSAC 284.5. All single seed; SAC-family slightly ahead but within seed variance. **Use FastSAC/FlashSAC by default for locomotion**, but FastTD3 is no longer obviously bad on high-dim.
+- gamma=0.97 for locomotion. C51 helps at scale. Vanilla algos at 128 envs are competitive for sample efficiency. Use `motor` actuators for sim2sim/sim2real transfer.
+- **Warp + unitree MJCF eliminates sim2sim gap.** FastSAC/FlashSAC on Warp surpass MJX PPO.
 
 ### Roadmap
 See `TODO.md` for full prioritized list. Summary:
