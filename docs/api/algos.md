@@ -215,7 +215,7 @@ FastTD3(
 from jax_rl.algos.flash_sac import FlashSAC
 ```
 
-Recent SAC variant combining inverted residual blocks, BatchNorm, weight normalization, and adaptive reward scaling. Eval **282.4 (single seed)** on Go2 joystick — within seed variance of FastSAC's **276.5 (single seed)**; A/B not yet established. Requires more tuning than FastSAC.
+Recent SAC variant combining inverted residual blocks, BatchNorm, weight normalization, and adaptive reward scaling. Eval **284.5 (single seed, post-truncation-fix)** on Go2 joystick at 10M steps — within seed variance of FastSAC's **283.8 (single seed, post-fix, per_step DR)**; A/B not yet established across seeds. Requires more tuning than FastSAC.
 
 See the annotated end-to-end loop in [Reference → Training Loop](../reference/training-loop.md) for how these algorithms plug into the off-policy training script.
 

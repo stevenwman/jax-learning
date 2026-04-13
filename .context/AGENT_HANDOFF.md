@@ -262,7 +262,7 @@ Every checkpoint contains: `meta.json` (full config), `metrics.csv` (training cu
 | FastSAC (symmetric) | 276.5 | 18M | Older config (seed 8001), no DR, sim2sim to CPU validated |
 | PPO | 132 | 50M | Kp=20/Kd=0.5, entropy collapsed to squat |
 
-**Post-fix improvement:** FastSAC went from 279.2 (best pre-fix reproducible, asymmetric/no DR) to 283.8 (per_step DR). FlashSAC went from 282.4-claimed (on reverted 51d obs, not reproducible) to 284.5 reproducible. Modest gains consistent with the truncation fix removing a small bias on long-horizon tasks. **All fix-era results trustworthy; all pre-fix results suspect on Go2/Humanoid scale tasks.**
+**Post-fix improvement:** FastSAC went from 279.2 (best pre-fix reproducible, asymmetric/no DR) to 283.8 (per_step DR). FlashSAC went from 282.4-claimed (on the reverted frame-stack obs space, not reproducible) to 284.5 reproducible. Modest gains consistent with the truncation fix removing a small bias on long-horizon tasks. **All fix-era results trustworthy; all pre-fix results suspect on Go2/Humanoid scale tasks.**
 
 **Key takeaways (updated 2026-04-13 post-truncation-fix):**
 - ~~Low-dim → FastTD3, High-dim → FastSAC~~ — pre-fix advice. Post-fix on Go2 (48d state, locomotion): FastTD3 273.1 vs FastSAC 283.8 vs FlashSAC 284.5. All single seed; SAC-family slightly ahead but within seed variance. **Use FastSAC/FlashSAC by default for locomotion**, but FastTD3 is no longer obviously bad on high-dim.

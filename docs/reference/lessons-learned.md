@@ -109,6 +109,19 @@ Creating a new `@jax.jit`-decorated function inside a loop (e.g., capturing a ch
 
 Putting large arrays (4M-entry replay buffers) in `lax.scan` carry makes it 30% slower than a Python loop. The carry overhead dominates at that size. Keep large state outside the scan; accept Python loops when the carry would be large.
 
+### lax.scan is wrong for one-shot inference scripts
+
+The "use lax.scan" rule above is specifically for **training throughput** — where you amortize compile cost over many rollouts and actually need the full trajectory on-device. For **one-shot inference** (e.g., `record_video.py` loading a checkpoint and rendering a single rollout) the tradeoff inverts:
+
+- `lax.scan(step, init, length=1000)` preallocates output buffers for the *full mjx State × 1000* upfront (~0.5–1 GB for Go2 Warp).
+- You pay the full compile cost for one execution — no amortization.
+- `done`-based early stop is awkward (post-hoc slicing only).
+- On a contested GPU or alongside concurrent training, the peak allocation OOMs even though steady-state needs <100 MB.
+
+Python loop over a jitted step function fixes all three: one State buffer reused per iter, minimal HBM, natural `break` on done. Dispatch overhead (~50–200 ms total across 1000 steps) is negligible compared to downstream CPU rendering (~30 s).
+
+**Rule:** scan for training (many rollouts, throughput-bound), Python loop for inference (one rollout, memory-bound).
+
 ---
 
 ## MuJoCo / Warp
