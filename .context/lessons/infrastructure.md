@@ -394,3 +394,42 @@ Both fixes landed together — `PREALLOCATE=false` handles the immediate preallo
 Original note said the Python loop "adds complexity; the env var fix is simpler." Reality: the env var alone only fixes the contested-GPU case. If you run a render while training on the same GPU, training's preallocator plus the render's 1 GB scan peak still OOMs. The Python loop makes the render memory-coexistent with other workloads.
 
 **Applies to:** Any one-shot Warp+JAX inference script. The `lax.scan` pattern copied from training is the wrong default for single-rollout use cases. Use Python loop + jitted step.
+
+---
+
+## `md_in_html` doesn't propagate `markdown` to child HTML elements
+
+**What happened (2026-04-13):** Homepage video grid captions rendered broken on the deployed site:
+```
+Go2 locomotion — [FastSAC](api/algos.md#fastsac){.gl}, eval 276.5
+```
+— raw markdown link syntax showing as literal text.
+
+**Setup:** The `glossary_links.py` hook (enabled in `mkdocs.yml:59`) auto-links the first occurrence of each glossary term with `[term](target){.gl}` markdown syntax. For typical prose, mkdocs' core markdown processor converts this to `<a>` tags as expected.
+
+**The interaction bug:** The video grid used nested HTML wrappers:
+```html
+<div class="video-grid" markdown>  <!-- outer has markdown -->
+<div>                              <!-- inner does NOT -->
+<video>...</video>
+<p class="caption">Go2 locomotion — FastSAC, eval 276.5</p>
+</div>
+</div>
+```
+
+The hook injected `[FastSAC](...){.gl}` into the caption text. But `md_in_html`'s `markdown` attribute only enables markdown processing for the **direct text children** of the annotated element — it does NOT propagate to nested `<div>`s or `<p>`s. The inner `<div>` and the `<p class="caption">` both needed their own `markdown` / `markdown="1"` attributes.
+
+**Fix:** add `markdown` to the inner `<div>` AND `markdown="1"` to each `<p class="caption">`. Then hook-injected markdown renders correctly.
+
+**Why this survived 6 rounds of review:**
+- Each component works in isolation (hook, md_in_html, custom HTML all valid).
+- Drift tests can't catch it — source markdown is valid, config is valid, only rendered output is broken.
+- Frontend-persona reviewers read `site/*.html` but apparently skimmed the caption as-rendered without noticing `[FastSAC](...){.gl}` was literal rather than a link. Captions are small; easy to miss.
+
+**Detection rule:** after building, grep `site/*.html` for raw unprocessed markdown:
+```bash
+grep -rE '\[[A-Za-z][^\]]*\]\([^)]+\)\{\.' site/ | head  # hook output that didn't render
+```
+Zero matches = clean. Any matches = an HTML wrapper is missing `markdown`.
+
+**Applies to:** Any MkDocs Material site using `md_in_html` + a markdown-generating hook (glossary auto-linking, shortcode expansion, term replacement) + custom HTML wrappers (video grids, card layouts, hero banners, two-column sections). The combination is the failure mode. Single-component usage is fine.

@@ -5,17 +5,17 @@
 jax-learning is a learning vehicle and lab tool — every algorithm is implemented from fundamentals with clear mappings to the papers. It provides GPU-accelerated simulation environments via MuJoCo Playground, 6 RL algorithms, composable reward/observation specs, and a sim-to-real deployment pipeline (training in simulation, then running the policy on real hardware). Current focus: [Unitree Go2](https://www.unitree.com/go2/) quadruped locomotion. If a term below is unfamiliar, the [Glossary](glossary.md) has one-liner definitions.
 
 <div class="video-grid" markdown>
-<div>
+<div markdown>
 <video autoplay loop muted playsinline preload="metadata">
   <source src="assets/videos/go2_joystick_walk.mp4" type="video/mp4">
 </video>
-<p class="caption">Go2 locomotion — FastSAC, eval 276.5</p>
+<p class="caption" markdown="1">Go2 locomotion — FastSAC, eval 276.5</p>
 </div>
-<div>
+<div markdown>
 <video controls loop muted playsinline preload="metadata">
   <source src="assets/videos/go2_bongo_handstand.mp4" type="video/mp4">
 </video>
-<p class="caption">Bongo board handstand — PPO</p>
+<p class="caption" markdown="1">Bongo board handstand — PPO</p>
 </div>
 </div>
 
