@@ -83,7 +83,7 @@ or [OPINION]. Drop claims you can't back.
 
 ## Typical output rates (for calibration)
 
-Based on 5 rounds on jax-learning docs (2026-04-12):
+Based on 6 rounds on jax-learning docs (2026-04-12 through 2026-04-13):
 
 | Round | Findings | Hallucinations (false positives) | Notes |
 |---|---|---|---|
@@ -92,13 +92,16 @@ Based on 5 rounds on jax-learning docs (2026-04-12):
 | 3 | ~15 | 1 (handle_truncation docs drift) | Drift tests added after this |
 | 4 | ~10 | 2 (arxiv IDs flagged as fake, both real) | Post-drift-tests |
 | 5 | **11 total, 0 hallucinations** | 0 | Anti-hallucination protocol + drift tests |
+| 6 | **13 total (3 🟠, 8 🟡, 2 🟢), 0 hallucinations** | 0 | After major refactors: off-policy loop extraction + truncation fix + record_video scan→loop. **PhD caught 2 of 3 🟠s** (target-Q gating, FlashSAC justification gap). Frontend caught nav feature stack conflict. Undergrad corroborated clean verdict. |
 
 **Diminishing returns curve:** Each round catches ~50% fewer issues than the prior. Stop when a round nets <3 actionable items.
 
+**But substantial code refactors reset the curve.** Round 6 netted 13 findings (more than round 5's 11) because significant architectural changes had landed since round 5. **Trigger reviews by code-change magnitude, not round count.** After any of these, run a review: new shared training-loop helper, new obs pipeline, algorithm loss/update refactor, new benchmark sweep that invalidates old numbers.
+
 ## Key lessons from multiple runs (2026-04-08 through 2026-04-12)
 
-- **Frontend reviewer catches what content reviewers miss.** `show_source: true` making API pages 6,300+ lines, `grid cards` requiring Material Insiders, `.md-grid` width override stretching nav — no content reviewer noticed any of these.
-- **PhD reviewer catches the real code bugs.** Truncation handling bug on round 2 (systematic Q underestimation on long-horizon tasks) was found only by the PhD persona cross-referencing algorithm files against each other. Worth the reviewer budget.
+- **Frontend reviewer catches what content reviewers miss.** `show_source: true` making API pages 6,300+ lines, `grid cards` requiring Material Insiders, `.md-grid` width override stretching nav, navigation feature-flag interaction bugs (`tabs + sections + expand` duplicate IA), unpinned MathJax CDN without `defer` — no content reviewer noticed any of these.
+- **PhD reviewer catches the real code bugs.** Round 2: truncation bug (systematic Q underestimation on long-horizon tasks). Round 6: target-Q Polyak update in FastSAC/FastTD3 is gated by `policy_delay`, making effective decay `tau/policy_delay` (docs implied `tau` was the raw rate) — and FlashSAC's standalone training loop was justified only in a code comment, never in user-facing docs. Both subtle, both cross-reference algo source against docs. **Worth the reviewer budget every time.**
 - **Undergrad catches drift — but only with cross-reference discipline.** Round 4 undergrad hallucinated arxiv IDs; round 5 undergrad with protocol caught a real broken pointer (`jax_rl/training/ppo_loop.py` doesn't exist).
 - **High schooler's persistent ask is "one-paragraph intro".** Same finding every round. Acknowledge once in the docs or accept it's not fixable without a restructure.
 - **"Cleanup of round N creates ghost refs for round N+1" is systemic.** Response: build drift tests (`tests/test_docs_drift.py` + `tests/test_docs_code_blocks.py`). They cost ~600 LOC once and protect against regression forever.
