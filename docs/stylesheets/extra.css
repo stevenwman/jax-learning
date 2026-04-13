@@ -67,8 +67,9 @@
 [data-md-color-scheme="default"] .highlight .c1,
 [data-md-color-scheme="default"] .highlight .cm { color: #636871; font-style: italic; }
 
-/* Distinguish variables from functions (was both #4078f2) */
-[data-md-color-scheme="default"] .highlight .nv { color: #e45649; }
+/* Distinguish variables from functions (was both #4078f2) — amber avoids
+   clashing with error-red; .e45649 red read visually close to error highlights */
+[data-md-color-scheme="default"] .highlight .nv { color: #b76b01; }
 
 /* ── Glossary auto-links — subtle, dotted underline (Wikipedia-style) ── */
 
@@ -194,7 +195,7 @@
 }
 
 .md-typeset table:not([class]) tbody tr:nth-child(even) {
-  background-color: rgba(0, 0, 0, 0.035);
+  background-color: rgba(0, 0, 0, 0.05);
 }
 
 /* Allow long descriptions in table cells to wrap on any character */
@@ -204,7 +205,7 @@
 }
 
 [data-md-color-scheme="slate"] .md-typeset table:not([class]) tbody tr:nth-child(even) {
-  background-color: rgba(255, 255, 255, 0.035);
+  background-color: rgba(255, 255, 255, 0.055);
 }
 
 /* Reward term tables inside collapsible details should fill width */

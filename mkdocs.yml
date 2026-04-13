@@ -36,6 +36,7 @@ theme:
     - navigation.tabs.sticky
     - navigation.sections
     - navigation.indexes
+    - navigation.expand
     - navigation.top
     - navigation.instant
     - navigation.tracking
@@ -118,6 +119,11 @@ nav:
     - Architecture: reference/architecture.md
     - Training Loop: reference/training-loop.md
     - Lessons Learned: reference/lessons-learned.md
-    - FAQ: faq.md
     - Contributing: contributing.md
+  - FAQ: faq.md
   - Glossary: glossary.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/stevenwman/jax-learning

@@ -219,6 +219,8 @@ Every checkpoint contains: `meta.json` (full config), `metrics.csv` (training cu
 
 ### Benchmark results (as of 2026-03-26)
 
+> **Note on truncation fix (2026-04-12):** Every FastSAC/FastTD3/FlashSAC number in this section was produced BEFORE commit `82c9fe5`, which fixed a silent truncation-handling bug that systematically underestimated Q on long-horizon tasks. See `.context/lessons/offpolicy.md` §"Truncation Handling". The fix should raise ceilings on long-horizon results (Go2, Humanoid); short-horizon tasks are largely unaffected. Re-benchmark pending — see `.context/TODO.md` Active.
+
 **CheetahRun** (6-dim actions):
 | Algo | Eval | Steps | Notes |
 |------|------|-------|-------|

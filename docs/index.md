@@ -12,7 +12,7 @@ jax-learning is a learning vehicle and lab tool — every algorithm is implement
 <p class="caption">Go2 locomotion — FastSAC, eval 276.5</p>
 </div>
 <div>
-<video autoplay loop muted playsinline preload="metadata">
+<video controls loop muted playsinline preload="metadata">
   <source src="assets/videos/go2_bongo_handstand.mp4" type="video/mp4">
 </video>
 <p class="caption">Bongo board handstand — PPO</p>

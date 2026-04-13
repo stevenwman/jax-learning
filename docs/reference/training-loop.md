@@ -2,7 +2,7 @@
 
 The API reference documents algorithms, buffers, and configs in isolation. This page shows how they fit together end-to-end. The real implementation lives in [`jax_rl/training/offpolicy_loop.py`](https://github.com/stevenwman/jax-learning/blob/main/jax_rl/training/offpolicy_loop.py); the snippet below is abbreviated for readability.
 
-For PPO see `jax_rl/training/ppo_loop.py` — the on-policy structure is different (lax.scan rollout + epoch-based update).
+For PPO the on-policy structure is different (lax.scan rollout + epoch-based update); see [`train_ppo_fast.py`](https://github.com/stevenwman/jax-learning/blob/main/train_ppo_fast.py) and [`jax_rl/algos/ppo.py`](https://github.com/stevenwman/jax-learning/blob/main/jax_rl/algos/ppo.py).
 
 ```python
 import jax, jax.numpy as jnp, optax
