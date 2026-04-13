@@ -64,6 +64,8 @@ loss = jnp.mean(per_sample_loss * mask)
 
 Pure terminations contribute their `r`-only target (correct). Pure timeouts are dropped (next_obs is corrupted by AutoReset, bootstrap can't be trusted, and the `r`-only target would teach `Q = r` at timeout, which is wrong).
 
+**For C51 algos (FastSAC/FastTD3/FlashSAC)** the explicit `target = r + gamma*(1-done)*V_next` line is absent — the `(1 - done)` bootstrap zeroing happens inside `project_distribution(...)` which handles terminal atoms by collapsing the support onto the reward. The loss-mask half (`mask = 1 - truncation`, applied to per-sample cross-entropy) is identical.
+
 **The bug we had until 2026-04-12:** FastSAC/FastTD3/FlashSAC omitted the loss mask. On long-horizon tasks (Go2, Humanoid) this caused systematic Q underestimation proportional to `(timeout_rate × true_tail_value)`. Fixed in commit `82c9fe5`. Pre-fix benchmark numbers on long-horizon tasks may not be reproducible.
 
 ---

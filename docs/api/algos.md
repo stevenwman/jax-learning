@@ -139,7 +139,7 @@ TD3(
 from jax_rl.algos.fast_sac import FastSAC
 ```
 
-SAC with C51 distributional critics, high UTD ratios (8–20), and TD3-style delayed actor+alpha updates (`policy_delay=4` by default). The actor and temperature are only updated every `policy_delay` critic steps, via `jax.lax.cond` on `update_count`. Better sample efficiency than standard SAC; preferred for off-policy locomotion training.
+SAC with C51 distributional critics, high UTD ratios (8–20), and TD3-style delayed actor+alpha updates (`policy_delay=4` by default). The actor, temperature, *and Polyak target-Q update* are gated by the same `jax.lax.cond` on `update_count`, so all three fire only every `policy_delay` critic steps. This means the **effective per-critic-step target decay is `tau / policy_delay`** — for the default `tau=0.125, policy_delay=4`, each critic step moves targets by ~0.031, not 0.125. Tune `tau` with this gating in mind. Better sample efficiency than standard SAC; preferred for off-policy locomotion training.
 
 **Constructor**
 
@@ -177,7 +177,7 @@ FastSAC(
 from jax_rl.algos.fast_td3 import FastTD3
 ```
 
-TD3 with C51 distributional critics and high UTD ratios. Deterministic policy counterpart to FastSAC.
+TD3 with C51 distributional critics and high UTD ratios. Deterministic policy counterpart to FastSAC. The actor and Polyak target-Q update are both gated by `policy_delay` (default `2`), so the **effective per-critic-step target decay is `tau / policy_delay`** — for the default `tau=0.125, policy_delay=2`, each critic step moves targets by ~0.063.
 
 **Constructor**
 
@@ -215,7 +215,7 @@ FastTD3(
 from jax_rl.algos.flash_sac import FlashSAC
 ```
 
-Recent SAC variant combining inverted residual blocks, BatchNorm, weight normalization, and adaptive reward scaling. Eval **284.5 (single seed, post-truncation-fix)** on Go2 joystick at 10M steps — within seed variance of FastSAC's **283.8 (single seed, post-fix, per_step DR)**; A/B not yet established across seeds. Requires more tuning than FastSAC.
+Recent SAC variant combining inverted residual blocks, BatchNorm, weight normalization, and adaptive reward scaling. Eval **284.5 (single seed, post-truncation-fix, default DR — `train_flashsac.py` has no `--reset-mode` flag)** on Go2 joystick at 10M steps. FastSAC with `--reset-mode per_step` reaches **283.8 (single seed, post-fix)**; comparison is not strictly DR-mode-matched, and A/B across seeds is not yet established. Requires more tuning than FastSAC.
 
 See the annotated end-to-end loop in [Reference → Training Loop](../reference/training-loop.md) for how these algorithms plug into the off-policy training script.
 

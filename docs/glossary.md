@@ -1,22 +1,6 @@
 # Glossary
 
-Key terms used throughout this framework, grouped by domain.
-
----
-
-## JAX
-
-### JIT (Just-In-Time compilation)
-JAX traces Python functions and compiles them to optimized XLA programs for GPU/TPU execution. The first call incurs compilation overhead; all subsequent calls with the same input shapes run the cached compiled code. Every algorithm in this framework wraps its `update` and `select_action` methods with `@jax.jit`.
-
-### lax.scan
-A JAX primitive that compiles a sequential loop into a single fused XLA operation. Required inside JIT'd functions because Python `for`-loops are unrolled at trace time and cannot depend on runtime values. PPO uses nested `lax.scan` for both epoch iteration and minibatch processing.
-
-### Pytree
-JAX's abstraction for arbitrarily nested containers (dicts, tuples, lists, dataclasses) of arrays. All `TrainingState` objects, optimizer states, and network parameters in this framework are pytrees, enabling `jax.tree.map` to apply transformations uniformly across their leaves.
-
-### vmap
-Vectorized map: transforms a function that operates on a single example into one that operates over a batch dimension, without rewriting the function body. Used in this framework to parallelize environment stepping and network inference across `num_envs` instances.
+Key terms used throughout this framework, grouped by domain. RL fundamentals come first; JAX internals (JIT, vmap, etc.) are at the bottom — those are implementation details, not the subject.
 
 ---
 
@@ -114,3 +98,19 @@ Simulator-only observations available to the critic but not the deployed actor. 
 
 ### Sim-to-real
 Transferring a simulation-trained policy to a physical robot. Requires domain randomization for robustness, matched PD gains and action scaling between sim and real, and an actor that depends only on deployable observations (not privileged state). See the [Sim-to-Real tutorial](tutorials/sim2real.md).
+
+---
+
+## JAX (implementation details)
+
+### JIT (Just-In-Time compilation)
+JAX traces Python functions and compiles them to optimized XLA programs for GPU/TPU execution. The first call incurs compilation overhead; all subsequent calls with the same input shapes run the cached compiled code. Every algorithm in this framework wraps its `update` and `select_action` methods with `@jax.jit`.
+
+### lax.scan
+A JAX primitive that compiles a sequential loop into a single fused XLA operation. Required inside JIT'd functions because Python `for`-loops are unrolled at trace time and cannot depend on runtime values. PPO uses nested `lax.scan` for both epoch iteration and minibatch processing.
+
+### Pytree
+JAX's abstraction for arbitrarily nested containers (dicts, tuples, lists, dataclasses) of arrays. All `TrainingState` objects, optimizer states, and network parameters in this framework are pytrees, enabling `jax.tree.map` to apply transformations uniformly across their leaves.
+
+### vmap
+Vectorized map: transforms a function that operates on a single example into one that operates over a batch dimension, without rewriting the function body. Used in this framework to parallelize environment stepping and network inference across `num_envs` instances.

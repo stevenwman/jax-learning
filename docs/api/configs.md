@@ -140,7 +140,7 @@ SAC + C51 distributional critic. Defaults from the paper (Seo et al. 2025) — d
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `tau` | `float` | `0.125` | 25x faster than SAC |
+| `tau` | `float` | `0.125` | Raw target decay rate. **Effective per-critic-step decay is `tau / policy_delay`** (targets are Polyak-updated only when the actor updates). |
 | `target_entropy_scale` | `float` | `0.0` | Prevents alpha collapse |
 | `alpha_init` | `float` | `0.001` | Near-zero start |
 | `max_std` | `float \| None` | `1.0` | Caps pre-tanh std |
@@ -174,7 +174,7 @@ TD3 + C51 distributional critic. Same distributional approach as FastSAC with de
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `tau` | `float` | `0.125` | Fast target update |
+| `tau` | `float` | `0.125` | Raw target decay rate. **Effective per-critic-step decay is `tau / policy_delay`** (targets are Polyak-updated only when the actor updates). |
 | `policy_delay` | `int` | `2` | Actor update frequency |
 | `target_noise_std` | `float` | `0.2` | Target policy noise |
 | `noise_clip` | `float` | `0.5` | Noise clipping range |

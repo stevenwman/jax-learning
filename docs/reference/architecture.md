@@ -7,7 +7,7 @@ The codebase follows a strict three-layer separation:
 ```mermaid
 flowchart TD
     ENV["<b>Environment Layer</b><br/>MuJoCo Playground<br/>Warp backend (primary), MJX for benchmarks<br/>Produces: obs, reward, done, info"]
-    TRAIN["<b>Training Scripts</b><br/>train_ppo_fast.py / train_sac.py / train_fast_sac.py<br/>Owns the loop, batches data, manages state<br/>Handles: env creation, normalization,<br/>logging, checkpointing, W&B, eval"]
+    TRAIN["<b>Training Scripts</b><br/>train_ppo_fast.py (on-policy)<br/>train_{sac,td3,fast_sac,fast_td3}.py → run_offpolicy_loop<br/>train_flashsac.py (standalone)<br/>Shared helpers: make_env_bundle, ObsPipeline<br/>Handles: env creation, normalization,<br/>logging, checkpointing, W&B, eval"]
     ALGO["<b>Algorithm Layer</b><br/>jax_rl/algos/*.py<br/>Pure math — no env knowledge<br/>PPO, SAC, TD3, FastSAC, FastTD3, FlashSAC<br/>Computes: gradients, loss, updated params"]
 
     ENV -->|"obs, reward, done"| TRAIN
@@ -33,6 +33,19 @@ flowchart TD
 2. After `min_buffer_size` transitions, begin gradient updates
 3. Each env step triggers `grad_updates_per_step` gradient updates (UTD ratio)
 4. Each gradient step: sample batch from buffer, compute loss, update params
+
+The four off-policy algos above share a single training loop implementation in [`jax_rl/training/offpolicy_loop.py`](https://github.com/stevenwman/jax-learning/blob/main/jax_rl/training/offpolicy_loop.py) (`run_offpolicy_loop`). Per-algo scripts (`train_sac.py`, `train_td3.py`, `train_fast_sac.py`, `train_fast_td3.py`) are thin wrappers that build the algo + optimizer + explore closure, then call this function. See the annotated walkthrough at [Training Loop](training-loop.md).
+
+### FlashSAC (standalone)
+
+FlashSAC has its own training loop in `train_flashsac.py` — it does **not** use `run_offpolicy_loop`. The shared helper has four narrow variation points (algo, explore_fn, log_extra_fields, log_extra_keys); FlashSAC needs more than that:
+
+- **BatchNorm state** (`actor_batch_stats`, `critic_batch_stats`) must thread through `select_action`, rollouts, eval, and checkpointing — the shared loop doesn't carry BN state.
+- **Zeta correlated-noise state** is per-env and persists across steps within an episode, not expressible as a stateless `explore_fn(actor_params, obs, key) -> action`.
+- **Adaptive reward scaling** keeps running statistics that need `num_envs` and `batch_size` wired in at construction and updated from each batch.
+- **Update order is reversed** — FlashSAC updates actor → α → critic → EMA (vs. the SAC/TD3 pattern of critic → actor → α → EMA), so the shared loop's step order wouldn't apply without branching.
+
+Pulling these into `run_offpolicy_loop` would require either four new variation points or a coarser helper that hurts the SAC/TD3/FastSAC/FastTD3 path. Keeping FlashSAC standalone preserves signal-to-noise in the shared loop.
 
 ---
 

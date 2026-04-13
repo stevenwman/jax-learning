@@ -214,26 +214,22 @@
   width: 100%;
 }
 
-/* ── Code block max-height ── */
-/* Cap very long code blocks so they don't dominate the viewport */
-.md-typeset .highlight pre > code {
-  max-height: 32rem;
-  overflow-y: auto;
-}
-
-/* ── Wider content area for dense API/reference pages with wide tables ── */
-/* Target .md-content only — .md-grid is also used by nav and header, widening it
-   unconditionally stretches those elements and pushes prose past readable line lengths. */
-.md-content {
-  max-width: 58rem;
-  margin-inline: auto;
-}
-@media (min-width: 76.25em) {
-  .md-content {
-    max-width: 62rem;
+/* ── Code block max-height (desktop only) ── */
+/* Cap very long code blocks so they don't dominate the viewport. On mobile,
+   the cap creates a nested-scroll trap (touch-scrolling the code block hijacks
+   page scroll), so only apply at tablet+ widths. */
+@media (min-width: 60em) {
+  .md-typeset .highlight pre > code {
+    max-height: 32rem;
+    overflow-y: auto;
   }
 }
-/* Allow wide tables and code blocks to break out of the narrower prose column */
+
+/* ── Wide-table breakout on content pages ── */
+/* Allow wide tables and code blocks to break out of the prose column if they're
+   wider than Material's default ~56rem. Content width is left to Material's
+   defaults — overriding .md-content stacks poorly with the right-rail TOC at
+   1440px+ and Material's 56rem default is already ergonomic. */
 .md-typeset .md-typeset__scrollwrap,
 .md-typeset .highlight {
   max-width: 72rem;

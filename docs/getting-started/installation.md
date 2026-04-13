@@ -7,6 +7,9 @@
 - **Linux** — CUDA JAX does not support macOS or Windows.
 - **[uv](https://docs.astral.sh/uv/)** — Fast Python package manager. Install it with `curl -LsSf https://astral.sh/uv/install.sh | sh` if you don't have it.
 
+!!! tip "No GPU? Try it in the cloud"
+    If you don't have an NVIDIA GPU but want to try the Quickstart, [Google Colab](https://colab.research.google.com/) offers a free T4 GPU tier that can run the CartpoleBalance example. You'll need to `!pip install -e .` the repo inside the notebook instead of using `uv sync`. Go2 training is too memory-intensive for the free tier; it needs a paid Colab Pro GPU or a local RTX 3060+.
+
 ## Install
 
 Clone the repository and install dependencies:

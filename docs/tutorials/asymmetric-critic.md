@@ -47,6 +47,9 @@ We tested asymmetric vs symmetric critics on `Go2WarpJoystickFlat` with FastSAC:
 
 The asymmetric critic reaches the 270+ performance threshold roughly **~2x faster** (5M vs 9M steps at one seed). Seed variance across this comparison hasn't been characterized.
 
+!!! note "Numbers predate the 2026-04-12 truncation fix"
+    These A/B scores (276/279) were measured before the truncation bug was fixed (commit `82c9fe5`). Absolute post-fix FastSAC on Go2 reaches 283.8 single-seed with per_step DR (see [Algorithms](../api/algos.md#fastsac)). The **relative** symmetric-vs-asymmetric speedup conclusion hasn't been re-measured post-fix but should hold — the truncation bug affected both arms symmetrically.
+
 !!! tip "What does the eval score mean?"
     Eval score = average undiscounted return over eval episodes. Each env defines its own reward scale, so scores aren't comparable across envs. For Go2 joystick, scores depend on episode length and reward weights — 270+ indicates reliable locomotion.
 
