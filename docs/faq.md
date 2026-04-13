@@ -28,7 +28,7 @@ Rough estimates on an RTX 4090:
 | Environment | Time |
 |---|---|
 | CartpoleBalance (SAC) | ~2 minutes |
-| Go2 locomotion (PPO, Warp) | ~30 minutes |
+| Go2 locomotion (FastSAC, Warp) | ~1-2 hours |
 | HumanoidRun (SAC, 100M steps) | 2-4 hours |
 
 JIT compilation adds 1-3 minutes of overhead at the start of every run.

@@ -66,6 +66,25 @@ Declarative wrapper composition from `TrainConfig` fields.
 **apply_wrapper_pipeline**(env, cfg) → wrapped_env
 : Convenience — calls `build_wrapper_pipeline` then applies each wrapper sequentially.
 
+The full wrapper stack for training, in order, is:
+
+```
+Raw env (MuJoCo Playground)
+  → ActionDelayWrapper      (if action_delay_ms > 0 or action_delay_range_ms set)
+  → FrameStackWrapper       (if n_frame_stack > 1)
+  → [Training wrappers — choice depends on reset_mode:]
+
+  reset_mode="legacy" (default):
+    → VmapWrapper             (vectorize across num_envs)
+    → EpisodeWrapper          (episode length, truncation flag)
+    → AutoResetWrapper        (auto-reset with cached initial state)
+
+  reset_mode="per_step":
+    → DomainRandWrapper       (vectorization + episode tracking + fresh ICs + per-episode DR)
+```
+
+`DomainRandWrapper` replaces the entire `VmapWrapper + EpisodeWrapper + AutoResetWrapper` stack. It is the correct choice for Go2 locomotion and any policy intended for sim-to-real transfer — it applies fresh initial conditions and per-episode domain randomization (friction, mass, PD gain scales, etc.) declared by the env via `get_domain_randomization_spec()`. The legacy stack remains available for lightweight DM Control benchmarks where fresh resets are not needed and throughput matters.
+
 ---
 
 ## Training Wrappers

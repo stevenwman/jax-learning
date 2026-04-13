@@ -167,8 +167,16 @@ def run_offpolicy_loop(
 
         # Env step
         env_state = env_step(env_state, action)
-        truncation = (env_state.info.get("truncation", jnp.zeros_like(env_state.done))
-                      if cfg.handle_truncation else jnp.zeros_like(env_state.done))
+        if cfg.handle_truncation:
+            if "truncation" not in env_state.info:
+                raise KeyError(
+                    "cfg.handle_truncation=True but env_state.info['truncation'] is "
+                    "missing. Either populate info['truncation'] in your environment "
+                    "or disable truncation handling with cfg.handle_truncation=False."
+                )
+            truncation = env_state.info["truncation"]
+        else:
+            truncation = jnp.zeros_like(env_state.done)
 
         # Buffer
         next_raw_obs = pipe.get_obs(env_state.obs)

@@ -41,11 +41,11 @@ We tested asymmetric vs symmetric critics on `Go2WarpJoystickFlat` with FastSAC:
 
 | Metric | Symmetric (48d/48d) | Asymmetric (48d/122d) |
 |--------|---------------------|-----------------------|
-| Steps to 270+ eval | ~9M | ~5M |
-| Final eval score | 276 | 279 |
+| Steps to 270+ eval | ~9M (single seed) | ~5M (single seed) |
+| Final eval score | 276 (single seed) | 279 (single seed) |
 | Training wall time | ~8 min | ~8 min |
 
-The asymmetric critic reaches the 270+ performance threshold roughly **~2x faster at one seed** (5M vs 9M steps). Seed variance across this comparison hasn't been characterized.
+The asymmetric critic reaches the 270+ performance threshold roughly **~2x faster** (5M vs 9M steps at one seed). Seed variance across this comparison hasn't been characterized.
 
 !!! tip "What does the eval score mean?"
     Eval score = average undiscounted return over eval episodes. Each env defines its own reward scale, so scores aren't comparable across envs. For Go2 joystick, scores depend on episode length and reward weights — 270+ indicates reliable locomotion.
@@ -74,7 +74,7 @@ Frame stacking (3 frames) did **not** help:
 
 | Config | Eval Score |
 |--------|-----------|
-| No stacking (baseline) | 276.5 |
+| No stacking (baseline) | 276.5 (single seed) |
 | 3-frame stacking | 271.3 |
 
 The `last_action` term in the observation already provides sufficient temporal context for locomotion. Stacking triples the actor's input dimensionality (48d to 144d) without adding useful information, slightly hurting performance.

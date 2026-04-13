@@ -35,7 +35,7 @@ A trajectory from environment reset to termination or truncation. The undiscount
 The mean undiscounted episodic return averaged over `num_eval_episodes` (default 10) rollouts using the deterministic policy. Reported periodically during training and used for algorithm comparison.
 
 ### GAE (Generalized Advantage Estimation)
-Estimates how much better an action was compared to the average. GAE blends short-horizon estimates (low variance, may be biased) with long-horizon estimates (high variance, less biased) via a parameter lambda. Default `gae_lambda=0.95`. Used by PPO; implemented via backward `lax.scan` in `buffers/rollout.py`.
+Estimates how much better a specific action was compared to what the policy would do on average in that state. Concretely, GAE computes a weighted sum of observed rewards-plus-future-value-estimates (looking N steps ahead), blending short windows (lower variance, potentially biased) with long windows (higher variance, less biased) via a mixing parameter `lambda`. At `lambda=0` you get a pure one-step estimate; at `lambda=1` you sum rewards all the way to the end of the episode. Default `gae_lambda=0.95`. Used by PPO; implemented via backward `lax.scan` in `buffers/rollout.py`.
 
 ### Observation (obs)
 The input vector the agent receives at each timestep. Go2 environments return a dictionary with `"state"` (48-dimensional deployable sensor readings: gyro, accelerometer, gravity, joint positions/velocities, last action, command) and `"privileged_state"` (122-dimensional, adding clean sensor values, actuator forces, foot contacts/velocities, and external forces).
@@ -50,16 +50,16 @@ Algorithms that optimize using only data collected under the current policy, dis
 The function mapping observations to actions (or action distributions). In this framework, policies are Flax `nn.Module` instances: `Actor` (encoder + `GaussianHead`) for stochastic policies (PPO, SAC, FastSAC, FlashSAC) and `DeterministicActor` (encoder + `DeterministicHead`) for deterministic policies (TD3, FastTD3).
 
 ### Replay buffer
-A GPU-resident circular FIFO buffer (`JaxReplayBuffer`) storing `(obs, action, reward, next_obs, done, truncation)` transitions for off-policy training. Both `add_batch` and `sample` are JIT'd. Default capacity is 4M transitions for SAC/FastSAC or 1M for TD3/FastTD3/FlashSAC.
+A GPU-resident circular FIFO buffer (`JaxReplayBuffer`) storing `(obs, action, reward, next_obs, done, truncation)` transitions for off-policy training. New transitions overwrite the oldest when the buffer is full. Both `add_batch` and `sample` are JIT'd. The training loop samples random mini-batches from this buffer — because transitions can be reused many times, off-policy algorithms decouple data collection speed from the gradient update rate. Default capacity is 4M transitions for SAC/FastSAC or 1M for TD3/FastTD3/FlashSAC.
 
 ### Reward shaping
 Designing the reward function to guide learning toward desired behavior. Go2 locomotion rewards are a weighted sum of tracking terms (linear/angular velocity commands) and regularization costs (torques, energy, action rate, joint limits, foot clearance). All terms are defined declaratively via `RewardTerm` specs.
 
 ### Truncation
-An episode ending due to a time limit rather than a terminal state (e.g., falling). The framework handles truncation distinctly from termination: in PPO's GAE, truncated timesteps have their TD error zeroed out; in off-policy algorithms, a truncation mask prevents learning from invalid bootstrap targets at episode boundaries.
+An episode ending due to a time limit rather than a terminal state (e.g., falling over). The framework handles truncation distinctly from termination. In PPO's GAE, truncated timesteps have their advantage contribution zeroed out (because the episode isn't truly over — the agent just ran out of time, so the value estimate at the last step is still valid as a future-return signal). In off-policy algorithms, a truncation mask drops the corresponding transitions from the critic loss, preventing the Q-function from treating the timeout boundary as if the agent reached a dead-end state with zero future return.
 
 ### Target entropy
-How random the policy should be. SAC auto-tunes a temperature parameter to maintain this target — higher means more exploration, lower means more exploitation. Computed as \(\mathcal{H}_{\text{target}} = -\texttt{scale} \times \dim(\mathcal{A})\). SAC defaults to scale 0.5; FastSAC uses 0.0 (minimal exploration, stable at large batch sizes). FlashSAC uses a Gaussian entropy formula: \(\frac{1}{2} \dim(\mathcal{A}) \ln(2\pi e \, \sigma_{\text{target}}^2)\) with \(\sigma_{\text{target}} = 0.15\).
+The desired level of randomness in the policy's action distribution. SAC auto-tunes a scalar multiplier `alpha` (the entropy coefficient, sometimes called the temperature) so that the observed entropy stays close to this target — increasing `alpha` when entropy is too low (pushing the policy to explore more) and decreasing it when entropy is too high (pushing toward more deterministic behavior). Computed as \(\mathcal{H}_{\text{target}} = -\texttt{scale} \times \dim(\mathcal{A})\). SAC defaults to scale 0.5; FastSAC uses 0.0 (minimal exploration, stable at large batch sizes). FlashSAC uses a Gaussian entropy formula: \(\frac{1}{2} \dim(\mathcal{A}) \ln(2\pi e \, \sigma_{\text{target}}^2)\) with \(\sigma_{\text{target}} = 0.15\).
 
 ### UTD ratio (Update-to-Data)
 The number of gradient updates performed per environment step collected. Higher UTD improves sample efficiency but increases compute per step. SAC defaults to `grad_updates_per_step=8`; TD3 defaults to 1; FastSAC and FastTD3 default to 8.

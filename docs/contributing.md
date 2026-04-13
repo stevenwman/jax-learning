@@ -17,7 +17,7 @@ uv run python -c "import jax; print(jax.devices())"
 ## Running Tests
 
 ```bash
-# Full test suite (~241 tests)
+# Full test suite (~299 tests)
 uv run python -m pytest tests/ -v
 
 # Run a specific test file

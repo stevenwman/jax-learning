@@ -14,7 +14,7 @@ Six RL algorithms, each self-contained with no shared base class.
 | [PPO](#ppo) | On-policy | Clipped surrogate + GAE |
 | [SAC](#sac) | Off-policy | Auto-tuned entropy, Gaussian policy |
 | [TD3](#td3) | Off-policy | Deterministic policy, twin critics, delayed actor |
-| [FastSAC](#fastsac) | Off-policy | C51 distributional critics, UTD 8 |
+| [FastSAC](#fastsac) | Off-policy | C51 distributional critics, UTD 8, TD3-style delayed actor (`policy_delay=4`) |
 | [FastTD3](#fasttd3) | Off-policy | C51 distributional critics, UTD 8 |
 | [FlashSAC](#flashsac) | Off-policy | Inverted residual blocks + BatchNorm + adaptive reward scaling |
 
@@ -139,7 +139,7 @@ TD3(
 from jax_rl.algos.fast_sac import FastSAC
 ```
 
-SAC with C51 distributional critics and high UTD ratios (8–20). Better sample efficiency than standard SAC; preferred for off-policy locomotion training.
+SAC with C51 distributional critics, high UTD ratios (8–20), and TD3-style delayed actor+alpha updates (`policy_delay=4` by default). The actor and temperature are only updated every `policy_delay` critic steps, via `jax.lax.cond` on `update_count`. Better sample efficiency than standard SAC; preferred for off-policy locomotion training.
 
 **Constructor**
 
@@ -164,7 +164,7 @@ FastSAC(
 : Same interface as SAC.
 
 `update(state, batch) → (TrainingState, metrics)`
-: One FastSAC update step — runs `utd_ratio` critic updates per actor update.
+: One FastSAC update step — runs one critic gradient step per call. The UTD loop (calling `update()` multiple times per env step) is in `jax_rl/training/offpolicy_loop.py` via `grad_updates_per_step`. Actor and alpha are updated only every `policy_delay` calls (TD3-style delay).
 
 `get_q_value(state, obs, action, critic_obs=None) → q`
 : Expected Q-value from the C51 distributional critics.
@@ -215,7 +215,7 @@ FastTD3(
 from jax_rl.algos.flash_sac import FlashSAC
 ```
 
-Recent SAC variant combining inverted residual blocks, BatchNorm, weight normalization, and adaptive reward scaling. Eval **282.4** on Go2 joystick at one seed — within seed variance of FastSAC's 276.5; A/B not yet established. Requires more tuning than FastSAC.
+Recent SAC variant combining inverted residual blocks, BatchNorm, weight normalization, and adaptive reward scaling. Eval **282.4 (single seed)** on Go2 joystick — within seed variance of FastSAC's **276.5 (single seed)**; A/B not yet established. Requires more tuning than FastSAC.
 
 See the annotated end-to-end loop in [Reference → Training Loop](../reference/training-loop.md) for how these algorithms plug into the off-policy training script.
 

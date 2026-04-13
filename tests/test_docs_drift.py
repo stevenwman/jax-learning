@@ -11,6 +11,9 @@ multiple doc-review rounds:
                                                names that don't resolve
 5. ``test_cli_flags_in_reference_match_scripts`` — CLI flag drift between
                                                argparse and ``cli-flags.md``
+6. ``test_arxiv_ids_resolve``               — every arXiv ID cited in docs/
+                                               must return HTTP 200 (slow,
+                                               needs network, @pytest.mark.slow)
 
 These are deliberately cheap (regex + import). Tests flag specific
 file:line locations so the next fix pass is surgical.
@@ -276,4 +279,68 @@ def test_cli_flags_in_reference_match_scripts(script):
             f"{script} flag drift:\n"
             f"  missing in docs: {sorted(missing_in_docs)}\n"
             f"  phantom in docs: {sorted(phantom_in_docs)}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 6. arXiv ID resolution
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.slow
+def test_arxiv_ids_resolve():
+    """Every arXiv ID cited in docs/ must resolve to a real paper (HTTP 200).
+
+    Catches fabricated citations before they reach readers. Gated @pytest.mark.slow
+    because it makes network requests. Run with:
+        uv run python -m pytest tests/test_docs_drift.py::test_arxiv_ids_resolve -v -m slow
+
+    Patterns matched:
+        arXiv:2512.01996
+        arxiv.org/abs/2512.01996
+    """
+    import urllib.request
+    import urllib.error
+
+    ARXIV_URL = "https://arxiv.org/abs/{id}"
+    TIMEOUT_S = 10
+
+    # Collect all unique IDs and their first source location
+    id_pattern = re.compile(
+        r"(?:arXiv:|arxiv\.org/abs/)(\d{4}\.\d{4,5})"
+    )
+    id_sources: dict[str, tuple[Path, int]] = {}
+    for md in _iter_md_files(DOCS_ROOT):
+        text = md.read_text(encoding="utf-8")
+        for i, line in enumerate(text.splitlines(), 1):
+            for m in id_pattern.finditer(line):
+                arxiv_id = m.group(1)
+                if arxiv_id not in id_sources:
+                    id_sources[arxiv_id] = (md, i)
+
+    if not id_sources:
+        pytest.skip("no arXiv IDs found in docs/")
+
+    failures = []
+    for arxiv_id, (source_path, line_no) in sorted(id_sources.items()):
+        url = ARXIV_URL.format(id=arxiv_id)
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=TIMEOUT_S) as resp:
+                status = resp.status
+        except urllib.error.HTTPError as exc:
+            status = exc.code
+        except Exception as exc:
+            status = f"error: {exc}"
+
+        if status != 200:
+            failures.append(
+                f"  {source_path.relative_to(REPO_ROOT)}:{line_no} — "
+                f"arXiv:{arxiv_id} returned {status} ({url})"
+            )
+
+    if failures:
+        pytest.fail(
+            "arXiv IDs that did not resolve (fabricated or mistyped citations):\n"
+            + "\n".join(failures)
         )
