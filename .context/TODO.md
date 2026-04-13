@@ -49,7 +49,8 @@
   - FlashSAC Go2 10M: 284.5 final → new best reproducible (vs 282.4 claimed on reverted obs)
   - FastTD3 Go2 + per_step DR 20M: still running at writing time (matrix-completing, first TD3-family Go2 result)
   - All `@pytest.mark.slow` tests pass on GPU (Go2Warp env bundle, SAC CheetahRun end-to-end).
-- [ ] **Render best-checkpoint videos** for the 4 post-fix runs (FastTD3 CheetahRun, FastSAC Go2, FlashSAC Go2, FastTD3 Go2). Use `MUJOCO_GL=egl uv run python record_video.py --checkpoint <best/>`. Wait for FastTD3 Go2 to finish first to avoid GPU contention.
+- [x] **Render best-checkpoint videos** for the 3 Go2 runs (FastSAC, FlashSAC, FastTD3). Done 2026-04-13. Skipped CheetahRun. All 1000 steps no termination. Files in respective `checkpoints/.../best/*.mp4`.
+- [ ] **Bump `record_video.py` env-var defaults to `XLA_PYTHON_CLIENT_PREALLOCATE=false`** so renders work on contested GPUs without manual env vars. Lesson: `lessons/infrastructure.md` §"`record_video.py` Needs `XLA_PYTHON_CLIENT_PREALLOCATE=false` on Contested GPU".
 - [ ] **Bump `XLA_CLIENT_MEM_FRACTION=0.7` → `0.55` in `train_flashsac.py`** so users don't hit the Warp-graph OOM. Lesson: `lessons/infrastructure.md` §"XLA Memory Fraction Has To Drop For Bigger-Network Algos".
 - [ ] **Code fix: `final_eval_and_checkpoint` should call `ckpt_mgr.maybe_save_best`** so the final eval competes for the "best" slot. Currently the final eval can beat the in-loop best but isn't tracked. Workaround: report `max(best_in_loop, final_eval)`. Lesson: `lessons/infrastructure.md` §"CheckpointManager 'Best' Tracking Excludes Final Eval".
 

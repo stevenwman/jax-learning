@@ -345,3 +345,30 @@ The 284.5 was higher but didn't trigger "New best!" in the logs because the fina
 Currently using option 2 (convention). Worth the code fix when next touching `eval_runner.py`.
 
 **Applies to:** Any benchmark recording from this codebase. Don't trust grep "New best!" alone — always cross-check final eval.
+
+---
+
+## `record_video.py` Needs `XLA_PYTHON_CLIENT_PREALLOCATE=false` on Contested GPU
+
+**What happened (2026-04-13):** Trying to render best-checkpoint videos for the 4 post-truncation-fix runs. GPU showed 13.6 GiB free (one other user's process at 1.1 GiB), should have been fine. Both `XLA_CLIENT_MEM_FRACTION=0.7` (default) and `=0.5` OOM'd:
+```
+RESOURCE_EXHAUSTED: Out of memory while trying to allocate 1.49GiB
+RESOURCE_EXHAUSTED: Out of memory while trying to allocate 1.12MiB  # ← even smaller!
+```
+
+The 1.12 MiB OOM is the giveaway: it's not about the size of the requested allocation, it's about JAX's preallocator grabbing a large contiguous chunk that doesn't fit alongside the other process + Warp's graph capture buffer.
+
+**Fix:** `XLA_PYTHON_CLIENT_PREALLOCATE=false` instead of mem fraction tuning. Forces JAX to allocate on demand, sharing the GPU with Warp's graph capture instead of locking out a fixed slice upfront. Worked first try — all 3 Go2 videos rendered cleanly.
+
+**What's actually using the memory during single-env rendering:**
+1. **Warp graph capture (the big one):** `jax.lax.scan(rollout_step, ..., length=1000)` makes Warp capture a CUDA graph for the entire rollout. Graph capture needs 1-2 GiB transient scratch, even though steady-state per-env physics is tiny.
+2. **JIT compilation working memory** for fusing actor forward + obs norm + env step + buffer write into one HLO graph.
+3. **Trajectory buffer** `[1000, ...]` for obs(122d) + action(12d) + reward + done = ~1 MB. Negligible.
+
+The "100% GPU spike for ~5s" you see during render is graph capture + JIT compile, not steady-state inference. After capture, steady-state uses <100 MB.
+
+**TODO** (`.context/TODO.md`): bump the env-var defaults in `record_video.py` to use `os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")` so future renders just work without manual env vars on contested GPUs.
+
+**Could we make Warp leaner for inference?** Yes — pass smaller `naccdmax`/`ccd_iterations` (env constructor sets these for 1024-env training scale; single-env inference doesn't need them). Or use a Python for-loop instead of `lax.scan` (no graph capture, slower but flat memory). Both add complexity; the env var fix is simpler.
+
+**Applies to:** Any time `record_video.py` (or similar Warp+JAX inference) needs to share GPU with another process. The default `XLA_PYTHON_CLIENT_PREALLOCATE=true` is great for clean GPUs, hostile on shared ones.
