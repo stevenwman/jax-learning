@@ -97,14 +97,15 @@
 }
 
 /* ── H2 section borders for long pages ── */
+/* Scoped to article > h2 so admonitions/collapsibles with h2 inside don't get the border */
 
-.md-typeset h2 {
+.md-typeset article > h2 {
   margin-top: 2.5em;
   padding-top: 0.6em;
   border-top: 1px solid var(--md-default-fg-color--lightest);
 }
 
-.md-typeset h2:first-of-type {
+.md-typeset article > h2:first-of-type {
   margin-top: 1em;
   padding-top: 0;
   border-top: 0;
@@ -220,13 +221,21 @@
 }
 
 /* ── Wider content area for dense API/reference pages with wide tables ── */
-.md-grid {
-  max-width: 68rem;
+/* Target .md-content only — .md-grid is also used by nav and header, widening it
+   unconditionally stretches those elements and pushes prose past readable line lengths. */
+.md-content {
+  max-width: 58rem;
+  margin-inline: auto;
 }
 @media (min-width: 76.25em) {
-  .md-grid {
-    max-width: 72rem;
+  .md-content {
+    max-width: 62rem;
   }
+}
+/* Allow wide tables and code blocks to break out of the narrower prose column */
+.md-typeset .md-typeset__scrollwrap,
+.md-typeset .highlight {
+  max-width: 72rem;
 }
 
 /* ── MathJax dark-mode color fix ── */

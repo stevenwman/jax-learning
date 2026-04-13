@@ -84,7 +84,7 @@ SAC algorithm parameters. Vanilla SAC defaults — for high-UTD training, use [F
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `tau` | `float` | `0.005` | Polyak soft update coefficient |
-| `target_entropy_scale` | `float` | `0.5` | `target_entropy = -scale * action_dim` |
+| `target_entropy_scale` | `float` | `0.5` | `target_entropy = -scale * action_dim`. **Non-standard default:** `0.5` is half the textbook SAC target of `-dim(A)` (i.e. `scale=1.0`). Empirically more stable at 1024+ envs where the full entropy target causes alpha to collapse. Set `scale=1.0` to match textbook SAC. |
 | `alpha_lr` | `float` | `1e-3` | Temperature optimizer LR |
 | `alpha_init` | `float` | `1.0` | Initial temperature |
 | `max_std` | `float \| None` | `None` | Cap on pre-tanh std |

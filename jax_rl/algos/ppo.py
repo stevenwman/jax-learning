@@ -77,11 +77,11 @@ class PPO:
 
             def value_loss_fn(critic_params):
                 values = critic.apply(critic_params, mb_critic_obs)
-                # 0.5 * 0.5 = 0.25x scaling to match Brax PPO reference:
-                #   First 0.5: MSE = 0.5 * (pred - target)^2 (derivative = pred - target)
-                #   Second 0.5: PPO value loss coefficient (Brax default)
-                # Without this, critic gradients are 4x too large → unstable training.
-                # See LESSONS.md "PPO value loss scaling".
+                # 0.5 * 0.5 = 0.25x scaling matches the Brax PPO convention:
+                #   value_loss = vf_coef * (0.5 * MSE)
+                # where vf_coef=0.5 (Brax default) and the inner 0.5 converts squared
+                # error to the standard MSE half-squared form. This is a deliberate
+                # coefficient choice, not a gradient-magnitude bug fix.
                 return jnp.mean((values - mb_returns) ** 2) * 0.5 * 0.5
 
             def actor_loss_fn(actor_params):

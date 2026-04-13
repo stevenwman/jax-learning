@@ -3,7 +3,7 @@
 Parallel to go2_joystick.py but uses unitree_mujoco's go2.xml via Warp.
 Full collision geometry (cylinders + boxes) -- no MJX simplifications.
 
-Returns dict obs: {"state": 51d policy obs, "privileged_state": 122d critic obs}.
+Returns dict obs: {"state": 48d policy obs, "privileged_state": 122d critic obs}.
 """
 
 from typing import Any, Dict, Optional, Union

@@ -55,6 +55,11 @@ uv run python train_fast_sac.py \
     --total-timesteps 20000000
 ```
 
+!!! note "Why 20M steps?"
+    The FastSAC preset for Go2 is 100M steps (5x longer). We cap at 20M here
+    for a faster demo that still shows meaningful learning. Omit `--total-timesteps`
+    to get the full preset budget.
+
 This runs 20 million timesteps across 1024 parallel environments. On an RTX 4090, expect roughly 3-4k steps/second after JIT warmup for FastSAC on Go2 Warp (full collision geometry + UTD 8 dominate the per-step cost). DM Control benchmarks like CheetahRun run much faster (~18k sps) because their physics is cheaper.
 
 !!! tip "Useful flags"
