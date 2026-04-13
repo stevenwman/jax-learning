@@ -267,3 +267,44 @@ def test_frame_stack_with_dr_and_critic():
 **Prevention:** `validation.links.unrecognized_links: warn` (and `validation.nav.omitted_files: warn`) in `mkdocs.yml` should be enabled by default for any MkDocs site. They don't break the build (warn, not error) but surface drift immediately — especially useful when multiple agents or contributors are editing in parallel.
 
 **Applies to:** Any static site generator with link-validation support. The cost is zero (warnings only appear when something is actually broken); the benefit is catching problems before deployment.
+
+---
+
+## Doc-Drift Test Suite
+
+**What happened:** Four rounds of 4-persona docs review today. Each round caught the prior round's cleanup artifacts:
+- Round 1 → obs dims 48/122 vs 51/125
+- Round 2 → truncation bug + 18k sps ghost-ref
+- Round 3 → Round 2's cleanup hallucinated `build_env_bundle` + forgot to update `handle_truncation` constructor docs
+- Round 4 → FAQ PPO Go2 timing lie, FastSAC `policy_delay` missing from docs, silent-zero fallback on `info["truncation"]`
+
+The pattern wasn't "these particular reviewers are better" — it was "cleanup of round N creates ghost refs for round N+1, independent of who reviews."
+
+**Fix:** `tests/test_docs_code_blocks.py` + `tests/test_docs_drift.py` (commit `2d2c807`) mechanize the cross-checks that humans kept making:
+
+1. **Python fence compile-check.** Every ` ```python ` fence in `docs/**/*.md` is compiled (not executed — too slow + too many variables). Skips fences with `...`, ellipsis, or `{: .no-test}` attr-list markers. Catches syntax errors + hallucinated import names.
+
+2. **Import resolution.** Every `from X import Y` in a docs fence is tried. If `Y` doesn't exist in module `X`, test fails pointing at the exact file:line. Catches `build_env_bundle`-class hallucinations.
+
+3. **Constructor kwarg consistency.** For each algo (SAC/TD3/FastSAC/FastTD3/FlashSAC), parse `docs/api/algos.md` for the constructor signature block, compare against `inspect.signature(AlgoClass.__init__)`. Any kwarg in docs that's not in the real constructor fails. Catches `handle_truncation`-class ghost refs.
+
+4. **Reverted-symbol greps.** `test_no_reverted_obs_dims()` asserts `51d`, `(51,)`, `125d`, `(125,)` never appear in docs/.context (except archive/historical files). `test_no_archived_script_refs()` asserts `train_offpolicy.py` never appears. One-line protections against resurrecting fixed bugs.
+
+5. **CLI flag drift.** For each `train_*.py`, parse its argparse via subprocess `--help`, compare against the flags listed for that script in `docs/reference/cli-flags.md`. Missing flags and phantom flags both fail. Catches flag drift AND misleads in the generator script.
+
+6. **arXiv ID resolution** (`@pytest.mark.slow`-gated). HEAD-checks every `arXiv:NNNN.NNNNN` reference. Catches hallucinated citations. Added round 4 after undergrad reviewer falsely flagged real IDs as fake — worth the test as insurance for future writing.
+
+**First run caught 16 real drift issues.** The test suite is the durable infrastructure output — future sessions get same-commit feedback instead of requiring a 4-persona review round.
+
+**What the tests CANNOT catch** (still requires human review):
+- FAQ claims that are factually wrong (PPO Go2 timing — the code doesn't lie about it, but the claim in docs is false)
+- Algorithmic descriptions that omit features (FastSAC `policy_delay` — code has it, docs don't mention it, test has no way to know)
+- Missing documentation of features (DomainRandWrapper absent from wrappers.md pipeline section)
+- Wrong benchmark numbers cited generically (the 18k sps ghost — test can't know which env a number was measured on)
+
+**Prevention of future drift:**
+- New docs pages with code fences → tests validate them on next commit
+- Code refactors that rename/delete symbols → tests flag any docs stragglers
+- Quarterly: run the full 4-persona review to catch the semantic drift classes the tests can't
+
+**Applies to:** Any docs site that makes claims about code. The cost is one-time (~600 lines of test code); the benefit compounds with every cleanup pass. Invest early.

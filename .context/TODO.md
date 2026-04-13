@@ -43,7 +43,12 @@
 - [x] Manipulation benchmark survey — MuJoCo Playground already has 10 tasks (PandaPickCube, LeapCubeReorient, AlohaSinglePegInsertion, etc.)
 
 ## Active
-- [ ] **Re-benchmark Fast*/Flash* post-truncation-fix** — All pre-2026-04-12 benchmarks on long-horizon tasks (Go2, Humanoid) were affected by the truncation bug (commit `82c9fe5`). Ceiling may be higher now. Run: FastSAC Go2 @ 20M, FastTD3 CheetahRun @ 5M, FlashSAC Go2 @ 10M. Tag results clearly as "post truncation fix".
+- [ ] **Re-benchmark Fast*/Flash* post-truncation-fix** — All pre-2026-04-12 benchmarks on long-horizon tasks (Go2, Humanoid) were affected by the truncation bug (commit `82c9fe5`). Ceiling may be higher now. Run when GPU is free (attempted 2026-04-12 evening, GPU was 86% util + 2 python processes using ~1.5 GiB, deferred):
+  - `uv run python train_fast_td3.py --env CheetahRun --num-envs 1024 --total-timesteps 5000000 --seed 100`
+  - `uv run python train_fast_sac.py --env Go2WarpJoystickFlat --num-envs 1024 --total-timesteps 20000000 --seed 100`
+  - `uv run python train_flashsac.py --env Go2WarpJoystickFlat --seed 100`  # uses preset 10M
+  - Tag W&B runs "post-truncation-fix" for clarity; compare against pre-fix numbers in AGENT_HANDOFF benchmark table.
+  - Also run `pytest tests/ -v -m slow` when GPU is free — the `@pytest.mark.slow` gates (Go2Warp env bundle test, SAC CheetahRun end-to-end) were deferred during the refactor session.
 
 ## Completed (2026-04-06)
 - [x] Documentation site — MkDocs + Material theme, 20 pages, mkdocstrings autodoc, videos embedded

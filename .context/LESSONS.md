@@ -90,6 +90,7 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **4-persona docs review: undergrad catches factual drift** — high schooler finds jargon, PhD finds algo bugs, frontend finds CSS issues, but only the undergrad systematically cross-references every claim against code. That's where ghost refs get caught.
 - **Treat every specific number in docs as a citation requirement** — the 18k sps claim was a real CheetahRun number cited on the Go2 page. Same failure mode as the obs dims ghost-ref. When copying a benchmark figure, copy the env name with it.
 - **Validation blocks catch cross-agent drift** — `validation.links.unrecognized_links: warn` in mkdocs.yml caught a broken link between two parallel subagents before it shipped. Cost: zero. Benefit: catches cross-cutting breakage.
+- **Drift test suite catches the "cleanup-N creates ghost-N+1" pattern** — `tests/test_docs_code_blocks.py` + `tests/test_docs_drift.py` mechanize the checks 4-persona reviewers keep making: Python fences compile-check, constructor kwargs match code, reverted-symbol greps stay zero, arxiv IDs resolve. Caught 16 issues on first run. See `lessons/infrastructure.md` §"Doc-Drift Test Suite".
 
 ## [MuJoCo Engine](lessons/mujoco.md) — 4 lessons
 
