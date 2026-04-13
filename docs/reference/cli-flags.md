@@ -45,9 +45,6 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--num-envs` | int | from preset | Number of parallel environments (default: from env preset) |
 | `--total-timesteps` | int | from preset | Total environment steps to train (default: from env preset) |
 | `--lr` | float | from preset | Learning rate for actor and critic (default: from algo config) |
-| `--batch-size` | int | from preset | Batch size for gradient updates (default: from algo config) |
-| `--grad-updates-per-step` | int | from preset | Gradient updates per env step (UTD ratio, default: from config) |
-| `--buffer-size` | int | from preset | Replay buffer capacity (default: from algo config) |
 | `--reward-scaling` | float | - | Multiply rewards by this factor (default: 1.0) |
 | `--episode-length` | int | from preset | Max steps per episode (default: from env preset) |
 | `--target-entropy-scale` | float | from preset | target_entropy = -scale * action_dim (default: from algo config) |
@@ -58,6 +55,7 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--frame-stack` | int | - | Number of stacked observation frames (default: 1, use 3 for locomotion) |
 | `--action-delay-ms` | int | - | Fixed action delay in ms (e.g., 120 for Go2 sim2real) |
 | `--action-delay-range-ms` | int int | - | Randomized action delay range in ms (e.g., 40 120) |
+| `--reset-mode` | str | - | Reset mode: legacy (AutoReset) or per_step (DomainRandWrapper) |
 
 ---
 
@@ -71,9 +69,6 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--num-envs` | int | from preset | Number of parallel environments (default: from env preset) |
 | `--total-timesteps` | int | from preset | Total environment steps to train (default: from env preset) |
 | `--lr` | float | from preset | Learning rate for actor and critic (default: from algo config) |
-| `--batch-size` | int | from preset | Batch size for gradient updates (default: from algo config) |
-| `--grad-updates-per-step` | int | from preset | Gradient updates per env step (UTD ratio, default: from config) |
-| `--buffer-size` | int | from preset | Replay buffer capacity (default: from algo config) |
 | `--reward-scaling` | float | - | Multiply rewards by this factor (default: 1.0) |
 | `--episode-length` | int | from preset | Max steps per episode (default: from env preset) |
 | `--exploration-noise` | float | - | Exploration noise std for TD3-family |
@@ -84,6 +79,7 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--frame-stack` | int | - | Number of stacked observation frames (default: 1, use 3 for locomotion) |
 | `--action-delay-ms` | int | - | Fixed action delay in ms (e.g., 120 for Go2 sim2real) |
 | `--action-delay-range-ms` | int int | - | Randomized action delay range in ms (e.g., 40 120) |
+| `--reset-mode` | str | - | Reset mode: legacy (AutoReset) or per_step (DomainRandWrapper) |
 
 ---
 
@@ -110,6 +106,7 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--frame-stack` | int | - | Number of stacked observation frames (default: 1, use 3 for locomotion) |
 | `--action-delay-ms` | int | - | Fixed action delay in ms (e.g., 120 for Go2 sim2real) |
 | `--action-delay-range-ms` | int int | - | Randomized action delay range in ms (e.g., 40 120) |
+| `--reset-mode` | str | - | Reset mode: legacy (AutoReset) or per_step (DomainRandWrapper) |
 
 ---
 
@@ -136,6 +133,7 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--frame-stack` | int | - | Number of stacked observation frames (default: 1, use 3 for locomotion) |
 | `--action-delay-ms` | int | - | Fixed action delay in ms (e.g., 120 for Go2 sim2real) |
 | `--action-delay-range-ms` | int int | - | Randomized action delay range in ms (e.g., 40 120) |
+| `--reset-mode` | str | - | Reset mode: legacy (AutoReset) or per_step (DomainRandWrapper) |
 
 ---
 

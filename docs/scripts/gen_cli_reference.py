@@ -72,12 +72,6 @@ def build_sac_parser() -> argparse.ArgumentParser:
                         help="Total environment steps to train (default: from env preset)")
     parser.add_argument("--lr", type=float, default=None,
                         help="Learning rate for actor and critic (default: from algo config)")
-    parser.add_argument("--batch-size", type=int, default=None,
-                        help="Batch size for gradient updates (default: from algo config)")
-    parser.add_argument("--grad-updates-per-step", type=int, default=None,
-                        help="Gradient updates per env step (UTD ratio, default: from config)")
-    parser.add_argument("--buffer-size", type=int, default=None,
-                        help="Replay buffer capacity (default: from algo config)")
     parser.add_argument("--reward-scaling", type=float, default=None,
                         help="Multiply rewards by this factor (default: 1.0)")
     parser.add_argument("--episode-length", type=int, default=None,
@@ -99,6 +93,9 @@ def build_sac_parser() -> argparse.ArgumentParser:
     parser.add_argument("--action-delay-range-ms", type=int, nargs=2, default=None,
                         metavar=("MIN", "MAX"),
                         help="Randomized action delay range in ms (e.g., 40 120)")
+    parser.add_argument("--reset-mode", type=str, default=None,
+                        choices=["legacy", "per_step"],
+                        help="Reset mode: legacy (AutoReset) or per_step (DomainRandWrapper)")
     return parser
 
 
@@ -116,12 +113,6 @@ def build_td3_parser() -> argparse.ArgumentParser:
                         help="Total environment steps to train (default: from env preset)")
     parser.add_argument("--lr", type=float, default=None,
                         help="Learning rate for actor and critic (default: from algo config)")
-    parser.add_argument("--batch-size", type=int, default=None,
-                        help="Batch size for gradient updates (default: from algo config)")
-    parser.add_argument("--grad-updates-per-step", type=int, default=None,
-                        help="Gradient updates per env step (UTD ratio, default: from config)")
-    parser.add_argument("--buffer-size", type=int, default=None,
-                        help="Replay buffer capacity (default: from algo config)")
     parser.add_argument("--reward-scaling", type=float, default=None,
                         help="Multiply rewards by this factor (default: 1.0)")
     parser.add_argument("--episode-length", type=int, default=None,
@@ -143,6 +134,9 @@ def build_td3_parser() -> argparse.ArgumentParser:
     parser.add_argument("--action-delay-range-ms", type=int, nargs=2, default=None,
                         metavar=("MIN", "MAX"),
                         help="Randomized action delay range in ms (e.g., 40 120)")
+    parser.add_argument("--reset-mode", type=str, default=None,
+                        choices=["legacy", "per_step"],
+                        help="Reset mode: legacy (AutoReset) or per_step (DomainRandWrapper)")
     return parser
 
 
@@ -187,6 +181,9 @@ def build_fast_sac_parser() -> argparse.ArgumentParser:
     parser.add_argument("--action-delay-range-ms", type=int, nargs=2, default=None,
                         metavar=("MIN", "MAX"),
                         help="Randomized action delay range in ms (e.g., 40 120)")
+    parser.add_argument("--reset-mode", type=str, default=None,
+                        choices=["legacy", "per_step"],
+                        help="Reset mode: legacy (AutoReset) or per_step (DomainRandWrapper)")
     return parser
 
 
@@ -231,6 +228,9 @@ def build_fast_td3_parser() -> argparse.ArgumentParser:
     parser.add_argument("--action-delay-range-ms", type=int, nargs=2, default=None,
                         metavar=("MIN", "MAX"),
                         help="Randomized action delay range in ms (e.g., 40 120)")
+    parser.add_argument("--reset-mode", type=str, default=None,
+                        choices=["legacy", "per_step"],
+                        help="Reset mode: legacy (AutoReset) or per_step (DomainRandWrapper)")
     return parser
 
 

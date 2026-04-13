@@ -7,14 +7,14 @@ For PPO see `jax_rl/training/ppo_loop.py` — the on-policy structure is differe
 ```python
 import jax, jax.numpy as jnp, optax
 from jax_rl.algos.fast_sac import FastSAC
-from jax_rl.training.env_setup import build_env_bundle
+from jax_rl.training.env_setup import make_env_bundle
 from jax_rl.training.obs_pipeline import ObsPipeline
 
 # 1. Build env + algo --------------------------------------------------------
 # env_bundle wraps the MuJoCo Playground env in our wrapper stack
 # (VmapWrapper, EpisodeWrapper, AutoResetWrapper / DomainRandWrapper).
 # env_step is JIT'd; env_state is a pytree of JAX arrays.
-env_bundle = build_env_bundle(cfg, seed=0)
+env_bundle = make_env_bundle(cfg, seed=0)
 env_step, env_state = env_bundle.env_step, env_bundle.env_state
 
 # Algorithms are constructed with their optimizer bound. Networks live as

@@ -200,7 +200,7 @@ Every checkpoint contains: `meta.json` (full config), `metrics.csv` (training cu
 - **Actuator model**: `motor` (direct torque) + external PD per substep. Matches unitree_mujoco and real robot. (Was `general` with built-in PD — switched 2026-03-26.)
 - **Working PPO config**: tracking_lin_vel=10.0, tracking_ang_vel=5.0, height_termination=True, Kp=35, Kd=0.1, calf_torque=45.43Nm
 - **Best PPO**: eval 244 @ 50M steps (seed 4000, motor actuators)
-- **Warp env**: `Go2WarpJoystickFlat` — uses unitree_mujoco's go2.xml (full cylinder collision geometry) via MuJoCo Warp backend. Eliminates sim2sim gap. `contact_mode` flag: `"training"` (firm contacts) / `"deploy"` (unitree-native physics). **Kp=20, Kd=0.5** (matches unitree_rl_gym; reverted from a brief Kp=10/Kd=1.0 detour 2026-04-10 that caused 7x worse training). Best reproducible result on current 48d env: **eval 276.6** (no linvel, deploy obs space, DR). Prior 285.1/280.1 results were on a 51d obs space that was reverted. Sim2sim to CPU MuJoCo validated.
+- **Warp env**: `Go2WarpJoystickFlat` — uses unitree_mujoco's go2.xml (full cylinder collision geometry) via MuJoCo Warp backend. Eliminates sim2sim gap. `contact_mode` flag: `"training"` (firm contacts) / `"deploy"` (unitree-native physics). **Kp=20, Kd=0.5** (matches unitree_rl_gym; reverted from a brief Kp=10/Kd=1.0 detour 2026-04-10 that caused 7x worse training). Best reproducible result on current 48d env: **eval 276.6** (no linvel, deploy obs space, DR). Prior 285.1/280.1 results were on an extended obs space (added linvel + accelerometer, reverted) that is not reproducible with the current 48-dim env. Sim2sim to CPU MuJoCo validated.
 - **CRITICAL:** Warp env has joint→actuator remapping (`_act_to_joint`). Unitree XML has different qpos vs ctrl ordering. Without remap, PD applies torques to wrong legs.
 
 ### Algorithm quick reference
@@ -244,8 +244,8 @@ Every checkpoint contains: `meta.json` (full config), `metrics.csv` (training cu
 **Go2 Joystick — Warp** (unitree go2.xml, full collision geometry):
 | Algo | Eval | Steps | Notes |
 |------|------|-------|-------|
-| **FastSAC (frame_stack=3, +linvel +accel, DR)** | **285.1** | 20M | 2026-04-10 (trained on prior 51d obs space, not reproducible with current 48d env). |
-| FastSAC (no stack, +linvel +accel, DR) | 280.1 | 20M | 2026-04-10 (trained on prior 51d obs space, not reproducible with current 48d env). |
+| **FastSAC (frame_stack=3, +linvel +accel, DR)** | **285.1** | 20M | 2026-04-10 (trained on prior extended obs space with linvel+accel, not reproducible with current 48-dim env). |
+| FastSAC (no stack, +linvel +accel, DR) | 280.1 | 20M | 2026-04-10 (trained on prior extended obs space with linvel+accel, not reproducible with current 48-dim env). |
 | **FastSAC (no stack, no linvel, DR — deploy obs)** | **276.6** | 20M | State 48d, deploy-realistic. ONNX exported. |
 | FastSAC (asym critic) | 279.2 | 20M | Older config, no DR. |
 | FastSAC (symmetric) | 276.5 | 18M | Older config (seed 8001), no DR, sim2sim to CPU validated |

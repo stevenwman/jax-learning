@@ -75,7 +75,6 @@ SAC(
     optimizer: optax.GradientTransformation,
     alpha_optimizer: optax.GradientTransformation,
     gamma: float = 0.99,
-    handle_truncation: bool = True,
     critic_obs_dim: int | None = None,
 )
 ```
@@ -114,7 +113,6 @@ TD3(
     actor_optimizer: optax.GradientTransformation,
     critic_optimizer: optax.GradientTransformation,
     gamma: float = 0.99,
-    handle_truncation: bool = True,
     critic_obs_dim: int | None = None,
 )
 ```
@@ -153,7 +151,6 @@ FastSAC(
     optimizer: optax.GradientTransformation,
     alpha_optimizer: optax.GradientTransformation,
     gamma: float = 0.99,
-    handle_truncation: bool = True,
     critic_obs_dim: int | None = None,
 )
 ```
@@ -192,7 +189,6 @@ FastTD3(
     actor_optimizer: optax.GradientTransformation,
     critic_optimizer: optax.GradientTransformation,
     gamma: float = 0.99,
-    handle_truncation: bool = True,
     critic_obs_dim: int | None = None,
 )
 ```
@@ -233,7 +229,6 @@ FlashSAC(
     optimizer: optax.GradientTransformation,
     alpha_optimizer: optax.GradientTransformation,
     gamma: float = 0.99,
-    handle_truncation: bool = True,
     critic_obs_dim: int | None = None,
     num_envs: int = 1,  # needed for per-env reward scaling
 )
