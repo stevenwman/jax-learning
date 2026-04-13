@@ -348,7 +348,7 @@ Currently using option 2 (convention). Worth the code fix when next touching `ev
 
 ---
 
-## `record_video.py` Needs `XLA_PYTHON_CLIENT_PREALLOCATE=false` on Contested GPU
+## `record_video.py` Memory Fix: `PREALLOCATE=false` + Python Loop (Not `lax.scan`)
 
 **What happened (2026-04-13):** Trying to render best-checkpoint videos for the 4 post-truncation-fix runs. GPU showed 13.6 GiB free (one other user's process at 1.1 GiB), should have been fine. Both `XLA_CLIENT_MEM_FRACTION=0.7` (default) and `=0.5` OOM'd:
 ```
@@ -356,19 +356,41 @@ RESOURCE_EXHAUSTED: Out of memory while trying to allocate 1.49GiB
 RESOURCE_EXHAUSTED: Out of memory while trying to allocate 1.12MiB  # ← even smaller!
 ```
 
-The 1.12 MiB OOM is the giveaway: it's not about the size of the requested allocation, it's about JAX's preallocator grabbing a large contiguous chunk that doesn't fit alongside the other process + Warp's graph capture buffer.
+The 1.12 MiB OOM is the giveaway: not about the requested size, it's about JAX's preallocator grabbing a large contiguous chunk that doesn't fit alongside the other process + Warp's graph-capture buffer.
 
-**Fix:** `XLA_PYTHON_CLIENT_PREALLOCATE=false` instead of mem fraction tuning. Forces JAX to allocate on demand, sharing the GPU with Warp's graph capture instead of locking out a fixed slice upfront. Worked first try — all 3 Go2 videos rendered cleanly.
+**Quick fix (applied to `record_video.py`):** `os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")`. On-demand allocation lets JAX and Warp share memory instead of fighting for a pre-locked slab. Solves the symptom.
 
-**What's actually using the memory during single-env rendering:**
-1. **Warp graph capture (the big one):** `jax.lax.scan(rollout_step, ..., length=1000)` makes Warp capture a CUDA graph for the entire rollout. Graph capture needs 1-2 GiB transient scratch, even though steady-state per-env physics is tiny.
-2. **JIT compilation working memory** for fusing actor forward + obs norm + env step + buffer write into one HLO graph.
-3. **Trajectory buffer** `[1000, ...]` for obs(122d) + action(12d) + reward + done = ~1 MB. Negligible.
+### Where the ~1.5 GiB actually went (corrected analysis)
 
-The "100% GPU spike for ~5s" you see during render is graph capture + JIT compile, not steady-state inference. After capture, steady-state uses <100 MB.
+Initial guess blamed "Warp graph capture" entirely with trajectory buffer dismissed as ~1 MB. That was wrong. Real breakdown:
 
-**TODO** (`.context/TODO.md`): bump the env-var defaults in `record_video.py` to use `os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")` so future renders just work without manual env vars on contested GPUs.
+1. **Scan output preallocation (500 MB–1 GB).** `jax.lax.scan(rollout_step, init, length=1000)` allocates output buffers for the *full mjx State × 1000* upfront. The State isn't just `qpos`/`qvel` — it's the full MJX `Data` struct with ~50 fields: `qM` (nv×nv), `cinert`/`crb` (nbody×10), `actuator_moment`, all `efc_*` and `contact.*` arrays padded to `nconmax`/`njmax`, plus the `info` dict (reward_components, command, last_act, ...). For Go2: ~0.5–1 MB per step × 1000 steps.
 
-**Could we make Warp leaner for inference?** Yes — pass smaller `naccdmax`/`ccd_iterations` (env constructor sets these for 1024-env training scale; single-env inference doesn't need them). Or use a Python for-loop instead of `lax.scan` (no graph capture, slower but flat memory). Both add complexity; the env var fix is simpler.
+2. **Warp graph-capture scratch (100–500 MB).** `_default_nconmax` = 48, `_default_njmax` = 64 for Go2 (heuristic floors of 45/53 rounded to valid tile sizes). Plus `_get_padded_sizes` pads for JtDAJ tile alignment. Per-step these are tiny — but with `opt.iterations=100` + `ls_iterations=50` + elliptic cone (`opt.cone=1`) + hundreds of kernels across `collision_*`, `constraint`, `solver`, `smooth`, `sensor`, `passive`, `forward`, `derivative`, the captured graph carries substantial workspace.
 
-**Applies to:** Any time `record_video.py` (or similar Warp+JAX inference) needs to share GPU with another process. The default `XLA_PYTHON_CLIENT_PREALLOCATE=true` is great for clean GPUs, hostile on shared ones.
+3. **XLA compilation working buffers** (tens-hundreds of MB).
+
+Sum = 1–2 GB, matching the 1.49 GiB ask.
+
+### Why a Python loop is the right architectural fix (not `lax.scan`)
+
+`lax.scan` is for *training* (amortize compile over many rollouts, full traj is your data). For *one-shot inference*:
+- You pay full compile cost for one execution (no amortization)
+- You preallocate the full 1000-step State buffer once, discard most of it
+- You can't early-stop on `done` cleanly
+
+Refactor applied to `record_video.py`: replace `lax.scan` with a Python loop calling `jit(rollout_step)`. Each step:
+- JIT compiles `rollout_step` *once* on first call (Warp graph captured once, reused)
+- Single State buffer reused each iter (no 1000-step preallocation)
+- `np.asarray(state.data.qpos)`, `np.asarray(state.data.qvel)`, action, reward, and info fields copied to host-side lists — only what's needed
+- `break` on `done` for natural early-stop
+
+**Measured result:** Peak HBM drops ~500 MB–1 GB. NPZ output schema unchanged (22 keys identical). First-run compile cheaper than scan (~7s vs ~20s) because XLA doesn't analyze a 1000-step unrolled body. Dispatch overhead: ~100 ms total over 1000 steps — negligible vs ~30s CPU render phase.
+
+Both fixes landed together — `PREALLOCATE=false` handles the immediate preallocator-vs-Warp contention (Warp graph creation inside `env.reset` needs memory *before* the scan/loop even starts), the Python loop drops steady-state peak so renders coexist with concurrent training on the same GPU.
+
+### What I initially dismissed and was wrong about
+
+Original note said the Python loop "adds complexity; the env var fix is simpler." Reality: the env var alone only fixes the contested-GPU case. If you run a render while training on the same GPU, training's preallocator plus the render's 1 GB scan peak still OOMs. The Python loop makes the render memory-coexistent with other workloads.
+
+**Applies to:** Any one-shot Warp+JAX inference script. The `lax.scan` pattern copied from training is the wrong default for single-rollout use cases. Use Python loop + jitted step.

@@ -22,9 +22,13 @@ import time
 # Override with MUJOCO_GL=osmesa if EGL is unavailable.
 os.environ.setdefault("MUJOCO_GL", "egl")
 
+# On-demand GPU allocation: preallocator locks out Warp's CUDA graph capture
+# (~1-2 GiB transient) on contested GPUs. One-shot inference gains nothing
+# from preallocation anyway.
+os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
+
 import imageio
 import jax
-import jax.numpy as jnp
 import numpy as np
 from tqdm import tqdm
 import optax
@@ -248,35 +252,56 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
             use_obs_norm, kicks_fn=kicks_fn)
         init_carry = (env_state, key)
 
-    # ── Phase 1: JIT-scan rollout on GPU ──────────────────────────────────
-    print("JIT-compiling rollout scan...")
+    # ── Phase 1: Python-loop rollout (low peak HBM) ───────────────────────
+    # A jit'd scan would preallocate full-State × max_steps on device (~1 GB
+    # for Go2). Calling the jit'd step in a Python loop reuses one State
+    # buffer and only retains numpy copies of qpos/qvel/action/reward/info
+    # on host. Compile cost: ~one rollout_step trace (5-10s). Dispatch
+    # overhead: ~100ms total across 1000 steps (negligible vs CPU render).
+    jit_rollout_step = jax.jit(rollout_step)
+
+    init_qpos = np.asarray(env_state.data.qpos)
+    init_qvel = np.asarray(env_state.data.qvel)
+
+    qpos_hist, qvel_hist, act_hist, rew_hist = [], [], [], []
+    cmd_hist = []
+    reward_components_hist: dict[str, list] = {}
+
+    print("JIT-compiling rollout step + running Python loop...")
     t0 = time.time()
-    _, (trajectory, actions) = jax.lax.scan(rollout_step, init_carry, jnp.arange(max_steps), length=max_steps)
-    jax.block_until_ready(trajectory.obs)
+    carry = init_carry
+    num_frames = max_steps
+    for i in range(max_steps):
+        carry, (state_i, action_i) = jit_rollout_step(carry, i)
+        qpos_hist.append(np.asarray(state_i.data.qpos))
+        qvel_hist.append(np.asarray(state_i.data.qvel))
+        act_hist.append(np.asarray(action_i))
+        rew_hist.append(float(state_i.reward))
+        info = state_i.info
+        if 'command' in info:
+            cmd_hist.append(np.asarray(info['command']))
+        if 'reward_components' in info:
+            for k, v in info['reward_components'].items():
+                reward_components_hist.setdefault(k, []).append(np.asarray(v))
+        if float(state_i.done) > 0.5:
+            num_frames = i + 1
+            print(f"Episode ended at step {num_frames}")
+            break
     t_rollout = time.time() - t0
-    print(f"Rollout done: {max_steps} steps in {t_rollout:.2f}s (includes JIT compilation)")
+    print(f"Rollout done: {num_frames} steps in {t_rollout:.2f}s (includes JIT compilation)")
 
-    total_reward = float(trajectory.reward.sum())
+    total_reward = float(np.sum(rew_hist[:num_frames]))
     print(f"Total reward: {total_reward:.1f}")
-
-    # Find first done step
-    dones = np.asarray(trajectory.done)
-    done_indices = np.where(dones > 0.5)[0]
-    if len(done_indices) > 0:
-        num_frames = int(done_indices[0]) + 1
-        print(f"Episode ended at step {num_frames}")
-    else:
-        num_frames = max_steps
+    if num_frames == max_steps:
         print(f"Episode ran full {max_steps} steps (no termination)")
 
     # ── Phase 2: Render frames on CPU ─────────────────────────────────────
     print(f"Rendering {num_frames + 1} frames (CPU)...")
     t0 = time.time()
 
-    states = [env_state]
-    for i in range(num_frames):
-        state_i = jax.tree.map(lambda x: x[i], trajectory)
-        states.append(state_i)
+    # Initial state + post-step states
+    all_qpos = [init_qpos] + qpos_hist[:num_frames]
+    all_qvel = [init_qvel] + qvel_hist[:num_frames]
 
     # Render with mujoco.Renderer for better quality + resolution control
     import mujoco
@@ -284,11 +309,11 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
     frames = []
     mj_data = mujoco.MjData(env.mj_model)
 
-    has_commands = hasattr(trajectory, 'info') and 'command' in trajectory.info
+    has_commands = len(cmd_hist) > 0
 
-    for idx, state_i in enumerate(tqdm(states)):
-        mj_data.qpos[:] = np.array(state_i.data.qpos)
-        mj_data.qvel[:] = np.array(state_i.data.qvel)
+    for idx in tqdm(range(len(all_qpos))):
+        mj_data.qpos[:] = all_qpos[idx]
+        mj_data.qvel[:] = all_qvel[idx]
         mujoco.mj_forward(env.mj_model, mj_data)
         if camera is not None:
             renderer.update_scene(mj_data, camera=camera)
@@ -303,8 +328,8 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
             renderer.update_scene(mj_data, camera=cam)
 
         # Add command arrow overlays (Go2-specific)
-        if has_commands and idx > 0 and idx <= len(trajectory.info['command']):
-            cmd = np.array(trajectory.info['command'][idx - 1])
+        if has_commands and idx > 0 and idx <= len(cmd_hist):
+            cmd = cmd_hist[idx - 1]
             render_command_overlays(renderer, mj_data, cmd, idx)
 
         frames.append(renderer.render())
@@ -327,18 +352,15 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
     # ── Save trajectory .npz for offline analysis ────────────────────────
     npz_path = video_path.replace(".mp4", "_traj.npz")
     traj_data = {
-        "qpos": np.array(trajectory.data.qpos[:num_frames]),
-        "qvel": np.array(trajectory.data.qvel[:num_frames]),
-        "actions": np.array(actions[:num_frames]),
-        "rewards": np.array(trajectory.reward[:num_frames]),
+        "qpos": np.stack(qpos_hist[:num_frames]),
+        "qvel": np.stack(qvel_hist[:num_frames]),
+        "actions": np.stack(act_hist[:num_frames]),
+        "rewards": np.asarray(rew_hist[:num_frames], dtype=np.float32),
     }
-    # Save reward components if available
-    if hasattr(trajectory, 'info') and 'reward_components' in trajectory.info:
-        for k, v in trajectory.info['reward_components'].items():
-            traj_data[f"reward_{k}"] = np.array(v[:num_frames])
-    # Save commands if available
-    if hasattr(trajectory, 'info') and 'command' in trajectory.info:
-        traj_data["commands"] = np.array(trajectory.info['command'][:num_frames])
+    for k, vs in reward_components_hist.items():
+        traj_data[f"reward_{k}"] = np.stack(vs[:num_frames])
+    if cmd_hist:
+        traj_data["commands"] = np.stack(cmd_hist[:num_frames])
 
     np.savez_compressed(npz_path, **traj_data)
     print(f"Trajectory saved: {npz_path} ({len(traj_data)} arrays)")
