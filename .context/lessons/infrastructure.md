@@ -308,3 +308,40 @@ The pattern wasn't "these particular reviewers are better" — it was "cleanup o
 - Quarterly: run the full 4-persona review to catch the semantic drift classes the tests can't
 
 **Applies to:** Any docs site that makes claims about code. The cost is one-time (~600 lines of test code); the benefit compounds with every cleanup pass. Invest early.
+
+---
+
+## XLA Memory Fraction Has To Drop For Bigger-Network Algos
+
+**What happened (2026-04-13):** FlashSAC Go2 OOM'd twice during MuJoCo Warp graph creation, around step 10-15k:
+```
+Warp CUDA error 2: out of memory (in function wp_cuda_graph_create_exec, ...)
+```
+
+GPU had 13.6 GiB free at launch. JAX preallocated 0.7 of total = ~11.4 GiB. FlashSAC's networks are 2-3x larger than FastSAC (Q params 1.1M vs 495k each, plus BatchNorm running stats for 4 critics = online + target × 2). JAX heap actually used more of that 0.7 fraction → less left for Warp's CUDA graph capture.
+
+**Fix:** Lower `XLA_CLIENT_MEM_FRACTION` to 0.55 for FlashSAC. Worked first try.
+
+**General rule:** the `XLA_CLIENT_MEM_FRACTION=0.7` default in `train_*.py` scripts is calibrated for FastSAC/FastTD3 sized networks. Bigger algos (FlashSAC) need 0.55-0.6. Smaller algos (vanilla SAC/TD3 at 128 envs) can run higher. The right per-script default is roughly `1 - (model_size / VRAM)` with some headroom for Warp's graph allocations.
+
+**TODO:** consider bumping the `os.environ.setdefault("XLA_CLIENT_MEM_FRACTION", "0.7")` line in `train_flashsac.py` to `"0.55"` so users don't hit the OOM. Low-priority but a good sharp-edge to dull.
+
+---
+
+## CheckpointManager "Best" Tracking Excludes Final Eval
+
+**What happened (2026-04-13):** Recording benchmark numbers for FlashSAC Go2 10M, found:
+- Best in-loop eval (CheckpointManager.best_eval): 279.5
+- Final eval (after training loop ends): 284.5
+
+The 284.5 was higher but didn't trigger "New best!" in the logs because the final eval is a separate code path in `eval_runner.py::final_eval_and_checkpoint`, and that path doesn't compare against `ckpt_mgr.best_eval` to maybe update it.
+
+**Implication:** Reporting "best eval" from grep-ing "New best!" lines undercounts the true peak performance. The right number is `max(in_loop_best, final_eval)`.
+
+**Fix options:**
+1. **Code fix:** make `final_eval_and_checkpoint` also call `ckpt_mgr.maybe_save_best(eval_mean)` so the final eval competes for the "best" slot.
+2. **Convention:** when recording benchmarks, always check both "New best!" lines AND the final "Eval return: X" line, take max.
+
+Currently using option 2 (convention). Worth the code fix when next touching `eval_runner.py`.
+
+**Applies to:** Any benchmark recording from this codebase. Don't trust grep "New best!" alone — always cross-check final eval.

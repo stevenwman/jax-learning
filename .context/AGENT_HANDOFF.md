@@ -244,14 +244,25 @@ Every checkpoint contains: `meta.json` (full config), `metrics.csv` (training cu
 | Brax PPO | 17.9 | 50M | A/B baseline |
 
 **Go2 Joystick — Warp** (unitree go2.xml, full collision geometry):
+
+*Post-truncation-fix runs (2026-04-13, commit `82c9fe5`+, 48d state, all single seed):*
 | Algo | Eval | Steps | Notes |
 |------|------|-------|-------|
-| **FastSAC (frame_stack=3, +linvel +accel, DR)** | **285.1** | 20M | 2026-04-10 (trained on prior extended obs space with linvel+accel, not reproducible with current 48-dim env). |
+| **FlashSAC (DR off, preset)** | **284.5 ± 4.6** | 10M | New best reproducible. seed 100. wandb: `20c1pcge`. |
+| **FastSAC (DR per_step)** | **283.8** (best in-loop) / 283.5 final | 20M | seed 100. wandb: `w47hu6a5`. Q bias 0.10 (well-calibrated). |
+| FastTD3 (DR per_step) | _running_ | 20M | seed 100. wandb run pending. First TD3-family Go2 result. |
+
+*Pre-truncation-fix runs (kept for context, NOT directly comparable to above):*
+| Algo | Eval | Steps | Notes |
+|------|------|-------|-------|
+| FastSAC (frame_stack=3, +linvel +accel, DR) | 285.1 | 20M | 2026-04-10 (trained on prior extended obs space with linvel+accel, not reproducible with current 48-dim env). |
 | FastSAC (no stack, +linvel +accel, DR) | 280.1 | 20M | 2026-04-10 (trained on prior extended obs space with linvel+accel, not reproducible with current 48-dim env). |
-| **FastSAC (no stack, no linvel, DR — deploy obs)** | **276.6** | 20M | State 48d, deploy-realistic. ONNX exported. |
+| FastSAC (no stack, no linvel, DR — deploy obs) | 276.6 | 20M | State 48d, deploy-realistic. ONNX exported. |
 | FastSAC (asym critic) | 279.2 | 20M | Older config, no DR. |
 | FastSAC (symmetric) | 276.5 | 18M | Older config (seed 8001), no DR, sim2sim to CPU validated |
 | PPO | 132 | 50M | Kp=20/Kd=0.5, entropy collapsed to squat |
+
+**Post-fix improvement:** FastSAC went from 279.2 (best pre-fix reproducible, asymmetric/no DR) to 283.8 (per_step DR). FlashSAC went from 282.4-claimed (on reverted 51d obs, not reproducible) to 284.5 reproducible. Modest gains consistent with the truncation fix removing a small bias on long-horizon tasks. **All fix-era results trustworthy; all pre-fix results suspect on Go2/Humanoid scale tasks.**
 
 **Key takeaways:** Low-dim → FastTD3. High-dim → FastSAC. gamma=0.97 for locomotion. C51 helps at scale. Vanilla algos at 128 envs are competitive for sample efficiency. Use `motor` actuators for sim2sim/sim2real transfer. **Warp + unitree MJCF eliminates sim2sim gap** — FastSAC on Warp surpasses MJX PPO.
 

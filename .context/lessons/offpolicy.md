@@ -179,3 +179,20 @@ Pure terminations still contribute their `r`-only target (it's genuinely correct
 **Dead code also removed** (`39c7ddc`): the `handle_truncation` constructor arg on all 5 off-policy algos was stored on `self` but never read. The real switch is `cfg.handle_truncation` in the training loop — controls whether `truncation` gets populated in the buffer at all (when False, zeros are stored and the mask becomes a no-op).
 
 **Rule of thumb:** Any off-policy algo that trains on `batch["done"]` from a Brax/Playground-style auto-reset wrapper needs `mask = 1 - truncation` on the loss. This is not optional.
+
+---
+
+## Q Bias Is the Cleanest Diagnostic for Truncation Handling
+
+**What happened:** Truncation bug was fixed in commit `82c9fe5`. Wanted a way to verify the fix actually applied at training time, not just that tests pass.
+
+**Diagnostic:** the `eval/q_bias` metric (Q mean − MC mean from rollouts). On long-horizon tasks (Go2: 1000-step episodes), pre-fix Fast*/Flash* showed systematic **negative** Q-bias because the `Q = r` target at timeout steps systematically underestimates the true return. Post-fix, Q-bias should be near zero.
+
+**Validation (2026-04-13):** FastSAC Go2 + per_step DR @ 20M, post-fix:
+- Q mean: 9.07
+- MC mean: 9.19
+- **Q bias: 0.10** (Q is essentially unbiased — actually slightly *over*estimating, which is the standard SAC tendency without the truncation correction)
+
+If Q bias is meaningfully negative on a long-horizon task, either (a) the truncation fix isn't applied, or (b) the env wrapper isn't populating `info["truncation"]` (in which case the mask becomes a no-op since `truncation` is zero).
+
+**Add to smoke-test checklist:** when validating any off-policy algo on a long-horizon task, log `eval/q_bias` and check it's not strongly negative. A bias of ±0.5 or so is normal noise; -2 or worse on a 9-magnitude Q signals something structural is broken.

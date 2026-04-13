@@ -43,12 +43,15 @@
 - [x] Manipulation benchmark survey — MuJoCo Playground already has 10 tasks (PandaPickCube, LeapCubeReorient, AlohaSinglePegInsertion, etc.)
 
 ## Active
-- [ ] **Re-benchmark Fast*/Flash* post-truncation-fix** — All pre-2026-04-12 benchmarks on long-horizon tasks (Go2, Humanoid) were affected by the truncation bug (commit `82c9fe5`). Ceiling may be higher now. Run when GPU is free (attempted 2026-04-12 evening, GPU was 86% util + 2 python processes using ~1.5 GiB, deferred):
-  - `uv run python train_fast_td3.py --env CheetahRun --num-envs 1024 --total-timesteps 5000000 --seed 100`
-  - `uv run python train_fast_sac.py --env Go2WarpJoystickFlat --num-envs 1024 --total-timesteps 20000000 --seed 100`
-  - `uv run python train_flashsac.py --env Go2WarpJoystickFlat --seed 100`  # uses preset 10M
-  - Tag W&B runs "post-truncation-fix" for clarity; compare against pre-fix numbers in AGENT_HANDOFF benchmark table.
-  - Also run `pytest tests/ -v -m slow` when GPU is free — the `@pytest.mark.slow` gates (Go2Warp env bundle test, SAC CheetahRun end-to-end) were deferred during the refactor session.
+- [x] **Re-benchmark Fast*/Flash* post-truncation-fix** (2026-04-13) — done. WandB project: `jax-rl-post-truncation-fix`. Results in AGENT_HANDOFF benchmark table.
+  - FastTD3 CheetahRun 5M: 515.9
+  - FastSAC Go2 + per_step DR 20M: 283.8 (best in-loop) / 283.5 final → new best reproducible (vs 279.2 pre-fix)
+  - FlashSAC Go2 10M: 284.5 final → new best reproducible (vs 282.4 claimed on reverted obs)
+  - FastTD3 Go2 + per_step DR 20M: still running at writing time (matrix-completing, first TD3-family Go2 result)
+  - All `@pytest.mark.slow` tests pass on GPU (Go2Warp env bundle, SAC CheetahRun end-to-end).
+- [ ] **Render best-checkpoint videos** for the 4 post-fix runs (FastTD3 CheetahRun, FastSAC Go2, FlashSAC Go2, FastTD3 Go2). Use `MUJOCO_GL=egl uv run python record_video.py --checkpoint <best/>`. Wait for FastTD3 Go2 to finish first to avoid GPU contention.
+- [ ] **Bump `XLA_CLIENT_MEM_FRACTION=0.7` → `0.55` in `train_flashsac.py`** so users don't hit the Warp-graph OOM. Lesson: `lessons/infrastructure.md` §"XLA Memory Fraction Has To Drop For Bigger-Network Algos".
+- [ ] **Code fix: `final_eval_and_checkpoint` should call `ckpt_mgr.maybe_save_best`** so the final eval competes for the "best" slot. Currently the final eval can beat the in-loop best but isn't tracked. Workaround: report `max(best_in_loop, final_eval)`. Lesson: `lessons/infrastructure.md` §"CheckpointManager 'Best' Tracking Excludes Final Eval".
 
 ## Completed (2026-04-06)
 - [x] Documentation site — MkDocs + Material theme, 20 pages, mkdocstrings autodoc, videos embedded

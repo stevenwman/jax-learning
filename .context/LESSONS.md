@@ -39,6 +39,7 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **Frame stacking doesn't help locomotion with proprioceptive obs** — A/B on Go2 FastSAC: 276.5 (48d) vs 271.3 (144d stacked). `last_action` already provides temporal context.
 - **Staged rewards need longer budgets** — gated rewards (box_target after reached_box) require 10M+ steps to discover full sequence; 2M plateau is stage 1, not convergence
 - **Truncation: mask the loss, zero the bootstrap** — Brax convention (SAC/TD3). `target = r + γ(1-done)V_next`, `loss *= (1 - truncation)`. Fast*/Flash* were missing the mask — teaching Q=r at timeout steps, systematic underestimation on long-horizon.
+- **Q bias is the cleanest diagnostic for truncation handling** — on long-horizon tasks, post-fix Q bias should be near zero. Strongly negative bias = fix isn't applied or wrapper doesn't populate `info["truncation"]`. Add `eval/q_bias` to smoke-test checklist.
 
 ## [Distributional RL (C51 / FastTD3 / FastSAC / FlashSAC)](lessons/distributional.md) — 12 lessons
 
@@ -91,6 +92,8 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **Treat every specific number in docs as a citation requirement** — the 18k sps claim was a real CheetahRun number cited on the Go2 page. Same failure mode as the obs dims ghost-ref. When copying a benchmark figure, copy the env name with it.
 - **Validation blocks catch cross-agent drift** — `validation.links.unrecognized_links: warn` in mkdocs.yml caught a broken link between two parallel subagents before it shipped. Cost: zero. Benefit: catches cross-cutting breakage.
 - **Drift test suite catches the "cleanup-N creates ghost-N+1" pattern** — `tests/test_docs_code_blocks.py` + `tests/test_docs_drift.py` mechanize the checks 4-persona reviewers keep making: Python fences compile-check, constructor kwargs match code, reverted-symbol greps stay zero, arxiv IDs resolve. Caught 16 issues on first run. See `lessons/infrastructure.md` §"Doc-Drift Test Suite".
+- **XLA mem fraction has to drop for bigger-network algos** — `XLA_CLIENT_MEM_FRACTION=0.7` works for FastSAC/FastTD3 but FlashSAC OOMs Warp graph creation. Drop to 0.55 for FlashSAC. Bigger models = more JAX heap = less for Warp.
+- **CheckpointManager "best" tracking excludes final eval** — `final_eval_and_checkpoint` doesn't update `ckpt_mgr.best_eval`, so grep "New best!" undercounts peak. Always check `max(best_in_loop, final_eval)` when reporting benchmarks.
 - **Anti-hallucination protocol cuts reviewer false positives** — drift-tests-first + tool-backed claims + date awareness + self-audit pass. Round 5 dropped hallucinations from ~2/round to 0, with verified rates 79-97% across reviewers. See `.context/references/docs_review_pattern.md` for paste-ready prompt template.
 - **Docs reviews hit diminishing returns at round 5** — each round catches ~50% fewer issues than the prior. Stop rule: next round nets <3 actionable items. Past that, drift tests + quarterly reviews are enough; continuous reviewing is bikeshedding.
 
