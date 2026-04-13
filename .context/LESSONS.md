@@ -91,6 +91,8 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **Treat every specific number in docs as a citation requirement** — the 18k sps claim was a real CheetahRun number cited on the Go2 page. Same failure mode as the obs dims ghost-ref. When copying a benchmark figure, copy the env name with it.
 - **Validation blocks catch cross-agent drift** — `validation.links.unrecognized_links: warn` in mkdocs.yml caught a broken link between two parallel subagents before it shipped. Cost: zero. Benefit: catches cross-cutting breakage.
 - **Drift test suite catches the "cleanup-N creates ghost-N+1" pattern** — `tests/test_docs_code_blocks.py` + `tests/test_docs_drift.py` mechanize the checks 4-persona reviewers keep making: Python fences compile-check, constructor kwargs match code, reverted-symbol greps stay zero, arxiv IDs resolve. Caught 16 issues on first run. See `lessons/infrastructure.md` §"Doc-Drift Test Suite".
+- **Anti-hallucination protocol cuts reviewer false positives** — drift-tests-first + tool-backed claims + date awareness + self-audit pass. Round 5 dropped hallucinations from ~2/round to 0, with verified rates 79-97% across reviewers. See `.context/references/docs_review_pattern.md` for paste-ready prompt template.
+- **Docs reviews hit diminishing returns at round 5** — each round catches ~50% fewer issues than the prior. Stop rule: next round nets <3 actionable items. Past that, drift tests + quarterly reviews are enough; continuous reviewing is bikeshedding.
 
 ## [MuJoCo Engine](lessons/mujoco.md) — 4 lessons
 

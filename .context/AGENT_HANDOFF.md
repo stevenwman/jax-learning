@@ -1,6 +1,6 @@
 # Agent Handoff — JAX RL Framework
 
-**Last updated:** 2026-03-26
+**Last updated:** 2026-04-12
 **Branch:** `new_slate_linen`
 **Status:** Active development — Go2 Phase A (PPO 244, motor actuators) and Phase B (FastSAC 226) COMPLETE. Sim2sim pipeline built, contact physics gap remaining.
 
