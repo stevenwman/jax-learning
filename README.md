@@ -1,8 +1,8 @@
 # jax-learning
 
-JAX-based reinforcement learning framework for robot learning research. Built for MuJoCo Playground environments, with a focus on locomotion and sim-to-real transfer.
+JAX-based reinforcement learning framework for robot learning research. Built for MuJoCo Playground environments, with a focus on Unitree Go2 locomotion and sim-to-real transfer.
 
-**[Documentation](https://stevenwman.github.io/jax-learning/)** | **[Quickstart](https://stevenwman.github.io/jax-learning/getting-started/quickstart/)** | **[API Reference](https://stevenwman.github.io/jax-learning/api/algos/)**
+**[Documentation](https://stevenwman.github.io/jax-learning/)** | **[Quickstart](https://stevenwman.github.io/jax-learning/getting-started/quickstart/)** | **[Annotated Training Loop](https://stevenwman.github.io/jax-learning/reference/training-loop/)** | **[API Reference](https://stevenwman.github.io/jax-learning/api/algos/)**
 
 ## Quick Start
 
@@ -10,45 +10,50 @@ JAX-based reinforcement learning framework for robot learning research. Built fo
 # Install dependencies
 uv sync
 
-# Train SAC on CheetahRun (simplest benchmark, ~8 min)
-uv run python train_offpolicy.py --algo sac --env CheetahRun
-
-# Train PPO on CartpoleBalance (fastest sanity check, ~2 min)
+# PPO on CartpoleBalance (fastest sanity check, ~2 min)
 uv run python train_ppo_fast.py --env CartpoleBalance --total-timesteps 1000000
 
+# SAC on CheetahRun (standard benchmark, ~8 min)
+uv run python train_sac.py --env CheetahRun
+
+# FastSAC on Go2 with domain randomization (best locomotion transfer)
+uv run python train_fast_sac.py --env Go2WarpJoystickFlat --reset-mode per_step --wandb
+
 # Record a video of a trained policy
-MUJOCO_GL=egl uv run python record_video.py --checkpoint checkpoints/<your_checkpoint>
+MUJOCO_GL=egl uv run python record_video.py --checkpoint checkpoints/<run_dir>/best
 ```
 
 ## Algorithms
 
-| Algorithm | Type | Script | Best Use Case |
-|-----------|------|--------|---------------|
-| **PPO** | On-policy | `train_ppo_fast.py` | Locomotion (Go2), high-dim obs |
-| **SAC** | Off-policy | `train_offpolicy.py --algo sac` | General continuous control |
-| **TD3** | Off-policy | `train_offpolicy.py --algo td3` | Low-dim action spaces |
-| **FastTD3** | Off-policy | `train_offpolicy.py --algo fast_td3` | Large-scale (1024 envs), C51 distributional |
-| **FastSAC** | Off-policy | `train_offpolicy.py --algo fast_sac` | Large-scale, high-dim actions (humanoid) |
-| **FlashSAC** | Off-policy | `train_flashsac.py` | Inverted residual blocks + BatchNorm + adaptive reward scaling |
+Each off-policy algo has its own entry script. The four below share a single loop implementation in `jax_rl/training/offpolicy_loop.py` (`run_offpolicy_loop`); FlashSAC stays standalone for BatchNorm + Zeta noise + adaptive reward scaling reasons (see [Architecture](https://stevenwman.github.io/jax-learning/reference/architecture/)).
 
-`train_ppo_fast.py` uses `jax.lax.scan` for the collection phase and is ~3x faster than `train_ppo.py`. Use it for real training runs.
+| Algorithm | Type | Script | Notes |
+|-----------|------|--------|-------|
+| **PPO** | On-policy | `train_ppo_fast.py` | `lax.scan` rollout. `train_ppo.py` is the Python-loop variant (slower, easier to read). |
+| **SAC** | Off-policy | `train_sac.py` | General continuous control baseline. |
+| **TD3** | Off-policy | `train_td3.py` | Deterministic-policy twin-critic baseline. |
+| **FastSAC** | Off-policy | `train_fast_sac.py` | SAC + C51 distributional critic + `policy_delay=4`. Large batches (8192), UTD 8. |
+| **FastTD3** | Off-policy | `train_fast_td3.py` | TD3 + C51 distributional critic. Same scale as FastSAC. |
+| **FlashSAC** | Off-policy | `train_flashsac.py` | Inverted residual blocks + BatchNorm + adaptive reward scaling. Standalone loop. |
+
+Note: for FastSAC/FastTD3 the target-Q Polyak update is gated by `policy_delay`, so effective per-critic-step target decay is `tau / policy_delay`, not `tau`. See [API → configs](https://stevenwman.github.io/jax-learning/api/configs/).
 
 ## Examples
 
-### DM Control Suite benchmarks
+### DM Control benchmarks
 
 ```bash
-# SAC on CheetahRun (expect ~771 eval @ 5M steps, ~8 min)
-uv run python train_offpolicy.py --algo sac --env CheetahRun
+# SAC on CheetahRun (~8 min, single seed)
+uv run python train_sac.py --env CheetahRun
 
-# SAC on WalkerWalk (expect ~975 eval @ 5M steps)
-uv run python train_offpolicy.py --algo sac --env WalkerWalk
+# SAC on WalkerWalk
+uv run python train_sac.py --env WalkerWalk
 
-# SAC on HumanoidRun (21-dim actions, expect ~426 eval @ 20M steps)
-uv run python train_offpolicy.py --algo sac --env HumanoidRun --obs-norm
+# SAC on HumanoidRun (21-dim actions, needs obs normalization)
+uv run python train_sac.py --env HumanoidRun --obs-norm
 
-# FastSAC at scale (1024 envs, C51 distributional critic)
-uv run python train_offpolicy.py --algo fast_sac --env HumanoidRun --obs-norm
+# FastSAC at scale
+uv run python train_fast_sac.py --env HumanoidRun --obs-norm
 
 # PPO on CheetahRun
 uv run python train_ppo_fast.py --env CheetahRun --total-timesteps 20000000
@@ -57,147 +62,131 @@ uv run python train_ppo_fast.py --env CheetahRun --total-timesteps 20000000
 ### Go2 quadruped locomotion
 
 ```bash
-# FastSAC on Go2 joystick walking (Warp backend, unitree MJCF)
-uv run python train_offpolicy.py --algo fast_sac --env Go2WarpJoystickFlat --total-timesteps 50000000
+# FastSAC on Go2 joystick (Warp backend, unitree MJCF, asymmetric critic)
+uv run python train_fast_sac.py --env Go2WarpJoystickFlat --num-envs 1024
 
-# FastSAC on Go2 (Warp backend, unitree MJCF — best for sim2sim/sim2real)
-uv run python train_offpolicy.py --algo fast_sac --env Go2WarpJoystickFlat --num-envs 1024
+# FastSAC + per-step domain randomization (recommended for sim-to-real transfer)
+uv run python train_fast_sac.py --env Go2WarpJoystickFlat --num-envs 1024 --reset-mode per_step
 
-# FastSAC + domain randomization (recommended for transfer)
-uv run python train_offpolicy.py --algo fast_sac --env Go2WarpJoystickFlat --num-envs 1024 --domain-rand
+# FlashSAC on Go2 (standalone loop)
+uv run python train_flashsac.py --env Go2WarpJoystickFlat --total-timesteps 10000000
 
-# Record a video of the trained walking policy
-MUJOCO_GL=egl uv run python record_video.py --checkpoint checkpoints/<go2_checkpoint>
-
-# Sim2sim validation on CPU MuJoCo (same unitree MJCF as Warp training)
+# Sim2sim validation on CPU MuJoCo (same unitree MJCF)
 MUJOCO_GL=egl uv run python deploy/sim2sim_direct.py \
-    --checkpoint checkpoints/<warp_go2_checkpoint> \
+    --checkpoint checkpoints/<warp_go2_checkpoint>/best \
     --vx 0.5 --duration 10 --record /tmp/sim2sim.mp4
 ```
 
-**Go2 backend:**
-- `Go2WarpJoystickFlat` — MuJoCo Warp backend, unitree go2.xml (full cylinder collision geometry). Eliminates sim2sim gap. Use for deployment.
+**Go2 backend:** `Go2WarpJoystickFlat` uses MuJoCo Warp with full cylinder collision geometry (unitree MJCF). Eliminates the MJX → real sim2sim gap. Asymmetric critic: 48d actor obs (deployable sensors) + 122d privileged critic obs.
 
-### Recording and visualizing policies
+### Recording videos
 
 ```bash
-# Record video from checkpoint (headless — works on servers without a display)
-MUJOCO_GL=egl uv run python record_video.py --checkpoint checkpoints/<checkpoint_dir>
-
-# Record with custom settings
-MUJOCO_GL=egl uv run python record_video.py \
-    --checkpoint checkpoints/<checkpoint_dir> \
-    --out my_video.mp4 \
-    --max-steps 1000
-
-# Live interactive viewer (requires display, Go2 joystick envs only)
-# Arrow keys control velocity commands, space resets
-uv run python live_viewer.py --checkpoint checkpoints/<go2_checkpoint>
+# Record from checkpoint — headless EGL, works on servers without display
+MUJOCO_GL=egl uv run python record_video.py --checkpoint checkpoints/<run_dir>/best
 ```
+
+`record_video.py` sets `XLA_PYTHON_CLIENT_PREALLOCATE=false` by default so it coexists with concurrent training on the same GPU. Uses a Python loop over `jit(rollout_step)` rather than `lax.scan` to keep peak HBM low (~300 MB vs ~1 GB for scan).
 
 ### Common flags
 
 ```bash
 # All training scripts support:
---env NAME              # Environment name (e.g., CheetahRun, Go2WarpJoystickFlat)
---seed N                # Random seed (default: 0)
---total-timesteps N     # Total environment steps
---num-envs N            # Parallel environments (default: varies by env preset)
---eval-every N          # Evaluate every N episodes
---resume PATH           # Resume training from a checkpoint
---obs-norm              # Enable sample-time observation normalization
---domain-rand           # Enable domain randomization (Go2 only)
---frame-stack N         # Stack N observation frames (default: 1)
---action-delay-ms N     # Simulate N ms action latency (sim2real)
+--env NAME                       # Environment name
+--seed N                         # Random seed (default: 0)
+--total-timesteps N              # Total environment steps
+--num-envs N                     # Parallel envs (default: varies by preset)
+--reset-mode MODE                # "legacy" (default) or "per_step" (enables DomainRandWrapper)
+--obs-norm                       # Sample-time observation normalization
+--frame-stack N                  # Stack N observation frames
+--action-delay-ms N              # Simulate fixed N ms action latency
 --action-delay-range-ms MIN MAX  # Randomized per-episode delay
---wandb                 # Enable W&B experiment tracking
-
-# Off-policy only (train_offpolicy.py):
---algo NAME             # Algorithm: sac, td3, fast_td3, fast_sac
---exploration-noise F   # TD3 exploration noise std (default: from config)
+--resume PATH                    # Resume from checkpoint
+--wandb                          # Enable W&B experiment tracking
 ```
+
+Full CLI reference: [docs.../reference/cli-flags](https://stevenwman.github.io/jax-learning/reference/cli-flags/).
 
 ## Project Structure
 
 ```
-├── train_ppo_fast.py          # PPO training (lax.scan collect, fastest)
-├── train_ppo.py               # PPO training (Python loop, easier to read)
-├── train_offpolicy.py         # Unified off-policy: SAC, TD3, FastTD3, FastSAC
-├── train_flashsac.py          # FlashSAC training (standalone)
-├── record_video.py            # Record policy videos from checkpoints
-├── live_viewer.py             # Interactive policy viewer (Go2)
+├── train_ppo_fast.py           # PPO (lax.scan rollout, fastest)
+├── train_ppo.py                # PPO (Python loop, easier to read)
+├── train_sac.py                # SAC          ─┐
+├── train_td3.py                # TD3           │  thin wrappers around
+├── train_fast_sac.py           # FastSAC       │  run_offpolicy_loop
+├── train_fast_td3.py           # FastTD3      ─┘
+├── train_flashsac.py           # FlashSAC (standalone)
+├── record_video.py             # Render a rollout from a checkpoint
 │
 ├── jax_rl/
-│   ├── algos/                 # Algorithm implementations
-│   │   ├── ppo.py             #   Proximal Policy Optimization
-│   │   ├── sac.py             #   Soft Actor-Critic
-│   │   ├── td3.py             #   Twin Delayed DDPG
-│   │   ├── fast_td3.py        #   TD3 + C51 distributional critic
-│   │   ├── fast_sac.py        #   SAC + C51 distributional critic
-│   │   └── flash_sac.py       #   Inverted residual + BatchNorm + weight norm
+│   ├── algos/                  # Pure-math algo implementations (no env knowledge)
+│   │   ├── ppo.py              #   Proximal Policy Optimization
+│   │   ├── sac.py, td3.py      #   Vanilla SAC / TD3
+│   │   ├── fast_sac.py         #   SAC + C51 distributional critic
+│   │   ├── fast_td3.py         #   TD3 + C51 distributional critic
+│   │   └── flash_sac.py        #   Inverted residual + BatchNorm + weight norm
 │   │
-│   ├── networks/
-│   │   ├── builders.py        #   Composed modules (encoder + head, swappable)
-│   │   ├── activations.py     #   Activation function registry
-│   │   ├── distributions.py   #   Gaussian sampling, log_prob, entropy
-│   │   ├── encoders/
-│   │   │   └── mlp.py         #   MLP encoder (obs → features)
-│   │   └── heads/
-│   │       ├── gaussian.py    #   Stochastic policy head (PPO, SAC)
-│   │       ├── deterministic.py # Deterministic policy head (TD3)
-│   │       ├── value.py       #   V(s) head (PPO critic)
-│   │       ├── q_head.py      #   Scalar Q(s,a) head (SAC, TD3)
-│   │       └── q_distributional.py # C51 Q(s,a) head (FastTD3, FastSAC)
+│   ├── training/               # Shared training plumbing
+│   │   ├── offpolicy_loop.py   #   run_offpolicy_loop — shared SAC/TD3/FastSAC/FastTD3 loop
+│   │   ├── env_setup.py        #   EnvBundle + make_env_bundle (env + step + obs dims)
+│   │   ├── obs_pipeline.py     #   ObsPipeline (dict obs, running mean/std, frame stacking)
+│   │   ├── checkpointing.py    #   Checkpoint save/load (orbax + meta.json)
+│   │   └── eval_runner.py      #   Periodic eval + best-checkpoint tracking
 │   │
-│   ├── configs/               # Hyperparameter dataclasses + env presets
-│   ├── training/              # Shared infrastructure (checkpointing, eval, logging)
+│   ├── configs/                # Hyperparameter dataclasses + env presets
+│   ├── networks/               # Encoder + head builders (MLP, Gaussian, C51, etc.)
 │   ├── envs/
-│   │   ├── locomotion/        #   Go2 envs (MJX + Warp backends), bongo handstand
-│   │   └── wrappers/          #   Training wrappers (vmap, episode, auto-reset, frame stack, action delay)
-│   ├── buffers/               # Replay buffer (off-policy, frame-stack-aware) + rollout buffer (PPO)
-│   └── utils/                 # Normalization, frame stacking, distributional math
+│   │   ├── locomotion/         #   Go2 (Warp + MJX archived), bongo handstand
+│   │   └── wrappers/           #   Vmap, Episode, AutoReset, DomainRand, FrameStack, ActionDelay
+│   ├── buffers/                # Off-policy replay + PPO rollout buffers
+│   └── utils/                  # Normalization, distributional math
 │
-├── checkpoints/               # Saved model checkpoints
-├── tools/                     # Diagnostic scripts (kinematic sweep, Brax baselines)
-├── tests/                     # Test suite (pytest)
-└── .context/                  # Project docs, lessons, plans
+├── deploy/                     # Sim2sim + real-hardware deploy (separate Python 3.12 venv)
+├── docs/                       # MkDocs site source
+├── tests/                      # pytest suite (includes docs-drift tests)
+├── tools/                      # Diagnostic scripts (kinematic sweep, Brax baselines)
+└── .context/                   # Project journal, lessons, plans (internal voice)
 ```
 
 ## Benchmark Results
 
-| Environment | PPO | SAC | TD3 | FastTD3 | FastSAC | FlashSAC |
-|-------------|-----|-----|-----|---------|---------|----------|
-| CheetahRun | 826 | **771** | 749 | **880** | 582 | — |
-| WalkerWalk | 833 | **975** | 955 | — | — | — |
-| HumanoidRun | ~10 | 426 | 4.3 | 665 | **892** | — |
-| Go2 Joystick (Warp) | 132 | — | — | — | 279 | **282** |
+All numbers are **single-seed, post-truncation-fix (2026-04-12)**. Pre-fix numbers on long-horizon tasks (Go2, Humanoid) may not reproduce — the fix removed a systematic Q-underestimation bias. See [`lessons-learned.md`](https://stevenwman.github.io/jax-learning/reference/lessons-learned/) for context.
 
-FastSAC excels on high-dim action spaces (HumanoidRun). **FlashSAC achieves highest Go2 eval (282.4 @ 10M steps)** with inverted residual blocks and adaptive reward scaling. Go2 MJX env is archived — Warp is the primary backend.
+| Environment | PPO | SAC | FastSAC | FastTD3 | FlashSAC |
+|-------------|----:|----:|--------:|--------:|---------:|
+| CheetahRun (5M) | — | 771 | — | **515.9** | — |
+| WalkerWalk (5M) | 833 | 975 | — | — | — |
+| Go2WarpJoystickFlat (10–20M) | 132 | — | **283.8** (per_step DR) | 273.1 (per_step DR) | **284.5** |
+
+FastTD3 CheetahRun 515.9 is at 5M steps (shorter than the ~880 number under 86M-step paper regime). Go2 scores within seed variance of each other — FlashSAC slightly ahead but A/B not yet characterized across seeds. See [AGENT_HANDOFF](.context/AGENT_HANDOFF.md) for full benchmark table.
 
 ## Key Design Decisions
 
-- **JAX-native**: Everything runs on GPU via JAX/Flax. No PyTorch dependency.
-- **MuJoCo Playground**: Uses MJX or Warp for GPU-parallelized physics (1024+ envs).
-- **Encoder-swappable**: All algos use `builders.py` — swap MLP for CNN by changing the builder, not the algo.
-- **Asymmetric critic**: Off-policy algos support privileged critic (122d) with policy actor (48d).
-- **Self-contained envs**: Each env handles its own obs, rewards, and action scaling. Training scripts are env-agnostic.
-- **Config-driven wrappers**: Frame stacking, action delay, etc. via pipeline — no per-wrapper code in training scripts.
-- **NaN/Inf safe**: MJX physics can crash stochastically. All training automatically guards against this.
+- **Three-layer separation** — env / training / algo. Algos never import environments; they receive batches of `(obs, action, reward, next_obs, done, truncation)` and return updated parameters.
+- **Shared off-policy loop** — `run_offpolicy_loop` handles the SAC/TD3/FastSAC/FastTD3 training script surface. Per-algo scripts just build the algo + optimizer + explore closure.
+- **JAX-native** — everything on GPU via JAX/Flax. No PyTorch dependency.
+- **MuJoCo Playground** — MJX or Warp for GPU-parallelized physics (1024+ envs). Warp is primary for Go2 (full cylinder collision).
+- **Asymmetric critic** — off-policy algos support privileged critic obs (122d) with deployable actor obs (48d). Critic is discarded at deployment.
+- **Closure-based networks** — algos build their networks once in `__init__` as closures; JIT-friendly, trace-stable.
+- **Truncation-aware** — off-policy loss masks pure-timeout transitions; `done`-terminated transitions keep their bootstrap-zero target.
 
 ## For New Contributors
 
-Start by reading:
-1. **This README** — overview and examples
-2. **`.context/LESSONS.md`** — debugging lessons and gotchas (save yourself hours)
-3. **`jax_rl/algos/sac.py`** — best-documented algo, explains the closure pattern all algos use
-4. **`jax_rl/networks/builders.py`** — how networks are composed (encoder + head)
+1. Read [Concepts](https://stevenwman.github.io/jax-learning/getting-started/concepts/) for the mental model
+2. Read [Annotated Training Loop](https://stevenwman.github.io/jax-learning/reference/training-loop/) — the off-policy loop, end-to-end
+3. Read `jax_rl/algos/sac.py` — simplest algo, shows the closure pattern all others use
+4. Read `.context/LESSONS.md` — debugging gotchas, saves hours
 
 ## Requirements
 
-- Python 3.10+
-- NVIDIA GPU with CUDA
-- [uv](https://docs.astral.sh/uv/) package manager
+- Python 3.13+
+- NVIDIA GPU with CUDA (no CPU-only training — JAX compiles to GPU)
+- Linux (CUDA JAX doesn't support macOS or Windows)
+- [uv](https://docs.astral.sh/uv/)
 
 ```bash
 uv sync  # installs everything
 ```
+
+No GPU? The CartpoleBalance quickstart runs on Google Colab's free T4 tier; Go2 needs a paid GPU or local RTX 3060+.

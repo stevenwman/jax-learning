@@ -108,18 +108,18 @@ deploy/.venv/bin/python deploy/deploy_go2.py \
 **Recommended: FastSAC on Warp backend** (trains on unitree's exact MJCF — no sim2sim gap):
 ```bash
 # FastSAC on Go2 Warp (unitree MJCF, full collision geometry)
-uv run python train_offpolicy.py --algo fast_sac --env Go2WarpJoystickFlat \
+uv run python train_fast_sac.py --env Go2WarpJoystickFlat \
     --num-envs 1024 --total-timesteps 20000000 --seed 42 --wandb
 
-# With domain randomization (recommended for robustness):
-uv run python train_offpolicy.py --algo fast_sac --env Go2WarpJoystickFlat \
-    --num-envs 1024 --total-timesteps 50000000 --seed 42 --wandb --domain-rand
+# With per-step domain randomization (recommended for robustness):
+uv run python train_fast_sac.py --env Go2WarpJoystickFlat \
+    --num-envs 1024 --total-timesteps 50000000 --seed 42 --wandb --reset-mode per_step
 ```
 
-**Alternative: PPO on MJX backend** (faster training, but sim2sim gap with unitree model):
+**Alternative: PPO** (faster wall-clock, but on-policy so less sample-efficient):
 ```bash
 uv run python train_ppo_fast.py --env Go2WarpJoystickFlat --num-envs 1024 \
-    --total-timesteps 50000000 --seed 42 --wandb --domain-rand
+    --total-timesteps 50000000 --seed 42 --wandb --reset-mode per_step
 ```
 
 ```bash
