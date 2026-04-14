@@ -9,7 +9,7 @@ jax-learning is a learning vehicle and lab tool — every algorithm is implement
 <video autoplay loop muted playsinline preload="metadata">
   <source src="assets/videos/go2_joystick_walk.mp4" type="video/mp4">
 </video>
-<p class="caption" markdown="1">Go2 locomotion — FastSAC, eval 276.5</p>
+<p class="caption" markdown="1">Go2 locomotion — FastSAC</p>
 </div>
 <div markdown>
 <video controls loop muted playsinline preload="metadata">
