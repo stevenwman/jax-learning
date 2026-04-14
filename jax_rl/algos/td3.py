@@ -152,10 +152,11 @@ class TD3:
 
             # ── Critic update (every step) ────────────────────────────────
             q_params = (state.q1_params, state.q2_params)
-            (_, critic_metrics), q_grads = jax.value_and_grad(
-                _critic_loss, argnums=0, has_aux=True
-            )(q_params, state.target_actor_params, state.target_q1_params,
-              state.target_q2_params, batch, k1)
+            critic_grad_fn = jax.value_and_grad(_critic_loss, argnums=0, has_aux=True)
+            (_, critic_metrics), q_grads = critic_grad_fn(
+                q_params, state.target_actor_params, state.target_q1_params,
+                state.target_q2_params, batch, k1,
+            )
             q_updates, new_q_opt_state = critic_optimizer.update(
                 q_grads, state.q_opt_state, params=q_params
             )
@@ -166,9 +167,10 @@ class TD3:
                 actor_params, actor_opt_state, q1_p, nq1, nq2, ta, tq1, tq2, _ = args
                 obs = batch["obs"]
                 critic_obs = batch["critic_obs"]
-                (_, actor_metrics), actor_grads = jax.value_and_grad(
-                    _actor_loss_fn, argnums=0, has_aux=True
-                )(actor_params, q1_p, obs, critic_obs)
+                actor_grad_fn = jax.value_and_grad(_actor_loss_fn, argnums=0, has_aux=True)
+                (_, actor_metrics), actor_grads = actor_grad_fn(
+                    actor_params, q1_p, obs, critic_obs,
+                )
                 actor_updates, new_actor_opt_state = actor_optimizer.update(
                     actor_grads, actor_opt_state, params=actor_params
                 )

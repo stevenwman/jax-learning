@@ -185,28 +185,31 @@ class SAC:
 
             # Critic update
             q_params = (state.q1_params, state.q2_params)
-            (_, critic_metrics), q_grads = jax.value_and_grad(
-                _critic_loss, argnums=0, has_aux=True
-            )(q_params, state.actor_params, state.target_q1_params,
-              state.target_q2_params, state.log_alpha, batch, k1)
+            critic_grad_fn = jax.value_and_grad(_critic_loss, argnums=0, has_aux=True)
+            (_, critic_metrics), q_grads = critic_grad_fn(
+                q_params, state.actor_params, state.target_q1_params,
+                state.target_q2_params, state.log_alpha, batch, k1,
+            )
             q_updates, new_q_opt_state = optimizer.update(
                 q_grads, state.q_opt_state, params=q_params)
             new_q1_params, new_q2_params = optax.apply_updates(q_params, q_updates)
 
             # Actor update
-            (_, actor_metrics), actor_grads = jax.value_and_grad(
-                _actor_loss, argnums=0, has_aux=True
-            )(state.actor_params, state.q1_params, state.q2_params,
-              state.log_alpha, batch, k2)
+            actor_grad_fn = jax.value_and_grad(_actor_loss, argnums=0, has_aux=True)
+            (_, actor_metrics), actor_grads = actor_grad_fn(
+                state.actor_params, state.q1_params, state.q2_params,
+                state.log_alpha, batch, k2,
+            )
             actor_updates, new_actor_opt_state = optimizer.update(
                 actor_grads, state.actor_opt_state, params=state.actor_params
             )
             new_actor_params = optax.apply_updates(state.actor_params, actor_updates)
 
             # Alpha update
-            (_, alpha_metrics), alpha_grads = jax.value_and_grad(
-                _alpha_loss, argnums=0, has_aux=True
-            )(state.log_alpha, state.actor_params, batch, k3)
+            alpha_grad_fn = jax.value_and_grad(_alpha_loss, argnums=0, has_aux=True)
+            (_, alpha_metrics), alpha_grads = alpha_grad_fn(
+                state.log_alpha, state.actor_params, batch, k3,
+            )
             alpha_updates, new_alpha_opt_state = alpha_optimizer.update(
                 alpha_grads, state.alpha_opt_state, params=state.log_alpha
             )

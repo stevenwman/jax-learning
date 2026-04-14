@@ -369,10 +369,11 @@ class FlashSAC:
                  log_alpha, alpha_opt) = args
 
                 # Actor gradient
-                (_, (new_a_bs, actor_metrics)), a_grads = jax.value_and_grad(
-                    _actor_loss, argnums=0, has_aux=True
-                )(a_params, a_bs, q1_p, q1_bs, q2_p, q2_bs,
-                  log_alpha, batch, k1)
+                actor_grad_fn = jax.value_and_grad(_actor_loss, argnums=0, has_aux=True)
+                (_, (new_a_bs, actor_metrics)), a_grads = actor_grad_fn(
+                    a_params, a_bs, q1_p, q1_bs, q2_p, q2_bs,
+                    log_alpha, batch, k1,
+                )
                 a_updates, new_a_opt = optimizer.update(
                     a_grads, a_opt, params=a_params
                 )
@@ -381,9 +382,8 @@ class FlashSAC:
 
                 # Temperature gradient (uses entropy from actor)
                 entropy = actor_metrics["entropy"]
-                (_, alpha_metrics), alpha_grads = jax.value_and_grad(
-                    _alpha_loss, argnums=0, has_aux=True
-                )(log_alpha, entropy)
+                alpha_grad_fn = jax.value_and_grad(_alpha_loss, argnums=0, has_aux=True)
+                (_, alpha_metrics), alpha_grads = alpha_grad_fn(log_alpha, entropy)
                 alpha_updates, new_alpha_opt = alpha_optimizer.update(
                     alpha_grads, alpha_opt, params=log_alpha
                 )
