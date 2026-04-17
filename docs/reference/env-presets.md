@@ -23,6 +23,9 @@ Select an algorithm tab below to see its presets. Defaults (gamma=0.99, reward_s
     | WalkerWalk | 2,048 | 60M | 0.001 | 30 | 16 | 0.01 | gamma=0.995, reward_scaling=10 |
     | HumanoidRun | 2,048 | 60M | 0.001 | 480 | 16 | 0.01 | gamma=0.995, reward_scaling=10, policy_hidden_dim=(128, 128, 128, 128), state_dependent_std=True, anneal_lr=False |
     | Go2WarpJoystickFlat | 4,096 | 100M | 3e-04 | 20 | 4 | 0.01 | gamma=0.97, num_updates_per_batch=4, policy_hidden_dim=(512, 256, 128), value_hidden_dim=(512, 256, 128), max_grad_norm=1 |
+    | Go2WarpJoystickFlatTorqueSpeed | 4,096 | 100M | 3e-04 | 20 | 4 | 0.01 | gamma=0.97, num_updates_per_batch=4, policy_hidden_dim=(512, 256, 128), value_hidden_dim=(512, 256, 128), max_grad_norm=1 |
+    | Go2WarpJoystickCurriculum | 4,096 | 100M | 3e-04 | 20 | 4 | 0.01 | gamma=0.97, num_updates_per_batch=4, policy_hidden_dim=(512, 256, 128), value_hidden_dim=(512, 256, 128), max_grad_norm=1 |
+    | Go2WarpJoystickCurriculumTorqueSpeed | 4,096 | 100M | 3e-04 | 20 | 4 | 0.01 | gamma=0.97, num_updates_per_batch=4, policy_hidden_dim=(512, 256, 128), value_hidden_dim=(512, 256, 128), max_grad_norm=1 |
 
     PPO algo defaults: `clip_eps=0.3`, `entropy_coef=0.01`, `gae_lambda=0.95`, `num_epochs=4`, `num_steps=64`, `num_updates_per_batch=1`, `policy_hidden_dim=(32, 32, 32, 32)`, `value_hidden_dim=(256, 256, 256, 256, 256)`, `activation=swish`, `squash=True`, `state_dependent_std=False`, `max_grad_norm=None`, `anneal_lr=True`, `critic_encoder=None`, `policy_head=None`, `normalize_advantage=True`.
 
@@ -77,6 +80,9 @@ Select an algorithm tab below to see its presets. Defaults (gamma=0.99, reward_s
     | WalkerWalk | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97 |
     | HumanoidRun | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97 |
     | Go2WarpJoystickFlat | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97 |
+    | Go2WarpJoystickFlatTorqueSpeed | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97 |
+    | Go2WarpJoystickCurriculum | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97 |
+    | Go2WarpJoystickCurriculumTorqueSpeed | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97 |
 
     FastSAC algo defaults: `tau=0.125`, `hidden_dim=(512, 256, 128)`, `activation=swish`, `batch_size=8,192`, `grad_updates_per_step=8`, `buffer_size=4M`, `min_buffer_size=8,192`, `q_layer_norm=True`.
 
@@ -91,6 +97,9 @@ Select an algorithm tab below to see its presets. Defaults (gamma=0.99, reward_s
     | WalkerWalk | 1,024 | 100M | 3e-04 | 2,048 | 8 |  |
     | HumanoidRun | 1,024 | 100M | 3e-04 | 2,048 | 8 |  |
     | Go2WarpJoystickFlat | 1,024 | 100M | 3e-04 | 2,048 | 8 | gamma=0.97 |
+    | Go2WarpJoystickFlatTorqueSpeed | 1,024 | 100M | 3e-04 | 2,048 | 8 | gamma=0.97 |
+    | Go2WarpJoystickCurriculum | 1,024 | 100M | 3e-04 | 2,048 | 8 | gamma=0.97 |
+    | Go2WarpJoystickCurriculumTorqueSpeed | 1,024 | 100M | 3e-04 | 2,048 | 8 | gamma=0.97 |
 
     FlashSAC algo defaults: `tau=0.01`, `batch_size=2,048`, `grad_updates_per_step=1`, `buffer_size=1M`, `min_buffer_size=10,000`.
 

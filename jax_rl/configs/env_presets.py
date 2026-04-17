@@ -70,6 +70,17 @@ PRESETS: dict[str, TrainConfig] = {
         ),
     ),
 }
+PRESETS["Go2WarpJoystickFlatTorqueSpeed"] = dataclasses.replace(
+    PRESETS["Go2WarpJoystickFlat"], env_name="Go2WarpJoystickFlatTorqueSpeed"
+)
+
+# Curriculum variants — same hyperparams as Flat.
+PRESETS["Go2WarpJoystickCurriculum"] = dataclasses.replace(
+    PRESETS["Go2WarpJoystickFlat"], env_name="Go2WarpJoystickCurriculum"
+)
+PRESETS["Go2WarpJoystickCurriculumTorqueSpeed"] = dataclasses.replace(
+    PRESETS["Go2WarpJoystickFlat"], env_name="Go2WarpJoystickCurriculumTorqueSpeed"
+)
 
 
 # SAC presets — matching MuJoCo Playground dm_control_suite_params.brax_sac_config()
@@ -257,6 +268,18 @@ FAST_SAC_PRESETS: dict[str, tuple[TrainConfig, FastSACConfig]] = {
         _FAST_SAC_BASE_ALGO,
     ),
 }
+FAST_SAC_PRESETS["Go2WarpJoystickFlatTorqueSpeed"] = (
+    dataclasses.replace(_FAST_SAC_BASE_CFG, env_name="Go2WarpJoystickFlatTorqueSpeed"),
+    _FAST_SAC_BASE_ALGO,
+)
+FAST_SAC_PRESETS["Go2WarpJoystickCurriculum"] = (
+    dataclasses.replace(_FAST_SAC_BASE_CFG, env_name="Go2WarpJoystickCurriculum"),
+    _FAST_SAC_BASE_ALGO,
+)
+FAST_SAC_PRESETS["Go2WarpJoystickCurriculumTorqueSpeed"] = (
+    dataclasses.replace(_FAST_SAC_BASE_CFG, env_name="Go2WarpJoystickCurriculumTorqueSpeed"),
+    _FAST_SAC_BASE_ALGO,
+)
 
 
 def get_fast_sac_preset(env_name: str) -> tuple[TrainConfig, FastSACConfig]:
@@ -306,6 +329,18 @@ FLASH_SAC_PRESETS: dict[str, tuple[TrainConfig, FlashSACConfig]] = {
         _FLASH_SAC_BASE_ALGO,
     ),
 }
+FLASH_SAC_PRESETS["Go2WarpJoystickFlatTorqueSpeed"] = (
+    dataclasses.replace(_FLASH_SAC_BASE_CFG, env_name="Go2WarpJoystickFlatTorqueSpeed"),
+    _FLASH_SAC_BASE_ALGO,
+)
+FLASH_SAC_PRESETS["Go2WarpJoystickCurriculum"] = (
+    dataclasses.replace(_FLASH_SAC_BASE_CFG, env_name="Go2WarpJoystickCurriculum"),
+    _FLASH_SAC_BASE_ALGO,
+)
+FLASH_SAC_PRESETS["Go2WarpJoystickCurriculumTorqueSpeed"] = (
+    dataclasses.replace(_FLASH_SAC_BASE_CFG, env_name="Go2WarpJoystickCurriculumTorqueSpeed"),
+    _FLASH_SAC_BASE_ALGO,
+)
 
 
 def get_flash_sac_preset(env_name: str) -> tuple[TrainConfig, FlashSACConfig]:
