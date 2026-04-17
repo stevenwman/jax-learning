@@ -115,9 +115,13 @@ def final_eval_and_checkpoint(
     )
 
     if ctx.ckpt_mgr is not None:
-        ctx.ckpt_mgr.save(training_state, norm_state, cfg, ctx.algo_cfg,
-                          ctx.algo_name, ctx.obs_dim, ctx.action_dim, metrics_log, ctx.resume,
-                          eval_mean=eval_metrics['eval_mean'])
+        is_best = ctx.ckpt_mgr.save(
+            training_state, norm_state, cfg, ctx.algo_cfg,
+            ctx.algo_name, ctx.obs_dim, ctx.action_dim, metrics_log, ctx.resume,
+            eval_mean=eval_metrics['eval_mean'],
+        )
+        if is_best:
+            print(f"  New best! eval={ctx.ckpt_mgr.best_eval:.1f}")
     else:
         save_checkpoint(ctx.ckpt_dir, training_state, norm_state, cfg, ctx.algo_cfg,
                         ctx.algo_name, ctx.obs_dim, ctx.action_dim, metrics_log, ctx.resume)

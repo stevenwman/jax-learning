@@ -338,13 +338,9 @@ The 284.5 was higher but didn't trigger "New best!" in the logs because the fina
 
 **Implication:** Reporting "best eval" from grep-ing "New best!" lines undercounts the true peak performance. The right number is `max(in_loop_best, final_eval)`.
 
-**Fix options:**
-1. **Code fix:** make `final_eval_and_checkpoint` also call `ckpt_mgr.maybe_save_best(eval_mean)` so the final eval competes for the "best" slot.
-2. **Convention:** when recording benchmarks, always check both "New best!" lines AND the final "Eval return: X" line, take max.
+**Update (2026-04-14):** On closer inspection, the checkpoint artifact was already correct — `final_eval_and_checkpoint` already passed `eval_mean` to `ckpt_mgr.save()`, which internally updated `best_eval` and wrote to `best_dir` when the final eval beat the in-loop best. Only the stdout announcement was missing. Fixed in `eval_runner.py::final_eval_and_checkpoint` by capturing `is_best` and printing "New best!" — now matches the in-loop path's behavior.
 
-Currently using option 2 (convention). Worth the code fix when next touching `eval_runner.py`.
-
-**Applies to:** Any benchmark recording from this codebase. Don't trust grep "New best!" alone — always cross-check final eval.
+**Applies retroactively to:** Any benchmark recorded before 2026-04-14 — grep "New best!" alone undercounted peaks; always cross-check with the final "Eval return: X" line. Post-fix, grep is sufficient.
 
 ---
 
