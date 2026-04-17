@@ -5,6 +5,7 @@ MuJoCo-based environments for quadruped locomotion. All environments use MuJoCo 
 | Environment | Task | Obs (state) | Obs (privileged) | Actions |
 |-------------|------|-------------|-------------------|---------|
 | [WarpJoystick](#warpjoystick) | Track velocity command | 48d | 122d | 12 (joint targets) |
+| [WarpJoystick (+torque-speed)](#actuator-models) | Same, with motor saturation curve | 48d | 122d | 12 (joint targets) |
 | [BongoHandstand](#bongohandstand) | Handstand on bongo board | 42–46d | ~96d | 12 (joint targets) |
 
 Reward and observation specs are data-driven — swap terms without touching environment internals.
@@ -63,6 +64,76 @@ Track a joystick velocity command (vx, vy, yaw rate) with the Unitree Go2. The p
 
 `get_domain_randomization_spec() → list[DRSpec]`
 : Declare per-episode randomization ranges.
+
+### Actuator models
+
+By default, WarpJoystick uses **ideal PD control**: `τ = Kp(q* − q) − Kd·q̇`, clipped by MJCF `actuator_ctrlrange` at peak torque (23.7 Nm hip/thigh, 45.43 Nm calf). Simple, fast, and sufficient for most training.
+
+An optional **linear torque-speed curve** is available — the approximation used by MJLab's `DcActuator` and similar frameworks:
+
+$$\tau_\text{limit} = \tau_\text{stall} \cdot \max\!\left(1 - \frac{|\dot{q}|}{\dot{q}_\text{max}},\ 0\right)$$
+
+Peak torque decreases linearly with joint velocity, reaching zero at the velocity limit (30.1 rad/s hip/thigh, 20.07 rad/s calf — from the Unitree URDF).
+
+Enable via the registered variant env:
+
+```bash
+uv run python train_fast_sac.py --env Go2WarpJoystickFlatTorqueSpeed \
+    --reset-mode per_step --total-timesteps 20000000 --wandb
+```
+
+The variant uses identical hyperparameters to `Go2WarpJoystickFlat` — clean A/B comparable.
+
+!!! note "When it matters"
+    Joint velocities during flat-terrain walking at 1 m/s peak around 15 rad/s — well below the 20–30 rad/s limit. The clip is essentially dormant during steady gait (0% saturation in 1000-step rollouts). It activates under sprint commands, jumps, recovery motions, or push-force disturbances. Adopt as default when those regimes are on the menu; skip otherwise.
+
+    Full analysis and quantitative trajectory data: [lessons/actuator_models.md](https://github.com/stevenwman/jax-learning/blob/main/.context/lessons/actuator_models.md).
+
+---
+
+## WarpJoystickCurriculum
+
+Procedurally generated terrain with per-env curriculum advancement. Robot navigates toward a per-episode world-frame goal; curriculum advances when the robot reaches the goal, demotes when the robot falls or fails to make progress.
+
+**Variants:**
+- `Go2WarpJoystickCurriculum` — default actuator (ideal PD).
+- `Go2WarpJoystickCurriculumTorqueSpeed` — with linear torque-speed actuator curve.
+
+**Terrain grid:** 10 difficulty levels × 4 terrain types = 40 tiles, each 9.6×9.6m.
+
+**Terrain types:**
+
+| Type | Description | Max height |
+|------|-------------|-----------|
+| Rough | Grid of boxes with per-cell height variation | 0.22m |
+| PyramidStairs (up) | Concentric rings rising to center platform | 0.4m step |
+| InvertedPyramidStairs (bowl) | Rim at ground, descends to pit | 0.4m step |
+| TiltedGrid | Grid of tiles with random tilt | 25° |
+
+**Column assignment:** each env is fixed to one terrain type for the entire training run (`env_id % 4`). Specialization pattern from legged_gym.
+
+**Goal-directed commands:** each episode samples a world-frame goal (opposite edge for rough/tilted, center for pyramid/inverted). Body-frame command is computed per-step from goal + robot pose via P-controller on yaw; `target_speed` scales linearly with `terrain_level` (0.5 m/s at level 0 → 1.5 m/s at level 9).
+
+**Curriculum advancement:** at episode end,
+
+- `reached_goal AND NOT fallen` → level += 1
+- `fallen` → level -= 1
+- `timeout AND min_distance > 0.5 × initial_distance` → level -= 1
+- otherwise → stay
+
+Level clamped to `[0, num_rows-1]`.
+
+**wandb metrics:** terrain metrics are logged automatically when `--wandb` is active. Keys: `terrain/{type}/mean_level`, `terrain/{type}/reach_rate`, `terrain/{type}/fall_rate`, `terrain/{type}/promote_rate`, `terrain/{type}/demote_rate`, and `terrain/global/*` aggregates.
+
+**Usage:**
+```bash
+uv run python train_fast_sac.py --env Go2WarpJoystickCurriculum --reset-mode per_step --num-envs 64 --wandb
+```
+
+!!! note "VRAM budget"
+    Curriculum env has ~1500 geoms (vs ~100 for flat) — needs fewer parallel envs than flat. `--num-envs 64` fits in ~13 GB VRAM.
+
+See [lessons/terrain_curriculum.md](https://github.com/stevenwman/jax-learning/blob/main/.context/lessons/terrain_curriculum.md) for design rationale and gotchas.
 
 ---
 
