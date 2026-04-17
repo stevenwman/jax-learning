@@ -61,6 +61,13 @@
 - [x] **A/B FastSAC torque-speed model vs baseline on Go2** (2026-04-15) — seed 42, 20M, per_step DR: **286.0 best / 280.9 final**. Matches full-config baseline (285.1 ± 3.2) despite stripped obs. Trajectory analysis: 0% saturations during 1 m/s walking, mean torque-speed scale 0.92, peak |q̇| 15.6 rad/s vs limits 20-30. Clip dormant at walking speeds. See `.context/lessons/actuator_models.md` and `.context/journals/2026-04-15.md`.
 - [ ] **Second seed on torque-speed model** — single-seed result 286; need at least one more seed to firm up "recovers stripped-obs regression" claim.
 - [ ] **Torque-speed validation under push curriculum** — clip is dormant at flat 1 m/s walking; real test comes with push-force disturbances driving transient joint velocity spikes.
+- [x] **Push-T manipulation env** (2026-04-17) — `PushEnv` in `jax_rl/envs/manipulation/push_env.py`. 4 shapes (T/L/circle/plus), 3 action modes (position/velocity/teleport), 16d shape-agnostic obs. 361k sps @ 1024 envs Warp. Heuristic rollouts validate dynamics.
+- [ ] **Register PushEnv in `env_setup.py` / `pg_registry`** — add `PushT`, `PushL`, `PushCircle`, `PushPlus` as separate registered envs (shape baked into registration).
+- [ ] **Add FastSAC preset for push-T** — in `env_presets.py`. Small networks (16d obs → 64/64 actor, 128/128 critic probably enough).
+- [ ] **Train FastSAC on push-T** — first real baseline. 5M steps should be plenty for 16d obs + contact task.
+- [ ] **Cross-shape transfer eval** — train on T, evaluate zero-shot on L/circle/plus. Core adaptability benchmark.
+- [ ] **DR specs for push env** — block mass, block friction, pusher friction, table friction, block size scale (via `<geom size>` multiplier — careful with MJCF model surgery).
+- [ ] **More shapes** — D (half-disc), star (radial boxes), irregular polygon from vertex list.
 
 ## Completed (2026-04-06)
 - [x] Documentation site — MkDocs + Material theme, 20 pages, mkdocstrings autodoc, videos embedded

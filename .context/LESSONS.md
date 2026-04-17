@@ -147,6 +147,14 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **Joint order ≠ actuator order — THE root cause** — unitree qpos is FL-first, ctrl is FR-first. PD applied FL torque to FR actuator. Robot fought itself. Hours of debugging PD/solver/entropy were all red herrings. ALWAYS verify ordering when using third-party MJCFs.
 - **"Stable" PD gains ≠ "trainable" PD gains** — Kp=10/Kd=1.0 holds the robot fine but trains 7x slower than Kp=20/Kd=0.5. Sluggish joint dynamics suppress the leg swings RL needs to find walking. Validate new PD gains with a training run, not a static hold test.
 
+## [Manipulation (Push-T)](lessons/manipulation.md) — 5 lessons
+
+- **Cylinder-box collisions need Warp** — MJX JAX backend raises `NotImplementedError`. Any manipulation env with cylinder pusher + box target is Warp-only.
+- **Tighten solref for manipulation contacts** — default `solref=0.02` (20ms) gives visible penetration; use `0.004 1` + `solimp="0.98 0.995 ..."` + `iterations=50 ls_iterations=10`.
+- **Shape-agnostic obs for cross-shape generalization** — `[center_xy, sin/cos(yaw), target_xy, sin/cos(goal_yaw), vels, last_action]` = 16d. Same obs for T/L/circle/plus. Policy infers contact dynamics, doesn't memorize T-geometry.
+- **Three action modes for RL vs demo parity** — position-PD (our default, jittery), velocity/delta (smooth, RL-friendly), teleport (gym-pusht parity). `config.action_mode` flag, same obs, different ctrl mapping.
+- **Data-driven shape registry** — `SHAPES = {"T": [geom_dicts], "circle": [...], ...}`. XML built programmatically. Adding new shape = one dict entry, no per-shape XML files.
+
 ## [Bongo Board Handstand](lessons/bongo.md) — 10 lessons
 
 - **Always verify policy behavior visually** — eval 397 looked great on paper, but the robot was balancing on the floor, not the board. Reward hacking is silent without video.
