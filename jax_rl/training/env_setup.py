@@ -25,6 +25,38 @@ def _register_custom_envs():
             functools.partial(WarpJoystick, task="flat_terrain"),
             warp_default_config,
         )
+    # Variant: linear torque-speed actuator limit (approximates motor saturation).
+    # Playground's registry.load passes config_overrides=None by default, which
+    # would clobber a partial(..., config_overrides=...). Bake the flag into a
+    # dedicated default_config factory instead.
+    def _warp_default_config_torque_speed():
+        cfg = warp_default_config()
+        cfg.torque_speed_model = True
+        return cfg
+    if "Go2WarpJoystickFlatTorqueSpeed" not in pg_locomotion._envs:
+        pg_locomotion.register_environment(
+            "Go2WarpJoystickFlatTorqueSpeed",
+            functools.partial(WarpJoystick, task="flat_terrain"),
+            _warp_default_config_torque_speed,
+        )
+    from jax_rl.envs.locomotion.go2_warp_curriculum import WarpJoystickCurriculum
+    from jax_rl.envs.locomotion.go2_warp_curriculum import default_config as curriculum_default_config
+    if "Go2WarpJoystickCurriculum" not in pg_locomotion._envs:
+        pg_locomotion.register_environment(
+            "Go2WarpJoystickCurriculum",
+            functools.partial(WarpJoystickCurriculum, task="flat_terrain"),
+            curriculum_default_config,
+        )
+    def _curriculum_ts_default_config():
+        cfg = curriculum_default_config()
+        cfg.torque_speed_model = True
+        return cfg
+    if "Go2WarpJoystickCurriculumTorqueSpeed" not in pg_locomotion._envs:
+        pg_locomotion.register_environment(
+            "Go2WarpJoystickCurriculumTorqueSpeed",
+            functools.partial(WarpJoystickCurriculum, task="flat_terrain"),
+            _curriculum_ts_default_config,
+        )
     from jax_rl.envs.locomotion.go2_bongo_handstand import BongoHandstand
     from jax_rl.envs.locomotion.go2_bongo_handstand import default_config as bongo_default_config
     if "Go2BongoHandstand" not in pg_locomotion._envs:
@@ -108,8 +140,16 @@ def make_envs(cfg: TrainConfig, seed: int):
 
     reset_mode = getattr(cfg, 'reset_mode', 'legacy')
     if reset_mode == "per_step":
-        from jax_rl.envs.wrappers.domain_rand import DomainRandWrapper
-        env = DomainRandWrapper(env, episode_length=cfg.episode_length, mode=reset_mode)
+        from jax_rl.envs.locomotion.go2_warp_curriculum import WarpJoystickCurriculum
+        if isinstance(env.unwrapped, WarpJoystickCurriculum):
+            from jax_rl.envs.wrappers.terrain_curriculum_dr import TerrainCurriculumDRWrapper
+            env = TerrainCurriculumDRWrapper(
+                env, episode_length=cfg.episode_length, mode=reset_mode,
+                num_envs=cfg.num_envs,
+            )
+        else:
+            from jax_rl.envs.wrappers.domain_rand import DomainRandWrapper
+            env = DomainRandWrapper(env, episode_length=cfg.episode_length, mode=reset_mode)
     else:
         env = wrap_for_training(env, episode_length=cfg.episode_length)
     env_step = _make_nan_safe_step(env.step)
