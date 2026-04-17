@@ -43,6 +43,10 @@
 - [x] Manipulation benchmark survey — MuJoCo Playground already has 10 tasks (PandaPickCube, LeapCubeReorient, AlohaSinglePegInsertion, etc.)
 
 ## Active
+- [x] **Terrain curriculum (Phases 1-4)** — 2026-04-17. 4 types × 10 levels grid, goal-directed commands, binary reach/fall advancement. Tests pass (42 primitives + generator, 9 env, 7 wrapper, 3 metrics). Presets wired for PPO/FastSAC/FlashSAC.
+- [ ] **Validate terrain curriculum in full training run** — 20M+ step run, confirm `terrain/global/mean_level` climbs 0→N over training.
+- [ ] **Fix eval OOM on curriculum env** — separate Warp graph capture doubles VRAM. Options: `XLA_PYTHON_CLIENT_PREALLOCATE=false`, reuse training graph, or skip final eval.
+- [ ] **Push-force curriculum** — follow-up plan, combine with torque-speed variant.
 - [x] **Re-benchmark Fast*/Flash* post-truncation-fix** (2026-04-13) — done. WandB project: `jax-rl-post-truncation-fix`. Results in AGENT_HANDOFF benchmark table.
   - FastTD3 CheetahRun 5M: 515.9
   - FastSAC Go2 + per_step DR 20M: 283.8 (best in-loop) / 283.5 final → new best reproducible (vs 279.2 pre-fix)
@@ -51,8 +55,12 @@
   - All `@pytest.mark.slow` tests pass on GPU (Go2Warp env bundle, SAC CheetahRun end-to-end).
 - [x] **Render best-checkpoint videos** for the 3 Go2 runs (FastSAC, FlashSAC, FastTD3). Done 2026-04-13. Skipped CheetahRun. All 1000 steps no termination. Files in respective `checkpoints/.../best/*.mp4`.
 - [x] **`record_video.py` memory fix** (2026-04-13): baked `XLA_PYTHON_CLIENT_PREALLOCATE=false` default + replaced `lax.scan` with Python loop over jitted `rollout_step`. Peak HBM drops ~500 MB–1 GB; also coexists with concurrent training on same GPU. NPZ schema unchanged. Lesson: `lessons/infrastructure.md` §"`record_video.py` Memory Fix: `PREALLOCATE=false` + Python Loop (Not `lax.scan`)".
-- [ ] **Bump `XLA_CLIENT_MEM_FRACTION=0.7` → `0.55` in `train_flashsac.py`** so users don't hit the Warp-graph OOM. Lesson: `lessons/infrastructure.md` §"XLA Memory Fraction Has To Drop For Bigger-Network Algos".
-- [ ] **Code fix: `final_eval_and_checkpoint` should call `ckpt_mgr.maybe_save_best`** so the final eval competes for the "best" slot. Currently the final eval can beat the in-loop best but isn't tracked. Workaround: report `max(best_in_loop, final_eval)`. Lesson: `lessons/infrastructure.md` §"CheckpointManager 'Best' Tracking Excludes Final Eval".
+- [x] **Code fix: `final_eval_and_checkpoint` now captures `is_best` + announces "New best!"** (2026-04-14). Checkpoint artifact was already correct — `save()` already received `eval_mean` and wrote to `best_dir` when final eval beat in-loop best. Only the stdout log was incomplete. Now matches the in-loop path. Grep "New best!" no longer undercounts peak.
+- [x] **Removed hardcoded MEM_FRACTION from all training scripts** (2026-04-15). Rationale: territory knob, not fragmentation knob. PREALLOCATE=true handles fragmentation. Fraction value is config-dependent; tuning per-script limits future experiments. Users now set `XLA_CLIENT_MEM_FRACTION=0.7` (or 0.55 if Warp needs room) via shell. Lesson: `.context/lessons/memory_tuning.md` — complete memory tuning strategy, signals, and workflow.
+- [x] **Torque-speed actuator model** (2026-04-15) — optional linear torque-speed curve (`tau_limit = stall_torque × max(1 - |dq|/vel_limit, 0)`) on Go2 Warp envs. Stall torques read from MJCF `actuator_ctrlrange`; velocity limits from Unitree URDF. Flag `config.torque_speed_model=False` by default (identical behavior to current). Enabled via registered env variant `Go2WarpJoystickFlatTorqueSpeed`. Shared helper on `Go2WarpEnv._apply_torque_speed_limit`. 12 unit tests pass. Inspired by MJLab's `DcMotorActuator`.
+- [x] **A/B FastSAC torque-speed model vs baseline on Go2** (2026-04-15) — seed 42, 20M, per_step DR: **286.0 best / 280.9 final**. Matches full-config baseline (285.1 ± 3.2) despite stripped obs. Trajectory analysis: 0% saturations during 1 m/s walking, mean torque-speed scale 0.92, peak |q̇| 15.6 rad/s vs limits 20-30. Clip dormant at walking speeds. See `.context/lessons/actuator_models.md` and `.context/journals/2026-04-15.md`.
+- [ ] **Second seed on torque-speed model** — single-seed result 286; need at least one more seed to firm up "recovers stripped-obs regression" claim.
+- [ ] **Torque-speed validation under push curriculum** — clip is dormant at flat 1 m/s walking; real test comes with push-force disturbances driving transient joint velocity spikes.
 
 ## Completed (2026-04-06)
 - [x] Documentation site — MkDocs + Material theme, 20 pages, mkdocstrings autodoc, videos embedded
@@ -82,7 +90,7 @@
 - [x] Motor strength DR — ×U(0.9, 1.1) via actuator_gainprm scaling
 - [x] Friction DR fix — randomize ALL geoms (MuJoCo max-combine), range [0.3, 1.5]
 - [x] Action delay — `ActionDelayWrapper` (120ms FIFO), `--action-delay-ms` / `--action-delay-range-ms` CLI flags. Config-driven wrapper pipeline.
-- [ ] **Wider DR ranges** — Kp/Kd scaling. May need curriculum.
+- [ ] **Wider DR ranges** — motor_strength, mass, friction. Use curriculum to expand ranges as policy stabilizes.
 - [x] Frame stacking — universal `FrameStackWrapper` wraps any env, `--frame-stack 3` CLI flag, deploy ObsBuilder mirrors.
 - [x] Go2 SAC Phase B — FastSAC eval 226. Off-policy validated on Go2.
 
@@ -202,7 +210,7 @@
 
 ## Mid-term — Env composability (from MJLab audit, prereq for DIAYN)
 - [x] **RewardSpec** — `compute_rewards(spec, **kwargs)` returns unweighted dict. All 3 envs refactored (Warp 17 terms, MJX 16, Bongo 9). DIAYN swaps reward by replacing `env._reward_spec`.
-- [ ] **Curriculum callback** — `curriculum_fn(env_ids, episode_returns) → dr_range_multipliers` in reset. Unblocks wider Kp/Kd DR ranges. ~1 hr, ~50 lines.
+- [ ] **Curriculum callback** — `curriculum_fn(mean_return) → {spec_name: multiplier}` hook in DomainRandWrapper. Expands DR ranges (motor_strength, mass, friction) as policy stabilizes. ~1 hr, ~50 lines.
 - [x] **ObsSpec** — `compute_obs(groups, noise_level, rng, **kwargs)` with per-term noise. All 3 envs refactored. DIAYN appends `ObsTerm("skill_z", ...)` to "state" group — one line.
 
 ## Long-term (Phase 6 — Skill Discovery)

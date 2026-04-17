@@ -1,6 +1,6 @@
 # Agent Handoff — JAX RL Framework
 
-**Last updated:** 2026-04-12
+**Last updated:** 2026-04-17
 **Branch:** `new_slate_linen`
 **Status:** Active development — Go2 Phase A (PPO 244, motor actuators) and Phase B (FastSAC 226) COMPLETE. Sim2sim pipeline built, contact physics gap remaining.
 
@@ -193,6 +193,16 @@ Each algo has its own config dataclass. Presets in `env_presets.py` return `(Tra
 ### Checkpoint format
 Every checkpoint contains: `meta.json` (full config), `metrics.csv` (training curve), `actor_params.npy` (inference), `orbax/` (training resume). `load_actor_for_inference()` loads just actor_params.npy — no orbax needed.
 
+### Available Go2 envs
+| Env name | Terrain | Actuator | Notes |
+|----------|---------|----------|-------|
+| `Go2WarpJoystickFlat` | Flat | Ideal PD | Primary benchmark env |
+| `Go2WarpJoystickFlatTorqueSpeed` | Flat | Linear torque-speed | A/B vs Flat |
+| `Go2WarpJoystickCurriculum` | 10 levels × 4 types grid | Ideal PD | Goal-directed commands, binary reach/fall curriculum |
+| `Go2WarpJoystickCurriculumTorqueSpeed` | Same | Linear torque-speed | Curriculum + actuator model |
+
+Curriculum env: 64 envs @ 16GB GPU (not 1024 — ~1500 geoms vs ~100). Use `--num-envs 64`. Eval OOM known issue (two Warp graphs). See `.context/lessons/terrain_curriculum.md`.
+
 ### Go2 env key facts
 - **Dict obs**: `{"state": (48,), "privileged_state": (122,)}`
 - **PPO**: asymmetric AC — actor sees "state", critic sees "privileged_state"
@@ -251,6 +261,7 @@ Every checkpoint contains: `meta.json` (full config), `metrics.csv` (training cu
 | **FlashSAC (DR off, preset)** | **284.5 ± 4.6** final | 10M | seed 100. wandb: `20c1pcge`. (Best in-loop 279.5; final beat best because final eval is a separate code path.) |
 | **FastSAC (DR per_step)** | **283.8** best in-loop / 283.5 final | 20M | seed 100. wandb: `w47hu6a5`. Q bias 0.10 (well-calibrated). |
 | **FastTD3 (DR per_step)** | **273.1** best in-loop / 272.2 ± 9.6 final | 20M | seed 100. **First TD3-family Go2 result.** Q bias 0.29. Within seed variance of FastSAC. |
+| **FastSAC (DR per_step, +torque-speed model)** | **286.0** best in-loop / 280.9 ± 7.3 final | 20M | seed 42. wandb: `jcr1mcfu`. `Go2WarpJoystickFlatTorqueSpeed` env. Linear torque-speed curve on actuator. Clip rarely fires at 1 m/s walking (0% saturation, mean scale 0.92) — see `.context/lessons/actuator_models.md`. |
 
 *Pre-truncation-fix runs (kept for context, NOT directly comparable to above):*
 | Algo | Eval | Steps | Notes |
@@ -272,12 +283,12 @@ Every checkpoint contains: `meta.json` (full config), `metrics.csv` (training cu
 ### Roadmap
 See `TODO.md` for full prioritized list. Summary:
 - **Done:** Warp env (FastSAC 276.5), MJX→CPU transfer, DR v1, sim2sim validated.
-- **Short-term:** DIAYN (north star), Kp/Kd DR, W&B HP tuning agent
+- **Short-term:** DIAYN (north star), curriculum DR (push forces + wider ranges), W&B HP tuning agent
 - **Mid-term:** Vision RL (CNN encoder, DrQ), real robot deployment
 - **Long-term:** DIAYN → METRA → USD (skill discovery on real Go2)
 
 ### Strategic note: Warp is the sole Go2 backend
-**MJX Go2 env archived** (`jax_rl/envs/locomotion/archive/` — go2_base.py, go2_joystick.py, go2_cpu.py). `Go2WarpJoystickFlat` is the sole active Go2 locomotion env. `Go2BongoHandstand` (Warp, bongo board task) is also active. Warp is strictly better for our use case: supports cylinder collisions (MJX can't), trains on the exact unitree MJCF (zero sim2sim gap), faster on complex scenes, and we only use NVIDIA GPUs. New envs (other robots, terrains) should be built on Warp from the start. DIAYN, Kp/Kd DR, frame stacking — all Warp-only.
+**MJX Go2 env archived** (`jax_rl/envs/locomotion/archive/` — go2_base.py, go2_joystick.py, go2_cpu.py). `Go2WarpJoystickFlat` is the sole active Go2 locomotion env. `Go2BongoHandstand` (Warp, bongo board task) is also active. Warp is strictly better for our use case: supports cylinder collisions (MJX can't), trains on the exact unitree MJCF (zero sim2sim gap), faster on complex scenes, and we only use NVIDIA GPUs. New envs (other robots, terrains) should be built on Warp from the start. DIAYN, curriculum DR, frame stacking — all Warp-only.
 
 ---
 
