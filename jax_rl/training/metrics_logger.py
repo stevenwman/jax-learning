@@ -206,3 +206,46 @@ def wandb_finish() -> None:
             wandb.finish()
     except ImportError:
         pass
+
+
+TERRAIN_TYPE_NAMES = ["rough", "pyramid_up", "pyramid_down", "tilted"]
+
+
+def log_terrain_metrics(info: dict, terrain_type_names: list[str] = None) -> dict[str, float]:
+    """Extract per-terrain-type metrics from state.info at a snapshot.
+
+    Snapshot approach: each env's values reflect its last completed episode.
+    Aggregates over ~num_envs/num_types envs per type (noisy per-sample, smooth
+    over training time).
+
+    Returns empty dict if terrain_level not in info (non-curriculum envs).
+    """
+    import numpy as np
+    if "terrain_level" not in info or "terrain_type" not in info:
+        return {}
+    if terrain_type_names is None:
+        terrain_type_names = TERRAIN_TYPE_NAMES
+
+    levels = np.asarray(info["terrain_level"])
+    types = np.asarray(info["terrain_type"])
+    reached = np.asarray(info.get("episode_reached_goal", np.zeros_like(levels, dtype=bool)))
+    fallen = np.asarray(info.get("episode_fallen", np.zeros_like(levels, dtype=bool)))
+    promoted = np.asarray(info.get("episode_promoted", np.zeros_like(levels, dtype=bool)))
+    demoted = np.asarray(info.get("episode_demoted", np.zeros_like(levels, dtype=bool)))
+
+    result = {}
+    for type_idx, name in enumerate(terrain_type_names):
+        mask = types == type_idx
+        if mask.any():
+            result[f"terrain/{name}/mean_level"]   = float(levels[mask].mean())
+            result[f"terrain/{name}/max_level"]    = int(levels[mask].max())
+            result[f"terrain/{name}/num_envs"]     = int(mask.sum())
+            result[f"terrain/{name}/reach_rate"]   = float(reached[mask].mean())
+            result[f"terrain/{name}/fall_rate"]    = float(fallen[mask].mean())
+            result[f"terrain/{name}/promote_rate"] = float(promoted[mask].mean())
+            result[f"terrain/{name}/demote_rate"]  = float(demoted[mask].mean())
+
+    result["terrain/global/mean_level"] = float(levels.mean())
+    result["terrain/global/reach_rate"] = float(reached.mean())
+    result["terrain/global/fall_rate"]  = float(fallen.mean())
+    return result

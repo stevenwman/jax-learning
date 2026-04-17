@@ -14,7 +14,6 @@ Trains FlashSAC (Kim et al. 2026) with:
 
 import os, sys
 os.environ.setdefault("XLA_FLAGS", "--xla_gpu_enable_command_buffer=")
-os.environ.setdefault("XLA_CLIENT_MEM_FRACTION", "0.7")
 sys.stdout.reconfigure(line_buffering=True)
 
 import argparse
@@ -39,7 +38,7 @@ from jax_rl.training import (
 )
 from jax_rl.training.train_context import TrainContext
 from jax_rl.training.checkpointing import CheckpointManager
-from jax_rl.training.metrics_logger import wandb_init, wandb_setup_metrics, wandb_log, wandb_finish
+from jax_rl.training.metrics_logger import wandb_init, wandb_setup_metrics, wandb_log, wandb_finish, log_terrain_metrics
 from jax_rl.configs.env_presets import get_flash_sac_preset
 from jax_rl.utils.reward_scaling import init_reward_norm, update_reward_stats, scale_reward
 
@@ -352,6 +351,8 @@ def train(cfg: TrainConfig, algo_cfg: FlashSACConfig, seed: int = 0,
                     extra_keys=log_extra_keys,
                 )
                 metrics_log.append(row)
+                terrain_metrics = log_terrain_metrics(env_state.info) if hasattr(env_state, "info") else {}
+                row.update(terrain_metrics)
                 wandb_log(row, step=total_steps)
 
         # ── Eval + checkpoint ──────────────────────────────────────────

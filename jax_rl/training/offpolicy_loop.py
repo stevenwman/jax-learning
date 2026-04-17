@@ -28,6 +28,7 @@ from jax_rl.training.eval_runner import maybe_eval_and_checkpoint, final_eval_an
 from jax_rl.training.metrics_logger import (
     log_training_step, make_metrics_row,
     wandb_init, wandb_setup_metrics, wandb_log, wandb_finish,
+    log_terrain_metrics,
 )
 from jax_rl.training.obs_pipeline import ObsPipeline
 from jax_rl.training.train_context import TrainContext
@@ -222,6 +223,8 @@ def run_offpolicy_loop(
                     extra_keys=log_extra_keys,
                 )
                 metrics_log.append(row)
+                terrain_metrics = log_terrain_metrics(env_state.info) if hasattr(env_state, "info") else {}
+                row.update(terrain_metrics)
                 wandb_log(row, step=raw_steps)
 
         # Eval + checkpoint. q_fn closes over training_state directly: the
