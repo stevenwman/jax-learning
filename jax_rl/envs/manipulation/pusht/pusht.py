@@ -153,6 +153,8 @@ class PushTEnv(gym.Env):
                 "sparse"   — 1.0 iff coverage > 0.95 else 0.0.
                 "shaped"   — coverage + 0.01 * contact_count - 0.001 * pusher_to_block.
                 "approach" — coverage + 0.05 * (1 - pusher_to_block / max_dist).
+                "dense"    — coverage + pose-error shaping + block velocity toward goal
+                             + contact + approach. Recommended for RL from scratch.
                 Pick to bootstrap RL (coverage alone is too sparse for from-scratch RL).
         """
         super().__init__()
@@ -190,10 +192,10 @@ class PushTEnv(gym.Env):
 
         self.success_threshold = 0.95  # 95% coverage
         self.reward_mode = reward_mode
-        if reward_mode not in ("coverage", "sparse", "shaped", "approach"):
+        if reward_mode not in ("coverage", "sparse", "shaped", "approach", "dense"):
             raise ValueError(
                 f"Unknown reward_mode {reward_mode!r}. Must be one of "
-                "[coverage, sparse, shaped, approach]."
+                "[coverage, sparse, shaped, approach, dense]."
             )
 
     def _initialize_observation_space(self):
@@ -268,34 +270,76 @@ class PushTEnv(gym.Env):
             # Step physics
             self.space.step(self.dt)
 
-        # Compute reward — coverage always computed for info + success.
+        # Coverage always computed (ground-truth objective + used by info/success).
         coverage = self._get_coverage()
         is_success = coverage > self.success_threshold
+        coverage_clip = float(np.clip(coverage / self.success_threshold, 0.0, 1.0))
 
-        # Pusher-to-block distance for shaping terms.
+        # Geometry signals for shaping.
         block_pos = np.array(self.block.position)
         agent_pos = np.array(self.agent.position)
+        goal_xy = self.goal_pose[:2]
+        goal_yaw = self.goal_pose[2]
         pusher_to_block = float(np.linalg.norm(agent_pos - block_pos))
-        max_dist = 512 * np.sqrt(2)  # diagonal of arena
+        block_to_goal = float(np.linalg.norm(block_pos - goal_xy))
+        # Shortest angular distance. Block angles aren't wrapped by pymunk,
+        # so use arctan2(sin(Δ), cos(Δ)) for continuity.
+        block_angle = float(self.block.angle)
+        angle_err = abs(np.arctan2(
+            np.sin(block_angle - goal_yaw), np.cos(block_angle - goal_yaw)
+        ))
+
+        # Block velocity toward goal (positive = approaching).
+        block_vel = np.array(self.block.velocity)
+        to_goal = goal_xy - block_pos
+        to_goal_norm = float(np.linalg.norm(to_goal))
+        if to_goal_norm > 1e-6:
+            block_vel_toward = float(np.dot(block_vel, to_goal / to_goal_norm))
+        else:
+            block_vel_toward = 0.0
+
+        # Scale constants. Arena is 512 px; normalize so shaping terms
+        # stay roughly in [0, 1] scale and never dominate coverage.
+        max_dist = 512 * np.sqrt(2)
+        max_pos_err = 512.0  # rough upper bound
+
+        r_coverage    = coverage_clip                             # [0, 1]
+        r_pos         = 1.0 - min(block_to_goal / max_pos_err, 1.0)   # [0, 1]
+        r_angle       = 1.0 - min(angle_err / np.pi, 1.0)             # [0, 1]
+        r_approach    = 1.0 - min(pusher_to_block / max_dist, 1.0)    # [0, 1]
+        # Block velocity reward: small constant scale, positive when progressing.
+        # pymunk velocities in px/s; 50 px/s ≈ "decent progress". Clip to ±1.
+        r_block_vel   = float(np.clip(block_vel_toward / 50.0, -1.0, 1.0))
+        r_contact     = 0.01 * float(self.n_contact_points)
+        r_success     = 5.0 if is_success else 0.0
 
         if self.reward_mode == "coverage":
-            # DP default — scaled IoU.
-            reward = float(np.clip(coverage / self.success_threshold, 0.0, 1.0))
+            # DP default — scaled IoU only.
+            reward = r_coverage
         elif self.reward_mode == "sparse":
             reward = float(is_success)
         elif self.reward_mode == "shaped":
             # Coverage + small contact bonus + tiny approach penalty.
-            # self.n_contact_points set by pymunk contact handler.
             reward = (
-                float(np.clip(coverage / self.success_threshold, 0.0, 1.0))
+                r_coverage
                 + 0.01 * float(self.n_contact_points)
                 - 0.001 * pusher_to_block
             )
         elif self.reward_mode == "approach":
-            # Coverage + proximity bonus (1 when pusher touches block, 0 far).
+            # Coverage + smooth proximity bonus.
+            reward = r_coverage + 0.05 * r_approach
+        elif self.reward_mode == "dense":
+            # Multi-term shaping tuned so (a) components are comparable in scale
+            # and (b) coverage remains the dominant signal near success.
+            # All shaping weights ≤ 0.5 so shaping never exceeds coverage range.
             reward = (
-                float(np.clip(coverage / self.success_threshold, 0.0, 1.0))
-                + 0.05 * (1.0 - pusher_to_block / max_dist)
+                r_coverage
+                + 0.30 * r_pos
+                + 0.20 * r_angle
+                + 0.10 * r_approach
+                + 0.10 * r_block_vel
+                + r_contact
+                + r_success
             )
 
         # Terminate on success per DP convention (can be disabled later).
@@ -306,7 +350,18 @@ class PushTEnv(gym.Env):
         info["is_success"] = is_success
         info["coverage"] = coverage
         info["pusher_to_block"] = pusher_to_block
+        info["block_to_goal"] = block_to_goal
+        info["angle_err"] = angle_err
+        info["block_vel_toward"] = block_vel_toward
         info["n_contact_points"] = int(self.n_contact_points)
+        # Per-component reward split — useful diagnostic regardless of mode.
+        info["r_coverage"] = r_coverage
+        info["r_pos"] = r_pos
+        info["r_angle"] = r_angle
+        info["r_approach"] = r_approach
+        info["r_block_vel"] = r_block_vel
+        info["r_contact"] = r_contact
+        info["r_success"] = r_success
 
         truncated = False
         return observation, reward, terminated, truncated, info

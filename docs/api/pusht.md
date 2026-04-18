@@ -37,10 +37,28 @@ Added to the vendored env via `reward_mode=` kwarg. Coverage is the DP default; 
 |------|-----------------|----------|
 | `coverage` (default) | `clip(coverage / 0.95, 0, 1)` — DP's exact formula | Matches DP paper baseline; sparse for pure RL |
 | `sparse` | `1.0 if coverage > 0.95 else 0.0` | Cleanest signal; hardest to learn from scratch |
-| `shaped` | `coverage + 0.01 * n_contacts - 0.001 * pusher_to_block` | Encourages contact + approach |
-| `approach` | `coverage + 0.05 * (1 - pusher_to_block / diag)` | Adds smooth proximity bonus to coverage |
+| `shaped` | `coverage + 0.01 * n_contacts - 0.001 * pusher_to_block` | Mild shaping atop coverage |
+| `approach` | `coverage + 0.05 * (1 - pusher_to_block / diag)` | Adds smooth proximity bonus |
+| `dense` | `r_coverage + 0.3·r_pos + 0.2·r_angle + 0.1·r_approach + 0.1·r_block_vel + 0.01·r_contact + 5·is_success` | **Recommended for RL from scratch** |
 
-All modes terminate on `coverage > 0.95` per DP convention. `info` dict always includes `coverage`, `is_success`, `pusher_to_block`, `n_contact_points` so post-hoc analysis works regardless of mode.
+All modes terminate on `coverage > 0.95` per DP convention. `info` dict always includes:
+
+- `coverage`, `is_success`, `n_contact_points` — common diagnostics
+- `pusher_to_block`, `block_to_goal`, `angle_err`, `block_vel_toward` — geometry signals
+- `r_coverage`, `r_pos`, `r_angle`, `r_approach`, `r_block_vel`, `r_contact`, `r_success` — per-component reward split (regardless of selected mode)
+
+Per-component breakdown enables post-hoc analysis like "was the policy earning mostly r_pos or mostly r_angle" without a retrain. Zero-cost instrumentation — always on.
+
+### Dense reward term definitions
+
+- `r_pos = 1 - min(block_to_goal / 512, 1)` — block in the goal zone ≈ 1, far away ≈ 0
+- `r_angle = 1 - min(angle_err / π, 1)` — aligned yaw ≈ 1, flipped ≈ 0
+- `r_approach = 1 - min(pusher_to_block / (512·√2), 1)` — touching block ≈ 1
+- `r_block_vel = clip(block_vel · unit_to_goal / 50, -1, 1)` — block moving toward goal gives positive reward
+- `r_contact = 0.01 * n_contact_points` — small reward per pymunk contact point per step
+- `r_success = 5.0 if coverage > 0.95 else 0` — large terminal bonus
+
+Weights (0.3, 0.2, 0.1, 0.1, 0.01) tuned so no single shaping term exceeds the 1.0 coverage signal. `r_success = 5` gives the solving episode a clear one-shot advantage.
 
 ---
 

@@ -29,11 +29,11 @@ def test_vendored_matches_upstream_coverage_mode():
 
 
 def test_reward_modes_produce_different_values():
-    """All 4 reward modes produce distinct rewards on same action."""
+    """All 5 reward modes produce distinct rewards on same action."""
     from jax_rl.envs.manipulation.pusht import PushTEnv
 
     rewards = {}
-    for mode in ("coverage", "sparse", "shaped", "approach"):
+    for mode in ("coverage", "sparse", "shaped", "approach", "dense"):
         env = PushTEnv(obs_type="state", reward_mode=mode)
         env.reset(seed=42)
         _, r, *_ = env.step(np.array([250.0, 250.0], dtype=np.float32))
@@ -45,6 +45,29 @@ def test_reward_modes_produce_different_values():
     assert rewards["shaped"] != rewards["coverage"]
     # Approach includes proximity bonus
     assert rewards["approach"] != rewards["coverage"]
+    # Dense combines coverage + multiple shaping terms — always > coverage alone
+    # when not solved (proximity bonus is always positive).
+    assert rewards["dense"] > rewards["coverage"]
+
+
+def test_dense_info_components_present():
+    """Dense mode exposes per-component breakdown in info dict."""
+    from jax_rl.envs.manipulation.pusht import PushTEnv
+
+    env = PushTEnv(obs_type="state", reward_mode="dense")
+    env.reset(seed=42)
+    _, r, _, _, info = env.step(np.array([250.0, 250.0], dtype=np.float32))
+
+    for key in ("r_coverage", "r_pos", "r_angle", "r_approach",
+                "r_block_vel", "r_contact", "r_success",
+                "block_to_goal", "angle_err", "block_vel_toward"):
+        assert key in info, f"missing info[{key!r}]"
+
+    # All shaping terms in [0, 1] or reasonable range
+    assert 0.0 <= info["r_pos"] <= 1.0
+    assert 0.0 <= info["r_angle"] <= 1.0
+    assert 0.0 <= info["r_approach"] <= 1.0
+    assert -1.0 <= info["r_block_vel"] <= 1.0
 
 
 def test_unknown_reward_mode_raises():
