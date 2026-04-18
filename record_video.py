@@ -29,6 +29,7 @@ os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
 
 import imageio
 import jax
+import jax.numpy as jnp
 import numpy as np
 from tqdm import tqdm
 import optax
@@ -245,7 +246,7 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
             # Resample spawn + goal at target tile.
             key, spawn_rng, yaw_rng = jax.random.split(key, 3)
             spawn_local, goal_local, spawn_yaw = base_env._sample_spawn_goal(
-                jnp.int32(tt), base_env._config.tile_size, spawn_rng, yaw_rng
+                jnp.int32(tt), base_env._tile_size, spawn_rng, yaw_rng
             )
             tile_origin = base_env._terrain_origins[tl, tt]
             spawn_world_xy = spawn_local[:2] + tile_origin[:2]
