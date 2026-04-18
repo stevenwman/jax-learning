@@ -83,6 +83,30 @@ Select an algorithm tab below to see its presets. Defaults (gamma=0.99, reward_s
     | Go2WarpJoystickFlatTorqueSpeed | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97 |
     | Go2WarpJoystickCurriculum | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97 |
     | Go2WarpJoystickCurriculumTorqueSpeed | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97 |
+    | PushT_Pos | 256 | 3M | 3e-04 | 2,048 | 8 | gamma=0.97, buffer_size=1M, hidden_dim=(128, 128, 64), critic_hidden_dim=(256, 256, 128) |
+    | PushT_Pos_Shaped | 256 | 3M | 3e-04 | 2,048 | 8 | gamma=0.97, buffer_size=1M, hidden_dim=(128, 128, 64), critic_hidden_dim=(256, 256, 128) |
+    | PushT_Vel | 256 | 3M | 3e-04 | 2,048 | 8 | gamma=0.97, buffer_size=1M, hidden_dim=(128, 128, 64), critic_hidden_dim=(256, 256, 128) |
+    | PushT_Vel_Shaped | 256 | 3M | 3e-04 | 2,048 | 8 | gamma=0.97, buffer_size=1M, hidden_dim=(128, 128, 64), critic_hidden_dim=(256, 256, 128) |
+    | PushT_Tele | 256 | 3M | 3e-04 | 2,048 | 8 | gamma=0.97, buffer_size=1M, hidden_dim=(128, 128, 64), critic_hidden_dim=(256, 256, 128) |
+    | PushT_Tele_Shaped | 256 | 3M | 3e-04 | 2,048 | 8 | gamma=0.97, buffer_size=1M, hidden_dim=(128, 128, 64), critic_hidden_dim=(256, 256, 128) |
+    | PushL_Pos | 256 | 3M | 3e-04 | 2,048 | 8 | gamma=0.97, buffer_size=1M, hidden_dim=(128, 128, 64), critic_hidden_dim=(256, 256, 128) |
+    | PushL_Pos_Shaped | 256 | 3M | 3e-04 | 2,048 | 8 | gamma=0.97, buffer_size=1M, hidden_dim=(128, 128, 64), critic_hidden_dim=(256, 256, 128) |
+    | PushL_Vel | 256 | 3M | 3e-04 | 2,048 | 8 | gamma=0.97, buffer_size=1M, hidden_dim=(128, 128, 64), critic_hidden_dim=(256, 256, 128) |
+    | PushL_Vel_Shaped | 256 | 3M | 3e-04 | 2,048 | 8 | gamma=0.97, buffer_size=1M, hidden_dim=(128, 128, 64), critic_hidden_dim=(256, 256, 128) |
+    | PushL_Tele | 256 | 3M | 3e-04 | 2,048 | 8 | gamma=0.97, buffer_size=1M, hidden_dim=(128, 128, 64), critic_hidden_dim=(256, 256, 128) |
+    | PushL_Tele_Shaped | 256 | 3M | 3e-04 | 2,048 | 8 | gamma=0.97, buffer_size=1M, hidden_dim=(128, 128, 64), critic_hidden_dim=(256, 256, 128) |
+    | PushCircle_Pos | 256 | 3M | 3e-04 | 2,048 | 8 | gamma=0.97, buffer_size=1M, hidden_dim=(128, 128, 64), critic_hidden_dim=(256, 256, 128) |
+    | PushCircle_Pos_Shaped | 256 | 3M | 3e-04 | 2,048 | 8 | gamma=0.97, buffer_size=1M, hidden_dim=(128, 128, 64), critic_hidden_dim=(256, 256, 128) |
+    | PushCircle_Vel | 256 | 3M | 3e-04 | 2,048 | 8 | gamma=0.97, buffer_size=1M, hidden_dim=(128, 128, 64), critic_hidden_dim=(256, 256, 128) |
+    | PushCircle_Vel_Shaped | 256 | 3M | 3e-04 | 2,048 | 8 | gamma=0.97, buffer_size=1M, hidden_dim=(128, 128, 64), critic_hidden_dim=(256, 256, 128) |
+    | PushCircle_Tele | 256 | 3M | 3e-04 | 2,048 | 8 | gamma=0.97, buffer_size=1M, hidden_dim=(128, 128, 64), critic_hidden_dim=(256, 256, 128) |
+    | PushCircle_Tele_Shaped | 256 | 3M | 3e-04 | 2,048 | 8 | gamma=0.97, buffer_size=1M, hidden_dim=(128, 128, 64), critic_hidden_dim=(256, 256, 128) |
+    | PushPlus_Pos | 256 | 3M | 3e-04 | 2,048 | 8 | gamma=0.97, buffer_size=1M, hidden_dim=(128, 128, 64), critic_hidden_dim=(256, 256, 128) |
+    | PushPlus_Pos_Shaped | 256 | 3M | 3e-04 | 2,048 | 8 | gamma=0.97, buffer_size=1M, hidden_dim=(128, 128, 64), critic_hidden_dim=(256, 256, 128) |
+    | PushPlus_Vel | 256 | 3M | 3e-04 | 2,048 | 8 | gamma=0.97, buffer_size=1M, hidden_dim=(128, 128, 64), critic_hidden_dim=(256, 256, 128) |
+    | PushPlus_Vel_Shaped | 256 | 3M | 3e-04 | 2,048 | 8 | gamma=0.97, buffer_size=1M, hidden_dim=(128, 128, 64), critic_hidden_dim=(256, 256, 128) |
+    | PushPlus_Tele | 256 | 3M | 3e-04 | 2,048 | 8 | gamma=0.97, buffer_size=1M, hidden_dim=(128, 128, 64), critic_hidden_dim=(256, 256, 128) |
+    | PushPlus_Tele_Shaped | 256 | 3M | 3e-04 | 2,048 | 8 | gamma=0.97, buffer_size=1M, hidden_dim=(128, 128, 64), critic_hidden_dim=(256, 256, 128) |
 
     FastSAC algo defaults: `tau=0.125`, `hidden_dim=(512, 256, 128)`, `activation=swish`, `batch_size=8,192`, `grad_updates_per_step=8`, `buffer_size=4M`, `min_buffer_size=8,192`, `q_layer_norm=True`.
 
