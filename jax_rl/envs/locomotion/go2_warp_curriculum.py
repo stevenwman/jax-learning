@@ -32,6 +32,9 @@ def default_config() -> config_dict.ConfigDict:
     cfg = _warp_default_config()
     cfg.torque_speed_model = False
     cfg.terrain_seed = 0
+    # Terrain grid has ~1500 geoms (vs ~100 for flat). Warp emits "nefc overflow
+    # - please increase njmax" at init; safe to ignore — sim functions at
+    # defaults (njmax=100, naconmax=32768). Bumping higher causes VRAM OOM.
     return cfg
 
 
