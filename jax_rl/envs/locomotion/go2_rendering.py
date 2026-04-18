@@ -110,30 +110,20 @@ def render_command_overlays(renderer, mj_data, cmd, idx, goal_xy=None):
         geom.rgba = np.array([1, 0.9, 0, 0.8], dtype=np.float32)
         renderer.scene.ngeom += 1
 
-    # ── Blue goal-direction arrow (curriculum env only) ──────────────────
-    # Shows desired world-frame walking direction. When this and the green
-    # command arrow disagree, policy is failing to turn toward goal.
+    # ── Red target marker at goal position (curriculum env only) ────────
+    # Flat cylinder (disc) at world (goal_x, goal_y, 0) — marks "go here".
     if goal_xy is not None:
         goal_xy = np.asarray(goal_xy, dtype=np.float64)
         if goal_xy.shape == (2,):
-            robot_xy = mj_data.qpos[:2].astype(np.float64)
-            dxy = goal_xy - robot_xy
-            dist = np.linalg.norm(dxy)
-            if dist > 0.1:
-                direction = dxy / dist
-                base_pos = mj_data.qpos[:3].copy().astype(np.float64)
-                base_pos[2] = 0.5  # above command arrow
-                end_pos = base_pos.copy()
-                end_pos[0] += direction[0] * 0.4
-                end_pos[1] += direction[1] * 0.4
-                geom = renderer.scene.geoms[renderer.scene.ngeom]
-                mujoco.mjv_initGeom(
-                    geom, mujoco.mjtGeom.mjGEOM_ARROW,
-                    np.zeros(3), np.zeros(3), np.zeros(9), np.zeros(4),
-                )
-                mujoco.mjv_connector(
-                    geom, mujoco.mjtGeom.mjGEOM_ARROW, 0.018,
-                    base_pos, end_pos,
-                )
-                geom.rgba = np.array([0.2, 0.4, 1.0, 0.9], dtype=np.float32)
-                renderer.scene.ngeom += 1
+            goal_pos = np.array([goal_xy[0], goal_xy[1], 0.02], dtype=np.float64)
+            geom = renderer.scene.geoms[renderer.scene.ngeom]
+            # Cylinder: size = (radius, half-height, 0). Flat disc = small half-height.
+            mujoco.mjv_initGeom(
+                geom,
+                mujoco.mjtGeom.mjGEOM_CYLINDER,
+                np.array([0.5, 0.02, 0.0], dtype=np.float64),  # size
+                goal_pos,                                        # pos
+                np.eye(3, dtype=np.float64).flatten(),           # mat (identity)
+                np.array([1.0, 0.1, 0.1, 0.7], dtype=np.float32),
+            )
+            renderer.scene.ngeom += 1
