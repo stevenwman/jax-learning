@@ -319,6 +319,7 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
 
     qpos_hist, qvel_hist, act_hist, rew_hist = [], [], [], []
     cmd_hist = []
+    goal_xy_hist = []
     reward_components_hist: dict[str, list] = {}
 
     print("JIT-compiling rollout step + running Python loop...")
@@ -334,6 +335,8 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
         info = state_i.info
         if 'command' in info:
             cmd_hist.append(np.asarray(info['command']))
+        if 'goal_xy' in info:
+            goal_xy_hist.append(np.asarray(info['goal_xy']))
         if 'reward_components' in info:
             for k, v in info['reward_components'].items():
                 reward_components_hist.setdefault(k, []).append(np.asarray(v))
@@ -384,7 +387,8 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
         # Add command arrow overlays (Go2-specific)
         if has_commands and idx > 0 and idx <= len(cmd_hist):
             cmd = cmd_hist[idx - 1]
-            render_command_overlays(renderer, mj_data, cmd, idx)
+            goal_xy = goal_xy_hist[idx - 1] if goal_xy_hist and idx <= len(goal_xy_hist) else None
+            render_command_overlays(renderer, mj_data, cmd, idx, goal_xy=goal_xy)
 
         frames.append(renderer.render())
     renderer.close()
