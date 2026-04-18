@@ -29,6 +29,7 @@ def default_config() -> config_dict.ConfigDict:
         episode_length=1000,
         Kp=20.0,
         Kd=0.5,
+        torque_speed_model=False,
         action_repeat=1,
         action_scale=0.5,
         soft_joint_pos_limit_factor=0.95,
@@ -325,6 +326,7 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
             current_q = data.qpos[7:]   # joint order (FL,FR,RL,RR)
             current_dq = data.qvel[6:]  # joint order
             tau_joint = kp * (motor_targets - current_q) + kd * (0.0 - current_dq)
+            tau_joint = self._apply_torque_speed_limit(tau_joint, current_dq)
             tau_act = tau_joint[a2j]     # ctrl[a] = tau_joint[act_to_joint[a]]
             data = data.replace(ctrl=tau_act)
             return mjx.step(model, data), None

@@ -80,6 +80,17 @@ class Go2WarpEnv(mjx_env.MjxEnv):
             act_to_joint[i] = jnt_id - 1  # joint index in qpos[7:]
         self._act_to_joint = jp.array(act_to_joint)
 
+        # Torque-speed limits (optional; enabled via config.torque_speed_model).
+        # Stall torque per joint = MJCF actuator_ctrlrange (remapped to joint order).
+        # Velocity limit per joint from Unitree URDF, repeating (hip, thigh, calf) per leg.
+        j2a = np.argsort(act_to_joint)
+        ctrlrange_max = self._mj_model.actuator_ctrlrange[:, 1]
+        self._stall_torque = jp.array(ctrlrange_max[j2a])
+        self._velocity_limit = jp.tile(
+            jp.array(consts.MOTOR_VELOCITY_LIMIT_PER_JOINT_TYPE), 4
+        )
+        self._torque_speed_model = bool(getattr(config, "torque_speed_model", False))
+
         # Rendering.
         self._mj_model.vis.global_.offwidth = 3840
         self._mj_model.vis.global_.offheight = 2160
@@ -125,6 +136,25 @@ class Go2WarpEnv(mjx_env.MjxEnv):
             go2_sensors.get_sensor_by_name(self.mj_model, data, name)
             for name in consts.FEET_POS_SENSOR
         ])
+
+    # ── Actuator model ──────────────────────────────────────────────────
+
+    def _apply_torque_speed_limit(
+        self, tau_joint: jax.Array, dq: jax.Array
+    ) -> jax.Array:
+        """Clip joint torques by a linear torque-speed curve.
+
+        tau_limit = stall_torque * max(1 - |dq| / velocity_limit, 0)
+
+        No-op when config.torque_speed_model is False. When True, at |dq|=0
+        the limit equals the MJCF ctrlrange (unchanged); at |dq|=velocity_limit
+        the allowance reaches zero. Both inputs are in joint order.
+        """
+        if not self._torque_speed_model:
+            return tau_joint
+        scale = jp.maximum(1.0 - jp.abs(dq) / self._velocity_limit, 0.0)
+        tau_limit = self._stall_torque * scale
+        return jp.clip(tau_joint, -tau_limit, tau_limit)
 
     # ── Properties ──────────────────────────────────────────────────────
 

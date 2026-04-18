@@ -7,7 +7,6 @@ Usage:
 
 import os, sys
 os.environ.setdefault("XLA_FLAGS", "--xla_gpu_enable_command_buffer=")
-os.environ.setdefault("XLA_CLIENT_MEM_FRACTION", "0.7")
 sys.stdout.reconfigure(line_buffering=True)
 
 import argparse

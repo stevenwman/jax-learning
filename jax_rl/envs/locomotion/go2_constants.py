@@ -43,3 +43,9 @@ WARP_ROOT_BODY = "base_link"  # unitree go2.xml (vs "base" in Menagerie)
 
 WARP_SCENE_FLAT_XML = ROOT_PATH / "go2_warp_scene_flat.xml"
 BONGO_SCENE_XML = ROOT_PATH / "go2_bongo_scene.xml"
+
+# Per-joint-type velocity limits (rad/s). Source: unitree_rl_gym/resources/robots/go2/urdf/go2.urdf.
+# Joint sub-order within each leg: (hip, thigh, calf). Legs repeat this triplet.
+# Stall torques are read from MJCF actuator_ctrlrange at env init (per-joint),
+# so they are not duplicated here.
+MOTOR_VELOCITY_LIMIT_PER_JOINT_TYPE = (30.1, 30.1, 20.07)

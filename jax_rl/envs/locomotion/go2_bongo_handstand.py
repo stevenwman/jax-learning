@@ -30,6 +30,7 @@ def _base_config() -> config_dict.ConfigDict:
         episode_length=250,
         Kp=20.0,
         Kd=0.5,
+        torque_speed_model=False,
         action_repeat=1,
         action_scale=1.0,
         soft_joint_pos_limit_factor=0.95,
@@ -420,6 +421,7 @@ class BongoHandstand(go2_warp_base.Go2WarpEnv):
             current_q = data.qpos[7:19]
             current_dq = data.qvel[6:18]
             tau_joint = kp * (motor_targets - current_q) + kd * (0.0 - current_dq)
+            tau_joint = self._apply_torque_speed_limit(tau_joint, current_dq)
             tau_act = tau_joint[a2j]
             data = data.replace(ctrl=tau_act)
             return mjx.step(model, data), None

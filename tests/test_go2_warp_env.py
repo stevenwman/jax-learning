@@ -127,3 +127,106 @@ class TestWarpBatched:
         cfg = TrainConfig(env_name="Go2WarpJoystickFlat", num_envs=2, total_timesteps=1000)
         _, _, env_state, _, obs_dim, _, _ = make_envs(cfg, seed=0)
         assert obs_dim == 45
+
+
+class TestTorqueSpeedModel:
+    """Optional linear torque-speed actuator limit.
+
+    tau_limit = stall_torque * max(1 - |dq| / velocity_limit, 0)
+
+    Disabled by default: the MJCF actuator_ctrlrange is the only clip.
+    Enabled via config.torque_speed_model: adds velocity-dependent dropoff.
+    """
+
+    def test_default_flag_is_off(self, env):
+        assert env._torque_speed_model is False
+
+    def test_stall_torque_from_mjcf(self, env):
+        # Joint order (qpos[7:]) is body-tree: (FL, FR, RL, RR) × (hip, thigh, calf).
+        # Unitree go2.xml: abduction+hip classes = 23.7 Nm, knee = 45.43 Nm.
+        assert env._stall_torque.shape == (12,)
+        expected = jnp.array([23.7, 23.7, 45.43] * 4)
+        assert jnp.allclose(env._stall_torque, expected, atol=1e-4)
+
+    def test_velocity_limit_from_urdf(self, env):
+        # URDF: hip/thigh 30.1 rad/s, calf 20.07 rad/s.
+        assert env._velocity_limit.shape == (12,)
+        expected = jnp.array([30.1, 30.1, 20.07] * 4)
+        assert jnp.allclose(env._velocity_limit, expected, atol=1e-4)
+
+    def test_helper_is_noop_when_disabled(self, env):
+        tau = jnp.ones(12) * 1000.0  # far above any stall torque
+        dq = jnp.ones(12) * 50.0     # far above any velocity limit
+        out = env._apply_torque_speed_limit(tau, dq)
+        assert jnp.array_equal(out, tau)
+
+    def test_enabled_via_override(self):
+        env = WarpJoystick(task="flat_terrain",
+                           config_overrides={"torque_speed_model": True})
+        assert env._torque_speed_model is True
+
+    def test_clip_at_zero_velocity(self):
+        """At dq=0, limit equals stall_torque (MJCF ctrlrange equivalent)."""
+        env = WarpJoystick(task="flat_terrain",
+                           config_overrides={"torque_speed_model": True})
+        dq = jnp.zeros(12)
+        huge_tau = jnp.ones(12) * 1000.0
+        out = env._apply_torque_speed_limit(huge_tau, dq)
+        # Clipped to per-joint stall torque.
+        assert jnp.allclose(out, env._stall_torque, atol=1e-4)
+
+    def test_clip_at_velocity_limit(self):
+        """At |dq|=velocity_limit, allowance reaches zero."""
+        env = WarpJoystick(task="flat_terrain",
+                           config_overrides={"torque_speed_model": True})
+        dq = env._velocity_limit  # exactly at limit
+        tau = jnp.ones(12) * 100.0
+        out = env._apply_torque_speed_limit(tau, dq)
+        assert jnp.allclose(out, 0.0, atol=1e-5)
+
+    def test_clip_beyond_velocity_limit_stays_zero(self):
+        """Beyond the limit, scale is clamped to 0 (no negative allowance)."""
+        env = WarpJoystick(task="flat_terrain",
+                           config_overrides={"torque_speed_model": True})
+        dq = env._velocity_limit * 2.0
+        tau = jnp.ones(12) * 100.0
+        out = env._apply_torque_speed_limit(tau, dq)
+        assert jnp.allclose(out, 0.0, atol=1e-5)
+
+    def test_clip_at_half_velocity(self):
+        """At |dq|=0.5 * velocity_limit, tau_limit = 0.5 * stall."""
+        env = WarpJoystick(task="flat_terrain",
+                           config_overrides={"torque_speed_model": True})
+        dq = env._velocity_limit * 0.5
+        huge_tau = jnp.ones(12) * 1000.0
+        out = env._apply_torque_speed_limit(huge_tau, dq)
+        expected = env._stall_torque * 0.5
+        assert jnp.allclose(out, expected, atol=1e-4)
+
+    def test_small_torques_unchanged(self):
+        """Sub-limit torques pass through unmodified."""
+        env = WarpJoystick(task="flat_terrain",
+                           config_overrides={"torque_speed_model": True})
+        dq = jnp.ones(12) * 5.0  # within all vel limits
+        small_tau = jnp.ones(12) * 0.5  # well below any stall torque
+        out = env._apply_torque_speed_limit(small_tau, dq)
+        assert jnp.allclose(out, small_tau, atol=1e-5)
+
+    def test_symmetric_clip_negative_tau(self):
+        """Negative torques clipped symmetrically."""
+        env = WarpJoystick(task="flat_terrain",
+                           config_overrides={"torque_speed_model": True})
+        dq = jnp.zeros(12)
+        huge_neg_tau = jnp.ones(12) * -1000.0
+        out = env._apply_torque_speed_limit(huge_neg_tau, dq)
+        assert jnp.allclose(out, -env._stall_torque, atol=1e-4)
+
+    def test_step_with_flag_on_no_nan(self):
+        """End-to-end: step with flag on produces finite obs/reward."""
+        env = WarpJoystick(task="flat_terrain",
+                           config_overrides={"torque_speed_model": True})
+        state = env.reset(jax.random.PRNGKey(0))
+        action = jnp.zeros(12)
+        next_state = env.step(state, action)
+        assert not jnp.any(jnp.isnan(next_state.obs["state"]))
+        assert not jnp.any(jnp.isnan(next_state.reward))
