@@ -75,6 +75,8 @@ class FlatTerrainCfg(SubTerrainCfg):
         difficulty: float,
         size: tuple[float, float],
         rng: np.random.Generator,
+        *,
+        grid_idx: tuple[int, int] = (0, 0),
     ) -> TerrainOutput:
         hx, hy = size[0] / 2.0, size[1] / 2.0
         geoms = [
@@ -97,7 +99,7 @@ class RoughTerrainCfg(SubTerrainCfg):
     """8×8 grid of boxes with per-cell random height offsets."""
 
     grid: tuple[int, int] = (8, 8)
-    max_height: float = 0.1
+    max_height: float = 0.22
     thickness: float = 0.5
 
     def generate(
@@ -105,6 +107,8 @@ class RoughTerrainCfg(SubTerrainCfg):
         difficulty: float,
         size: tuple[float, float],
         rng: np.random.Generator,
+        *,
+        grid_idx: tuple[int, int] = (0, 0),
     ) -> TerrainOutput:
         nx, ny = self.grid
         cell_w = size[0] / nx
@@ -140,19 +144,35 @@ class RoughTerrainCfg(SubTerrainCfg):
 
 @dataclass
 class SlopeTerrainCfg(SubTerrainCfg):
-    """Single box tilted about the x-axis."""
+    """Tilted plane that alternates tilt direction between adjacent rows.
 
-    max_angle_deg: float = 20.0
+    Row-parity determines sign: even rows tilt +x (rising toward +y), odd rows
+    tilt -x (rising toward -y). Adjacent rows' high edges meet at row
+    boundaries, so the surface is roughly continuous.
+
+    Surface box is scaled by ``surface_overhang`` so rotation-induced edge
+    pull-in doesn't leave flat gaps between adjacent tilted tiles.
+
+    A solid base sits below the tile to back-fill any remaining gap — robot
+    can't fall through.
+    """
+
+    max_angle_deg: float = 22.0
     thickness: float = 0.2
+    base_depth: float = 0.3  # solid base below the tilted surface
+    surface_overhang: float = 1.15  # surface xy extent = tile_half * overhang
 
     def generate(
         self,
         difficulty: float,
         size: tuple[float, float],
         rng: np.random.Generator,
+        *,
+        grid_idx: tuple[int, int] = (0, 0),
     ) -> TerrainOutput:
         hx, hy = size[0] / 2.0, size[1] / 2.0
-        angle_deg = difficulty * self.max_angle_deg
+        sign = -1.0 if grid_idx[0] % 2 == 1 else 1.0
+        angle_deg = sign * difficulty * self.max_angle_deg
 
         if abs(angle_deg) < 1e-6:
             quat = None
@@ -161,13 +181,25 @@ class SlopeTerrainCfg(SubTerrainCfg):
             q = rot.as_quat()  # scipy: (x, y, z, w)
             quat = (float(q[3]), float(q[0]), float(q[1]), float(q[2]))  # wxyz
 
+        # Solid base underneath — prevents fall-through at tile edges and gaps.
+        base_hz = self.base_depth / 2.0
+        # Surface is oversized so post-rotation corners still cover the tile.
+        sur_hx = hx * self.surface_overhang
+        sur_hy = hy * self.surface_overhang
         geoms = [
             _box(
+                pos=(0.0, 0.0, -self.thickness - base_hz),
+                size=(hx, hy, base_hz),
+                rgba=_GROUND_RGBA,
+                name="slope_base",
+            ),
+            _box(
                 pos=(0.0, 0.0, -self.thickness),
-                size=(hx, hy, self.thickness),
+                size=(sur_hx, sur_hy, self.thickness),
                 quat=quat,
                 rgba=_GROUND_RGBA,
-            )
+                name="slope_surface",
+            ),
         ]
         return TerrainOutput(geoms=geoms, spawn_origin=np.array([0.0, 0.0, 0.3]))
 
@@ -186,7 +218,7 @@ class PyramidStairsTerrainCfg(SubTerrainCfg):
     """
 
     num_steps: int = 5
-    max_step_height: float = 0.2
+    max_step_height: float = 0.4
     thickness: float = 0.5  # extra depth below the surface
 
     def generate(
@@ -194,6 +226,8 @@ class PyramidStairsTerrainCfg(SubTerrainCfg):
         difficulty: float,
         size: tuple[float, float],
         rng: np.random.Generator,
+        *,
+        grid_idx: tuple[int, int] = (0, 0),
     ) -> TerrainOutput:
         n = self.num_steps
         step_h = difficulty * self.max_step_height
@@ -272,99 +306,95 @@ class PyramidStairsTerrainCfg(SubTerrainCfg):
 
 @dataclass
 class InvertedPyramidStairsTerrainCfg(SubTerrainCfg):
-    """Central platform at top; steps descend outward into a bowl.
+    """Bowl-shaped descent: outer rim at ground level, steps descend inward
+    to a central pit.
 
-    Ring 0 is the centre platform (highest).  Ring num_steps-1 is the outermost
-    (lowest above the pit floor).
+    Ring 0 is the outermost (at z=0, where the robot spawns).  Each subsequent
+    ring descends by ``step_h`` toward the central pit at the bottom.  Robot
+    walks DOWN from rim to centre.
     """
 
     num_steps: int = 5
-    max_step_height: float = 0.2
-    pit_depth: float = 0.5  # depth of the floor below the lowest ring
-    thickness: float = 0.5
+    max_step_height: float = 0.4
+    thickness: float = 0.5  # extra depth below each step surface
 
     def generate(
         self,
         difficulty: float,
         size: tuple[float, float],
         rng: np.random.Generator,
+        *,
+        grid_idx: tuple[int, int] = (0, 0),
     ) -> TerrainOutput:
         n = self.num_steps
         step_h = difficulty * self.max_step_height
         step_w = min(size[0], size[1]) / (2.0 * n)
         slab_depth = self.thickness
 
-        # Total height of central platform above z=0
-        total_height = n * step_h
-
         geoms: list[dict[str, Any]] = []
 
         for ring in range(n):
-            # Centre (ring 0) is at total_height, outer rings descend
-            top_z = total_height - ring * step_h
-            inner = ring * step_w
-            outer = inner + step_w
-            hz = (top_z + slab_depth) / 2.0 if (top_z + slab_depth) > 0 else slab_depth / 2.0
-            pos_z = top_z / 2.0 - slab_depth / 2.0
+            outer = size[0] / 2.0 - ring * step_w
+            inner = outer - step_w
+            # Ring 0 at z=0 (rim/ground), each inner ring descends by step_h.
+            top_z = -ring * step_h
+            # Slab thickness reaches from top_z down — ensure positive extent.
+            hz = (slab_depth - top_z + step_h) / 2.0 if step_h > 0 else slab_depth / 2.0
+            pos_z = top_z - hz
 
-            # For ring 0 (centre), generate a solid square platform
-            if ring == 0:
-                geoms.append(
-                    _box(
-                        pos=(0.0, 0.0, pos_z),
-                        size=(outer, outer, hz),
-                        rgba=_STEP_RGBA,
-                        name="inv_stair_platform",
-                    )
+            # Four strips: north, south, east, west
+            geoms.append(
+                _box(
+                    pos=(0.0, (outer + inner) / 2.0, pos_z),
+                    size=(outer, step_w / 2.0, hz),
+                    rgba=_STEP_RGBA,
+                    name=f"inv_stair_ring{ring}_north",
                 )
-            else:
-                # Four strips: north, south, east, west
-                geoms.append(
-                    _box(
-                        pos=(0.0, (outer + inner) / 2.0, pos_z),
-                        size=(outer, step_w / 2.0, hz),
-                        rgba=_STEP_RGBA,
-                        name=f"inv_stair_ring{ring}_north",
-                    )
+            )
+            geoms.append(
+                _box(
+                    pos=(0.0, -(outer + inner) / 2.0, pos_z),
+                    size=(outer, step_w / 2.0, hz),
+                    rgba=_STEP_RGBA,
+                    name=f"inv_stair_ring{ring}_south",
                 )
-                geoms.append(
-                    _box(
-                        pos=(0.0, -(outer + inner) / 2.0, pos_z),
-                        size=(outer, step_w / 2.0, hz),
-                        rgba=_STEP_RGBA,
-                        name=f"inv_stair_ring{ring}_south",
-                    )
+            )
+            geoms.append(
+                _box(
+                    pos=((outer + inner) / 2.0, 0.0, pos_z),
+                    size=(step_w / 2.0, inner, hz),
+                    rgba=_STEP_RGBA,
+                    name=f"inv_stair_ring{ring}_east",
                 )
-                geoms.append(
-                    _box(
-                        pos=((outer + inner) / 2.0, 0.0, pos_z),
-                        size=(step_w / 2.0, inner, hz),
-                        rgba=_STEP_RGBA,
-                        name=f"inv_stair_ring{ring}_east",
-                    )
+            )
+            geoms.append(
+                _box(
+                    pos=(-(outer + inner) / 2.0, 0.0, pos_z),
+                    size=(step_w / 2.0, inner, hz),
+                    rgba=_STEP_RGBA,
+                    name=f"inv_stair_ring{ring}_west",
                 )
-                geoms.append(
-                    _box(
-                        pos=(-(outer + inner) / 2.0, 0.0, pos_z),
-                        size=(step_w / 2.0, inner, hz),
-                        rgba=_STEP_RGBA,
-                        name=f"inv_stair_ring{ring}_west",
-                    )
-                )
+            )
 
-        # Pit floor at the bottom
-        pit_z = -(self.pit_depth)
+        # Central pit at the deepest point.
+        platform_half = step_w / 2.0
+        bottom_z = -n * step_h
+        hz = (slab_depth - bottom_z) / 2.0
+        pos_z = bottom_z - hz
         geoms.append(
             _box(
-                pos=(0.0, 0.0, pit_z - slab_depth / 2.0),
-                size=(size[0] / 2.0, size[1] / 2.0, slab_depth / 2.0),
+                pos=(0.0, 0.0, pos_z),
+                size=(platform_half, platform_half, hz),
                 rgba=_PIT_RGBA,
                 name="inv_stair_floor",
             )
         )
 
-        spawn_z = total_height + 0.3
-        return TerrainOutput(geoms=geoms, spawn_origin=np.array([0.0, 0.0, spawn_z]))
+        # Robot spawns at the outer rim, ready to walk down.
+        return TerrainOutput(
+            geoms=geoms,
+            spawn_origin=np.array([0.0, size[1] / 2.0 * 0.9, 0.3]),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -388,6 +418,8 @@ class DiscreteObstaclesTerrainCfg(SubTerrainCfg):
         difficulty: float,
         size: tuple[float, float],
         rng: np.random.Generator,
+        *,
+        grid_idx: tuple[int, int] = (0, 0),
     ) -> TerrainOutput:
         count = round(difficulty * self.max_count)
         hx, hy = size[0] / 2.0, size[1] / 2.0
@@ -448,6 +480,8 @@ class SteppingStonesTerrainCfg(SubTerrainCfg):
         difficulty: float,
         size: tuple[float, float],
         rng: np.random.Generator,
+        *,
+        grid_idx: tuple[int, int] = (0, 0),
     ) -> TerrainOutput:
         nx, ny = self.stone_count
         cell_w = size[0] / nx
@@ -502,14 +536,17 @@ class TiltedGridTerrainCfg(SubTerrainCfg):
     """
 
     grid_size: tuple[int, int] = (6, 6)
-    max_tilt_deg: float = 15.0
+    max_tilt_deg: float = 25.0
     tile_thickness: float = 0.1
+    base_depth: float = 0.3  # solid base below tiles — prevents fall-through gaps
 
     def generate(
         self,
         difficulty: float,
         size: tuple[float, float],
         rng: np.random.Generator,
+        *,
+        grid_idx: tuple[int, int] = (0, 0),
     ) -> TerrainOutput:
         nx, ny = self.grid_size
         cell_w = size[0] / nx
@@ -522,6 +559,20 @@ class TiltedGridTerrainCfg(SubTerrainCfg):
         cy_idx = ny // 2
 
         geoms: list[dict[str, Any]] = []
+
+        # Solid base underneath all tiles — plugs any gaps left by tile tilt.
+        # Top of base sits just below the nominal tile bottom so any fall-through
+        # gap between tilted tiles lands on the base (no real hole).
+        base_hz = self.base_depth / 2.0
+        base_top = -hz  # directly under tiles
+        geoms.append(
+            _box(
+                pos=(0.0, 0.0, base_top - base_hz),
+                size=(size[0] / 2.0, size[1] / 2.0, base_hz),
+                rgba=_TILE_RGBA,
+                name="tilt_base",
+            )
+        )
 
         for ix in range(nx):
             for iy in range(ny):

@@ -17,7 +17,7 @@ def test_generator_produces_mjcf_string():
     assert isinstance(mjcf, str)
     assert "<body" in mjcf
     assert "<geom" in mjcf
-    assert origins.shape == (10, 8, 3)
+    assert origins.shape == (10, 4, 3)
 
 
 def test_generator_origins_reflect_grid_layout():

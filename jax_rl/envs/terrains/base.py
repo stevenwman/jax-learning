@@ -73,12 +73,19 @@ class SubTerrainCfg(ABC):
     ``generate``.
     """
 
+    @property
+    def name(self) -> str:
+        """Short type name for metrics/logging (e.g. 'flat', 'rough')."""
+        return type(self).__name__.removesuffix("TerrainCfg").lower()
+
     @abstractmethod
     def generate(
         self,
         difficulty: float,
         size: tuple[float, float],
         rng: np.random.Generator,
+        *,
+        grid_idx: tuple[int, int] = (0, 0),
     ) -> TerrainOutput:
         """Generate tile-local geometry.
 
@@ -90,6 +97,10 @@ class SubTerrainCfg(ABC):
             Full tile extent ``(width_x, width_y)`` in metres.
         rng:
             NumPy random Generator for reproducible stochasticity.
+        grid_idx:
+            ``(row, col)`` position of this tile in the grid.  Primitives that
+            vary based on neighbours (e.g., alternating slope) use this; others
+            ignore it.  Defaults to ``(0, 0)`` so standalone calls still work.
 
         Returns
         -------

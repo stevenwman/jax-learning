@@ -9,13 +9,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .primitives import (
-    DiscreteObstaclesTerrainCfg,
-    FlatTerrainCfg,
     InvertedPyramidStairsTerrainCfg,
     PyramidStairsTerrainCfg,
     RoughTerrainCfg,
-    SlopeTerrainCfg,
-    SteppingStonesTerrainCfg,
     TiltedGridTerrainCfg,
 )
 
@@ -50,21 +46,25 @@ class TerrainGridCfg:
 
 
 # ---------------------------------------------------------------------------
-# Default config for Go2 — all 8 terrain types
+# Default config for Go2 — 4 locomotion-relevant terrain types.
+# FlatTerrainCfg is not included here because every other type at difficulty=0
+# produces a flat tile; a dedicated flat column would be redundant.
+# DiscreteObstaclesTerrainCfg (navigation) and SteppingStonesTerrainCfg
+# (precise foot placement, not deployment-relevant) are also omitted; import
+# any of them directly and add to terrain_types if needed.
+#
+# Tiles are 9.6×9.6m (20% bigger than legged_gym's 8m default) to reduce
+# boundary-crossing during a single episode.
 # ---------------------------------------------------------------------------
 
 GO2_DEFAULT_CFG = TerrainGridCfg(
     num_rows=10,
-    tile_size=(8.0, 8.0),
+    tile_size=(9.6, 9.6),
     border_width=20.0,
     terrain_types=[
-        FlatTerrainCfg(),
         RoughTerrainCfg(),
-        SlopeTerrainCfg(),
         PyramidStairsTerrainCfg(),
         InvertedPyramidStairsTerrainCfg(),
-        DiscreteObstaclesTerrainCfg(),
-        SteppingStonesTerrainCfg(),
         TiltedGridTerrainCfg(),
     ],
 )

@@ -73,7 +73,9 @@ class TerrainGenerator:
                 tile_x = x0 + c * tile_sx
                 terrain_type = cfg.terrain_types[c]
 
-                output = terrain_type.generate(difficulty, cfg.tile_size, rng)
+                output = terrain_type.generate(
+                    difficulty, cfg.tile_size, rng, grid_idx=(r, c)
+                )
 
                 # Offset tile-local geoms to world coordinates
                 for geom in output.geoms:
@@ -93,17 +95,36 @@ class TerrainGenerator:
                 so = output.spawn_origin
                 origins[r, c] = [so[0] + tile_x, so[1] + tile_y, so[2]]
 
-        # Border: large flat box centred at origin, below z=0
-        border_hx = grid_w / 2.0 + cfg.border_width
-        border_hy = grid_h / 2.0 + cfg.border_width
-        border_geom: dict[str, Any] = {
-            "name": f"t{geom_idx}",
-            "type": "box",
-            "pos": (0.0, 0.0, -0.1),
-            "size": (border_hx, border_hy, 0.05),
-            "rgba": (0.4, 0.4, 0.4, 1.0),
-        }
-        geom_lines.append(_geom_to_xml(border_geom))
+        # Border: four flat strips AROUND the grid (not underneath it) — avoids
+        # covering up pits/descending terrain beneath tile ground level.
+        bw = cfg.border_width
+        outer_hx = grid_w / 2.0 + bw
+        outer_hy = grid_h / 2.0 + bw
+        inner_hx = grid_w / 2.0
+        inner_hy = grid_h / 2.0
+        border_strips = [
+            # North strip: +y side, full outer x extent
+            {"pos": (0.0, (outer_hy + inner_hy) / 2.0, -0.05),
+             "size": (outer_hx, bw / 2.0, 0.05)},
+            # South strip
+            {"pos": (0.0, -(outer_hy + inner_hy) / 2.0, -0.05),
+             "size": (outer_hx, bw / 2.0, 0.05)},
+            # East strip: +x side, inner y extent (avoid overlap with N/S)
+            {"pos": ((outer_hx + inner_hx) / 2.0, 0.0, -0.05),
+             "size": (bw / 2.0, inner_hy, 0.05)},
+            # West strip
+            {"pos": (-(outer_hx + inner_hx) / 2.0, 0.0, -0.05),
+             "size": (bw / 2.0, inner_hy, 0.05)},
+        ]
+        for i, strip in enumerate(border_strips):
+            geom: dict[str, Any] = {
+                "name": f"t{geom_idx + i}",
+                "type": "box",
+                "pos": strip["pos"],
+                "size": strip["size"],
+                "rgba": (0.4, 0.4, 0.4, 1.0),
+            }
+            geom_lines.append(_geom_to_xml(geom))
 
         inner = "\n    ".join(geom_lines)
         mjcf = f'<body name="terrain">\n    {inner}\n  </body>'

@@ -107,27 +107,50 @@ class TestRoughTerrain:
 # ---------------------------------------------------------------------------
 
 
+def _slope_surface(out):
+    """Return the tilted surface geom (the one with quat or named 'slope_surface')."""
+    for g in out.geoms:
+        if g.get("name") == "slope_surface":
+            return g
+    raise AssertionError("no slope_surface geom found")
+
+
 class TestSlopeTerrain:
-    def test_generates_one_geom(self):
+    def test_generates_surface_and_base(self):
         out = SlopeTerrainCfg().generate(0.5, SIZE, _rng())
-        assert len(out.geoms) == 1
+        # Solid base + tilted surface
+        assert len(out.geoms) == 2
+        names = {g.get("name") for g in out.geoms}
+        assert names == {"slope_base", "slope_surface"}
 
     def test_zero_difficulty_identity_quat(self):
         out = SlopeTerrainCfg().generate(0.0, SIZE, _rng())
-        g = out.geoms[0]
+        g = _slope_surface(out)
         assert _is_identity_quat(g.get("quat"))
 
     def test_full_difficulty_nonidentity_quat(self):
         out = SlopeTerrainCfg().generate(1.0, SIZE, _rng())
-        g = out.geoms[0]
+        g = _slope_surface(out)
         quat = g.get("quat")
         assert quat is not None
         assert not _is_identity_quat(quat), f"Expected non-identity quat, got {quat}"
 
     def test_quat_is_unit(self):
         out = SlopeTerrainCfg().generate(1.0, SIZE, _rng())
-        q = np.asarray(out.geoms[0]["quat"])
+        q = np.asarray(_slope_surface(out)["quat"])
         assert np.isclose(np.linalg.norm(q), 1.0, atol=1e-6)
+
+    def test_alternating_rows_have_opposite_tilt(self):
+        """Even row: +tilt; odd row: -tilt. Alternating gives visually continuous surface."""
+        cfg = SlopeTerrainCfg()
+        even = cfg.generate(1.0, SIZE, _rng(), grid_idx=(2, 0))
+        odd = cfg.generate(1.0, SIZE, _rng(), grid_idx=(3, 0))
+        q_even = np.asarray(_slope_surface(even)["quat"])
+        q_odd = np.asarray(_slope_surface(odd)["quat"])
+        # Quaternion for rotation -angle about x equals conjugate (flip x component)
+        # For rotation about x: q = (cos(a/2), sin(a/2), 0, 0), opposite: (cos(a/2), -sin(a/2), 0, 0)
+        assert np.isclose(q_even[0], q_odd[0], atol=1e-6)  # same w
+        assert np.isclose(q_even[1], -q_odd[1], atol=1e-6)  # opposite x component
 
 
 # ---------------------------------------------------------------------------
@@ -167,15 +190,16 @@ class TestInvertedPyramidStairs:
         out = InvertedPyramidStairsTerrainCfg().generate(1.0, SIZE, _rng())
         assert len(out.geoms) >= 5
 
-    def test_spawn_at_centre_top(self):
-        """Spawn origin should be at (0,0) and elevated."""
+    def test_spawn_at_outer_rim(self):
+        """Spawn at rim (outer edge, at ground level) — robot walks down inward."""
         out = InvertedPyramidStairsTerrainCfg().generate(1.0, SIZE, _rng())
-        assert np.isclose(out.spawn_origin[0], 0.0, atol=0.1)
-        assert np.isclose(out.spawn_origin[1], 0.0, atol=0.1)
+        # Spawn at outer edge along y-axis (like pyramid stairs)
+        assert abs(out.spawn_origin[1]) > SIZE[1] * 0.3
+        # Spawn above ground (robot stands on outer rim)
         assert out.spawn_origin[2] > 0.0
 
-    def test_outer_ring_z_less_than_inner_at_full_difficulty(self):
-        """Steps descend outward — outer ring top should be lower than inner."""
+    def test_outer_ring_z_greater_than_inner_at_full_difficulty(self):
+        """Bowl shape — outer ring top (rim) should be higher than inner rings."""
         cfg = InvertedPyramidStairsTerrainCfg(num_steps=5, max_step_height=0.2)
         out = cfg.generate(1.0, SIZE, _rng())
         geoms = out.geoms
@@ -185,12 +209,12 @@ class TestInvertedPyramidStairs:
         if outer and inner:
             outer_tops = [g["pos"][2] + g["size"][2] for g in outer]
             inner_tops = [g["pos"][2] + g["size"][2] for g in inner]
-            assert np.mean(outer_tops) < np.mean(inner_tops)
+            assert np.mean(outer_tops) > np.mean(inner_tops)
 
-    def test_has_floor_geom(self):
-        """A floor geom at the pit bottom should be present."""
+    def test_has_pit_at_bottom(self):
+        """Pit geom at the deepest point (below ground)."""
         out = InvertedPyramidStairsTerrainCfg().generate(1.0, SIZE, _rng())
-        # At least one geom should be at negative z (the pit floor)
+        # At least one geom should be well below ground (the pit floor at center)
         bottom_z = [g["pos"][2] for g in out.geoms]
         assert min(bottom_z) < 0.0
 

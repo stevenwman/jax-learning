@@ -10,3 +10,4 @@ wandb/
 MUJOCO_LOG.TXT
 /tmp_videos
 site/
+.temp/
