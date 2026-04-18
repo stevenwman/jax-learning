@@ -211,7 +211,8 @@ def wandb_finish() -> None:
 TERRAIN_TYPE_NAMES = ["rough", "pyramid_up", "pyramid_down", "tilted"]
 
 
-def log_terrain_metrics(info: dict, terrain_type_names: list[str] = None) -> dict[str, float]:
+def log_terrain_metrics(info: dict, terrain_type_names: list[str] = None,
+                        num_levels: int = 10) -> dict[str, float]:
     """Extract per-terrain-type metrics from state.info at a snapshot.
 
     Snapshot approach: each env's values reflect its last completed episode.
@@ -219,6 +220,17 @@ def log_terrain_metrics(info: dict, terrain_type_names: list[str] = None) -> dic
     over training time).
 
     Returns empty dict if terrain_level not in info (non-curriculum envs).
+
+    Metrics per terrain type:
+      - mean_level, max_level, std_level, num_envs
+      - reach_rate, fall_rate, promote_rate, demote_rate
+      - level_hist_L{0..num_levels-1} — env count at each curriculum level (bug-hunt: clumps / bimodal)
+
+    Global: mean_level, reach_rate, fall_rate, std_level.
+
+    Goal/yaw diagnostics (if present in info):
+      - goal_dist_mean — current ||robot_xy - goal_xy||, per-type and global
+      - min_distance_mean — how close each env got this episode (before reset), per-type
     """
     import numpy as np
     if "terrain_level" not in info or "terrain_type" not in info:
@@ -232,20 +244,74 @@ def log_terrain_metrics(info: dict, terrain_type_names: list[str] = None) -> dic
     fallen = np.asarray(info.get("episode_fallen", np.zeros_like(levels, dtype=bool)))
     promoted = np.asarray(info.get("episode_promoted", np.zeros_like(levels, dtype=bool)))
     demoted = np.asarray(info.get("episode_demoted", np.zeros_like(levels, dtype=bool)))
+    min_dist = info.get("episode_min_distance", None)
+    init_dist = info.get("initial_distance", None)
 
     result = {}
     for type_idx, name in enumerate(terrain_type_names):
         mask = types == type_idx
         if mask.any():
-            result[f"terrain/{name}/mean_level"]   = float(levels[mask].mean())
-            result[f"terrain/{name}/max_level"]    = int(levels[mask].max())
+            sub_levels = levels[mask]
+            result[f"terrain/{name}/mean_level"]   = float(sub_levels.mean())
+            result[f"terrain/{name}/max_level"]    = int(sub_levels.max())
+            result[f"terrain/{name}/std_level"]    = float(sub_levels.std())
             result[f"terrain/{name}/num_envs"]     = int(mask.sum())
             result[f"terrain/{name}/reach_rate"]   = float(reached[mask].mean())
             result[f"terrain/{name}/fall_rate"]    = float(fallen[mask].mean())
             result[f"terrain/{name}/promote_rate"] = float(promoted[mask].mean())
             result[f"terrain/{name}/demote_rate"]  = float(demoted[mask].mean())
+            # Level histogram — counts of envs at each level.
+            # Catches clumping (all at one level) and bimodal distributions.
+            hist, _ = np.histogram(sub_levels, bins=np.arange(num_levels + 1))
+            for lvl in range(num_levels):
+                result[f"terrain/{name}/level_hist_L{lvl}"] = int(hist[lvl])
+            # Progress fraction: how close did robot get to goal this episode.
+            if min_dist is not None and init_dist is not None:
+                md = np.asarray(min_dist)[mask]
+                ind = np.asarray(init_dist)[mask]
+                ind_safe = np.where(ind > 1e-6, ind, 1.0)
+                progress = 1.0 - md / ind_safe  # 1.0 = reached, 0.0 = didn't move
+                result[f"terrain/{name}/progress_frac"] = float(progress.mean())
 
     result["terrain/global/mean_level"] = float(levels.mean())
+    result["terrain/global/std_level"]  = float(levels.std())
     result["terrain/global/reach_rate"] = float(reached.mean())
     result["terrain/global/fall_rate"]  = float(fallen.mean())
     return result
+
+
+def print_curriculum_dump(info: dict, step: int, terrain_type_names: list[str] = None) -> None:
+    """Console dump — curriculum state snapshot. Call every ~10k steps during training.
+
+    Catches hidden bugs: stuck levels, type imbalance, silent failures. Zero-op if
+    no terrain keys in info.
+    """
+    import numpy as np
+    if "terrain_level" not in info or "terrain_type" not in info:
+        return
+    if terrain_type_names is None:
+        terrain_type_names = TERRAIN_TYPE_NAMES
+
+    levels = np.asarray(info["terrain_level"])
+    types = np.asarray(info["terrain_type"])
+    reached = np.asarray(info.get("episode_reached_goal", np.zeros_like(levels, dtype=bool)))
+    fallen = np.asarray(info.get("episode_fallen", np.zeros_like(levels, dtype=bool)))
+
+    print(f"[curriculum @ {step:,} steps]  global mean_level={float(levels.mean()):.2f}  "
+          f"reach={float(reached.mean()):.2f}  fall={float(fallen.mean()):.2f}")
+    for type_idx, name in enumerate(terrain_type_names):
+        mask = types == type_idx
+        n = int(mask.sum())
+        if n == 0:
+            print(f"    {name:<14} (no envs)")
+            continue
+        sub_levels = levels[mask]
+        r = float(reached[mask].mean())
+        f = float(fallen[mask].mean())
+        # Level distribution as inline compact histogram
+        num_levels = 10
+        hist, _ = np.histogram(sub_levels, bins=np.arange(num_levels + 1))
+        hist_str = " ".join(str(int(h)) for h in hist)
+        print(f"    {name:<14} n={n:<3}  mean={float(sub_levels.mean()):.2f} "
+              f"(±{float(sub_levels.std()):.2f})  "
+              f"reach={r:.2f}  fall={f:.2f}  hist=[{hist_str}]")

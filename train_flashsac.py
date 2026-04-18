@@ -38,7 +38,7 @@ from jax_rl.training import (
 )
 from jax_rl.training.train_context import TrainContext
 from jax_rl.training.checkpointing import CheckpointManager
-from jax_rl.training.metrics_logger import wandb_init, wandb_setup_metrics, wandb_log, wandb_finish, log_terrain_metrics
+from jax_rl.training.metrics_logger import wandb_init, wandb_setup_metrics, wandb_log, wandb_finish, log_terrain_metrics, print_curriculum_dump
 from jax_rl.configs.env_presets import get_flash_sac_preset
 from jax_rl.utils.reward_scaling import init_reward_norm, update_reward_stats, scale_reward
 
@@ -355,6 +355,11 @@ def train(cfg: TrainConfig, algo_cfg: FlashSACConfig, seed: int = 0,
                 row.update(terrain_metrics)
                 wandb_log(row, step=total_steps)
 
+                # Console curriculum dump every ~50k env steps (bug-hunt diagnostic).
+                # Zero-op for non-curriculum envs.
+                if total_steps // 50_000 != (total_steps - log_every * cfg.num_envs) // 50_000:
+                    print_curriculum_dump(env_state.info, step=total_steps)
+
         # ── Eval + checkpoint ──────────────────────────────────────────
         # Update actor batch_stats so select_action uses current BN running stats
         algo._default_actor_bs = training_state.actor_batch_stats
@@ -429,6 +434,9 @@ if __name__ == "__main__":
                         help="Disable weight normalization after optimizer steps")
     parser.add_argument("--eval-every", type=int, default=None,
                         help="Evaluate every N episodes")
+    parser.add_argument("--reset-mode", type=str, default=None,
+                        choices=[None, "legacy", "per_step"],
+                        help="'per_step' enables DomainRandWrapper / TerrainCurriculumDRWrapper")
     parser.add_argument("--wandb", action="store_true",
                         help="Enable W&B experiment tracking")
     parser.add_argument("--wandb-project", type=str, default="jax-rl",
@@ -446,6 +454,7 @@ if __name__ == "__main__":
     if args.episode_length is not None:    cfg_overrides["episode_length"] = args.episode_length
     if args.gamma is not None:             cfg_overrides["gamma"] = args.gamma
     if args.eval_every is not None:        cfg_overrides["eval_every_n_episodes"] = args.eval_every
+    if args.reset_mode is not None:        cfg_overrides["reset_mode"] = args.reset_mode
     if args.batch_size is not None:        algo_overrides["batch_size"] = args.batch_size
     if args.buffer_size is not None:       algo_overrides["buffer_size"] = args.buffer_size
     if args.grad_updates_per_step is not None:
