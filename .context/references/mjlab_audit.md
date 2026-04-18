@@ -46,17 +46,17 @@ When we attempt real transfer and identify failure modes, add interval-mode DR f
 
 **Current gap:** We have nothing; MJLab has `CurriculumManager` that adjusts difficulty per-env during reset.
 
-**Us:** Zero curriculum support. TODO mentions "Wider DR ranges (Kp/Kd scaling, action delay — may need curriculum)" as active.
+**Us:** Zero curriculum support. DR ranges are fixed from step 0; wider ranges destabilize early training.
 
 **MJLab:** `CurriculumManager.compute(env_ids)` called during `_reset_idx()` before sim/scene reset. Each term receives `(env, env_ids)`, returns arbitrary state. Logged under `Curriculum/` prefix. Simple: ~135 lines + `NullCurriculumManager` for envs without curriculum.
 
 **Impact on north star: MEDIUM-HIGH**
-- Kp/Kd DR widening: TODO explicitly notes "may need curriculum." Without it, wide ranges cause learning collapse.
+- DR range widening (motor_strength, mass, friction): needs curriculum to avoid early collapse.
 - Terrain curriculum: needed for rough terrain, not needed for flat ground DIAYN.
 - Command difficulty: gradual velocity range widening would improve early training stability.
 
-**Recommendation: ADAPT — short-term, for Kp/Kd DR widening**
-Add a `curriculum_fn` optional parameter to `reset()` that, given `(env_ids, episode_returns)`, returns updated DR range multipliers. Linear threshold: widen Kp/Kd range when avg return > target. ~1 hour, ~50 lines.
+**Recommendation: ADAPT — short-term, for DR range widening**
+Add a `curriculum_fn` optional parameter to `DomainRandWrapper` that, given `(mean_return)`, returns DR range multipliers. Linear threshold: widen motor_strength/mass/friction ranges when avg return > target. ~1 hour, ~50 lines.
 
 ---
 
@@ -162,8 +162,8 @@ Single RTX 5080 is not a bottleneck. DIAYN adds discriminator but doesn't fundam
 ### 1. Extract reward terms into composable `RewardSpec` (before DIAYN)
 Refactor `_get_reward()` from 16 inline methods into a list of `(name, weight, fn)` tuples the env iterates. DIAYN swaps in `reward = discriminator(obs, z)` by replacing the spec, not forking the env. Highest-leverage change — unblocks the entire skill discovery roadmap. ~2 hours, ~80 lines.
 
-### 2. Add curriculum callback for DR range scaling (for Kp/Kd widening)
-Optional `curriculum_fn(env_ids, episode_returns) → dr_range_multipliers` in `reset()`. Linear threshold: widen Kp/Kd range when avg return exceeds target. Unblocks active TODO "Wider DR ranges — may need curriculum." ~1 hour, ~50 lines.
+### 2. Add curriculum callback for DR range scaling
+Optional `curriculum_fn(mean_return) → dr_range_multipliers` in `DomainRandWrapper`. Linear threshold: widen motor_strength/mass/friction ranges when avg return exceeds target. ~1 hour, ~50 lines.
 
 ### 3. Make observation construction config-driven (before vision RL)
 Refactor `_get_obs()` into `ObsSpec` — list of `(name, fn, noise_cfg)` tuples grouped by "policy" and "critic". Adding vision = config change, not env surgery. Enables clean DIAYN skill vector injection into obs. ~2 hours, ~100 lines.

@@ -167,7 +167,9 @@ def _build_select_action(meta, obs_dim, action_dim):
 def record(env_name: str | None = None, checkpoint: str | None = None,
            out: str = "rollout.mp4", max_steps: int = 1000,
            camera: str | None = None, video_seed: int = 0,
-           kicks: bool = False):
+           kicks: bool = False,
+           terrain_level: int | None = None,
+           terrain_type: str | None = None):
 
     # ── Load checkpoint ───────────────────────────────────────────────────
     algo_type = "ppo"  # default
@@ -217,6 +219,57 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
     key = jax.random.PRNGKey(video_seed)
     key, reset_key = jax.random.split(key)
     env_state = env.reset(reset_key)
+
+    # ── Curriculum-env debug override (optional) ──────────────────────────
+    # Force spawn at a specific (terrain_level, terrain_type) tile. Useful for
+    # isolating failure modes: e.g., "does policy handle pyramid_down L7?".
+    if terrain_level is not None or terrain_type is not None:
+        _TERRAIN_TYPE_NAMES = ["rough", "pyramid_up", "pyramid_down", "tilted"]
+        base_env = env
+        while hasattr(base_env, "env"):
+            base_env = base_env.env
+        if not hasattr(base_env, "_terrain_origins"):
+            print(f"[warn] --terrain-level/--terrain-type ignored: env {env_name} is not a curriculum env")
+        else:
+            tl = int(terrain_level) if terrain_level is not None else 0
+            if terrain_type is not None:
+                if terrain_type not in _TERRAIN_TYPE_NAMES:
+                    raise ValueError(f"--terrain-type must be one of {_TERRAIN_TYPE_NAMES}, got '{terrain_type}'")
+                tt = _TERRAIN_TYPE_NAMES.index(terrain_type)
+            else:
+                tt = int(env_state.info.get("terrain_type", 0))
+            tl = max(0, min(tl, base_env._num_rows - 1))
+            tt = max(0, min(tt, base_env._num_cols - 1))
+            print(f"  [curriculum override] terrain_level={tl}, terrain_type={_TERRAIN_TYPE_NAMES[tt]} (col {tt})")
+
+            # Resample spawn + goal at target tile.
+            key, spawn_rng, yaw_rng = jax.random.split(key, 3)
+            spawn_local, goal_local, spawn_yaw = base_env._sample_spawn_goal(
+                jnp.int32(tt), base_env._config.tile_size, spawn_rng, yaw_rng
+            )
+            tile_origin = base_env._terrain_origins[tl, tt]
+            spawn_world_xy = spawn_local[:2] + tile_origin[:2]
+            spawn_world_z = tile_origin[2] + spawn_local[2]
+            goal_world_xy = goal_local[:2] + tile_origin[:2]
+
+            new_qpos = env_state.data.qpos.at[0].set(spawn_world_xy[0])
+            new_qpos = new_qpos.at[1].set(spawn_world_xy[1])
+            new_qpos = new_qpos.at[2].set(spawn_world_z)
+            new_qpos = new_qpos.at[3].set(jnp.cos(spawn_yaw / 2.0))
+            new_qpos = new_qpos.at[4].set(0.0)
+            new_qpos = new_qpos.at[5].set(0.0)
+            new_qpos = new_qpos.at[6].set(jnp.sin(spawn_yaw / 2.0))
+            env_state = env_state.replace(data=env_state.data.replace(qpos=new_qpos))
+            env_state.info["terrain_level"] = jnp.int32(tl)
+            env_state.info["terrain_type"] = jnp.int32(tt)
+            env_state.info["goal_xy"] = goal_world_xy
+            env_state.info["initial_distance"] = jnp.linalg.norm(spawn_world_xy - goal_world_xy)
+            env_state.info["episode_reached_goal"] = jnp.bool_(False)
+            env_state.info["episode_min_distance"] = env_state.info["initial_distance"]
+            env_state.info["episode_fallen"] = jnp.bool_(False)
+            env_state.info["target_speed"] = jnp.float32(
+                0.5 + tl / max(1, base_env._num_rows - 1) * 1.0
+            )
 
     raw_obs = env_state.obs
     policy_obs = raw_obs["state"] if isinstance(raw_obs, dict) else raw_obs
@@ -340,10 +393,13 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
 
     # ── Save video ────────────────────────────────────────────────────────
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    if checkpoint is not None:
+    if out != "rollout.mp4":
+        # User explicitly set --out; honor it verbatim.
+        video_path = out
+    elif checkpoint is not None:
         video_path = os.path.join(checkpoint, f"{timestamp}_rollout.mp4")
     else:
-        video_path = out if out != "rollout.mp4" else f"{timestamp}_rollout.mp4"
+        video_path = f"{timestamp}_rollout.mp4"
 
     print(f"Saving to {video_path}...")
     imageio.mimsave(video_path, frames, fps=50)  # 50Hz policy = 50fps for real-time
@@ -376,10 +432,17 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=0, help="Random seed for env reset")
     parser.add_argument("--kicks", action="store_true",
                         help="Zero velocity command + random velocity kicks every 1.5s")
+    parser.add_argument("--terrain-level", type=int, default=None,
+                        help="Curriculum env only: force spawn at this level (0-9)")
+    parser.add_argument("--terrain-type", type=str, default=None,
+                        choices=[None, "rough", "pyramid_up", "pyramid_down", "tilted"],
+                        help="Curriculum env only: force spawn at this terrain type")
     args = parser.parse_args()
     record(
         env_name=args.env, checkpoint=args.checkpoint, out=args.out,
         max_steps=args.max_steps,
         camera=args.camera, video_seed=args.seed,
         kicks=args.kicks,
+        terrain_level=args.terrain_level,
+        terrain_type=args.terrain_type,
     )

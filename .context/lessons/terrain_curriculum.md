@@ -109,6 +109,18 @@ Workarounds:
 - Skip final eval: `--eval-every 9999999` to suppress eval entirely, or patch `final_eval_and_checkpoint` to be a no-op on curriculum envs
 - Use train env for eval (reuse the graph) — requires refactoring eval runner
 
+### Don't bump `njmax` / `naconmax` to silence the "nefc overflow" warning
+
+On terrain env init, MuJoCo Warp prints `nefc overflow - please increase njmax to 123` (exact number varies). The natural fix is to set `cfg.njmax = 256, cfg.naconmax = 8*8192` in curriculum `default_config()`. This **causes OOM** at forward-pass time — solver kernels allocate memory proportional to these limits, and the combined budget blows past VRAM.
+
+Keep the defaults (`njmax=100`, `naconmax=32768`). Warning is cosmetic — sim functions correctly. The terrain's many geoms exceed the *advisory* constraint count but MuJoCo handles it.
+
+### Warp kernel cache accumulates across in-process env creations
+
+Creating multiple curriculum env instances in one `python` process (e.g., sequential unit tests, stress probes) accumulates Warp graph captures that aren't garbage-collected. Typically fails around the 3rd-4th instantiation with `Warp CUDA error 2: out of memory (wp_cuda_graph_create_exec)`.
+
+Workaround: run each test in a fresh subprocess (`uv run python -c "..."` per probe). Not an issue for training — training uses one env for the whole run.
+
 ---
 
 ## 4. wandb Metrics Interpretation
