@@ -114,3 +114,77 @@ XML is built programmatically by `build_xml(shape)` — inserts the geoms into a
 **Mirror the same geom spec to the target ghost** (transparent, `contype=0 conaffinity=0`). Visual target match without collision interference.
 
 **Lesson:** for tasks that vary by one axis (here: block shape), drive the variation from Python data, not per-variant XML files. The template stays canonical, variation lives in one place, and shape-name is a first-class env parameter.
+
+---
+
+## Slide-Joint Body Pos Is an Offset, Not a Starting Position (2026-04-17)
+
+**What happened:** Wrote `qpos = [pusher_x, pusher_y, block_x, block_y, block_yaw]` in reset(), expecting pusher/block to appear at those world coordinates. On render, pusher was visibly *outside* the wall on the left — despite qpos values being inside the valid range.
+
+**Root cause:** Pusher body had `<body pos="-0.15 0 0.015">` in the MJCF. Slide joints are **additive to body pose**: world_x = body_pos_x + qpos[0]. So qpos=-0.19 produced world_x = -0.15 + -0.19 = -0.34, past the wall at ±0.3. Same for block (body_pos 0.05). Visible confusion: policy obs said pusher at -0.19, physics had it at -0.34.
+
+**Fix:** Set body pos to origin (`<body pos="0 0 0.015">`) so qpos directly = world XY. No offset bookkeeping.
+
+**Lesson:** When using slide joints to express "XY position" of a body, always anchor the body at origin. Any nonzero `<body pos>` becomes a hidden offset baked into every qpos read/write. Check with `d.xpos[body_id]` vs `d.qpos[joint_qposadr]` during a forward pass — they should match for a pure slide body. Silent visual-only bug otherwise.
+
+---
+
+## Zero-Action Attractor in Velocity/Teleport Modes (2026-04-18)
+
+**What happened:** On push-T with shaped reward, position-PD mode converged to eval +143 (47% success). Velocity-delta and teleport modes plateaued at -85 to -90 despite same obs, same reward, same training budget. Shaping tweaks (r_block_vel 2→10, added r_pusher_vel_toward_block) marginally helped vel/tele but never closed the gap.
+
+**Diagnosis (with per-component reward + velocity logging):** pusher_vel_mag 0.80 m/s in pos mode vs 0.06 m/s in vel/tele. Even with 4× cap bump (vel 0.01→0.04 m/step, tele 0.25→1.5 m/s), pusher used only 7-13% of the cap. Policies learned small actions and stayed there.
+
+**Root cause:** in vel/teleport modes, `action=0 → ctrl=current → pusher holds still`. Self-consistent attractor. Policy has no local gradient to explore "what if I moved aggressively" — any aggressive action reverts to hover next step because the new ctrl again equals current pusher position. In pos-PD mode, `action=0 → ctrl=[0,0] ≠ current` so PD always yanks pusher toward origin at kp×err force. Accidentally forces motion even at zero action. Exploration-friendly by construction.
+
+**Implications:**
+- Position-PD is the surprisingly-good default for pushing tasks trained from scratch with RL.
+- Velocity/teleport match imitation-literature conventions (gym-pusht, DP) but those use expert demos as exploration crutch — not RL-from-scratch.
+- Don't assume equivalent action spaces have equivalent trainability. The attractor structure matters.
+
+**Fix options (none fully closed gap in our tests):**
+1. Bypass PD entirely for vel mode: directly set `qvel[pusher]=action*scale`. Removes attractor but breaks contact force coupling.
+2. Large action bonus term `+α||action||` to counter the hover equilibrium. Fragile.
+3. Accept: pos-PD for RL, reserve vel/tele for BC/imitation comparisons.
+
+**Lesson:** before blaming HPs, check if your action parameterization has a fixed-point at `action=0`. If yes, and the fixed-point is inside the workspace, expect cautious policies. Add diagnostic `pusher_vel_mag / block_vel_mag / pusher_to_block` to metrics when A/B-ing action modes — the numbers tell you whether policy is action-limited or structural.
+
+---
+
+## Reward Shaping Strength Is a Dial, Not a Monotonic Knob (2026-04-18)
+
+**What happened:** Bumping `r_block_vel` scale from 2.0 → 10.0 tanked pos mode from eval +143 → -1.7. Bigger shaping reward made training worse.
+
+**Mechanism:** at 10.0, the reward became: _achievable only if you shove the block around_. Angle-matching (`r_angle`) stopped mattering in relative terms — drowned by block_vel gradients. Policy learned to hustle the block back-and-forth for r_block_vel rather than patiently rotating to the target angle. Returns got mostly-positive-but-not-solving: task-reward noise but benchmark-low success rate (47% → 3.5%).
+
+**Reverting `r_block_vel` to 2.0** restored eval +143 at cost of losing the new `r_pusher_vel` term (net −25 from the perturbation, better than -1.7 but still below +143).
+
+**Lesson:** when shaping, the ratio between shaping terms and ground-truth (pos+angle error) must stay bounded. A shaping term that dominates becomes the policy's real objective — and if it's not aligned with the actual task, you optimize the wrong thing. Tuning heuristic: keep shaping reward magnitude ≤ 0.5× max task reward. If a bigger shaping term helps early exploration, anneal it down over training (curriculum on reward weights).
+
+---
+
+## Always Log Per-Component Reward + Velocity Magnitudes When Shaping (2026-04-18)
+
+**What happened:** Spent several iterations blindly tweaking reward term weights without visibility into which component was dominant. Added env-side metrics (`r_pos`, `r_angle`, `r_approach`, `r_block_vel`, `r_pusher_vel`, `pusher_vel_mag`, `block_vel_mag`, `pusher_to_block`) then ran a quick diag rollout on each checkpoint. Immediately saw pusher_vel 24× smaller in vel/tele vs pos. One diag run answered several open hypotheses.
+
+**Pattern:**
+1. Emit every reward component as a scalar metric from env (in `state.metrics`).
+2. Emit proxy metrics for "is the policy even _using_ the action space?" (`pusher_vel_mag`, distance to relevant bodies).
+3. Rollout 200 steps on the trained checkpoint, print mean of each metric.
+4. Diff metrics across configs instead of only comparing eval reward.
+
+**Lesson:** per-component reward logging is essentially free (µs per step) and turns "why is this worse" from a multi-hour A/B into a 10-line diff. Bake it into env design from day 1 for any env with more than 2 reward terms.
+
+---
+
+## Vendoring Old Static Benchmarks Beats Pip Dependency (2026-04-18)
+
+**What happened:** `gym-pusht` from Hugging Face broke on `pymunk>=7` (`Space.add_collision_handler` removed). pip install pulled pymunk 7.2; env crashed at `reset()`. Downgrading pymunk unblocked it, but now our env set has a brittle dependency on a floating pip version of a 2-year-old static benchmark.
+
+**Fix:** Copied `gym_pusht/envs/pusht.py` + `pymunk_override.py` + LICENSE (Apache 2.0) into `jax_rl/envs/manipulation/pusht/`. Added `reward_mode` kwarg for swappable rewards (`coverage` | `sparse` | `shaped` | `approach`) without forking any upstream logic. Packed 206 LeRobot expert demos into `demos/pusht_demos.npz` (0.29 MB). Parity test: 100 random steps → byte-exact match with pip `gym-pusht` in coverage mode.
+
+**When to vendor vs pin:**
+- **Vendor** when: upstream is static (no ongoing development), upstream is small (<1k LOC), or you need to extend the API (new kwargs). Push-T ticks all three.
+- **Pin** when: upstream is actively maintained, large, or security-sensitive. Vendoring loses automatic fixes.
+
+**Lesson:** a 700-line frozen benchmark from a 2023 paper is better vendored than pip'd. The pinning battle is lost before it starts — some dep will force you to upgrade pymunk/numpy/torch eventually, and old benchmarks don't follow. Copying in the code + LICENSE is the cheapest form of reproducibility insurance.

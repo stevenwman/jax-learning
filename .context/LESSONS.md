@@ -147,13 +147,18 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **Joint order ≠ actuator order — THE root cause** — unitree qpos is FL-first, ctrl is FR-first. PD applied FL torque to FR actuator. Robot fought itself. Hours of debugging PD/solver/entropy were all red herrings. ALWAYS verify ordering when using third-party MJCFs.
 - **"Stable" PD gains ≠ "trainable" PD gains** — Kp=10/Kd=1.0 holds the robot fine but trains 7x slower than Kp=20/Kd=0.5. Sluggish joint dynamics suppress the leg swings RL needs to find walking. Validate new PD gains with a training run, not a static hold test.
 
-## [Manipulation (Push-T)](lessons/manipulation.md) — 5 lessons
+## [Manipulation (Push-T)](lessons/manipulation.md) — 10 lessons
 
 - **Cylinder-box collisions need Warp** — MJX JAX backend raises `NotImplementedError`. Any manipulation env with cylinder pusher + box target is Warp-only.
 - **Tighten solref for manipulation contacts** — default `solref=0.02` (20ms) gives visible penetration; use `0.004 1` + `solimp="0.98 0.995 ..."` + `iterations=50 ls_iterations=10`.
 - **Shape-agnostic obs for cross-shape generalization** — `[center_xy, sin/cos(yaw), target_xy, sin/cos(goal_yaw), vels, last_action]` = 16d. Same obs for T/L/circle/plus. Policy infers contact dynamics, doesn't memorize T-geometry.
 - **Three action modes for RL vs demo parity** — position-PD (our default, jittery), velocity/delta (smooth, RL-friendly), teleport (gym-pusht parity). `config.action_mode` flag, same obs, different ctrl mapping.
 - **Data-driven shape registry** — `SHAPES = {"T": [geom_dicts], "circle": [...], ...}`. XML built programmatically. Adding new shape = one dict entry, no per-shape XML files.
+- **Slide-joint body pos is an offset, not a starting position** — body `pos="-0.15 0 0.015"` + qpos=-0.19 = world -0.34, outside the wall. Anchor slide bodies at origin so qpos directly = world XY. Silent visual-only bug caught by top-down render.
+- **Zero-action attractor in velocity/teleport modes** — pos-PD accidentally forces motion at action=0 (kp × err > 0); vel/tele do not (action=0 → ctrl=current → hover). Policies converge cautious in vel/tele regardless of shaping strength. Pos-PD is surprisingly the best default for RL-from-scratch pushing.
+- **Reward shaping strength is a dial, not a monotonic knob** — bumping `r_block_vel` 2→10 on push-T regressed pos mode from eval +143 → -1.7. When a shaping term dominates ground-truth task terms, you optimize the wrong thing. Keep shaping ≤ 0.5× max task reward.
+- **Always log per-component rewards + motion metrics when shaping** — `r_pos, r_angle, r_approach, r_block_vel, r_pusher_vel`, `pusher_vel_mag`, `block_vel_mag`, `pusher_to_block`. Essentially free, turns "why is A worse than B" from a multi-hour A/B into a 10-line diff rollout.
+- **Vendor old static benchmarks; don't pip-depend** — gym-pusht broke on pymunk 7 (upstream API removed). Copied 700 LOC + LICENSE into repo, added `reward_mode` kwarg, packed 206 expert demos as 0.3 MB npz. Parity-tested byte-exact vs pip. Old 2023-paper benchmarks should be owned.
 
 ## [Bongo Board Handstand](lessons/bongo.md) — 10 lessons
 

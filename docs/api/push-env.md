@@ -146,7 +146,19 @@ Core use case:
 
 Observation space is identical across shapes. Only the block's response to contact differs. This is the minimal perturbation that isolates dynamics-generalization from representation-generalization.
 
-## Comparison to gym-pusht
+## Comparison to vendored [PushTEnv](pusht.md)
+
+For Diffusion Policy parity + expert demos, use the vendored [PushTEnv](pusht.md) instead. Key differences:
+
+| | PushEnv (this page) | PushTEnv (vendored) |
+|---|---|---|
+| Backend | MuJoCo Warp (GPU vmap) | pymunk 2D (CPU) |
+| Shapes | T, L, circle, plus | T only |
+| Throughput | 360k sps @ 1024 envs | ~2k sps single proc |
+| Expert demos | None | 206 LeRobot teleops bundled |
+| Use for | RL adaptability, shape transfer | DP paper parity, BC, imitation |
+
+## Comparison to gym-pusht (pip)
 
 This env is **not** a drop-in replacement for the Diffusion Policy gym-pusht benchmark:
 

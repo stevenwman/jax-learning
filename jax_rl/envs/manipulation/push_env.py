@@ -62,7 +62,7 @@ _XML_TEMPLATE = """\
   <visual>
     <headlight diffuse="0.25 0.25 0.25" ambient="0.15 0.15 0.15" specular="0 0 0"/>
     <rgba haze="0.15 0.25 0.35 1"/>
-    <global offwidth="480" offheight="480"/>
+    <global offwidth="1920" offheight="1080"/>
   </visual>
 
   <default>
@@ -90,6 +90,9 @@ _XML_TEMPLATE = """\
   <worldbody>
     <light pos="0 0 1.5" dir="0 0 -1" diffuse="0.2 0.2 0.2" specular="0 0 0" ambient="0 0 0"/>
 
+    <!-- Top-down camera for video recording. FOV sized to show walls at ±0.3. -->
+    <camera name="topdown" pos="0 0 0.9" xyaxes="1 0 0 0 1 0" fovy="45"/>
+
     <!-- Table surface -->
     <geom name="floor" type="plane" size="0.3 0.3 0.01" material="grid"
           pos="0 0 0" friction="0.4 0.005 0.001" condim="3"/>
@@ -104,15 +107,15 @@ _XML_TEMPLATE = """\
     <geom name="wall_yn" type="box" size="0.3 0.005 0.03" pos="0 -0.305 0.03"
           rgba="0.5 0.5 0.5 0.15" contype="1" conaffinity="1"/>
 
-    <!-- Pusher -->
-    <body name="pusher" pos="-0.15 0 0.015">
+    <!-- Pusher (body at origin so qpos = world XY directly) -->
+    <body name="pusher" pos="0 0 0.015">
       <joint name="pusher_x" type="slide" axis="1 0 0" range="-0.28 0.28" damping="0.8"/>
       <joint name="pusher_y" type="slide" axis="0 1 0" range="-0.28 0.28" damping="0.8"/>
       <geom name="pusher" class="pusher"/>
     </body>
 
-    <!-- Block (shape-specific geoms injected) -->
-    <body name="block" pos="0.05 0 0.015">
+    <!-- Block (body at origin, shape-specific geoms injected) -->
+    <body name="block" pos="0 0 0.015">
       <joint name="block_x" type="slide" axis="1 0 0" damping="0.3"/>
       <joint name="block_y" type="slide" axis="0 1 0" damping="0.3"/>
       <joint name="block_yaw" type="hinge" axis="0 0 1" damping="0.1"/>
@@ -133,6 +136,7 @@ _XML_TEMPLATE = """\
   </actuator>
 
   <keyframe>
+    <!-- qpos = [pusher_x, pusher_y, block_x, block_y, block_yaw] — absolute world coords -->
     <key name="home" qpos="-0.15 0 0.05 0 0"/>
   </keyframe>
 </mujoco>
@@ -178,14 +182,17 @@ def default_config() -> config_dict.ConfigDict:
         episode_length=200,
         shape="T",
         action_mode="position",  # "position" | "velocity" | "teleport"
-        max_pusher_speed=0.25,   # m/s, used by teleport mode
-        reward_type="dense",     # "dense" or "sparse"
+        max_pusher_speed=1.5,    # m/s, used by teleport mode (matches pos-PD effective)
+        reward_type="dense",     # "dense" | "sparse" | "shaped"
         pos_threshold=0.02,      # success threshold (m)
         angle_threshold=0.15,    # success threshold (rad)
         randomize_target=True,
         randomize_block=True,
         table_half=0.22,         # spawn region half-size (within walls)
         impl="warp",
+        naconmax=1024,           # Warp contact buffer. Overflow seen >830 at 256 envs.
+        naccdmax=256,            # CCD narrowphase candidates. Must be <= naconmax.
+        njmax=64,                # Max constraints per env.
     )
 
 
@@ -281,16 +288,27 @@ class PushEnv(mjx_env.MjxEnv):
             lambda: jp.float32(0.0),
         )
 
-        # Pusher starts at fixed offset from block
-        pusher_xy = block_xy + jp.array([-0.12, 0.0])
-        pusher_xy = jp.clip(pusher_xy, -0.28, 0.28)
+        # Pusher spawns opposite side of block from target, with enough
+        # clearance to avoid overlap with rotated shapes (T top bar = 0.15m,
+        # half=0.075, pusher radius 0.025, plus margin).
+        to_target_unit = (target_xy - block_xy) / (jp.linalg.norm(target_xy - block_xy) + 1e-6)
+        pusher_xy = block_xy - 0.18 * to_target_unit
+        pusher_xy = jp.clip(pusher_xy, -0.27, 0.27)
 
         qpos = jp.array([pusher_xy[0], pusher_xy[1],
                           block_xy[0], block_xy[1], block_yaw])
         qvel = jp.zeros(self._mj_model.nv)
 
-        data = mjx.make_data(self._mj_model, impl=self._config.impl)
-        data = data.replace(qpos=qpos, qvel=qvel)
+        data = mjx_env.make_data(
+            self._mj_model,
+            qpos=qpos,
+            qvel=qvel,
+            ctrl=jp.zeros(self._mjx_model.nu),
+            impl=self._mjx_model.impl.value,
+            naconmax=self._config.naconmax,
+            naccdmax=self._config.naccdmax,
+            njmax=self._config.njmax,
+        )
 
         # Set mocap body (target ghost) position
         mocap_pos = jp.array([[target_xy[0], target_xy[1], 0.015]])
@@ -314,6 +332,17 @@ class PushEnv(mjx_env.MjxEnv):
         metrics = {
             "pos_error": jp.float32(0),
             "angle_error": jp.float32(0),
+            "pusher_to_block": jp.float32(0),
+            "pusher_vel_mag": jp.float32(0),
+            "block_vel_mag": jp.float32(0),
+            "block_vel_toward": jp.float32(0),
+            "r_pos": jp.float32(0),
+            "r_angle": jp.float32(0),
+            "r_approach": jp.float32(0),
+            "r_block_vel": jp.float32(0),
+            "r_pusher_vel": jp.float32(0),
+            "r_action": jp.float32(0),
+            "pusher_vel_toward_block": jp.float32(0),
             "success": jp.float32(0),
         }
 
@@ -327,9 +356,11 @@ class PushEnv(mjx_env.MjxEnv):
         data = state.data
 
         if self._action_mode == "velocity":
-            # Delta mode: action = delta position per step (1cm per unit).
+            # Delta mode: action = delta position per step.
+            # Scale tuned to match pos-PD's effective pusher velocity (~1.4 m/s).
+            # 0.04 m per step at 50Hz = 2 m/s cap.
             current_pos = data.qpos[self._pusher_qpos_idx]
-            target = current_pos + action * 0.01
+            target = current_pos + action * 0.04
             target = jp.clip(target, -0.28, 0.28)
         elif self._action_mode == "teleport":
             # gym-pusht style: move toward commanded target, capped at
@@ -356,22 +387,51 @@ class PushEnv(mjx_env.MjxEnv):
         target_xy = state.info["target_xy"]
         target_yaw = state.info["target_yaw"]
 
-        # Compute reward
+        # Compute reward + diagnostics
+        pusher_xy = data.qpos[self._pusher_qpos_idx]
         block_xy = data.qpos[self._block_qpos_idx]
         block_yaw = data.qpos[self._block_yaw_idx]
+        pusher_vel = data.qvel[self._pusher_qvel_idx]
+        block_vel = data.qvel[self._block_qvel_idx]
+
         pos_error = jp.linalg.norm(block_xy - target_xy)
         angle_error = _angle_dist(block_yaw, target_yaw)
+        pusher_to_block = jp.linalg.norm(pusher_xy - block_xy)
+        pusher_vel_mag = jp.linalg.norm(pusher_vel)
+        block_vel_mag = jp.linalg.norm(block_vel)
+
+        to_target = target_xy - block_xy
+        to_target_unit = to_target / (jp.linalg.norm(to_target) + 1e-6)
+        block_vel_toward = jp.dot(block_vel, to_target_unit)
+
+        success = (pos_error < self._config.pos_threshold) & \
+                  (angle_error < self._config.angle_threshold)
+        success_f = success.astype(jp.float32)
+
+        # Pusher velocity projected onto direction toward block — rewards
+        # aggressive approach motion (breaks the "hover near block" local min).
+        to_block = block_xy - pusher_xy
+        to_block_unit = to_block / (pusher_to_block + 1e-6)
+        pusher_vel_toward_block = jp.dot(pusher_vel, to_block_unit)
+
+        # Always compute all components (for diagnostics), select which
+        # combination to use based on reward_type.
+        r_pos        = -pos_error
+        r_angle      = -0.3 * angle_error
+        r_approach   = -0.2 * pusher_to_block
+        r_block_vel  = 2.0 * block_vel_toward             # revert from 10 — overweighted
+        r_pusher_vel = 0.5 * pusher_vel_toward_block      # new: motivates aggression
+        r_action     = -0.001 * jp.sum(action ** 2)
+        r_success_s  = 1.0 * success_f                    # shaped bonus
+        r_success_d  = 5.0 * success_f                    # dense bonus
 
         if self._config.reward_type == "sparse":
-            success = (pos_error < self._config.pos_threshold) & \
-                      (angle_error < self._config.angle_threshold)
-            reward = success.astype(jp.float32)
+            reward = success_f
+        elif self._config.reward_type == "shaped":
+            reward = (r_pos + r_angle + r_approach + r_block_vel
+                      + r_pusher_vel + r_action + r_success_s)
         else:
-            # Dense: negative distance + angle penalty + success bonus
-            reward = -pos_error - 0.3 * angle_error
-            success = (pos_error < self._config.pos_threshold) & \
-                      (angle_error < self._config.angle_threshold)
-            reward = reward + 5.0 * success.astype(jp.float32)
+            reward = r_pos + r_angle + r_success_d
 
         step_count = state.info["step_count"] + 1
         done = jp.float32(0)  # episode ends by truncation only
@@ -387,7 +447,20 @@ class PushEnv(mjx_env.MjxEnv):
         metrics = {
             "pos_error": pos_error,
             "angle_error": angle_error,
-            "success": success.astype(jp.float32),
+            "success": success_f,
+            # Diagnostic metrics (always logged, regardless of reward_type).
+            "pusher_to_block": pusher_to_block,
+            "pusher_vel_mag": pusher_vel_mag,
+            "block_vel_mag": block_vel_mag,
+            "block_vel_toward": block_vel_toward,
+            # Reward component breakdown (shaped components always computed).
+            "r_pos": r_pos,
+            "r_angle": r_angle,
+            "r_approach": r_approach,
+            "r_block_vel": r_block_vel,
+            "r_pusher_vel": r_pusher_vel,
+            "r_action": r_action,
+            "pusher_vel_toward_block": pusher_vel_toward_block,
         }
 
         return state.replace(data=data, obs=obs, reward=reward,

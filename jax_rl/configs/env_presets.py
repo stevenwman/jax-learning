@@ -281,6 +281,36 @@ FAST_SAC_PRESETS["Go2WarpJoystickCurriculumTorqueSpeed"] = (
     _FAST_SAC_BASE_ALGO,
 )
 
+# ── Push-T manipulation presets ──────────────────────────────────────────
+# 16d obs + 2d action → smaller networks, shorter episodes, faster training.
+# Scaled for 3-way parallel runs (256 envs each) so 3 fit on one GPU.
+_PUSH_BASE_CFG = TrainConfig(
+    total_timesteps=3_000_000,
+    num_envs=256,
+    episode_length=200,
+    lr=3e-4,
+    reward_scaling=1.0,
+    gamma=0.97,
+    num_eval_episodes=5,
+    handle_truncation=True,
+)
+_PUSH_BASE_ALGO = dataclasses.replace(
+    _FAST_SAC_BASE_ALGO,
+    buffer_size=1_000_000,
+    batch_size=2048,
+    hidden_dim=(128, 128, 64),        # tiny networks for 16d obs
+    critic_hidden_dim=(256, 256, 128),
+)
+for _shape in ("T", "L", "Circle", "Plus"):
+    for _mode in ("Pos", "Vel", "Tele"):
+        for _suffix in ("", "_Shaped"):
+            _env_name = f"Push{_shape}_{_mode}{_suffix}"
+            FAST_SAC_PRESETS[_env_name] = (
+                dataclasses.replace(_PUSH_BASE_CFG, env_name=_env_name),
+                _PUSH_BASE_ALGO,
+            )
+
+
 
 def get_fast_sac_preset(env_name: str) -> tuple[TrainConfig, FastSACConfig]:
     """Return FastSAC preset (TrainConfig, FastSACConfig) for env, or a default."""
