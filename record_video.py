@@ -335,8 +335,12 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
         info = state_i.info
         if 'command' in info:
             cmd_hist.append(np.asarray(info['command']))
-        if 'goal_xy' in info:
+        # Only record goal_xy for goal-directed (Class B) tiles — Class A uses
+        # a placeholder goal=spawn that shouldn't be visualized.
+        if 'goal_xy' in info and bool(info.get('is_goal_directed', True)):
             goal_xy_hist.append(np.asarray(info['goal_xy']))
+        else:
+            goal_xy_hist.append(None)
         if 'reward_components' in info:
             for k, v in info['reward_components'].items():
                 reward_components_hist.setdefault(k, []).append(np.asarray(v))

@@ -96,8 +96,10 @@ class TerrainCurriculumDRWrapper(DomainRandWrapper):
         initial_dist = jp.linalg.norm(spawn_xys - goal_xys, axis=-1)
         target_speed = 0.5 + initial_levels.astype(jp.float32) / (self._num_rows - 1) * 1.0
 
+        _IS_GOAL = jp.asarray([False, True, True, False])
         state.info["terrain_type"] = fixed_types
         state.info["terrain_level"] = initial_levels
+        state.info["is_goal_directed"] = _IS_GOAL[fixed_types]
         state.info["goal_xy"] = goal_xys
         state.info["spawn_xy"] = spawn_xys
         state.info["initial_distance"] = initial_dist

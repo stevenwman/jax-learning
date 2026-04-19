@@ -126,8 +126,10 @@ class WarpJoystickCurriculum(WarpJoystick):
         target_speed = 0.5 + terrain_level.astype(jp.float32) / (self._num_rows - 1) * 1.0
         initial_distance = jp.linalg.norm(spawn_world_xy - goal_world_xy)
 
+        is_goal = jp.asarray(self._IS_GOAL_DIRECTED, dtype=jp.bool_)[terrain_type]
         state.info["terrain_level"] = terrain_level
         state.info["terrain_type"] = terrain_type
+        state.info["is_goal_directed"] = is_goal
         state.info["goal_xy"] = goal_world_xy
         state.info["spawn_xy"] = spawn_world_xy
         state.info["initial_distance"] = initial_distance
@@ -178,11 +180,25 @@ class WarpJoystickCurriculum(WarpJoystick):
         return spawn, goal, yaw
 
     def _rim_to_center(self, rng, yaw_rng, tile_size):
-        """Spawn on rim (random angle), goal at tile center."""
-        angle = jax.random.uniform(rng, (), minval=0.0, maxval=2.0 * jp.pi)
-        r = min(tile_size[0], tile_size[1]) / 2.0 * 0.9  # static Python — ok
-        spawn_x = r * jp.cos(angle)
-        spawn_y = r * jp.sin(angle)
+        """Spawn on outer TILE EDGE (not rim-circle), goal at tile center.
+
+        Pyramid/bowl rings are rectangular strips — a rim-circle at r≈4.3m lands
+        ON TOP of ring-1 strips at diagonals (0.22m elevated at L5+), causing
+        spawn clipping. Sampling on the axis-aligned outer edge guarantees
+        spawn lands on ring 0 at z=0 regardless of angle.
+        """
+        axis_rng, side_rng, offset_rng = jax.random.split(rng, 3)
+        hx = tile_size[0] / 2.0
+        hy = tile_size[1] / 2.0
+        axis = jax.random.randint(axis_rng, (), 0, 2)          # 0 = +/-x edge, 1 = +/-y edge
+        side = jax.random.randint(side_rng, (), 0, 2) * 2 - 1  # -1 or +1
+        # Offset along the chosen edge, kept well inside ring 0 (|other| < 0.7 * hy
+        # to avoid overlap corners where ring 0 strip meets ring 1).
+        offset = jax.random.uniform(offset_rng, (), minval=-0.7, maxval=0.7)
+        edge_val = side.astype(jp.float32) * hx * 0.95
+        off_val = hy * offset
+        spawn_x = jp.where(axis == 0, edge_val, off_val)
+        spawn_y = jp.where(axis == 0, off_val, edge_val)
         spawn = jp.array([spawn_x, spawn_y, jp.float32(0.3)])
         goal = jp.array([jp.float32(0.0), jp.float32(0.0), jp.float32(0.0)])
         yaw = jax.random.uniform(yaw_rng, (), minval=-jp.pi, maxval=jp.pi)
