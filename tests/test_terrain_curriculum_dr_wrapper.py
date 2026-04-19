@@ -71,8 +71,18 @@ def test_goal_xy_is_2d(make_wrapped_env):
     assert state.info["goal_xy"].shape == (4, 2)
 
 
-def test_initial_distance_positive(make_wrapped_env):
-    """initial_distance should be positive for all envs."""
+def test_initial_distance_positive_for_goal_directed(make_wrapped_env):
+    """initial_distance should be positive for goal-directed types (pyramid_up / pyramid_down).
+
+    Class-A types (rough, tilted) spawn at tile center with goal = spawn placeholder,
+    so their initial_distance may be ≈ 0 by design.
+    """
     env = make_wrapped_env
     state = env.reset(jax.random.split(jax.random.PRNGKey(0), 4))
-    assert (state.info["initial_distance"] > 0).all()
+    types = state.info["terrain_type"]
+    dists = state.info["initial_distance"]
+    # Types 1 (pyramid_up) and 2 (pyramid_down) are goal-directed
+    is_goal = (types == 1) | (types == 2)
+    goal_dists = dists[is_goal]
+    if goal_dists.shape[0] > 0:
+        assert (goal_dists > 0).all(), f"BUG: goal-directed envs had zero initial_distance: {goal_dists}"

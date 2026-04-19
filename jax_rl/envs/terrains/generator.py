@@ -91,9 +91,10 @@ class TerrainGenerator:
                     geom_idx += 1
                     geom_lines.append(_geom_to_xml(world_geom))
 
-                # Store world-frame spawn origin
-                so = output.spawn_origin
-                origins[r, c] = [so[0] + tile_x, so[1] + tile_y, so[2]]
+                # Store world-frame TILE CENTER (independent of primitive).
+                # Callers combine this with tile-local spawn/goal offsets to
+                # derive world-frame positions.
+                origins[r, c] = [tile_x, tile_y, 0.0]
 
         # Border: four flat strips AROUND the grid (not underneath it) — avoids
         # covering up pits/descending terrain beneath tile ground level.

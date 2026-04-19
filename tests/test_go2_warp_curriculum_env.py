@@ -65,13 +65,15 @@ def test_reset_initial_distance_matches_spawn_goal():
 # ── Task 2.4 tests ────────────────────────────────────────────────────────────
 
 def test_step_computes_command_from_goal():
+    """Holonomic scheme: magnitude of (vx, vy) ≈ target_speed (direction depends on yaw)."""
     from jax_rl.envs.locomotion.go2_warp_curriculum import WarpJoystickCurriculum
     env = WarpJoystickCurriculum()
     state = env.reset(jax.random.PRNGKey(0))
     next_state = env.step(state, jnp.zeros(12))
     cmd = next_state.info["command"]
     assert cmd.shape == (3,)
-    assert float(cmd[0]) == pytest.approx(float(state.info["target_speed"]), abs=0.01)
+    speed_mag = float(jnp.sqrt(cmd[0] ** 2 + cmd[1] ** 2))
+    assert speed_mag == pytest.approx(float(state.info["target_speed"]), abs=0.02)
 
 
 def test_step_tracks_min_distance():

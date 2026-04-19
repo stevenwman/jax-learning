@@ -129,41 +129,51 @@ class WarpJoystickCurriculum(WarpJoystick):
         state.info["terrain_level"] = terrain_level
         state.info["terrain_type"] = terrain_type
         state.info["goal_xy"] = goal_world_xy
+        state.info["spawn_xy"] = spawn_world_xy
         state.info["initial_distance"] = initial_distance
         state.info["episode_reached_goal"] = jp.bool_(False)
         state.info["episode_min_distance"] = initial_distance
+        state.info["episode_max_dist_from_spawn"] = jp.float32(0.0)
         state.info["episode_fallen"] = jp.bool_(False)
         state.info["target_speed"] = target_speed
 
         return state
 
+    # Per-column classification. True = goal-directed (body-frame linvel cmd
+    # overridden toward goal). False = "locomotion robustness" — keep parent's
+    # Bernoulli-random linvel, no goal override. Indexed by terrain_type.
+    #   col 0 rough, col 1 pyramid_up, col 2 pyramid_down, col 3 tilted
+    _IS_GOAL_DIRECTED = (False, True, True, False)
+
     def _sample_spawn_goal(self, terrain_type, tile_size, spawn_rng, yaw_rng):
-        """Dispatch on terrain_type via lax.switch. Returns (spawn_local, goal_local, yaw)."""
+        """Dispatch on terrain_type via lax.switch. Returns (spawn_local, goal_local, yaw).
+
+        For non-goal-directed types (rough, tilted) goal_local is set to spawn_local
+        so distance tracking doesn't produce weird numbers; the goal isn't actually
+        used by the policy (goal-override is gated off for these types).
+        """
         branches = [
-            lambda r: self._edge_to_edge(r, yaw_rng, tile_size),   # col 0: Rough
+            lambda r: self._center_spawn(r, yaw_rng, tile_size),   # col 0: Rough
             lambda r: self._rim_to_center(r, yaw_rng, tile_size),  # col 1: PyramidStairs
             lambda r: self._rim_to_center(r, yaw_rng, tile_size),  # col 2: InvertedPyramid
-            lambda r: self._edge_to_edge(r, yaw_rng, tile_size),   # col 3: TiltedGrid
+            lambda r: self._center_spawn(r, yaw_rng, tile_size),   # col 3: TiltedGrid
         ]
         return jax.lax.switch(terrain_type, branches, spawn_rng)
 
-    def _edge_to_edge(self, rng, yaw_rng, tile_size):
-        """Spawn on one edge, goal on the opposite edge. Random axis + direction."""
-        axis_rng, side_rng, offset_rng = jax.random.split(rng, 3)
-        hx = tile_size[0] / 2.0  # static Python float — ok, not traced
+    def _center_spawn(self, rng, yaw_rng, tile_size):
+        """Spawn near tile center with small xy jitter. 'Goal' = spawn (unused for these types).
+
+        Used for rough + tilted where success = stayed upright while following random
+        Bernoulli linvel commands. No directed navigation.
+        """
+        dx_rng, dy_rng = jax.random.split(rng)
+        hx = tile_size[0] / 2.0
         hy = tile_size[1] / 2.0
-        axis = jax.random.randint(axis_rng, (), 0, 2)   # 0=x-traverse, 1=y-traverse
-        side = jax.random.randint(side_rng, (), 0, 2) * 2 - 1   # -1 or +1
-        offset = jax.random.uniform(offset_rng, (), minval=-0.4, maxval=0.4)
-        spawn_axis_val = side.astype(jp.float32) * hx * 0.9
-        goal_axis_val = -side.astype(jp.float32) * hx * 0.9
-        off = hy * offset
-        spawn_x = jp.where(axis == 0, spawn_axis_val, off)
-        spawn_y = jp.where(axis == 0, off, spawn_axis_val)
-        goal_x = jp.where(axis == 0, goal_axis_val, off)
-        goal_y = jp.where(axis == 0, off, goal_axis_val)
-        spawn = jp.array([spawn_x, spawn_y, jp.float32(0.3)])
-        goal = jp.array([goal_x, goal_y, jp.float32(0.0)])
+        # Small jitter (±20% of half-tile) so per-episode spawn isn't identical.
+        dx = jax.random.uniform(dx_rng, (), minval=-0.2 * hx, maxval=0.2 * hx)
+        dy = jax.random.uniform(dy_rng, (), minval=-0.2 * hy, maxval=0.2 * hy)
+        spawn = jp.array([dx, dy, jp.float32(0.3)])
+        goal = jp.array([dx, dy, jp.float32(0.0)])  # placeholder; unused
         yaw = jax.random.uniform(yaw_rng, (), minval=-jp.pi, maxval=jp.pi)
         return spawn, goal, yaw
 
@@ -181,33 +191,55 @@ class WarpJoystickCurriculum(WarpJoystick):
     # ── Task 2.4: goal-directed step ────────────────────────────────────────
 
     def step(self, state: mjx_env.State, action: jax.Array) -> mjx_env.State:
-        # Build goal-directed command in body frame
-        goal_cmd = self._goal_directed_command(state)
+        # Class A (rough, tilted): NO override — keep parent's Bernoulli linvel.
+        #   Success = survive + travel ≥ 2m.
+        # Class B (pyramid, inv): override vx, vy with holonomic goal command.
+        #   Success = reach goal within goal_radius.
+        # Gate via mask indexed on terrain_type (both branches traced by JAX).
+        tt = state.info["terrain_type"]
+        is_goal = jp.asarray(self._IS_GOAL_DIRECTED, dtype=jp.bool_)[tt]
+        mask = is_goal.astype(jp.float32)
 
-        # Inject before super so reward terms (tracking_lin_vel, etc.) use it
-        state.info["command"] = goal_cmd
+        body_vx, body_vy = self._goal_linvel_body(state)
+        cmd = state.info["command"]
+        new_vx = mask * body_vx + (1.0 - mask) * cmd[0]
+        new_vy = mask * body_vy + (1.0 - mask) * cmd[1]
+        state.info["command"] = cmd.at[0].set(new_vx).at[1].set(new_vy)
 
-        # Physics step — NOTE: super().step() overwrites info["command"] at the
-        # end when steps_until_next_cmd <= 0.  We re-apply our command after.
         state = super().step(state, action)
 
-        # Re-apply goal-directed command so next step starts from it, not random
-        state.info["command"] = self._goal_directed_command(state)
+        # Re-apply vx/vy post-step (parent's sampler may have clobbered).
+        body_vx, body_vy = self._goal_linvel_body(state)
+        cmd = state.info["command"]
+        new_vx = mask * body_vx + (1.0 - mask) * cmd[0]
+        new_vy = mask * body_vy + (1.0 - mask) * cmd[1]
+        state.info["command"] = cmd.at[0].set(new_vx).at[1].set(new_vy)
 
-        # Update episode tracking flags
-        dist = jp.linalg.norm(state.data.qpos[:2] - state.info["goal_xy"])
+        # Episode tracking — both classes track fall + distance-from-spawn + reach
+        robot_xy = state.data.qpos[:2]
+        dist_to_goal = jp.linalg.norm(robot_xy - state.info["goal_xy"])
+        dist_from_spawn = jp.linalg.norm(robot_xy - state.info["spawn_xy"])
+
         state.info["episode_min_distance"] = jp.minimum(
-            state.info["episode_min_distance"], dist
+            state.info["episode_min_distance"], dist_to_goal
+        )
+        state.info["episode_max_dist_from_spawn"] = jp.maximum(
+            state.info["episode_max_dist_from_spawn"], dist_from_spawn
         )
         state.info["episode_reached_goal"] = state.info["episode_reached_goal"] | (
-            dist < jp.float32(0.5)
+            dist_to_goal < jp.float32(0.5)
         )
         state.info["episode_fallen"] = state.done.astype(jp.bool_)
 
         return state
 
-    def _goal_directed_command(self, state: mjx_env.State) -> jax.Array:
-        """Compute [vx, vy=0, yaw_rate] in body frame pointing toward goal_xy."""
+    def _goal_linvel_body(self, state: mjx_env.State) -> tuple:
+        """Body-frame (vx, vy) derived from world-frame goal direction.
+
+        Robot can walk toward goal by any gait — forward, sideways, diagonal —
+        without having to turn first. yaw_rate is left untouched so the parent's
+        Bernoulli sampler continues to drive DR-style random turning.
+        """
         robot_xy = state.data.qpos[:2]
         qw = state.data.qpos[3]
         qx = state.data.qpos[4]
@@ -219,11 +251,14 @@ class WarpJoystickCurriculum(WarpJoystick):
         )
         dx = state.info["goal_xy"][0] - robot_xy[0]
         dy = state.info["goal_xy"][1] - robot_xy[1]
-        heading_world = jp.arctan2(dy, dx)
-        yaw_error = heading_world - robot_yaw
-        # Wrap to [-pi, pi]
-        yaw_error = jp.mod(yaw_error + jp.pi, 2.0 * jp.pi) - jp.pi
-        cmd_vx = state.info["target_speed"]
-        cmd_vy = jp.float32(0.0)
-        cmd_yaw_rate = jp.clip(2.0 * yaw_error, -1.5, 1.5)
-        return jp.array([cmd_vx, cmd_vy, cmd_yaw_rate])
+        dist = jp.sqrt(dx * dx + dy * dy) + 1e-6
+        # Unit vector toward goal in world frame, scaled to target_speed
+        speed = state.info["target_speed"]
+        world_vx = dx / dist * speed
+        world_vy = dy / dist * speed
+        # Rotate into body frame via yaw
+        c = jp.cos(robot_yaw)
+        s = jp.sin(robot_yaw)
+        body_vx = c * world_vx + s * world_vy
+        body_vy = -s * world_vx + c * world_vy
+        return body_vx, body_vy

@@ -99,9 +99,11 @@ class TerrainCurriculumDRWrapper(DomainRandWrapper):
         state.info["terrain_type"] = fixed_types
         state.info["terrain_level"] = initial_levels
         state.info["goal_xy"] = goal_xys
+        state.info["spawn_xy"] = spawn_xys
         state.info["initial_distance"] = initial_dist
         state.info["episode_reached_goal"] = jp.zeros(self._num_envs, dtype=jp.bool_)
         state.info["episode_min_distance"] = initial_dist
+        state.info["episode_max_dist_from_spawn"] = jp.zeros(self._num_envs, dtype=jp.float32)
         state.info["episode_fallen"] = jp.zeros(self._num_envs, dtype=jp.bool_)
         state.info["target_speed"] = target_speed
 
@@ -124,6 +126,7 @@ class TerrainCurriculumDRWrapper(DomainRandWrapper):
         prev_fallen = state.info["episode_fallen"]
         prev_min_dist = state.info["episode_min_distance"]
         prev_initial_dist = state.info["initial_distance"]
+        prev_max_dist_from_spawn = state.info["episode_max_dist_from_spawn"]
 
         # Save and strip TC wrapper state so tree_map in super doesn't see it
         # (reset_state from inner env won't have these keys → tree mismatch)
@@ -138,14 +141,27 @@ class TerrainCurriculumDRWrapper(DomainRandWrapper):
         # Get done signal from DomainRandWrapper
         done = state.info[f'{self._KEY}_episode_done']
 
-        # Compute curriculum advancement based on PREVIOUS episode's outcome
-        # (prev flags are from before where_done wiped them)
-        reached = prev_reached
-        fallen = prev_fallen
-        no_progress = (~reached) & (~fallen) & (prev_min_dist > 0.5 * prev_initial_dist)
+        # Dual-class advancement:
+        # Class B (goal-directed, pyramid/inv): reached → promote; fall OR
+        #   no-progress-to-goal → demote
+        # Class A (locomotion robustness, rough/tilted): survived + moved ≥ 2m
+        #   → promote; fell OR didn't move → demote
+        _IS_GOAL = jp.asarray([False, True, True, False])
+        is_goal = _IS_GOAL[prev_type]
 
-        promote = reached & (~fallen) & (done > 0)
-        demote = (fallen | no_progress) & (done > 0)
+        # Class B logic
+        reached = prev_reached
+        no_progress_B = (~reached) & (~prev_fallen) & (prev_min_dist > 0.5 * prev_initial_dist)
+        promote_B = reached & (~prev_fallen)
+        demote_B = prev_fallen | no_progress_B
+
+        # Class A logic
+        moved_enough = prev_max_dist_from_spawn > 2.0
+        promote_A = (~prev_fallen) & moved_enough
+        demote_A = prev_fallen | (~moved_enough)
+
+        promote = jp.where(is_goal, promote_B, promote_A) & (done > 0)
+        demote = jp.where(is_goal, demote_B, demote_A) & (done > 0)
 
         delta = promote.astype(jp.int32) - demote.astype(jp.int32)
         new_level = jp.clip(prev_level + delta, 0, self._num_rows - 1)
@@ -182,6 +198,9 @@ class TerrainCurriculumDRWrapper(DomainRandWrapper):
         state.info["goal_xy"] = jp.where(
             done_bool[:, None], new_goal_xys, state.info["goal_xy"]
         )
+        state.info["spawn_xy"] = jp.where(
+            done_bool[:, None], new_spawn_xys, state.info["spawn_xy"]
+        )
         state.info["initial_distance"] = jp.where(
             done_bool, new_initial_dist, state.info["initial_distance"]
         )
@@ -190,6 +209,9 @@ class TerrainCurriculumDRWrapper(DomainRandWrapper):
         )
         state.info["episode_min_distance"] = jp.where(
             done_bool, new_initial_dist, state.info["episode_min_distance"]
+        )
+        state.info["episode_max_dist_from_spawn"] = jp.where(
+            done_bool, jp.float32(0.0), state.info["episode_max_dist_from_spawn"]
         )
         state.info["episode_fallen"] = jp.where(
             done_bool, jp.bool_(False), state.info["episode_fallen"]
