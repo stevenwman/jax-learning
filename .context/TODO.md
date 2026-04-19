@@ -66,10 +66,13 @@
 - [x] **Spawn-bug fix** (2026-04-18) — slide-joint body pos was being used as offset; world coords drifted outside walls. Re-anchored pusher + block bodies to origin. Documented in `lessons/manipulation.md`.
 - [x] **Reward shaping iteration + diagnostics** (2026-04-18) — 3 shaping variants tested (v1/v2/v3). v1 pos-PD: eval +143, 47% success. Added per-component reward + velocity-magnitude metrics; found zero-action attractor bug in vel/tele modes. 5 new lessons.
 - [x] **Vendor gym-pusht + expert demos** (2026-04-18) — copied pusht.py + pymunk_override.py + LICENSE to `jax_rl/envs/manipulation/pusht/`. Added `reward_mode` kwarg (coverage/sparse/shaped/approach). Packed 206 LeRobot demos into 0.29 MB `pusht_demos.npz`. Parity test (3/3 pass) vs pip gym-pusht.
-- [ ] **Train vendored PushTEnv with `reward_mode="shaped"` or `"approach"`** — see if RL-from-scratch beats coverage-only (which trained to 0 from scratch in our experiments).
-- [ ] **BC pretrain → RL fine-tune on PushTEnv** — recipe from DP paper. Dataset already bundled at `pusht/demos/pusht_demos.npz`.
-- [ ] **Cross-shape transfer eval** — train PushT_Pos_Shaped (pos-PD + shaped) on T, zero-shot eval on L/Circle/Plus. Metric = mean eval return on each shape.
-- [ ] **Remove gym-pusht from pip deps?** — now redundant with vendored version. Keep for parity test only, move to `[tool.uv] dev-dependencies` once decided.
+- [x] **Train vendored PushTEnv — contact_gated reward + full stack + TimeLimit** (2026-04-19) — 84% mean / 89% peak sto coverage at 2M steps. Vanilla SAC with keypoint obs + frame_stack 3 + action_repeat 2 + obs norm. TimeLimit bug was the 6× blocker.
+- [ ] **Close the final-mile position gap** — policy stops ~7 px short of perfect. Options: absolute position refinement bonus `exp(-pos_err/2)`, longer training (3-5M), or BC-pretrain.
+- [ ] **Ablate v9 knobs** — currently 6 stacked changes. Strip to find minimum. Likely TimeLimit + frame_stack are core; others 1-2% each.
+- [ ] **Test sparse-coverage-only with TimeLimit** — maybe sparse reward alone works now that infra is right. One run to check.
+- [ ] **BC pretrain → RL fine-tune on PushTEnv** — recipe from DP paper. Dataset bundled at `pusht/demos/pusht_demos.npz`. Probably gets past 95% threshold.
+- [ ] **Cross-shape transfer eval** — train PushT_Pos_Shaped (our `push_env.py`) on T, zero-shot eval on L/Circle/Plus. Adaptability benchmark axis, separate from gym-pusht work.
+- [ ] **Remove gym-pusht from pip deps?** — vendored version is primary. Keep pip for parity test only.
 - [ ] **Add FastSAC preset for push-T** — in `env_presets.py`. Small networks (16d obs → 64/64 actor, 128/128 critic probably enough).
 - [ ] **Train FastSAC on push-T** — first real baseline. 5M steps should be plenty for 16d obs + contact task.
 - [ ] **Cross-shape transfer eval** — train on T, evaluate zero-shot on L/circle/plus. Core adaptability benchmark.

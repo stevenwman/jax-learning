@@ -192,10 +192,10 @@ class PushTEnv(gym.Env):
 
         self.success_threshold = 0.95  # 95% coverage
         self.reward_mode = reward_mode
-        if reward_mode not in ("coverage", "sparse", "shaped", "approach", "dense"):
+        if reward_mode not in ("coverage", "sparse", "shaped", "approach", "dense", "contact_gated"):
             raise ValueError(
                 f"Unknown reward_mode {reward_mode!r}. Must be one of "
-                "[coverage, sparse, shaped, approach, dense]."
+                "[coverage, sparse, shaped, approach, dense, contact_gated]."
             )
 
     def _initialize_observation_space(self):
@@ -328,19 +328,73 @@ class PushTEnv(gym.Env):
         elif self.reward_mode == "approach":
             # Coverage + smooth proximity bonus.
             reward = r_coverage + 0.05 * r_approach
+        elif self.reward_mode == "contact_gated":
+            # Published recipe: Cong et al. 2023 (Frontiers Neurorobotics,
+            # contact-based pushing) + Ferrari et al. 2025 (directional
+            # unit-vector progress reward). Key idea: shape on CONTACT STATE.
+            #
+            # New: add "pusher-on-correct-side" — structural prior that for
+            # pushing block toward goal, pusher must be on the far side of
+            # block from goal. Standard in robotic pushing literature.
+            in_contact = self.n_contact_points > 0
+
+            # σ=50px: exp(-d/50) ≈ 0.37 at 50px, ≈ 0.05 at 150px.
+            approach_bonus = float(np.exp(-pusher_to_block / 50.0))
+            r_approach_gated = (not in_contact) * approach_bonus
+
+            # Pusher-on-correct-side (NEW). Unit vector from pusher→block
+            # dotted with block→goal direction. +1 when pusher is behind
+            # block relative to goal, -1 when in front.
+            pb_vec = block_pos - agent_pos
+            pb_norm = float(np.linalg.norm(pb_vec)) + 1e-6
+            r_correct_side = float(np.dot(
+                pb_vec / pb_norm, (goal_xy - block_pos) / (to_goal_norm + 1e-6)
+            ))
+
+            # Unit-vector dot product of block velocity and to-goal vector.
+            # Magnitude-free by construction (Ferrari 2025). Range [-1, 1].
+            vel_norm = float(np.linalg.norm(block_vel)) + 1e-6
+            v_dot = float(np.dot(block_vel, goal_xy - block_pos) / (vel_norm * (to_goal_norm + 1e-6)))
+            r_dir_gated = (1.0 if in_contact else 0.0) * v_dot
+
+            # Angle-delta — rewards rotating block toward goal yaw. Gated on
+            # contact because otherwise block doesn't rotate anyway.
+            prev_angle = getattr(self, '_prev_angle_err', angle_err)
+            r_angle_delta_gated = (1.0 if in_contact else 0.0) * (prev_angle - angle_err)
+
+            reward = (
+                r_coverage                        # [0, 1]      — task objective
+                + 0.2 * r_approach_gated          # [0, 0.2]    — NOT in contact
+                + 0.15 * r_correct_side           # [-0.15, 0.15] — always on
+                + 0.3 * r_dir_gated               # [-0.3, 0.3] — IN contact
+                + 2.0 * r_angle_delta_gated       # telescopes, bounded
+                + (50.0 if is_success else 0.0)   # big success salience
+            )
+            self._prev_angle_err = angle_err
+
         elif self.reward_mode == "dense":
-            # Multi-term shaping tuned so (a) components are comparable in scale
-            # and (b) coverage remains the dominant signal near success.
-            # All shaping weights ≤ 0.5 so shaping never exceeds coverage range.
+            # Delta shaping — only rewards *progress*, not static state.
+            #
+            # Absolute-bonus shaping (e.g. "0.3 * (1 - pos_err/max)") gives the
+            # policy free reward for block simply being near goal, even with
+            # the policy doing nothing. That farming was what killed the
+            # previous dense-mode run (eval 115, coverage 0%). With deltas,
+            # stationary block → zero shaping reward → policy forced to
+            # actually solve. Telescopes: total delta reward = total progress
+            # made, naturally bounded by initial_err.
+            #
+            # Init guards: `_prev_*_err` initialized in reset().
+            r_pos_delta   = getattr(self, '_prev_pos_err', block_to_goal) - block_to_goal
+            r_angle_delta = getattr(self, '_prev_angle_err', angle_err) - angle_err
             reward = (
                 r_coverage
-                + 0.30 * r_pos
-                + 0.20 * r_angle
-                + 0.10 * r_approach
-                + 0.10 * r_block_vel
-                + r_contact
-                + r_success
+                + 0.01 * r_pos_delta     # ~2 total over episode if solved (512 → 0)
+                + 0.50 * r_angle_delta   # ~1.5 total over episode if solved (π → 0)
+                + r_contact              # 0.01 per contact point — encourages touching
+                + r_success              # 5 terminal bonus
             )
+            self._prev_pos_err = block_to_goal
+            self._prev_angle_err = angle_err
 
         # Terminate on success per DP convention (can be disabled later).
         terminated = bool(is_success)
@@ -384,6 +438,16 @@ class PushTEnv(gym.Env):
                 ]
             )
         self._set_state(state)
+
+        # Init delta-shaping state for dense reward mode.
+        block_pos = np.array(self.block.position)
+        goal_xy = self.goal_pose[:2]
+        goal_yaw = self.goal_pose[2]
+        self._prev_pos_err = float(np.linalg.norm(block_pos - goal_xy))
+        self._prev_angle_err = float(abs(np.arctan2(
+            np.sin(float(self.block.angle) - goal_yaw),
+            np.cos(float(self.block.angle) - goal_yaw),
+        )))
 
         observation = self.get_obs()
         info = self._get_info()

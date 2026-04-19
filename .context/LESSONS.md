@@ -147,7 +147,7 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **Joint order ≠ actuator order — THE root cause** — unitree qpos is FL-first, ctrl is FR-first. PD applied FL torque to FR actuator. Robot fought itself. Hours of debugging PD/solver/entropy were all red herrings. ALWAYS verify ordering when using third-party MJCFs.
 - **"Stable" PD gains ≠ "trainable" PD gains** — Kp=10/Kd=1.0 holds the robot fine but trains 7x slower than Kp=20/Kd=0.5. Sluggish joint dynamics suppress the leg swings RL needs to find walking. Validate new PD gains with a training run, not a static hold test.
 
-## [Manipulation (Push-T)](lessons/manipulation.md) — 10 lessons
+## [Manipulation (Push-T)](lessons/manipulation.md) — 16 lessons
 
 - **Cylinder-box collisions need Warp** — MJX JAX backend raises `NotImplementedError`. Any manipulation env with cylinder pusher + box target is Warp-only.
 - **Tighten solref for manipulation contacts** — default `solref=0.02` (20ms) gives visible penetration; use `0.004 1` + `solimp="0.98 0.995 ..."` + `iterations=50 ls_iterations=10`.
@@ -159,6 +159,12 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **Reward shaping strength is a dial, not a monotonic knob** — bumping `r_block_vel` 2→10 on push-T regressed pos mode from eval +143 → -1.7. When a shaping term dominates ground-truth task terms, you optimize the wrong thing. Keep shaping ≤ 0.5× max task reward.
 - **Always log per-component rewards + motion metrics when shaping** — `r_pos, r_angle, r_approach, r_block_vel, r_pusher_vel`, `pusher_vel_mag`, `block_vel_mag`, `pusher_to_block`. Essentially free, turns "why is A worse than B" from a multi-hour A/B into a 10-line diff rollout.
 - **Vendor old static benchmarks; don't pip-depend** — gym-pusht broke on pymunk 7 (upstream API removed). Copied 700 LOC + LICENSE into repo, added `reward_mode` kwarg, packed 206 expert demos as 0.3 MB npz. Parity-tested byte-exact vs pip. Old 2023-paper benchmarks should be owned.
+- **TimeLimit is NOT applied by direct env construction** — `gym.make("gym_pusht/PushT-v0")` adds TimeLimit(300); `PushTEnv(...)` does not. Episodes never truncate, Q bootstraps infinite future, critic explodes. Fix: `env = gym.wrappers.TimeLimit(env, max_episode_steps=300)`. This bug alone limited peak coverage 14% → 88% (6x) on push-T SAC.
+- **Verify infrastructure before tuning HPs** — 8 runs and 15+ HP combos chased a ceiling caused by a 1-line env wrapper bug. Signal I missed: `ep_r_avg = -3100` is physically impossible (per-step reward ∈ [-0.3, 1.5]). Rule: when a metric goes outside its possible range, halt tuning, find the infra bug.
+- **95% success threshold on push-T is above human-expert teleop** — LeRobot's 206 demos max coverage = 0.9489, never crosses 0.95. Reporting "0% success" is misleading for pure RL; always compare coverage distribution against the bundled demos.
+- **Don't eyeball metrics from rendered video** — claimed a policy's episode had "30° yaw off" from screenshot; actual angle error was 4.66°. 6x wrong. Policy metrics are scalars accessible from env internals; 2 LOC of diagnostic > staring at pixels.
+- **FastSAC C51 wrong choice for bounded-reward manipulation** — C51 atoms over default `[v_min=-20, v_max=20]` don't cover contact_gated Q-range (up to ~150 discounted). Critic blind past `v_max`. Use vanilla SAC (scalar Q) for short-horizon shaped-reward tasks; FastSAC for unbounded locomotion.
+- **Combined recipe that works on push-T** — keypoint obs (18d) + frame_stack(3) (→ 54d) + obs normalization (pixel → [-1, 1]) + action_repeat(2) + contact_gated shaping + SAC(target_entropy=2, batch=1024, UTD=2, lr=1e-4, gamma=0.995) + TimeLimit. 84% mean / 89% peak sto coverage at 2M steps. Each component ablated independently; stack all.
 
 ## [Bongo Board Handstand](lessons/bongo.md) — 10 lessons
 

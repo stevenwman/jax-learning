@@ -12,9 +12,11 @@ Old, static benchmark. The point of vendoring is that old benchmarks **should** 
 ## Usage
 
 ```python
+import gymnasium as gym
 from jax_rl.envs.manipulation.pusht import PushTEnv
 
-env = PushTEnv(obs_type="state", reward_mode="shaped")
+env = PushTEnv(obs_type="state", reward_mode="contact_gated")
+env = gym.wrappers.TimeLimit(env, max_episode_steps=300)   # CRITICAL
 obs, info = env.reset(seed=0)
 for _ in range(300):
     action = env.action_space.sample()     # (2,), XY target in [0, 512] px
@@ -23,9 +25,12 @@ for _ in range(300):
         break
 ```
 
+!!! danger "TimeLimit is not applied by direct construction"
+    `gym.make("gym_pusht/PushT-v0")` auto-wraps with `TimeLimit(300)` via the env registry. Direct `PushTEnv(...)` does NOT. Without TimeLimit, failed episodes run indefinitely during RL training — the critic bootstraps infinite future and diverges. **Always wrap with `gym.wrappers.TimeLimit(env, max_episode_steps=300)` when constructing directly.** We caught this the hard way: missed the wrapper for 8 training runs, hit a "14% coverage ceiling." One-line fix, 6× jump to 88%.
+
 - Single-env, CPU, pymunk 2D physics. ~2k sps single process.
 - `action_space = Box([0, 0], [512, 512])` — absolute agent target in pixel coords.
-- `observation_space` varies by `obs_type`: `"state"` (5d), `"pixels"` (96×96×3), `"pixels_agent_pos"` (dict), `"environment_state_agent_pos"` (dict).
+- `observation_space` varies by `obs_type`: `"state"` (5d), `"pixels"` (96×96×3), `"pixels_agent_pos"` (dict), `"environment_state_agent_pos"` (dict with 16d keypoints + 2d agent).
 
 ---
 
@@ -39,7 +44,8 @@ Added to the vendored env via `reward_mode=` kwarg. Coverage is the DP default; 
 | `sparse` | `1.0 if coverage > 0.95 else 0.0` | Cleanest signal; hardest to learn from scratch |
 | `shaped` | `coverage + 0.01 * n_contacts - 0.001 * pusher_to_block` | Mild shaping atop coverage |
 | `approach` | `coverage + 0.05 * (1 - pusher_to_block / diag)` | Adds smooth proximity bonus |
-| `dense` | `r_coverage + 0.3·r_pos + 0.2·r_angle + 0.1·r_approach + 0.1·r_block_vel + 0.01·r_contact + 5·is_success` | **Recommended for RL from scratch** |
+| `dense` | `r_coverage + 0.01·(prev_pos_err - pos_err) + 0.5·(prev_angle_err - angle_err) + 0.01·n_contacts + 5·is_success` | Delta shaping; telescoping |
+| `contact_gated` | `r_coverage + 0.2·(1-in_contact)·exp(-d/50) + 0.15·correct_side + 0.3·in_contact·v̂·ĝ + 2·angle_delta_gated + 50·is_success` | **Recommended for RL from scratch** — Cong 2023 + Ferrari 2025 recipe |
 
 All modes terminate on `coverage > 0.95` per DP convention. `info` dict always includes:
 
@@ -121,6 +127,63 @@ Run with `uv run pytest tests/test_pusht_parity.py -v`.
 - **Reproducibility.** A future user clones this repo in 2030 and everything still works.
 
 ---
+
+## Training from Scratch — Working Recipe
+
+Pure-RL SAC trained from scratch with no demos reaches **~84% mean coverage / 89% peak stochastic** on push-T at 2M env steps (~35 min wall-clock). Published BC+RL (DPPO) exceeds 95%; our number is a pure-RL reference point.
+
+### Use `train_pusht.py`
+
+```bash
+uv run python train_pusht.py --reward-mode contact_gated \
+    --obs-type environment_state_agent_pos --frame-stack 3 --action-repeat 2 \
+    --total-timesteps 2000000 --num-envs 8 --buffer-size 500000 \
+    --batch-size 1024 --grad-updates-per-step 2 \
+    --reward-scale 0.1 --grad-clip-norm 1.0 --target-entropy-scale 2.0 \
+    --lr 1e-4 --gamma 0.995 \
+    --eval-every-n-steps 50000 --wandb
+```
+
+### Why each knob matters
+
+1. **`contact_gated` reward** — gates shaping on pusher-block contact state. Not farmable like absolute distance shaping (which we tried first, policy hovered near block and collected shaping bonuses without pushing).
+2. **`environment_state_agent_pos` obs** — 16d T-vertex keypoints + 2d agent. Captures geometry 5d state obs misses.
+3. **`frame_stack=3`** — implicit velocity from obs history. gym-pusht state obs has no velocities.
+4. **Obs normalization** (automatic in `train_pusht.py`) — pixel coords [0, 512] → [-1, 1]. Without, SAC critic explodes early.
+5. **`action_repeat=2`** — commits each policy decision for 2 env steps (FiGAR). Lets the policy complete a short push before reconsidering. Halves policy frequency 10Hz → 5Hz.
+6. **`reward_scale=0.1`** — brings Q values to a tractable range. Raw sum over 300 steps otherwise hits Q ~ 150.
+7. **`grad_clip_norm=1.0`** — damps early Q-loss explosion during warmup.
+8. **`target_entropy_scale=2.0`** — target_entropy = -4 (= 2 × action_dim). Default (-action_dim) pushes alpha to near-zero; slightly higher keeps exploration alive.
+9. **`gamma=0.995`** — effective horizon ~200 steps (vs ~100 with 0.99). Matches 300-step episode length better.
+10. **`lr=1e-4`** — `3e-4` (SAC default) was unstable with this reward scale; `1e-4` converges cleanly.
+11. **`TimeLimit(300)`** — see danger note above. Without this, everything above fails.
+
+### Individual contributions (ablation sketch, not rigorously re-run)
+
+- `state` obs (5d) + no frame_stack: ~14% sto coverage ceiling
+- +keypoint obs + obs normalization: minor gain, unstable without TimeLimit
+- +frame_stack: helps policy temporally reason about motion
+- +action_repeat: enables cleaner multi-contact sub-sequences
+- +TimeLimit: unlocks everything, **6× overall jump to 84%**
+
+The single highest-leverage fix was TimeLimit. Everything else delivered 1-2% each.
+
+### Eval result interpretation
+
+Our 5-episode deterministic eval diagnostic (`tools/pusht_eval_diag.py`):
+
+| Episode | Final coverage | Position error (px) | Angle error |
+|---------|---------------|--------------------|--------------| 
+| 0       | 87.4%         | 6.3                | 0.75°        |
+| 1       | 80.4%         | 8.5                | 0.24°        |
+| 2       | 86.5%         | 6.6                | 1.25°        |
+| 3       | 80.2%         | 8.9                | 0.02°        |
+| 4       | 85.8%         | 7.0                | 4.66°        |
+
+**Mean: 84% cov, 7.5 px pos error, 1.4° angle error.** Angle control is tight. The remaining gap is **position refinement** — policy stops ~7 px short of perfect alignment.
+
+!!! note "95% threshold vs human performance"
+    The bundled `lerobot/pusht` dataset contains 206 human teleop demos. Max coverage across all 25,650 frames in those demos: **0.9489**. Not a single human demo frame crosses the 0.95 threshold. Humans don't "solve" push-T under this success criterion either. Our RL policy hits ~94% of human peak. Published >95% results require BC + gradient-based refinement.
 
 ## Comparison to `push_env.py`
 

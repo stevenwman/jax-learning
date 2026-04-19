@@ -188,3 +188,104 @@ XML is built programmatically by `build_xml(shape)` — inserts the geoms into a
 - **Pin** when: upstream is actively maintained, large, or security-sensitive. Vendoring loses automatic fixes.
 
 **Lesson:** a 700-line frozen benchmark from a 2023 paper is better vendored than pip'd. The pinning battle is lost before it starts — some dep will force you to upgrade pymunk/numpy/torch eventually, and old benchmarks don't follow. Copying in the code + LICENSE is the cheapest form of reproducibility insurance.
+
+---
+
+## TimeLimit Is NOT Applied by Direct Env Construction (2026-04-19)
+
+**What happened:** Trained SAC on vendored PushTEnv for 8 runs, best sto coverage 14%. Hit a "ceiling." Kept tuning HPs (reward scale, batch, UTD, entropy, network, action repeat, frame stack, etc.) without progress. The ceiling turned out to be a missing env wrapper.
+
+`gym.make("gym_pusht/PushT-v0")` registers via `EnvSpec(max_episode_steps=300)` and auto-wraps with `TimeLimit(300)`. But our training script did direct construction: `PushTEnv(obs_type=..., reward_mode=...)`. This **does not apply TimeLimit**. Failed episodes (which is 100% of them, since success is rare) ran indefinitely in training, never terminating or truncating.
+
+**Why this destroys SAC:** with no termination, the Q target `r + γV(s')` bootstraps a value assuming the episode continues forever. For push-T where non-success contact_gated rewards average slightly negative per step, the critic learns to estimate an unbounded negative sum. Q values drifted to -1400+ early in some runs, oscillated for 200k+ steps before stabilizing.
+
+**Diagnostic signatures we should have caught earlier:**
+- `ep_r_avg = -3100` when per-step reward is bounded in [-0.3, 1.5] — **physically impossible** for one episode. Means episode was cumulative across many would-be resets.
+- Q1 values at -50 to -1400 range when Q should be bounded ≤ ~150 under any normal reward structure.
+- Massive Q1 loss spikes (2000+) early in training.
+
+**Fix (one line):**
+```python
+env = gym.wrappers.TimeLimit(env, max_episode_steps=300)
+```
+After this: **peak coverage 14% → 88%.** 6× improvement in one fix. All prior HP tuning was running on broken infrastructure.
+
+**Lesson:** gym env wrapper stack is implicit via `gym.make()`. Direct construction silently drops wrappers. Always either (a) use `gym.make()`, or (b) assume direct construction gives you nothing and apply every wrapper explicitly (TimeLimit, OrderEnforcing, etc.). Read `env.spec.max_episode_steps` to verify TimeLimit is active.
+
+---
+
+## Verify Infrastructure Before Tuning HPs (2026-04-19)
+
+**What happened:** 8 consecutive training runs across 6 reward modes and 15+ HP combinations, all plateauing at ~14% coverage. I kept proposing "maybe larger batch, maybe higher UTD, maybe different shaping" without questioning whether the env was even running correctly. Only after user pushback ("metrics look impossible, find evidence before fixing") did I check the underlying mechanics and find the missing TimeLimit in 5 minutes.
+
+**Costs of rapid pivoting without verification:**
+- 6+ hours of wall-clock training time on a broken infra
+- Incorrect conclusions ("push-T has a ~14% RL ceiling")
+- Documented misleading "lessons" about shaping that would have steered future agents wrong
+- Generic "try more things" instead of **"this metric is wrong, why"**
+
+**The tell I missed:** `ep_r_avg = -3100` is not a tuning signal — it's a reality check failure. Per-step reward is bounded in [-0.3, 1.5], episode is nominally 300 steps, so ep return is in [-90, +450]. The number -3100 can only mean multiple episodes without reset. I should have asked "can this number even happen?" before reaching for another HP.
+
+**Rule:** when a metric goes out of physically-possible range, stop tuning. The bug is in infrastructure (env, buffer, reward, wrappers), not HPs. **Specifically:**
+1. Compute min/max possible value for every scalar you log.
+2. When you observe a value outside that range, halt and find the bug.
+3. HP tuning assumes the metric reflects what you think it does. If it doesn't, tuning is chasing noise.
+
+Applied retroactively, this would have caught the TimeLimit bug at run 1 instead of run 9.
+
+---
+
+## The 95% Success Threshold Is Above Human Expert Performance (2026-04-19)
+
+**What happened:** Our trained SAC policy hit 84% mean coverage, 0% success rate (threshold = 0.95). Looked like failure but evidently the policy was getting very close. Dug into the bundled LeRobot expert demos (206 human teleops): **max coverage across all 25,650 frames = 0.9489.** Not a single frame in the expert dataset crosses the 0.95 threshold. Humans playing the game teleoperated fail the "success" check too.
+
+**Implication:** For push-T (gym-pusht default), success threshold = 0.95 is functionally unreachable for expert humans via teleoperation. Published RL results that cross it (e.g. DPPO) use BC pretraining + RL fine-tuning to exploit gradient-based refinement beyond demo quality.
+
+**Our policy:**
+- Mean det coverage: 0.84 — about 89% of human teleop peak
+- Peak sto coverage: 0.889 — about 94% of human teleop peak
+- Final pose error: ~7 px position, ~1.4° angle
+- **Functionally solves the task within human-achievable range.**
+
+**Lesson:** before treating "0% success" as training failure, check whether the success metric is actually achievable by any baseline including humans. On imitation benchmarks in particular, thresholds may be calibrated around a BC baseline's ceiling rather than a hard physical achievability line. Report coverage distribution and compare to the bundled demos, not just the binary success flag.
+
+---
+
+## Don't Eyeball Metrics from Rendered Video (2026-04-19)
+
+**What happened:** User sent 5 screenshots of trained-policy eval episodes. I confidently described image 4 as "position close but ~30° yaw off → ~50% coverage" based on visual inspection. User challenged ("image 4 has almost perfect yaw"). Ran env-side diagnostic: actual angle error for ep 4 was **4.66°**, not 30°. Coverage was 0.858 (85.8%), not 50%.
+
+**My 30° eyeball claim was off by 6×.** Coverage claim was off by 1.5×. All based on "looking at the picture."
+
+**Why this matters:** I was steering the user's decision ("add more angle shaping, angle is the bottleneck") on invented data. Could have pushed the whole training session in a wrong direction. The correct diagnosis was: angle is fine (<5° across all eps), position is the binding constraint (~7 px short).
+
+**Rule:** env metrics are scalars. Don't reconstruct them from pixels. If you need final-state metrics to diagnose a run, compute them from the env state (pymunk `body.position`, `body.angle`) or from the info dict, not from screenshots. 2 lines of Python. Don't save the user from "is the policy succeeding" by staring at videos — it's the kind of diagnosis that looks authoritative but isn't. Write the diagnostic script.
+
+---
+
+## Contact-Gated + Frame Stack + Action Repeat + Keypoint Obs — Combined Recipe (2026-04-19)
+
+**What worked** (after TimeLimit fix, eval 84% coverage):
+
+1. **Obs**: `environment_state_agent_pos` (18d: 8 T-keypoints × 2 + agent_xy) + `FrameStack(3)` → 54d obs. Includes implicit velocity + past action history.
+2. **Obs normalization**: rescale pixel coords [0, 512] to [-1, 1] via linear wrapper. Without, Q explodes early. Standard pre-SAC preprocessing.
+3. **Action repeat = 2**: each policy decision held for 2 env steps. Halves effective control frequency to 5 Hz but commits to directional pushes long enough for contact to matter.
+4. **Reward `contact_gated`**: gated approach (when not touching) + gated directional velocity (when touching) + angle-delta (rotation progress) + large success bonus. See `jax_rl/envs/manipulation/pusht/pusht.py` for full formula.
+5. **SAC HPs**: `target_entropy_scale=2.0`, `batch=1024`, `UTD=2`, `lr=1e-4`, `gamma=0.995`, `tau=0.005`, `reward_scale=0.1`, `grad_clip_norm=1.0`, `buffer=500k`.
+6. **Network**: (256, 256) actor, (256, 256) critic — vanilla SAC Q-head, NOT FastSAC C51.
+
+**Lesson:** push-T RL from scratch requires ~6 stacked design decisions to work. Each individually could be ablated (and we did ablate several). The full stack matters because the task's exploration landscape is genuinely difficult. Frame stack alone doesn't fix it; action repeat alone doesn't fix it; contact-gated shaping alone doesn't fix it. The combination plus TimeLimit hit 84% coverage. Published pure-RL results are rare on this env for a reason — it takes a carefully-tuned pipeline.
+
+---
+
+## FastSAC C51 Critic Is Wrong Choice for Bounded-Reward Manipulation (2026-04-19)
+
+**What happened:** Early training attempts used `FastSAC` (C51 distributional critic, atoms over `[v_min, v_max]` range). Training diverged because `v_max` defaults to 20 in the paper preset, but cumulative contact_gated reward over 300 steps can hit ~150. Critic atoms don't cover actual Q range → critic is "blind" beyond v_max → policy can't improve past that ceiling.
+
+**Fix:** switch to vanilla SAC (scalar Q, unbounded). Same task works immediately (once TimeLimit is also fixed).
+
+**When to use each (updated from earlier locomotion-centric lessons):**
+- **FastSAC / C51**: good for **unbounded** locomotion rewards, paper-tuned for humanoid / Go2 scale. Needs `v_min`/`v_max` sized to actual discounted Q.
+- **Vanilla SAC**: better for **bounded, short-horizon, shaped-reward** tasks like push-T. No atom-range landmine.
+
+**Lesson:** distributional critics are optimization tools, not reward-range magic. Always sanity-check that `[v_min, v_max]` covers `reward_min * horizon` to `reward_max * horizon` under your gamma and episode length. If it doesn't, the distributional critic is actively worse than a scalar one.
