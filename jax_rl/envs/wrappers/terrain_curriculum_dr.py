@@ -109,6 +109,11 @@ class TerrainCurriculumDRWrapper(DomainRandWrapper):
         state.info["episode_fallen"] = jp.zeros(self._num_envs, dtype=jp.bool_)
         state.info["target_speed"] = target_speed
 
+        # Note: force_zero_linvel is already sampled per-env by the inner env's
+        # reset (vmapped by DomainRandWrapper.reset). No wrapper-level override
+        # needed — where_done merging on step will propagate fresh samples from
+        # reset_state into done envs automatically.
+
         # Advancement flags (initialized to False; populated per step)
         state.info["episode_promoted"] = jp.zeros(self._num_envs, dtype=jp.bool_)
         state.info["episode_demoted"] = jp.zeros(self._num_envs, dtype=jp.bool_)
@@ -143,6 +148,14 @@ class TerrainCurriculumDRWrapper(DomainRandWrapper):
         # Get done signal from DomainRandWrapper
         done = state.info[f'{self._KEY}_episode_done']
 
+        # Fall detection: prev_fallen (state.info["episode_fallen"]) is wiped
+        # to False by where_done before we can read it next step. Infer fall
+        # from the preserved truncation flag instead:
+        #   done=1, truncation=1 → ended via timeout (no fall)
+        #   done=1, truncation=0 → ended via env termination (= fall)
+        truncation = state.info["truncation"]
+        fall_at_done = (done > 0) & (truncation < 0.5)
+
         # Dual-class advancement:
         # Class B (goal-directed, pyramid/inv): reached → promote; fall OR
         #   no-progress-to-goal → demote
@@ -153,14 +166,14 @@ class TerrainCurriculumDRWrapper(DomainRandWrapper):
 
         # Class B logic
         reached = prev_reached
-        no_progress_B = (~reached) & (~prev_fallen) & (prev_min_dist > 0.5 * prev_initial_dist)
-        promote_B = reached & (~prev_fallen)
-        demote_B = prev_fallen | no_progress_B
+        no_progress_B = (~reached) & (~fall_at_done) & (prev_min_dist > 0.5 * prev_initial_dist)
+        promote_B = reached & (~fall_at_done)
+        demote_B = fall_at_done | no_progress_B
 
         # Class A logic
         moved_enough = prev_max_dist_from_spawn > 2.0
-        promote_A = (~prev_fallen) & moved_enough
-        demote_A = prev_fallen | (~moved_enough)
+        promote_A = (~fall_at_done) & moved_enough
+        demote_A = fall_at_done | (~moved_enough)
 
         promote = jp.where(is_goal, promote_B, promote_A) & (done > 0)
         demote = jp.where(is_goal, demote_B, demote_A) & (done > 0)

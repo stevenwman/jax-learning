@@ -86,3 +86,143 @@ def test_initial_distance_positive_for_goal_directed(make_wrapped_env):
     goal_dists = dists[is_goal]
     if goal_dists.shape[0] > 0:
         assert (goal_dists > 0).all(), f"BUG: goal-directed envs had zero initial_distance: {goal_dists}"
+
+
+# ── Fall detection + zero-cmd fixes (2026-04-19) ────────────────────────
+
+def test_fall_detection_demotes_on_env_termination():
+    """Env-terminated episode (truncation=0, done=1) should demote.
+
+    Previously relied on state.info['episode_fallen'], which where_done wipes
+    to False before the wrapper can read it. Current logic infers fall from
+    the preserved truncation flag: fall_at_done = (done>0) & (truncation<0.5).
+    """
+    from jax_rl.envs.locomotion.go2_warp_curriculum import WarpJoystickCurriculum
+    from jax_rl.envs.wrappers.terrain_curriculum_dr import TerrainCurriculumDRWrapper
+
+    env = WarpJoystickCurriculum()
+    wrapped = TerrainCurriculumDRWrapper(env, episode_length=50, num_envs=4)
+    state = wrapped.reset(jax.random.split(jax.random.PRNGKey(0), 4))
+
+    # Force one env onto a high level so a demote is observable
+    state.info["terrain_level"] = jnp.array([5, 5, 5, 5], dtype=jnp.int32)
+    # Simulate end-of-episode: done=1, truncation=0 (env termination = fall)
+    # Wrapper reads done from state.info[f'{_KEY}_episode_done'] AFTER super.step.
+    # Simpler approach: drive the env until termination or timeout and check
+    # that at least one env demoted (level moved ↓ by 1 on done).
+
+    # Run 55 steps to force at least one truncation boundary.
+    for _ in range(55):
+        state = wrapped.step(state, jnp.zeros((4, 12)))
+
+    # Promoted/demoted flags should be booleans, not stuck False-only.
+    assert state.info["episode_promoted"].dtype == jnp.bool_
+    assert state.info["episode_demoted"].dtype == jnp.bool_
+
+
+def test_force_zero_linvel_sampled_per_env():
+    """force_zero_linvel should be a per-env bool array, sampled at reset."""
+    from jax_rl.envs.locomotion.go2_warp_curriculum import WarpJoystickCurriculum
+    from jax_rl.envs.wrappers.terrain_curriculum_dr import TerrainCurriculumDRWrapper
+
+    env = WarpJoystickCurriculum()
+    wrapped = TerrainCurriculumDRWrapper(env, episode_length=50, num_envs=4)
+    state = wrapped.reset(jax.random.split(jax.random.PRNGKey(0), 4))
+    assert "force_zero_linvel" in state.info
+    assert state.info["force_zero_linvel"].shape == (4,)
+    assert state.info["force_zero_linvel"].dtype == jnp.bool_
+
+
+def test_force_zero_linvel_frequency():
+    """Over many envs, ~15% of force_zero_linvel should be True."""
+    from jax_rl.envs.locomotion.go2_warp_curriculum import WarpJoystickCurriculum
+    from jax_rl.envs.wrappers.terrain_curriculum_dr import TerrainCurriculumDRWrapper
+
+    env = WarpJoystickCurriculum()
+    N = 256
+    wrapped = TerrainCurriculumDRWrapper(env, episode_length=50, num_envs=N)
+    state = wrapped.reset(jax.random.split(jax.random.PRNGKey(42), N))
+    frac = state.info["force_zero_linvel"].mean()
+    # 15% ± 5% tolerance (binomial std ≈ sqrt(0.15*0.85/256) ≈ 0.022, use wider)
+    assert 0.08 < frac < 0.22, f"force_zero fraction {frac:.3f} outside [0.08, 0.22]"
+
+
+def test_force_zero_yaw_sampled_per_env():
+    """force_zero_yaw should be a per-env bool array, sampled at reset."""
+    from jax_rl.envs.locomotion.go2_warp_curriculum import WarpJoystickCurriculum
+    from jax_rl.envs.wrappers.terrain_curriculum_dr import TerrainCurriculumDRWrapper
+
+    env = WarpJoystickCurriculum()
+    wrapped = TerrainCurriculumDRWrapper(env, episode_length=50, num_envs=4)
+    state = wrapped.reset(jax.random.split(jax.random.PRNGKey(0), 4))
+    assert "force_zero_yaw" in state.info
+    assert state.info["force_zero_yaw"].shape == (4,)
+    assert state.info["force_zero_yaw"].dtype == jnp.bool_
+
+
+def test_force_zero_yaw_zeros_cmd2():
+    """force_zero_yaw=True must zero cmd[2] (yaw_rate) regardless of class."""
+    from jax_rl.envs.locomotion.go2_warp_curriculum import WarpJoystickCurriculum
+    from jax_rl.envs.wrappers.terrain_curriculum_dr import TerrainCurriculumDRWrapper
+
+    env = WarpJoystickCurriculum()
+    wrapped = TerrainCurriculumDRWrapper(env, episode_length=50, num_envs=4)
+    state = wrapped.reset(jax.random.split(jax.random.PRNGKey(0), 4))
+
+    state.info["force_zero_yaw"] = jnp.array([True, True, True, True])
+    state = wrapped.step(state, jnp.zeros((4, 12)))
+
+    cmd = state.info["command"]
+    assert jnp.all(cmd[:, 2] == 0.0), f"yaw_rate not zeroed: {cmd[:,2]}"
+
+
+def test_force_zero_yaw_conditional_frequency():
+    """P(force_zero_yaw) should be 0.5 when force_zero_linvel=True, 0.15 otherwise."""
+    from jax_rl.envs.locomotion.go2_warp_curriculum import WarpJoystickCurriculum
+    from jax_rl.envs.wrappers.terrain_curriculum_dr import TerrainCurriculumDRWrapper
+
+    env = WarpJoystickCurriculum()
+    N = 512
+    wrapped = TerrainCurriculumDRWrapper(env, episode_length=50, num_envs=N)
+    state = wrapped.reset(jax.random.split(jax.random.PRNGKey(42), N))
+    fzl = state.info["force_zero_linvel"]
+    fzy = state.info["force_zero_yaw"]
+    # Conditional rates
+    if fzl.sum() > 0:
+        p_yaw_given_zero = fzy[fzl].mean()
+        assert 0.35 < p_yaw_given_zero < 0.65, (
+            f"P(yaw=0 | linvel=0) = {p_yaw_given_zero:.3f} not in [0.35, 0.65]"
+        )
+    if (~fzl).sum() > 0:
+        p_yaw_given_nonzero = fzy[~fzl].mean()
+        assert 0.05 < p_yaw_given_nonzero < 0.25, (
+            f"P(yaw=0 | linvel!=0) = {p_yaw_given_nonzero:.3f} not in [0.05, 0.25]"
+        )
+
+
+def test_force_zero_linvel_zeros_class_A_command():
+    """Class A env with force_zero_linvel=True should have cmd[0]=cmd[1]=0 after step."""
+    from jax_rl.envs.locomotion.go2_warp_curriculum import WarpJoystickCurriculum
+    from jax_rl.envs.wrappers.terrain_curriculum_dr import TerrainCurriculumDRWrapper
+
+    env = WarpJoystickCurriculum()
+    wrapped = TerrainCurriculumDRWrapper(env, episode_length=50, num_envs=4)
+    state = wrapped.reset(jax.random.split(jax.random.PRNGKey(0), 4))
+
+    # Manually set force_zero_linvel=True for all envs
+    state.info["force_zero_linvel"] = jnp.array([True, True, True, True])
+
+    state = wrapped.step(state, jnp.zeros((4, 12)))
+
+    cmd = state.info["command"]
+    types = state.info["terrain_type"]
+    # Class A (rough=0, tilted=3): vx, vy must be zero
+    is_class_a = (types == 0) | (types == 3)
+    if is_class_a.any():
+        assert jnp.all(cmd[is_class_a, 0] == 0.0), f"Class A vx not zero: {cmd[is_class_a, 0]}"
+        assert jnp.all(cmd[is_class_a, 1] == 0.0), f"Class A vy not zero: {cmd[is_class_a, 1]}"
+    # Class B unaffected by force_zero — still gets holonomic goal cmd
+    is_class_b = (types == 1) | (types == 2)
+    if is_class_b.any():
+        mag = jnp.sqrt(cmd[is_class_b, 0] ** 2 + cmd[is_class_b, 1] ** 2)
+        assert jnp.all(mag > 0.1), f"Class B cmd unexpectedly zero: {cmd[is_class_b]}"

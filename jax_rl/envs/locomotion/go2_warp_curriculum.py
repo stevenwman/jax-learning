@@ -14,6 +14,7 @@ from typing import Any, Dict, Optional, Union
 
 import jax
 import jax.numpy as jp
+from mujoco import mjx
 from ml_collections import config_dict
 from mujoco_playground._src import mjx_env
 
@@ -86,10 +87,24 @@ class WarpJoystickCurriculum(WarpJoystick):
         self._num_cols = GO2_DEFAULT_CFG.num_cols    # 4
         self._tile_size = GO2_DEFAULT_CFG.tile_size  # (9.6, 9.6)
 
+        # Base-contact sensor for terrain-agnostic fall detection.
+        base_contact_sid = self._mj_model.sensor("base_contact").id
+        self._base_contact_sensor_adr = int(self._mj_model.sensor_adr[base_contact_sid])
+
     # ── Task 2.3: spawn + goal sampling ─────────────────────────────────────
 
+    # Per-episode probability of forcing zero linvel command for Class A
+    # (rough/tilted). Gives robot full stand-still episodes as DR — otherwise
+    # Bernoulli sampler rarely emits sustained low-speed. Wrapper resamples
+    # this flag on each done; standalone reset samples fresh per-call.
+    _ZERO_LINVEL_PROB = 0.15
+    # Per-episode zero yaw_rate command. Higher prob when linvel already zero
+    # (true stand-still episodes) vs when linvel is active (drive straight DR).
+    _ZERO_YAW_PROB_IF_ZERO_LINVEL = 0.5
+    _ZERO_YAW_PROB_OTHERWISE = 0.15
+
     def reset(self, rng: jax.Array) -> mjx_env.State:
-        rng, type_rng, level_rng, spawn_rng, yaw_rng = jax.random.split(rng, 5)
+        rng, type_rng, level_rng, spawn_rng, yaw_rng, zero_rng, zero_yaw_rng = jax.random.split(rng, 7)
 
         # Random terrain_type for standalone reset (wrapper will override for curriculum)
         terrain_type = jax.random.randint(type_rng, (), 0, self._num_cols)
@@ -138,6 +153,17 @@ class WarpJoystickCurriculum(WarpJoystick):
         state.info["episode_max_dist_from_spawn"] = jp.float32(0.0)
         state.info["episode_fallen"] = jp.bool_(False)
         state.info["target_speed"] = target_speed
+        force_zero_linvel = (
+            jax.random.uniform(zero_rng, ()) < self._ZERO_LINVEL_PROB
+        )
+        yaw_prob = jp.where(
+            force_zero_linvel,
+            jp.float32(self._ZERO_YAW_PROB_IF_ZERO_LINVEL),
+            jp.float32(self._ZERO_YAW_PROB_OTHERWISE),
+        )
+        force_zero_yaw = jax.random.uniform(zero_yaw_rng, ()) < yaw_prob
+        state.info["force_zero_linvel"] = force_zero_linvel
+        state.info["force_zero_yaw"] = force_zero_yaw
 
         return state
 
@@ -214,22 +240,26 @@ class WarpJoystickCurriculum(WarpJoystick):
         # Gate via mask indexed on terrain_type (both branches traced by JAX).
         tt = state.info["terrain_type"]
         is_goal = jp.asarray(self._IS_GOAL_DIRECTED, dtype=jp.bool_)[tt]
-        mask = is_goal.astype(jp.float32)
+        force_zero = state.info["force_zero_linvel"]
+        force_zero_yaw = state.info["force_zero_yaw"]
 
-        body_vx, body_vy = self._goal_linvel_body(state)
-        cmd = state.info["command"]
-        new_vx = mask * body_vx + (1.0 - mask) * cmd[0]
-        new_vy = mask * body_vy + (1.0 - mask) * cmd[1]
-        state.info["command"] = cmd.at[0].set(new_vx).at[1].set(new_vy)
+        def _override(cmd):
+            body_vx, body_vy = self._goal_linvel_body(state)
+            # is_goal: use holonomic body command toward goal
+            # ~is_goal & force_zero (Class A standstill): zero out vx/vy
+            # ~is_goal & ~force_zero: keep parent's Bernoulli cmd[0], cmd[1]
+            new_vx = jp.where(is_goal, body_vx, jp.where(force_zero, jp.float32(0.0), cmd[0]))
+            new_vy = jp.where(is_goal, body_vy, jp.where(force_zero, jp.float32(0.0), cmd[1]))
+            # force_zero_yaw gates cmd[2] regardless of class
+            new_yaw = jp.where(force_zero_yaw, jp.float32(0.0), cmd[2])
+            return cmd.at[0].set(new_vx).at[1].set(new_vy).at[2].set(new_yaw)
+
+        state.info["command"] = _override(state.info["command"])
 
         state = super().step(state, action)
 
-        # Re-apply vx/vy post-step (parent's sampler may have clobbered).
-        body_vx, body_vy = self._goal_linvel_body(state)
-        cmd = state.info["command"]
-        new_vx = mask * body_vx + (1.0 - mask) * cmd[0]
-        new_vy = mask * body_vy + (1.0 - mask) * cmd[1]
-        state.info["command"] = cmd.at[0].set(new_vx).at[1].set(new_vy)
+        # Re-apply post-step (parent's sampler may have clobbered command).
+        state.info["command"] = _override(state.info["command"])
 
         # Episode tracking — both classes track fall + distance-from-spawn + reach
         robot_xy = state.data.qpos[:2]
@@ -248,6 +278,20 @@ class WarpJoystickCurriculum(WarpJoystick):
         state.info["episode_fallen"] = state.done.astype(jp.bool_)
 
         return state
+
+    def _get_termination(self, data: mjx.Data) -> jax.Array:
+        """Terrain-agnostic termination.
+
+        Replaces parent's `base_z < 0.18` check (which breaks on uneven
+        terrain — robot standing in a bowl has low world-z but isn't fallen).
+        Uses torso-ground contact sensor instead: any contact between
+        base_link and any other geom = fall. Orientation check unchanged —
+        full flip still terminates. Lying on one side (upvector ~0, legs
+        propped) does NOT terminate — policy may still recover.
+        """
+        flipped = self.get_upvector(data)[-1] < 0.0
+        base_contact = data.sensordata[self._base_contact_sensor_adr] > 0.0
+        return flipped | base_contact
 
     def _goal_linvel_body(self, state: mjx_env.State) -> tuple:
         """Body-frame (vx, vy) derived from world-frame goal direction.

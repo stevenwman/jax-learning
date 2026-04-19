@@ -170,7 +170,9 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
            camera: str | None = None, video_seed: int = 0,
            kicks: bool = False,
            terrain_level: int | None = None,
-           terrain_type: str | None = None):
+           terrain_type: str | None = None,
+           force_zero_linvel: bool = False,
+           force_zero_yaw: bool = False):
 
     # ── Load checkpoint ───────────────────────────────────────────────────
     algo_type = "ppo"  # default
@@ -271,6 +273,12 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
             env_state.info["target_speed"] = jnp.float32(
                 0.5 + tl / max(1, base_env._num_rows - 1) * 1.0
             )
+            if force_zero_linvel:
+                env_state.info["force_zero_linvel"] = jnp.bool_(True)
+                print("  [curriculum override] force_zero_linvel=True (Class A cmd_vx=cmd_vy=0)")
+            if force_zero_yaw:
+                env_state.info["force_zero_yaw"] = jnp.bool_(True)
+                print("  [curriculum override] force_zero_yaw=True (cmd_yaw_rate=0)")
 
     raw_obs = env_state.obs
     policy_obs = raw_obs["state"] if isinstance(raw_obs, dict) else raw_obs
@@ -441,6 +449,10 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=0, help="Random seed for env reset")
     parser.add_argument("--kicks", action="store_true",
                         help="Zero velocity command + random velocity kicks every 1.5s")
+    parser.add_argument("--force-zero-linvel", action="store_true",
+                        help="Curriculum Class A only: force cmd_vx=cmd_vy=0 for the whole episode (DR sanity check)")
+    parser.add_argument("--force-zero-yaw", action="store_true",
+                        help="Curriculum: force cmd_yaw_rate=0 for the whole episode (DR sanity check)")
     parser.add_argument("--terrain-level", type=int, default=None,
                         help="Curriculum env only: force spawn at this level (0-9)")
     parser.add_argument("--terrain-type", type=str, default=None,
@@ -454,4 +466,6 @@ if __name__ == "__main__":
         kicks=args.kicks,
         terrain_level=args.terrain_level,
         terrain_type=args.terrain_type,
+        force_zero_linvel=args.force_zero_linvel,
+        force_zero_yaw=args.force_zero_yaw,
     )

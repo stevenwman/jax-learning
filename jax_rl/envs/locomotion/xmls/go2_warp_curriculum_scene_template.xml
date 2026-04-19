@@ -51,5 +51,10 @@
     <contact name="FR_floor_found" geom1="FR" reduce="mindist" num="1" data="found"/>
     <contact name="RL_floor_found" geom1="RL" reduce="mindist" num="1" data="found"/>
     <contact name="RR_floor_found" geom1="RR" reduce="mindist" num="1" data="found"/>
+
+    <!-- Base (torso) contact with anything. Used for terrain-agnostic fall
+         detection: world-frame base_z check breaks on pyramids/bowls, but a
+         torso-ground contact is invariant. Returns num_contacts (>0 = fall). -->
+    <contact name="base_contact" body1="base_link" reduce="mindist" num="1" data="found"/>
   </sensor>
 </mujoco>
