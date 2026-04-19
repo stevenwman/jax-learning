@@ -110,20 +110,20 @@ def render_command_overlays(renderer, mj_data, cmd, idx, goal_xy=None):
         geom.rgba = np.array([1, 0.9, 0, 0.8], dtype=np.float32)
         renderer.scene.ngeom += 1
 
-    # ── Red target marker at goal position (curriculum env only) ────────
-    # Flat cylinder (disc) at world (goal_x, goal_y, 0) — marks "go here".
+    # ── Red target marker floating above goal position (curriculum env) ─
+    # Sphere at world (goal_x, goal_y, 2.5) — elevated so it clears any
+    # pyramid apex (max ~2m) and stays visible on tilted/bowl terrains.
     if goal_xy is not None:
         goal_xy = np.asarray(goal_xy, dtype=np.float64)
         if goal_xy.shape == (2,):
-            goal_pos = np.array([goal_xy[0], goal_xy[1], 0.02], dtype=np.float64)
+            goal_pos = np.array([goal_xy[0], goal_xy[1], 2.5], dtype=np.float64)
             geom = renderer.scene.geoms[renderer.scene.ngeom]
-            # Cylinder: size = (radius, half-height, 0). Flat disc = small half-height.
             mujoco.mjv_initGeom(
                 geom,
-                mujoco.mjtGeom.mjGEOM_CYLINDER,
-                np.array([0.5, 0.02, 0.0], dtype=np.float64),  # size
-                goal_pos,                                        # pos
-                np.eye(3, dtype=np.float64).flatten(),           # mat (identity)
-                np.array([1.0, 0.1, 0.1, 0.7], dtype=np.float32),
+                mujoco.mjtGeom.mjGEOM_SPHERE,
+                np.array([0.3, 0.0, 0.0], dtype=np.float64),   # radius
+                goal_pos,
+                np.eye(3, dtype=np.float64).flatten(),
+                np.array([1.0, 0.15, 0.15, 0.85], dtype=np.float32),
             )
             renderer.scene.ngeom += 1

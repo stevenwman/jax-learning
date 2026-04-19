@@ -379,9 +379,9 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
             cam = mujoco.MjvCamera()
             cam.type = mujoco.mjtCamera.mjCAMERA_TRACKING
             cam.trackbodyid = 1  # base/base_link (body ID 1 in both models)
-            cam.distance = 6.0  # zoomed out to frame robot + goal marker
+            cam.distance = 12.0  # zoomed out to frame robot + elevated goal sphere
             cam.azimuth = 135
-            cam.elevation = -25
+            cam.elevation = -30
             renderer.update_scene(mj_data, camera=cam)
 
         # Add command arrow overlays (Go2-specific)
