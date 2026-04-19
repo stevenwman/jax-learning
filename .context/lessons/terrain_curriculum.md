@@ -40,39 +40,66 @@ Kept 4 that cover the space efficiently: height variation (rough), stair negotia
 
 9.6m (not 8m) to reduce boundary crossing mid-episode. Robot walks 1-1.5 m/s, episode 1000 steps = 20s. At 1.5 m/s that's 30m — robot will reach the far edge and potentially cross terrain boundaries. 9.6m gives 19.2m round-trip before boundary crossing; goal-directed commands (see below) further reduce boundary risk by pulling the robot toward a fixed goal rather than wandering.
 
-### Goal-directed commands (not legged_gym Bernoulli)
+### Dual-class command scheme (2026-04-18 redesign)
 
-legged_gym uses a Bernoulli random command that resamples mid-episode. This works for curriculum advancement based on tracking reward mean, but is weak for a binary reach/fall signal — if the robot gets lucky and wanders toward the goal, it advances without actually learning.
+Terrain types split into two classes with different success criteria:
 
-Our scheme: sample a fixed world-frame goal at episode start (opposite edge for rough/tilted, center for pyramid/bowl). Per-step command is computed from `(goal_pos - robot_pos)` via a P-controller on yaw error and a linear speed proportional to distance. The robot knows where to go and must consistently get there to advance.
+**Class A — locomotion robustness (rough, tilted)**
+- Spawn at tile center with small xy jitter
+- Linvel command = parent's Bernoulli random (no override)
+- Success = stayed upright AND traveled ≥ 2m from spawn during episode
+- Tests: "can robot walk stably on uneven ground in any commanded direction"
 
-**GOTCHA:** `WarpJoystick.step()` overwrites `state.info["command"]` via its Bernoulli sampler on every step. The goal-directed command must be injected BOTH before and after calling `super().step()`. Pattern:
+**Class B — directed navigation (pyramid_up, pyramid_down)**
+- Spawn at rim (random angle, radius = 0.9 × tile_half)
+- Goal at tile center (apex for pyramid, pit bottom for bowl)
+- Linvel command = holonomic decomposition of world-frame goal direction into body frame via robot yaw
+- Success = reached within 0.5m of goal
+- Tests: "can robot climb / descend this shape"
+
+Gated via `_IS_GOAL_DIRECTED = (False, True, True, False)` indexed on terrain_type. Both `env.step()` and `TerrainCurriculumDRWrapper` advancement logic consult this tuple.
+
+**Holonomic command** — critical for Class B. Previous unicycle scheme (cmd_vx=target_speed, cmd_yaw_rate = P × yaw_error) forced robot to turn before walking. Holonomic decomposition:
 
 ```python
-def step(self, state, action):
-    state = self._inject_goal_command(state)   # before: so physics sees our command
-    state = super().step(state, action)
-    state = self._inject_goal_command(state)   # after: so Bernoulli sampler doesn't clobber it
-    return state
+world_vel = unit(goal - robot) * target_speed       # world frame
+cmd_vx =  cos(yaw)*world_vx + sin(yaw)*world_vy     # body frame
+cmd_vy = -sin(yaw)*world_vx + cos(yaw)*world_vy
 ```
 
-Missing either injection → Bernoulli command leaks through in either physics or obs.
+Robot can side-step toward goal regardless of heading. `cmd_yaw_rate` is left to the parent's Bernoulli sampler — random turning serves as DR for omnidirectional training.
 
-### Binary reach/fall curriculum (not tracking reward)
+**GOTCHA:** `WarpJoystick.step()` overwrites `state.info["command"]` via its Bernoulli sampler on every step. The command must be overridden BOTH before and after calling `super().step()`. For Class A, override is a no-op (passes through whatever parent sampled). For Class B, override sets `cmd[0], cmd[1]` from goal direction and leaves `cmd[2]` (yaw_rate) untouched. Use a mask:
 
-Tracking reward mean as curriculum signal (legged_gym approach) has two problems:
-1. Requires per-episode buffering and smoothing — more state.
-2. Reward scale varies across terrain types (bowl terrain is intrinsically harder to get high reward on than rough).
+```python
+mask = is_goal_directed(terrain_type).astype(float32)
+new_vx = mask * body_vx + (1-mask) * cmd[0]
+new_vy = mask * body_vy + (1-mask) * cmd[1]
+# Do this both before and after super().step()
+```
 
-Binary outcome (reached_goal OR fallen) is terrain-agnostic, easy to compute, and directly measures the capability we care about: "can the robot navigate this tile?"
+### Dual-class advancement (wrapper)
 
-Advancement rule:
-- `reached_goal AND NOT fallen` → promote
-- `fallen` → demote
-- `timeout AND min_distance > 0.5 * initial_distance` → demote (robot barely moved)
-- otherwise → stay
+```python
+# Class A:  survived + moved → promote;  fell or stood still → demote
+promote_A = (~fallen) & (max_dist_from_spawn > 2.0)
+demote_A  =   fallen  | (max_dist_from_spawn <= 2.0)
 
-Level clamped to `[0, num_rows-1]`.
+# Class B:  reached → promote;  fall or no goal-progress → demote
+promote_B =   reached & (~fallen)
+demote_B  =   fallen  | (~reached & (min_dist_to_goal > 0.5 * initial_dist))
+
+promote = where(is_goal_directed, promote_B, promote_A) & done
+demote  = where(is_goal_directed, demote_B,  demote_A)  & done
+```
+
+Level clamped to `[0, num_rows-1]`. All 4 types share `terrain_level` — same curriculum ladder, different entry criteria per tier.
+
+### Tile-origin semantics (fixed 2026-04-18)
+
+Initial `TerrainGenerator` stored `origins[r, c] = [tile_x + primitive_spawn_x, tile_y + primitive_spawn_y, spawn_z]`. This meant `_terrain_origins[r,c]` was primitive-dependent (pyramid's rim, rough's edge). Code that used it as "tile center reference" for goal offset produced wrong world positions (goals at tile boundaries).
+
+Fixed: `origins[r, c] = [tile_x, tile_y, 0]` — strict tile centers. Primitive `spawn_origin` is strictly tile-local; env code adds `tile_origin` to tile-local offsets to derive world positions.
 
 ### Inverted pyramid = actual bowl, not inverted pyramid
 
