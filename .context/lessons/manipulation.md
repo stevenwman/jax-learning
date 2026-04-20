@@ -235,6 +235,55 @@ Applied retroactively, this would have caught the TimeLimit bug at run 1 instead
 
 ---
 
+## Pymunk CoG Offset → `block.position` ≠ Block Goal Pose (2026-04-19)
+
+**What happened:** Calibration script tried to set the T at the goal pose with `block.position = (256, 256), block.angle = π/4`. Coverage came out at 0.298, not 1.0. Debugging revealed `block.center_of_gravity = (0, 45)` in body frame. When you set `body.position = X` for a body with non-zero CoG, X is the **body origin location**, not the CoG location. World CoG = body.position + rotate(CoG, angle). Setting position then angle (per `_set_state` order) made the block end up at world (287.8, 269.2) — 32 pixels from where I asked.
+
+**True identity state** (gives coverage 0.9995): `[agent_x, agent_y, 224.2, 242.8, π/4]` for `reset_to_state`. Discovered by 0.5-px grid search around (256, 256).
+
+**Implications for any code using `block.position`:**
+- Distance shaping `||block.position - goal_pose[:2]||` is measuring distance between body origin and goal *body origin*, NOT geometric centers. Off by ~30 px on the constant CoG offset, so still gives a useful gradient — but interpret with care.
+- For exact pose matching (e.g. setting up a calibration test), use `pymunk_to_shapely(body, shapes).centroid` to get the actual world centroid.
+- For RL training, the bias is a constant offset, so the policy learns to compensate. Not a hard bug, but a footgun for diagnostics.
+
+**Lesson:** any pymunk body with non-zero `center_of_gravity` behaves "weirdly" under direct position+angle assignment because rotation pivots around CoG, not origin. For T-shapes, hexagons, asymmetric polygons — read `body.center_of_gravity` first; never assume `body.position` = world geometric center.
+
+---
+
+## Coverage Metric Is Geometrically Sensitive — 2 px Drops 5% (2026-04-19)
+
+**What happened:** Trained policy achieved 84% mean coverage. User looked at 5 rendered episodes — visually they all looked very close to goal. Wrote calibration tool that directly perturbs block pose by known amounts and measures coverage. Result:
+
+| Coverage | x-translation | yaw |
+|----------|---------------|-----|
+| 0.999    | 0 px          | 0°  |
+| 0.95     | 1.9 px        | 2.5°|
+| 0.90     | 3.8 px        | 5.1°|
+| 0.85     | 5.7 px        | 7.8°|
+| 0.80     | 7.8 px        | 10.5°|
+| 0.70     | 12.0 px       | 16.3°|
+
+The T has thin bars (~15 px wide). A 2 px translation (0.4% of arena) loses 5% coverage because the thin top bar shifts off the target's top bar. **Coverage is calibrated for fine-grained alignment** — visually similar poses can differ by 10-20% coverage.
+
+**Implication:** when reporting RL results on push-T, an 80-85% mean coverage policy is "close to perfect" visually but quantitatively the metric is unforgiving. Don't conclude "policy is bad" from low coverage without checking pose error directly.
+
+**Calibration script:** `tools/pusht_coverage_calibration.py`. Outputs labeled figure showing what each coverage level looks like.
+
+---
+
+## Tunable `success_threshold` for Sparse-Reward Tractability (2026-04-19)
+
+**What happened:** Default `success_threshold=0.95` (DP convention) is unreachable by humans (max LeRobot demo = 0.9489) and by pure RL (peak ~0.89). Sparse reward mode `1 if coverage > 0.95 else 0` therefore gives literally zero signal during from-scratch training.
+
+**Fix:** added `success_threshold` kwarg to `PushTEnv`. Defaults to 0.95 (parity), can be lowered for tractable sparse RL:
+```python
+env = PushTEnv(reward_mode="sparse", success_threshold=0.85)
+```
+
+**Reporting convention reminder:** push-T literature reports **max coverage per episode**, not binary success rate. DP scores ~0.91-0.95, BC LSTM ~0.55-0.74, ours ~0.84-0.89. Don't compare against 0.95 termination flag.
+
+---
+
 ## The 95% Success Threshold Is Above Human Expert Performance (2026-04-19)
 
 **What happened:** Our trained SAC policy hit 84% mean coverage, 0% success rate (threshold = 0.95). Looked like failure but evidently the policy was getting very close. Dug into the bundled LeRobot expert demos (206 human teleops): **max coverage across all 25,650 frames = 0.9489.** Not a single frame in the expert dataset crosses the 0.95 threshold. Humans playing the game teleoperated fail the "success" check too.
@@ -289,3 +338,80 @@ Applied retroactively, this would have caught the TimeLimit bug at run 1 instead
 - **Vanilla SAC**: better for **bounded, short-horizon, shaped-reward** tasks like push-T. No atom-range landmine.
 
 **Lesson:** distributional critics are optimization tools, not reward-range magic. Always sanity-check that `[v_min, v_max]` covers `reward_min * horizon` to `reward_max * horizon` under your gamma and episode length. If it doesn't, the distributional critic is actively worse than a scalar one.
+
+---
+
+## Log-Barrier Coverage Reward Beats Linear by +8pp (2026-04-20)
+
+**What happened:** Baseline `contact_gated` used `r_coverage = coverage_clip` — linear in `[0, 1]`. Policy plateaued around 85% cov because marginal reward was flat (1pp gain = 0.01 reward regardless of coverage level). Geometry of coverage metric is nonlinear: 30→60% is gross-motor, 90→95% is pixel-precision. Linear underpays precision work.
+
+**Fix:** `coverage_shape="log_barrier"` → `r_coverage = -log(1 - clip(cov/threshold, 0, 1) + ε)` with `ε=0.01`.
+
+```
+cov    linear   log_bar
+0.5    0.53     0.73
+0.7    0.74     1.30
+0.9    0.95     2.77
+0.95+  1.00     4.60 (ceiling at ε=0.01)
+```
+
+Marginal reward near goal ∝ `1/(1-cov+ε)` — at cov=0.9, gradient is 9× steeper than at cov=0. Policy actually pursues the last few percent.
+
+**Evidence:**
+- v9 linear (full stack): 0.852 sto
+- baseline_logbar (same stack, log_bar only): **0.933 sto** (+8pp, det std 5× tighter)
+
+**Cost:** Q magnitudes grow ~3-5× (ep_r_avg from 130 → 500). No instability observed at `reward_scale=0.1, grad_clip_norm=1.0`. Monitor Q1 trajectory for early-training blowup signs.
+
+**When NOT to use:** if coverage metric is already well-distributed (e.g. dense geometric progress), log_barrier adds instability without gain. Best applied to metrics where the last few % are disproportionately hard (IoU, pose overlap, SSIM).
+
+**Lesson:** match reward curvature to metric curvature. Linear reward on a geometrically-nonlinear metric caps learning where marginal task difficulty exceeds marginal reward. Log-barrier is the standard interior-point shape for this.
+
+---
+
+## Action Repeat Is the Single Most Critical Knob on Push-T RL (2026-04-20)
+
+**What happened:** ablation stripping `action_repeat=2 → 1` collapsed performance from 0.933 → 0.522 sto (−41pp). Largest effect of any single knob in the ablation study (vs keypoints −5pp, frame_stack −1pp, reward shape +8pp).
+
+**Why:** Push-T needs sustained directional force on the block to initiate/continue contact pushes. At AR=1 (10 Hz policy), any small policy oscillation reverses the pusher direction mid-push. With AR=2 (5 Hz policy), each action commits for 2 env steps → the block actually accumulates velocity. Also: halves decision count → less Q-target noise → more stable learning.
+
+**Evidence:**
+| AR | Det | Sto |
+|---|---|---|
+| 2 | 0.867 | 0.933 |
+| 1 | 0.326 | 0.522 |
+
+Q1 range during training: AR=2 stable ~+90, AR=1 oscillates into negative. Alpha (SAC entropy coef) also bounced 0.04 with AR=1 vs stable 0.02 with AR=2.
+
+**Lesson:** AR is not cosmetic — it's **algorithmic**. For contact-rich manipulation, policy-rate > control-rate matters more than obs richness or reward shaping. Always test K∈{2, 4, 8} before optimizing anything else. Action chunking (Q-chunking NeurIPS 2025) is the generalization.
+
+---
+
+## Minimal Shape-Agnostic Config Matches Full Stack (2026-04-20)
+
+**What happened:** cross-shape benchmarks need shape-agnostic obs (keypoints have shape-specific dim). Hypothesis: swapping 18d keypoints → 5d state + dropping frame_stack would drop performance substantially. Tested on push-T:
+
+| Config | Det | Sto |
+|---|---|---|
+| Full: keypoints(18d) + FS=3 + AR=2 + log_bar | 0.867 | 0.933 |
+| **Minimal: state(5d) + FS=1 + AR=2 + log_bar** | **0.906** | **0.939** |
+
+Minimal *beat* full stack. First success event (cov=0.9511, terminated at step 27) observed only on minimal config. Single seed per run — noise possible — but direction clear.
+
+**Why it might win:** FS=3 on 5d state = 15d with correlated dims (same 5 obs shifted in time). Under log_barrier which gives strong signal, the extra 10 dims add input noise without useful velocity signal (vels already recoverable). With FS=1, the critic fits a simpler input distribution → lower-variance Q → tighter policy.
+
+**Implication for cross-shape:** use `state + FS=1 + AR=2 + log_bar + contact_gated` as the cross-shape baseline. 5d obs is shape-agnostic (agent_xy + block_xy + block_yaw), no redefinition per shape.
+
+**Lesson:** don't assume richer obs = better. When the reward signal is strong (log_bar), minimal obs often outperforms padded obs. Test the minimal config before porting complexity.
+
+---
+
+## Bigger Success Bonus Doesn't Raise Ceiling on Unreachable Thresholds (2026-04-20)
+
+**What happened:** tested `success_bonus: 50 → 200` on full-stack log_bar config. Expected: bigger terminal pull → policy reaches higher coverage. Actual: det 0.867 → 0.914 (+5pp tighter), sto 0.933 → 0.933 (unchanged).
+
+**Why:** with `success_threshold=0.95` and peak coverage observed during training ~0.94, the policy never crossed threshold → never sampled the bonus. Making an unobserved terminal larger doesn't change learning.
+
+Det tightened because Q near goal has less variance (policy converges to the same near-threshold trajectory), but the stochastic ceiling is set by the unreachable threshold, not the bonus magnitude.
+
+**Lesson:** before tuning success bonus, verify policy actually hits successful terminations during training. If terminal is never sampled, its magnitude is irrelevant to learning — only to offline analysis. Alternative: lower threshold until terminations happen during training (tradeoff: caps learning at the threshold).

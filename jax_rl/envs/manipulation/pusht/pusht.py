@@ -145,17 +145,24 @@ class PushTEnv(gym.Env):
         visualization_width=680,
         visualization_height=680,
         reward_mode="coverage",
+        success_threshold=0.95,
+        coverage_shape="linear",
+        coverage_eps=0.01,
+        success_bonus=50.0,
     ):
         """
         Args:
-            reward_mode: reward function to return from step().
-                "coverage" — DP default. `clip(coverage / 0.95, 0, 1)`.
-                "sparse"   — 1.0 iff coverage > 0.95 else 0.0.
-                "shaped"   — coverage + 0.01 * contact_count - 0.001 * pusher_to_block.
-                "approach" — coverage + 0.05 * (1 - pusher_to_block / max_dist).
-                "dense"    — coverage + pose-error shaping + block velocity toward goal
-                             + contact + approach. Recommended for RL from scratch.
-                Pick to bootstrap RL (coverage alone is too sparse for from-scratch RL).
+            reward_mode: reward function returned from step().
+                "coverage" (default) — DP's clip(coverage / threshold, 0, 1).
+                "sparse"   — 1 if coverage > threshold else 0.
+                "shaped"   — coverage + small contact + small approach penalty.
+                "approach" — coverage + smooth proximity bonus.
+                "dense"    — coverage + delta-shaping (pos+angle progress).
+                "contact_gated" — Cong/Ferrari recipe; recommended for RL from scratch.
+            success_threshold: coverage >= threshold → terminated=True, is_success=True.
+                Default 0.95 matches DP paper. Use ~0.85 for sparse-reward RL —
+                LeRobot expert demos peak at 0.9489, so 0.95 is unreachable in
+                practice and gives zero sparse-reward signal during training.
         """
         super().__init__()
         # Observations
@@ -190,7 +197,19 @@ class PushTEnv(gym.Env):
         self.teleop = None
         self._last_action = None
 
-        self.success_threshold = 0.95  # 95% coverage
+        # DP default 0.95 — but max coverage in 206 LeRobot teleop demos is
+        # 0.9489. So 0.95 is unreachable by humans + makes sparse-reward RL
+        # have zero signal. Lower (e.g. 0.85) for tractable sparse RL; keep
+        # 0.95 for parity with DP/literature reporting.
+        self.success_threshold = success_threshold
+        if coverage_shape not in ("linear", "log_barrier"):
+            raise ValueError(
+                f"Unknown coverage_shape {coverage_shape!r}. "
+                "Must be 'linear' or 'log_barrier'."
+            )
+        self.coverage_shape = coverage_shape
+        self.coverage_eps = coverage_eps
+        self.success_bonus = success_bonus
         self.reward_mode = reward_mode
         if reward_mode not in ("coverage", "sparse", "shaped", "approach", "dense", "contact_gated"):
             raise ValueError(
@@ -303,7 +322,14 @@ class PushTEnv(gym.Env):
         max_dist = 512 * np.sqrt(2)
         max_pos_err = 512.0  # rough upper bound
 
-        r_coverage    = coverage_clip                             # [0, 1]
+        # Coverage shaping — linear (default) or log_barrier.
+        # log_barrier: r = -log(1 - cov + ε). Unbounded but log-slow near goal;
+        # amplifies final-mile precision signal (cov=0.9 → 2.2, cov=0.99 → 3.9
+        # at ε=0.01). Standard interior-point barrier shape.
+        if self.coverage_shape == "log_barrier":
+            r_coverage = float(-np.log(1.0 - coverage_clip + self.coverage_eps))
+        else:
+            r_coverage = coverage_clip                            # [0, 1]
         r_pos         = 1.0 - min(block_to_goal / max_pos_err, 1.0)   # [0, 1]
         r_angle       = 1.0 - min(angle_err / np.pi, 1.0)             # [0, 1]
         r_approach    = 1.0 - min(pusher_to_block / max_dist, 1.0)    # [0, 1]
@@ -368,7 +394,7 @@ class PushTEnv(gym.Env):
                 + 0.15 * r_correct_side           # [-0.15, 0.15] — always on
                 + 0.3 * r_dir_gated               # [-0.3, 0.3] — IN contact
                 + 2.0 * r_angle_delta_gated       # telescopes, bounded
-                + (50.0 if is_success else 0.0)   # big success salience
+                + (self.success_bonus if is_success else 0.0)  # big success salience
             )
             self._prev_angle_err = angle_err
 
