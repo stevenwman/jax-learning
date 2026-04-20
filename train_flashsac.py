@@ -38,7 +38,7 @@ from jax_rl.training import (
 )
 from jax_rl.training.train_context import TrainContext
 from jax_rl.training.checkpointing import CheckpointManager
-from jax_rl.training.metrics_logger import wandb_init, wandb_setup_metrics, wandb_log, wandb_finish, log_terrain_metrics, print_curriculum_dump
+from jax_rl.training.metrics_logger import wandb_init, wandb_setup_metrics, wandb_log, wandb_finish, log_terrain_metrics, log_terrain_image, print_curriculum_dump
 from jax_rl.configs.env_presets import get_flash_sac_preset
 from jax_rl.utils.reward_scaling import init_reward_norm, update_reward_stats, scale_reward
 
@@ -353,7 +353,8 @@ def train(cfg: TrainConfig, algo_cfg: FlashSACConfig, seed: int = 0,
                 metrics_log.append(row)
                 terrain_metrics = log_terrain_metrics(env_state.info) if hasattr(env_state, "info") else {}
                 row.update(terrain_metrics)
-                wandb_log(row, step=total_steps)
+                img_dict = log_terrain_image(env_state.info) if hasattr(env_state, "info") else {}
+                wandb_log({**row, **img_dict}, step=total_steps)
 
                 # Console curriculum dump every ~50k env steps (bug-hunt diagnostic).
                 # Zero-op for non-curriculum envs.
