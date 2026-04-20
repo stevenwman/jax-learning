@@ -208,13 +208,22 @@ class WarpJoystickCurriculum(WarpJoystick):
         # body-frame cmd toward tile center. yaw_rate stays from parent's
         # Bernoulli sampler (random rotation = body-frame linvel DR). Both
         # linvel and yaw have per-episode zero-cmd DR flags.
+        #
+        # After reach (episode_reached_goal=True, stays True for rest of
+        # episode via OR accumulation), switch linvel cmd to zero. Robot
+        # stands still at goal with random yaw_rate (parent's Bernoulli) —
+        # naturally teaches "stop at target" and exercises yaw while
+        # stationary. Episode continues to truncation, not cut on reach.
         force_zero = state.info["force_zero_linvel"]
         force_zero_yaw = state.info["force_zero_yaw"]
 
         def _override(cmd):
+            # Read reached from current state.info (may have flipped in super.step)
+            reached = state.info["episode_reached_goal"]
+            zero_linvel = force_zero | reached
             body_vx, body_vy = self._goal_linvel_body(state)
-            new_vx = jp.where(force_zero, jp.float32(0.0), body_vx)
-            new_vy = jp.where(force_zero, jp.float32(0.0), body_vy)
+            new_vx = jp.where(zero_linvel, jp.float32(0.0), body_vx)
+            new_vy = jp.where(zero_linvel, jp.float32(0.0), body_vy)
             new_yaw = jp.where(force_zero_yaw, jp.float32(0.0), cmd[2])
             return cmd.at[0].set(new_vx).at[1].set(new_vy).at[2].set(new_yaw)
 
