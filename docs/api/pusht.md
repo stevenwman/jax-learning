@@ -255,6 +255,69 @@ Generate calibration figure: `PYTHONPATH=. uv run python tools/pusht_coverage_ca
 
 Also note pymunk CoG offset gotcha: `block.position = (256, 256)` is **NOT** the goal pose. The T's center of gravity is offset (0, 45) from body origin in body frame, so setting body position+angle leaves the actual world COG elsewhere. True identity state (for `reset_to_state`): `[agent_x, agent_y, 224.2, 242.8, π/4]` → coverage 0.9995.
 
+## Cross-shape extension (2026-04-20)
+
+PushTEnv defaults to the T block, but 4 additional shapes are implemented in `tools/record_pusht_shapes.py` for cross-shape transfer experiments: **ellipse**, **iso-triangle**, **letter S**, **letter U**.
+
+### Shape construction — annular sectors for concave letters
+
+pymunk's `Poly` requires **convex** vertices. Concave letters (S, U) decompose into fat ring segments:
+
+```python
+def _ring_polys(center, inner_r, outer_r, theta_start, theta_end, n):
+    """Annular sector → n convex wedge quads tangent to circles."""
+    thetas = np.linspace(theta_start, theta_end, n + 1)
+    return [[
+        (cx + inner_r * cos(t0), cy + inner_r * sin(t0)),
+        (cx + outer_r * cos(t0), cy + outer_r * sin(t0)),
+        (cx + outer_r * cos(t1), cy + outer_r * sin(t1)),
+        (cx + inner_r * cos(t1), cy + inner_r * sin(t1)),
+    ] for t0, t1 in zip(thetas[:-1], thetas[1:])]
+```
+
+| Shape | Decomposition | Convex pieces |
+|---|---|---|
+| Ellipse | single 32-vert poly | 1 |
+| Iso-triangle | single 3-vert poly | 1 |
+| Letter U | 180° half-ring + 2 rect arms | 10 + 2 = 12 |
+| Letter S | 2× 270° rings (rot-180 symm, overlapping middle) | 9 × 2 = **18** |
+
+Every wedge is tangent to a circle → **uniform curvature** across the shape, no kinks or tangent-mismatch artifacts. Design constraint: `inner_r > pusher_radius + margin` (gym-pusht pusher is 15 px; S / U use `inner_r ≈ 30 px`).
+
+### Shapely topology gotcha
+
+`_get_coverage` does `sg.MultiPolygon([s1, s2, ...]).intersection(goal).area` — **fails** on shapes whose convex pieces overlap (S has two overlapping rings by design):
+
+```
+GEOSException: TopologyException: side location conflict at (343.6, 274.2).
+```
+
+Root cause: overlapping MultiPolygon members produce self-intersecting geometry that GEOS flags as invalid. MultiPolygon is NOT "polygon with holes" semantics.
+
+Fixes:
+- **Training**: replace `MultiPolygon([...])` with `unary_union([...]).buffer(0)` in `pymunk_to_shapely`. `buffer(0)` heals seams into a single valid polygon.
+- **Recording / vibes**: catch the exception in `_get_coverage` → return 0. Used by `tools/record_pusht_shapes.py`.
+
+### Zero-shot transfer from T-only policy
+
+The `minimal_logbar` policy (`state + FS=1 + AR=2 + log_bar`, 0.939 sto on T) run on each new shape without retraining, single episode each:
+
+| Shape | Coverage (zero-shot) |
+|---|---|
+| tee (in-distribution) | 0.868 |
+| ellipse | 0.121 |
+| triangle | 0.025 |
+| U | 0.126 |
+| S | ~0 (coverage stubbed) |
+
+**This is a floor, not a baseline.** The 5d state obs carries `(agent_xy, block_xy, block_yaw)` — no shape info. Policy memorizes T-specific approach angles (dictated by T's asymmetric CoM vs bbox), and fails when applied to different geometries. To cross-shape-generalize, training needs either:
+
+1. Shape-aware obs (keypoints or contact history).
+2. Domain randomization over shape set during training.
+3. Shape-invariant task encoding (goal polygon as obs, not pose).
+
+Run with `uv run python tools/record_pusht_shapes.py` — saves `.temp/pusht_shape_{tee,ellipse,triangle,s,u}_rollout.mp4` for visual inspection.
+
 ## Comparison to `push_env.py`
 
 `jax_rl/envs/manipulation/push_env.py` is our custom shape-agnostic pushing benchmark for RL adaptability studies (train on T, zero-shot on L / circle / plus). Different purpose.

@@ -147,7 +147,7 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **Joint order ≠ actuator order — THE root cause** — unitree qpos is FL-first, ctrl is FR-first. PD applied FL torque to FR actuator. Robot fought itself. Hours of debugging PD/solver/entropy were all red herrings. ALWAYS verify ordering when using third-party MJCFs.
 - **"Stable" PD gains ≠ "trainable" PD gains** — Kp=10/Kd=1.0 holds the robot fine but trains 7x slower than Kp=20/Kd=0.5. Sluggish joint dynamics suppress the leg swings RL needs to find walking. Validate new PD gains with a training run, not a static hold test.
 
-## [Manipulation (Push-T)](lessons/manipulation.md) — 23 lessons
+## [Manipulation (Push-T)](lessons/manipulation.md) — 26 lessons
 
 - **Cylinder-box collisions need Warp** — MJX JAX backend raises `NotImplementedError`. Any manipulation env with cylinder pusher + box target is Warp-only.
 - **Tighten solref for manipulation contacts** — default `solref=0.02` (20ms) gives visible penetration; use `0.004 1` + `solimp="0.98 0.995 ..."` + `iterations=50 ls_iterations=10`.
@@ -172,6 +172,9 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **Action repeat is the dominant single knob on push-T RL** — stripping AR=2→1 collapses from 0.93 → 0.52 sto (−41pp). Larger effect than obs, reward shape, or frame stack combined. Contact-rich manipulation needs sustained directional force; AR=1 lets policy oscillate and kills push impulse. Test K∈{2,4,8} before tuning anything else. Action chunking (Q-chunking NeurIPS 2025) generalizes this.
 - **Minimal shape-agnostic config beats full stack under log_bar** — `state(5d) + FS=1 + AR=2 + log_bar + contact_gated` hits 0.94 sto (first success event observed), vs full-stack 18d+FS=3 at 0.93 sto. Richer obs adds input noise without useful velocity signal when reward is strong. Use minimal config as cross-shape baseline — 5d obs is shape-agnostic (agent_xy + block_xy + block_yaw).
 - **Bigger success bonus doesn't raise ceiling on unreachable thresholds** — 50→200 only tightened det policy (−5× std) because policy never crossed 0.95 threshold during training → never sampled the larger bonus. Verify terminals actually fire before tuning bonus magnitude. Otherwise the tuning is literally unused.
+- **Pymunk shapes: decompose concave letters into annular sectors** — pymunk requires convex `Poly`. Letter S built from 2× 270° fat rings (rot-180 symmetric, overlapping mid-strip, 18 convex wedge quads); letter U from 180° half-ring + 2 rectangles. Bezier-centerline ribbons produce "fins" at tight curvature; ring decomposition gives uniform curvature. Size shapes so `inner_r > pusher_r + margin` for reachable hook interiors.
+- **Shapely MultiPolygon fails on overlapping convex pieces** — `sg.MultiPolygon([s1, s2])` is not "polygon with holes"; overlapping members produce self-intersecting geometry → `GEOSException: TopologyException: side location conflict`. Fix: `unary_union([...]).buffer(0)` heals seams; or catch/stub for vibes-only rollouts. Don't assume pymunk→shapely round-trip yields valid geometry just because pymunk shapes are valid.
+- **Zero-shot cross-shape transfer is a floor, not a working baseline** — T-trained policy on 5d pose-only obs hits 0.12 cov on ellipse/U, 0.025 on triangle, ~0 on S (vs 0.87 on T). 5d obs `(agent_xy, block_xy, yaw)` has no shape info so policy memorizes T-specific approach angles. Cross-shape needs DR training over shape set OR shape-aware obs (keypoints, contact history). Zero-shot only verifies infra correctness.
 
 ## [Bongo Board Handstand](lessons/bongo.md) — 10 lessons
 

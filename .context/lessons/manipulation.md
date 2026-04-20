@@ -415,3 +415,79 @@ Minimal *beat* full stack. First success event (cov=0.9511, terminated at step 2
 Det tightened because Q near goal has less variance (policy converges to the same near-threshold trajectory), but the stochastic ceiling is set by the unreachable threshold, not the bonus magnitude.
 
 **Lesson:** before tuning success bonus, verify policy actually hits successful terminations during training. If terminal is never sampled, its magnitude is irrelevant to learning — only to offline analysis. Alternative: lower threshold until terminations happen during training (tradeoff: caps learning at the threshold).
+
+---
+
+## Pymunk Shape Construction — Decompose Concave Letters Into Convex Rings (2026-04-20)
+
+**What happened:** needed 4 new block shapes (ellipse, iso-triangle, letter S, letter U) for cross-shape benchmark. pymunk requires **convex** `Poly` geoms; letters S / U are concave. Early attempts at S used rotated rectangles along a bezier centerline — produced visible "fins" at hook tips (tangent rotates fast near tight curvature → quads poke perpendicular to curve).
+
+**Fix:** build concave letters as sets of **annular sectors** (fat C's). Each sector decomposed into wedge quads via:
+
+```python
+def _ring_polys(center, inner_r, outer_r, theta_start, theta_end, n):
+    thetas = np.linspace(theta_start, theta_end, n + 1)
+    return [[
+        (cx + inner_r * cos(t0), cy + inner_r * sin(t0)),
+        (cx + outer_r * cos(t0), cy + outer_r * sin(t0)),
+        (cx + outer_r * cos(t1), cy + outer_r * sin(t1)),
+        (cx + inner_r * cos(t1), cy + inner_r * sin(t1)),
+    ] for t0, t1 in zip(thetas[:-1], thetas[1:])]
+```
+
+- **Letter S**: two 270°-arc rings, rot-180 symmetric, overlapping in middle strip → smooth uniform-curvature S with 18 quads total. Thickness `outer_r - inner_r` controls stroke width; `inner_r` controls hook-interior radius (must be ≥ pusher radius for reachability).
+- **Letter U**: 180° half-ring + 2 rectangles (arms).
+- **Ellipse / triangle**: single convex `Poly` each (no decomposition needed).
+
+Every wedge is tangent to a circle → uniform curvature across the shape, no kinks or tangent-mismatch artifacts.
+
+**Design knobs:**
+- `n_per_ring` = 10 (30°/wedge) looks clean; 8 acceptable, 6 chunky.
+- Scale shape so `inner_r > pusher_radius + margin` (pusher 15 px, inner_r ≥ 22 → 7 px margin).
+- For letter hooks: trim the END wedge of each ring (reduce `theta_end` by ~30°) for tapered tip instead of squared terminal.
+
+**Lesson:** when pymunk's convexity constraint bites, reach for annular sectors before bezier ribbons. Circle-tangent decompositions produce much cleaner curves per poly count than curve-sampling approaches.
+
+---
+
+## Shapely TopologyException on Overlapping Convex Pieces (2026-04-20)
+
+**What happened:** after adding multi-piece block shapes (S = 18 overlapping quads, U = 10+2 polys), `_get_coverage` crashed:
+
+```
+shapely.errors.GEOSException: TopologyException: side location conflict
+at 343.55936998684041 274.20135325161755. This can occur if the
+input geometry is invalid.
+```
+
+**Root cause:** `pymunk_to_shapely` builds a `sg.MultiPolygon` from the convex pieces and calls `.intersection(goal_geom).area`. When pieces overlap (S has two overlapping rings by design), the MultiPolygon has self-intersections at overlap boundaries. GEOS rejects the geometry as invalid.
+
+**Fixes (in order of robustness):**
+1. **Union first, then intersect:** replace `MultiPolygon` with `unary_union(polygons).buffer(0)` — heals overlap seams into a single valid polygon. `buffer(0)` is a known GEOS idiom for fixing self-intersecting geometries.
+2. **Catch + stub:** try/except around `.intersection` → return 0. Fine for vibes-only tests where coverage doesn't drive learning. Used in `tools/record_pusht_shapes.py`.
+3. **Redesign shape**: decompose such that convex pieces don't overlap. Doubles the convex-piece count and breaks the elegant ring construction.
+
+**Lesson:** MultiPolygon is not the same as "polygon with holes" in GEOS. Overlapping convex pieces → invalid MultiPolygon. When porting T-specific coverage metric to multi-shape envs, wrap union with `buffer(0)` or catch the exception explicitly. Don't assume valid geometry from valid pymunk shapes.
+
+---
+
+## Zero-Shot Cross-Shape Transfer Is a Floor, Not a Baseline (2026-04-20)
+
+**What happened:** took `minimal_logbar` policy trained on T (5d state obs, 0.939 sto on T) and ran it on 4 new shapes (ellipse, triangle, S, U) without retraining. Coverage results:
+
+| Shape | Coverage |
+|---|---|
+| tee (in-distribution) | 0.868 |
+| ellipse | 0.121 |
+| triangle | 0.025 |
+| U | 0.126 |
+| S | ~0 (coverage stubbed) |
+
+**Why it fails:** the 5d state obs is `(agent_xy, block_xy, block_yaw)`. No shape information. Policy learned pushing strategies specific to T-geometry (e.g. which side to approach given the T's asymmetric CoM-vs-bbox). On a different shape, the same approach strategy pushes the wrong surface — block rotates unpredictably or moves perpendicular to goal.
+
+**Implication:** cross-shape generalization needs either:
+1. **Shape-aware obs** — pass shape ID or shape-specific keypoints. Kills 5d shape-agnostic property.
+2. **Domain randomization during training** — sample shapes per episode, force policy to learn "push-block-to-pose" as a shape-invariant skill rather than a T-specific one.
+3. **Contact-based obs** — pusher's contact history on the block's current surface (robot-relative, shape-invariant). Similar to what humans use.
+
+**Lesson:** zero-shot transfer from T-only training is the **floor** for cross-shape generalization, not a working baseline. Useful as a sanity check that infrastructure is correct (policy runs, renders, doesn't crash across all shapes), but not as a claim of generalization. Next step: DR training on mixed shapes.
