@@ -74,12 +74,18 @@ PRESETS["Go2WarpJoystickFlatTorqueSpeed"] = dataclasses.replace(
     PRESETS["Go2WarpJoystickFlat"], env_name="Go2WarpJoystickFlatTorqueSpeed"
 )
 
-# Curriculum variants — same hyperparams as Flat.
+# Curriculum variants — same hyperparams as Flat + per_step reset mode
+# (required: curriculum logic lives in TerrainCurriculumDRWrapper which
+# env_setup only applies when reset_mode == "per_step").
 PRESETS["Go2WarpJoystickCurriculum"] = dataclasses.replace(
-    PRESETS["Go2WarpJoystickFlat"], env_name="Go2WarpJoystickCurriculum"
+    PRESETS["Go2WarpJoystickFlat"],
+    env_name="Go2WarpJoystickCurriculum",
+    reset_mode="per_step",
 )
 PRESETS["Go2WarpJoystickCurriculumTorqueSpeed"] = dataclasses.replace(
-    PRESETS["Go2WarpJoystickFlat"], env_name="Go2WarpJoystickCurriculumTorqueSpeed"
+    PRESETS["Go2WarpJoystickFlat"],
+    env_name="Go2WarpJoystickCurriculumTorqueSpeed",
+    reset_mode="per_step",
 )
 
 
@@ -273,11 +279,11 @@ FAST_SAC_PRESETS["Go2WarpJoystickFlatTorqueSpeed"] = (
     _FAST_SAC_BASE_ALGO,
 )
 FAST_SAC_PRESETS["Go2WarpJoystickCurriculum"] = (
-    dataclasses.replace(_FAST_SAC_BASE_CFG, env_name="Go2WarpJoystickCurriculum"),
+    dataclasses.replace(_FAST_SAC_BASE_CFG, env_name="Go2WarpJoystickCurriculum", reset_mode="per_step"),
     _FAST_SAC_BASE_ALGO,
 )
 FAST_SAC_PRESETS["Go2WarpJoystickCurriculumTorqueSpeed"] = (
-    dataclasses.replace(_FAST_SAC_BASE_CFG, env_name="Go2WarpJoystickCurriculumTorqueSpeed"),
+    dataclasses.replace(_FAST_SAC_BASE_CFG, env_name="Go2WarpJoystickCurriculumTorqueSpeed", reset_mode="per_step"),
     _FAST_SAC_BASE_ALGO,
 )
 
@@ -364,11 +370,11 @@ FLASH_SAC_PRESETS["Go2WarpJoystickFlatTorqueSpeed"] = (
     _FLASH_SAC_BASE_ALGO,
 )
 FLASH_SAC_PRESETS["Go2WarpJoystickCurriculum"] = (
-    dataclasses.replace(_FLASH_SAC_BASE_CFG, env_name="Go2WarpJoystickCurriculum"),
+    dataclasses.replace(_FLASH_SAC_BASE_CFG, env_name="Go2WarpJoystickCurriculum", reset_mode="per_step"),
     _FLASH_SAC_BASE_ALGO,
 )
 FLASH_SAC_PRESETS["Go2WarpJoystickCurriculumTorqueSpeed"] = (
-    dataclasses.replace(_FLASH_SAC_BASE_CFG, env_name="Go2WarpJoystickCurriculumTorqueSpeed"),
+    dataclasses.replace(_FLASH_SAC_BASE_CFG, env_name="Go2WarpJoystickCurriculumTorqueSpeed", reset_mode="per_step"),
     _FLASH_SAC_BASE_ALGO,
 )
 

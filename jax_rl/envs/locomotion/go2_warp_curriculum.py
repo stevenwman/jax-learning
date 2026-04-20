@@ -153,6 +153,10 @@ class WarpJoystickCurriculum(WarpJoystick):
         state.info["episode_max_dist_from_spawn"] = jp.float32(0.0)
         state.info["episode_fallen"] = jp.bool_(False)
         state.info["target_speed"] = target_speed
+        # Class-A promote signal: mean body-frame linvel tracking error over
+        # the episode. Accumulated per step, used by TC wrapper at done.
+        state.info["episode_tracking_error_sum"] = jp.float32(0.0)
+        state.info["episode_step_count"] = jp.int32(0)
         force_zero_linvel = (
             jax.random.uniform(zero_rng, ()) < self._ZERO_LINVEL_PROB
         )
@@ -261,7 +265,9 @@ class WarpJoystickCurriculum(WarpJoystick):
         # Re-apply post-step (parent's sampler may have clobbered command).
         state.info["command"] = _override(state.info["command"])
 
-        # Episode tracking — both classes track fall + distance-from-spawn + reach
+        # Episode tracking — both classes track fall + distance-from-spawn.
+        # reach_goal is CLASS-B only (Class A has goal=spawn placeholder).
+        # tracking_error is CLASS-A promote signal.
         robot_xy = state.data.qpos[:2]
         dist_to_goal = jp.linalg.norm(robot_xy - state.info["goal_xy"])
         dist_from_spawn = jp.linalg.norm(robot_xy - state.info["spawn_xy"])
@@ -272,10 +278,20 @@ class WarpJoystickCurriculum(WarpJoystick):
         state.info["episode_max_dist_from_spawn"] = jp.maximum(
             state.info["episode_max_dist_from_spawn"], dist_from_spawn
         )
-        state.info["episode_reached_goal"] = state.info["episode_reached_goal"] | (
-            dist_to_goal < jp.float32(0.5)
-        )
+        # Class-B reach tracking (gated via is_goal; Class A stays False)
+        is_goal_step = jp.asarray(self._IS_GOAL_DIRECTED, dtype=jp.bool_)[tt]
+        new_reach = state.info["episode_reached_goal"] | (dist_to_goal < jp.float32(0.5))
+        state.info["episode_reached_goal"] = jp.where(is_goal_step, new_reach, jp.bool_(False))
         state.info["episode_fallen"] = state.done.astype(jp.bool_)
+
+        # Class-A tracking quality: accumulate |cmd - actual_linvel| in body frame.
+        actual_body_linvel = self.get_local_linvel(state.data)[:2]
+        cmd_body_linvel = state.info["command"][:2]
+        step_tracking_err = jp.linalg.norm(cmd_body_linvel - actual_body_linvel)
+        state.info["episode_tracking_error_sum"] = (
+            state.info["episode_tracking_error_sum"] + step_tracking_err
+        )
+        state.info["episode_step_count"] = state.info["episode_step_count"] + jp.int32(1)
 
         return state
 
