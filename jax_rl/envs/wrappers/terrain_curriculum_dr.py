@@ -94,7 +94,7 @@ class TerrainCurriculumDRWrapper(DomainRandWrapper):
 
         # Override info fields
         initial_dist = jp.linalg.norm(spawn_xys - goal_xys, axis=-1)
-        target_speed = 0.5 + initial_levels.astype(jp.float32) / (self._num_rows - 1) * 1.0
+        target_speed = 0.5 + initial_levels.astype(jp.float32) / (self._num_rows - 1) * 0.5
 
         state.info["terrain_type"] = fixed_types
         state.info["terrain_level"] = initial_levels
@@ -187,7 +187,7 @@ class TerrainCurriculumDRWrapper(DomainRandWrapper):
 
         # Override info fields
         new_initial_dist = jp.linalg.norm(new_spawn_xys - new_goal_xys, axis=-1)
-        new_speed = 0.5 + new_level.astype(jp.float32) / (self._num_rows - 1) * 1.0
+        new_speed = 0.5 + new_level.astype(jp.float32) / (self._num_rows - 1) * 0.5
 
         state.info["terrain_level"] = jp.where(done_bool, new_level, prev_level)
         state.info["terrain_type"] = prev_type  # always preserved

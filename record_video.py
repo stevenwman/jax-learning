@@ -271,7 +271,7 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
             env_state.info["episode_min_distance"] = env_state.info["initial_distance"]
             env_state.info["episode_fallen"] = jnp.bool_(False)
             env_state.info["target_speed"] = jnp.float32(
-                0.5 + tl / max(1, base_env._num_rows - 1) * 1.0
+                0.5 + tl / max(1, base_env._num_rows - 1) * 0.5
             )
             if force_zero_linvel:
                 env_state.info["force_zero_linvel"] = jnp.bool_(True)

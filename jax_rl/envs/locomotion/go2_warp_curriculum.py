@@ -33,6 +33,11 @@ def default_config() -> config_dict.ConfigDict:
     cfg = _warp_default_config()
     cfg.torque_speed_model = False
     cfg.terrain_seed = 0
+    # Stronger action-rate penalty to discourage spiky actions on terrain.
+    # Video analysis (2026-04-20) showed action saturation + velocity overshoot
+    # preceding flips on pyramid_up L1 / pyramid_down L3. 5× stronger penalty
+    # (was -0.01 from WarpJoystick default) encourages smoother gait.
+    cfg.reward_config.scales.action_rate = -0.05
     # Terrain grid has ~1500 geoms (vs ~100 for flat). Warp emits "nefc overflow
     # - please increase njmax" at init; safe to ignore — sim functions at
     # defaults (njmax=100, naconmax=32768). Bumping higher causes VRAM OOM.
@@ -138,7 +143,7 @@ class WarpJoystickCurriculum(WarpJoystick):
         state = state.replace(data=state.data.replace(qpos=new_qpos))
 
         # Curriculum bookkeeping
-        target_speed = 0.5 + terrain_level.astype(jp.float32) / (self._num_rows - 1) * 1.0
+        target_speed = 0.5 + terrain_level.astype(jp.float32) / (self._num_rows - 1) * 0.5
         initial_distance = jp.linalg.norm(spawn_world_xy - goal_world_xy)
 
         is_goal = jp.asarray(self._IS_GOAL_DIRECTED, dtype=jp.bool_)[terrain_type]
