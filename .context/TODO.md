@@ -15,7 +15,7 @@
 - [x] Frame stack utility (`jax_rl/utils/frame_stack.py`) — shared by Go2 and vision RL
 
 ## Completed (2026-03-23)
-- [x] Go2 env (`jax_rl/envs/locomotion/go2_joystick.py`) — MjxEnv subclass, dict obs (48d state + 116d privileged), 16 reward terms, 12 tests pass
+- [x] Go2 env (`jax_rl/envs/locomotion/go2_joystick.py` — deleted 2026-04-09) — MjxEnv subclass, dict obs (48d state + 116d privileged), 16 reward terms, 12 tests pass
 - [x] env_setup.py → unified registry loading (Go2 + DM Control Suite both work)
 - [x] Go2 PPO preset in env_presets.py (1024 envs, gamma=0.97)
 
@@ -44,8 +44,18 @@
 
 ## Active
 - [x] **Terrain curriculum (Phases 1-4)** — 2026-04-17. 4 types × 10 levels grid, goal-directed commands, binary reach/fall advancement. Tests pass (42 primitives + generator, 9 env, 7 wrapper, 3 metrics). Presets wired for PPO/FastSAC/FlashSAC.
-- [ ] **Validate terrain curriculum in full training run** — 20M+ step run, confirm `terrain/global/mean_level` climbs 0→N over training.
+- [x] **Curriculum fix marathon** (2026-04-20) — 8 fixes + unified redesign. Commits 07679e6, 7afadee, 8463b17, ceb72c2. See `.context/journals/2026-04-20.md`. Pilot v5 (5M) advancing at 4× v3 pace with unified rim-to-center design.
+  1. Fall detect via `truncation` (episode_fallen wiped by where_done)
+  2. 15% force_zero_linvel DR flag
+  3. force_zero_yaw DR (0.5/0.15)
+  4. Contact-based termination (`base_contact` sensor replaces world-frame base_z<0.18)
+  5. Preset `reset_mode="per_step"` default (TC wrapper was silently not applied)
+  6. Class-A tracking-error promote (obsoleted by #7)
+  7. Unified goal-directed (all 4 types spawn rim, goal center; single promote/demote rule; rotating body frame = free omnidirectional linvel DR)
+  8. Zero linvel after reach (stand/spin at goal for rest of episode)
+- [ ] **Validate terrain curriculum in full 20M run** — pilot v5 (5M) climbing steadily; need 20M to see mean_level plateau / ceiling.
 - [ ] **Fix eval OOM on curriculum env** — separate Warp graph capture doubles VRAM. Options: `XLA_PYTHON_CLIENT_PREALLOCATE=false`, reuse training graph, or skip final eval.
+- [ ] **Reduce num_rows 10→5** — halves geom count (~1500→750), potentially enables num_envs=64 on 16GB. Coarser curriculum steps but 2× throughput. Try after 20M baseline.
 - [ ] **Push-force curriculum** — follow-up plan, combine with torque-speed variant.
 - [x] **Re-benchmark Fast*/Flash* post-truncation-fix** (2026-04-13) — done. WandB project: `jax-rl-post-truncation-fix`. Results in AGENT_HANDOFF benchmark table.
   - FastTD3 CheetahRun 5M: 515.9
@@ -71,6 +81,7 @@
 - [ ] **Ablate v9 knobs** — currently 6 stacked changes. Strip to find minimum. Likely TimeLimit + frame_stack are core; others 1-2% each.
 - [ ] **Test sparse-coverage-only with TimeLimit** — maybe sparse reward alone works now that infra is right. One run to check.
 - [ ] **BC pretrain → RL fine-tune on PushTEnv** — recipe from DP paper. Dataset bundled at `pusht/demos/pusht_demos.npz`. Probably gets past 95% threshold.
+- [ ] **Action chunking for off-policy RL (revisit w/ flow-matching)** — K-step action chunks instead of single action. SAC mods needed: (1) actor outputs K·d flat or autoregressive, (2) exec K-step open-loop, (3) K-step returns for TD target `y = Σγⁱrᵢ + γᵏQ(s_{t+K}, a'_{1:K})`, (4) critic `Q(s, a_{1:K})`, (5) buffer stores chunked tuples, (6) target entropy scales with K. Nuance: independent Gaussian per step breaks action correlation → needs flow-matching or diffusion actor for proper chunking (Q-chunking NeurIPS 2025 uses FQL for this reason). Our current `action_repeat=2` is degenerate K=2 shared-action chunk — probably the floor. References: RL-with-Action-Chunking ([arxiv.org/abs/2507.07969](https://arxiv.org/abs/2507.07969)), Q-LAC (ICML 2025), Bidirectional Decoding (ICLR 2025). Plan to revisit once flow-matching off-policy infra lands.
 - [ ] **Cross-shape transfer eval** — train PushT_Pos_Shaped (our `push_env.py`) on T, zero-shot eval on L/Circle/Plus. Adaptability benchmark axis, separate from gym-pusht work.
 - [ ] **Remove gym-pusht from pip deps?** — vendored version is primary. Keep pip for parity test only.
 - [ ] **Add FastSAC preset for push-T** — in `env_presets.py`. Small networks (16d obs → 64/64 actor, 128/128 critic probably enough).
@@ -102,8 +113,8 @@
 
 ## Short-term — Go2 robustness (ACTIVE)
 - [x] Domain rand (Tier 1) — friction, mass, COM, armature, frictionloss. Now declared via `get_domain_randomization_spec()` on the env, applied by `DomainRandWrapper` when `--reset-mode per_step`. (Legacy `go2_randomize.py` + `--domain-rand` path removed 2026-04-09.)
-- [x] CPU sister env — `go2_cpu.py`, same MJCF + overrides, CPU mj_step. Policy walks 3s.
-- [x] Velocity kicks — ±0.75 m/s every 350 steps, already in go2_joystick.py step()
+- [x] CPU sister env — `go2_cpu.py` (deleted 2026-04-09), same MJCF + overrides, CPU mj_step. Policy walks 3s.
+- [x] Velocity kicks — ±0.75 m/s every 350 steps, was in MJX `go2_joystick.py` (deleted 2026-04-09); superseded by `domain_rand.py` + Warp env.
 - [x] Motor strength DR — ×U(0.9, 1.1) via actuator_gainprm scaling
 - [x] Friction DR fix — randomize ALL geoms (MuJoCo max-combine), range [0.3, 1.5]
 - [x] Action delay — `ActionDelayWrapper` (120ms FIFO), `--action-delay-ms` / `--action-delay-range-ms` CLI flags. Config-driven wrapper pipeline.
@@ -112,8 +123,8 @@
 - [x] Go2 SAC Phase B — FastSAC eval 226. Off-policy validated on Go2.
 
 ## Short-term — Cleanup
-- [x] Consolidate off-policy train scripts → `train_offpolicy.py --algo sac|td3|fast_td3|fast_sac` (commit 14a17df)
-- [x] Extract shared loop → `run_offpolicy_loop` helper (2026-04-12). Per-algo scripts (`train_sac.py`, `train_td3.py`, `train_fast_sac.py`, `train_fast_td3.py`) are now ~60-line thin wrappers. `train_offpolicy.py` archived. FlashSAC stays standalone.
+- [x] Consolidate off-policy train scripts → unified dispatcher (commit 14a17df, later moved to `archive/train_offpolicy.py`).
+- [x] Extract shared loop → `run_offpolicy_loop` helper (2026-04-12). Per-algo scripts (`train_sac.py`, `train_td3.py`, `train_fast_sac.py`, `train_fast_td3.py`) are thin wrappers (~110–130 lines each; grew from ~60 at split). Unified dispatcher moved to `archive/train_offpolicy.py`. FlashSAC stays standalone.
 - [x] **Truncation bug fix (2026-04-12)** — FastSAC/FastTD3/FlashSAC were teaching `Q=r` at timeout steps (no loss mask). Now matches SAC/TD3 Brax convention: `target = r + γ(1-done)V_next`, `loss *= (1 - truncation)`. Systematic underestimation on long-horizon tasks should be gone. See `lessons/offpolicy.md` and `lessons/distributional.md` §3.
 - [x] Drop dead `handle_truncation` constructor arg from 5 off-policy algos (was stored on `self`, never read). The real switch is `cfg.handle_truncation` in the training loop.
 - [x] Integration debt — 7/7 resolved (select_action_eval, asymmetric PPO test, etc.)
@@ -200,7 +211,7 @@
 - [ ] Shampoo / other second-order optimizers — evaluate if Muon shows promise on RL
 
 ## Short-term — MJX archival
-- [ ] Archive MJX Go2 env (go2_base, go2_joystick, go2_cpu, record_video_cpu) + doc cleanup. Spec: `docs/superpowers/specs/2026-04-06-archive-mjx-go2.md`
+- [x] MJX Go2 env deleted 2026-04-09 (go2_base.py, go2_joystick.py, go2_cpu.py removed outright; record_video_cpu.py moved to `archive/`). Doc cleanup done 2026-04-20 (audit `.context/tmp/audit_2026-04-19.md`). Spec: `docs/superpowers/specs/2026-04-06-archive-mjx-go2.md`.
 
 ## Mid-term — DR wrapper v2
 
