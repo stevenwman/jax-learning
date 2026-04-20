@@ -150,13 +150,8 @@ class WarpJoystickCurriculum(WarpJoystick):
         state.info["initial_distance"] = initial_distance
         state.info["episode_reached_goal"] = jp.bool_(False)
         state.info["episode_min_distance"] = initial_distance
-        state.info["episode_max_dist_from_spawn"] = jp.float32(0.0)
         state.info["episode_fallen"] = jp.bool_(False)
         state.info["target_speed"] = target_speed
-        # Class-A promote signal: mean body-frame linvel tracking error over
-        # the episode. Accumulated per step, used by TC wrapper at done.
-        state.info["episode_tracking_error_sum"] = jp.float32(0.0)
-        state.info["episode_step_count"] = jp.int32(0)
         force_zero_linvel = (
             jax.random.uniform(zero_rng, ()) < self._ZERO_LINVEL_PROB
         )
@@ -171,43 +166,15 @@ class WarpJoystickCurriculum(WarpJoystick):
 
         return state
 
-    # Per-column classification. True = goal-directed (body-frame linvel cmd
-    # overridden toward goal). False = "locomotion robustness" — keep parent's
-    # Bernoulli-random linvel, no goal override. Indexed by terrain_type.
-    #   col 0 rough, col 1 pyramid_up, col 2 pyramid_down, col 3 tilted
-    _IS_GOAL_DIRECTED = (False, True, True, False)
+    # All 4 types are goal-directed: spawn on rim, walk to tile center.
+    # Holonomic body-frame cmd; random yaw (parent's Bernoulli) + goal direction
+    # together produce omnidirectional linvel DR in body frame — as yaw rotates,
+    # the goal-directed cmd_vx/vy rotate through all body-frame directions.
+    _IS_GOAL_DIRECTED = (True, True, True, True)
 
     def _sample_spawn_goal(self, terrain_type, tile_size, spawn_rng, yaw_rng):
-        """Dispatch on terrain_type via lax.switch. Returns (spawn_local, goal_local, yaw).
-
-        For non-goal-directed types (rough, tilted) goal_local is set to spawn_local
-        so distance tracking doesn't produce weird numbers; the goal isn't actually
-        used by the policy (goal-override is gated off for these types).
-        """
-        branches = [
-            lambda r: self._center_spawn(r, yaw_rng, tile_size),   # col 0: Rough
-            lambda r: self._rim_to_center(r, yaw_rng, tile_size),  # col 1: PyramidStairs
-            lambda r: self._rim_to_center(r, yaw_rng, tile_size),  # col 2: InvertedPyramid
-            lambda r: self._center_spawn(r, yaw_rng, tile_size),   # col 3: TiltedGrid
-        ]
-        return jax.lax.switch(terrain_type, branches, spawn_rng)
-
-    def _center_spawn(self, rng, yaw_rng, tile_size):
-        """Spawn near tile center with small xy jitter. 'Goal' = spawn (unused for these types).
-
-        Used for rough + tilted where success = stayed upright while following random
-        Bernoulli linvel commands. No directed navigation.
-        """
-        dx_rng, dy_rng = jax.random.split(rng)
-        hx = tile_size[0] / 2.0
-        hy = tile_size[1] / 2.0
-        # Small jitter (±20% of half-tile) so per-episode spawn isn't identical.
-        dx = jax.random.uniform(dx_rng, (), minval=-0.2 * hx, maxval=0.2 * hx)
-        dy = jax.random.uniform(dy_rng, (), minval=-0.2 * hy, maxval=0.2 * hy)
-        spawn = jp.array([dx, dy, jp.float32(0.3)])
-        goal = jp.array([dx, dy, jp.float32(0.0)])  # placeholder; unused
-        yaw = jax.random.uniform(yaw_rng, (), minval=-jp.pi, maxval=jp.pi)
-        return spawn, goal, yaw
+        """Rim-to-center spawn for all terrain types. Returns (spawn_local, goal_local, yaw)."""
+        return self._rim_to_center(spawn_rng, yaw_rng, tile_size)
 
     def _rim_to_center(self, rng, yaw_rng, tile_size):
         """Spawn on outer TILE EDGE (not rim-circle), goal at tile center.
@@ -237,24 +204,17 @@ class WarpJoystickCurriculum(WarpJoystick):
     # ── Task 2.4: goal-directed step ────────────────────────────────────────
 
     def step(self, state: mjx_env.State, action: jax.Array) -> mjx_env.State:
-        # Class A (rough, tilted): NO override — keep parent's Bernoulli linvel.
-        #   Success = survive + travel ≥ 2m.
-        # Class B (pyramid, inv): override vx, vy with holonomic goal command.
-        #   Success = reach goal within goal_radius.
-        # Gate via mask indexed on terrain_type (both branches traced by JAX).
-        tt = state.info["terrain_type"]
-        is_goal = jp.asarray(self._IS_GOAL_DIRECTED, dtype=jp.bool_)[tt]
+        # Unified (all types goal-directed): override vx, vy with holonomic
+        # body-frame cmd toward tile center. yaw_rate stays from parent's
+        # Bernoulli sampler (random rotation = body-frame linvel DR). Both
+        # linvel and yaw have per-episode zero-cmd DR flags.
         force_zero = state.info["force_zero_linvel"]
         force_zero_yaw = state.info["force_zero_yaw"]
 
         def _override(cmd):
             body_vx, body_vy = self._goal_linvel_body(state)
-            # is_goal: use holonomic body command toward goal
-            # ~is_goal & force_zero (Class A standstill): zero out vx/vy
-            # ~is_goal & ~force_zero: keep parent's Bernoulli cmd[0], cmd[1]
-            new_vx = jp.where(is_goal, body_vx, jp.where(force_zero, jp.float32(0.0), cmd[0]))
-            new_vy = jp.where(is_goal, body_vy, jp.where(force_zero, jp.float32(0.0), cmd[1]))
-            # force_zero_yaw gates cmd[2] regardless of class
+            new_vx = jp.where(force_zero, jp.float32(0.0), body_vx)
+            new_vy = jp.where(force_zero, jp.float32(0.0), body_vy)
             new_yaw = jp.where(force_zero_yaw, jp.float32(0.0), cmd[2])
             return cmd.at[0].set(new_vx).at[1].set(new_vy).at[2].set(new_yaw)
 
@@ -265,33 +225,17 @@ class WarpJoystickCurriculum(WarpJoystick):
         # Re-apply post-step (parent's sampler may have clobbered command).
         state.info["command"] = _override(state.info["command"])
 
-        # Episode tracking — both classes track fall + distance-from-spawn.
-        # reach_goal is CLASS-B only (Class A has goal=spawn placeholder).
-        # tracking_error is CLASS-A promote signal.
+        # Episode tracking: reach (within 0.5m of goal) + min distance.
         robot_xy = state.data.qpos[:2]
         dist_to_goal = jp.linalg.norm(robot_xy - state.info["goal_xy"])
-        dist_from_spawn = jp.linalg.norm(robot_xy - state.info["spawn_xy"])
 
         state.info["episode_min_distance"] = jp.minimum(
             state.info["episode_min_distance"], dist_to_goal
         )
-        state.info["episode_max_dist_from_spawn"] = jp.maximum(
-            state.info["episode_max_dist_from_spawn"], dist_from_spawn
+        state.info["episode_reached_goal"] = state.info["episode_reached_goal"] | (
+            dist_to_goal < jp.float32(0.5)
         )
-        # Class-B reach tracking (gated via is_goal; Class A stays False)
-        is_goal_step = jp.asarray(self._IS_GOAL_DIRECTED, dtype=jp.bool_)[tt]
-        new_reach = state.info["episode_reached_goal"] | (dist_to_goal < jp.float32(0.5))
-        state.info["episode_reached_goal"] = jp.where(is_goal_step, new_reach, jp.bool_(False))
         state.info["episode_fallen"] = state.done.astype(jp.bool_)
-
-        # Class-A tracking quality: accumulate |cmd - actual_linvel| in body frame.
-        actual_body_linvel = self.get_local_linvel(state.data)[:2]
-        cmd_body_linvel = state.info["command"][:2]
-        step_tracking_err = jp.linalg.norm(cmd_body_linvel - actual_body_linvel)
-        state.info["episode_tracking_error_sum"] = (
-            state.info["episode_tracking_error_sum"] + step_tracking_err
-        )
-        state.info["episode_step_count"] = state.info["episode_step_count"] + jp.int32(1)
 
         return state
 

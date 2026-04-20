@@ -96,19 +96,15 @@ class TerrainCurriculumDRWrapper(DomainRandWrapper):
         initial_dist = jp.linalg.norm(spawn_xys - goal_xys, axis=-1)
         target_speed = 0.5 + initial_levels.astype(jp.float32) / (self._num_rows - 1) * 1.0
 
-        _IS_GOAL = jp.asarray([False, True, True, False])
         state.info["terrain_type"] = fixed_types
         state.info["terrain_level"] = initial_levels
-        state.info["is_goal_directed"] = _IS_GOAL[fixed_types]
+        state.info["is_goal_directed"] = jp.ones(self._num_envs, dtype=jp.bool_)
         state.info["goal_xy"] = goal_xys
         state.info["spawn_xy"] = spawn_xys
         state.info["initial_distance"] = initial_dist
         state.info["episode_reached_goal"] = jp.zeros(self._num_envs, dtype=jp.bool_)
         state.info["episode_min_distance"] = initial_dist
-        state.info["episode_max_dist_from_spawn"] = jp.zeros(self._num_envs, dtype=jp.float32)
         state.info["episode_fallen"] = jp.zeros(self._num_envs, dtype=jp.bool_)
-        state.info["episode_tracking_error_sum"] = jp.zeros(self._num_envs, dtype=jp.float32)
-        state.info["episode_step_count"] = jp.zeros(self._num_envs, dtype=jp.int32)
         state.info["target_speed"] = target_speed
 
         # Note: force_zero_linvel is already sampled per-env by the inner env's
@@ -132,12 +128,8 @@ class TerrainCurriculumDRWrapper(DomainRandWrapper):
         prev_level = state.info["terrain_level"]
         prev_type = state.info["terrain_type"]
         prev_reached = state.info["episode_reached_goal"]
-        prev_fallen = state.info["episode_fallen"]
         prev_min_dist = state.info["episode_min_distance"]
         prev_initial_dist = state.info["initial_distance"]
-        prev_max_dist_from_spawn = state.info["episode_max_dist_from_spawn"]
-        prev_tracking_err_sum = state.info["episode_tracking_error_sum"]
-        prev_step_count = state.info["episode_step_count"]
 
         # Save and strip TC wrapper state so tree_map in super doesn't see it
         # (reset_state from inner env won't have these keys → tree mismatch)
@@ -160,32 +152,12 @@ class TerrainCurriculumDRWrapper(DomainRandWrapper):
         truncation = state.info["truncation"]
         fall_at_done = (done > 0) & (truncation < 0.5)
 
-        # Dual-class advancement:
-        # Class B (goal-directed, pyramid/inv): reached → promote; fall OR
-        #   no-progress-to-goal → demote
-        # Class A (locomotion robustness, rough/tilted): survived + moved ≥ 2m
-        #   → promote; fell OR didn't move → demote
-        _IS_GOAL = jp.asarray([False, True, True, False])
-        is_goal = _IS_GOAL[prev_type]
-
-        # Class B logic
+        # Unified advancement (all types goal-directed, rim-to-center):
+        # reached → promote; fall OR no-progress-to-goal → demote
         reached = prev_reached
-        no_progress_B = (~reached) & (~fall_at_done) & (prev_min_dist > 0.5 * prev_initial_dist)
-        promote_B = reached & (~fall_at_done)
-        demote_B = fall_at_done | no_progress_B
-
-        # Class A logic: locomotion robustness = tracked cmd velocity well on
-        # uneven/tilted ground. Uses body-frame linvel error averaged over
-        # the episode. 0.3 m/s ≈ 25% of typical cmd magnitude = "decent track".
-        mean_tracking_err = prev_tracking_err_sum / jp.maximum(
-            prev_step_count.astype(jp.float32), jp.float32(1.0)
-        )
-        tracked_well = mean_tracking_err < jp.float32(0.3)
-        promote_A = (~fall_at_done) & tracked_well
-        demote_A = fall_at_done | (~tracked_well)
-
-        promote = jp.where(is_goal, promote_B, promote_A) & (done > 0)
-        demote = jp.where(is_goal, demote_B, demote_A) & (done > 0)
+        no_progress = (~reached) & (~fall_at_done) & (prev_min_dist > 0.5 * prev_initial_dist)
+        promote = reached & (~fall_at_done) & (done > 0)
+        demote = (fall_at_done | no_progress) & (done > 0)
 
         delta = promote.astype(jp.int32) - demote.astype(jp.int32)
         new_level = jp.clip(prev_level + delta, 0, self._num_rows - 1)
@@ -234,17 +206,8 @@ class TerrainCurriculumDRWrapper(DomainRandWrapper):
         state.info["episode_min_distance"] = jp.where(
             done_bool, new_initial_dist, state.info["episode_min_distance"]
         )
-        state.info["episode_max_dist_from_spawn"] = jp.where(
-            done_bool, jp.float32(0.0), state.info["episode_max_dist_from_spawn"]
-        )
         state.info["episode_fallen"] = jp.where(
             done_bool, jp.bool_(False), state.info["episode_fallen"]
-        )
-        state.info["episode_tracking_error_sum"] = jp.where(
-            done_bool, jp.float32(0.0), state.info["episode_tracking_error_sum"]
-        )
-        state.info["episode_step_count"] = jp.where(
-            done_bool, jp.int32(0), state.info["episode_step_count"]
         )
         state.info["target_speed"] = jp.where(
             done_bool, new_speed, state.info["target_speed"]

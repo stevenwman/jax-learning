@@ -71,21 +71,12 @@ def test_goal_xy_is_2d(make_wrapped_env):
     assert state.info["goal_xy"].shape == (4, 2)
 
 
-def test_initial_distance_positive_for_goal_directed(make_wrapped_env):
-    """initial_distance should be positive for goal-directed types (pyramid_up / pyramid_down).
-
-    Class-A types (rough, tilted) spawn at tile center with goal = spawn placeholder,
-    so their initial_distance may be ≈ 0 by design.
-    """
+def test_initial_distance_positive(make_wrapped_env):
+    """All types spawn rim-to-center → initial_distance should be > 0 for every env."""
     env = make_wrapped_env
     state = env.reset(jax.random.split(jax.random.PRNGKey(0), 4))
-    types = state.info["terrain_type"]
     dists = state.info["initial_distance"]
-    # Types 1 (pyramid_up) and 2 (pyramid_down) are goal-directed
-    is_goal = (types == 1) | (types == 2)
-    goal_dists = dists[is_goal]
-    if goal_dists.shape[0] > 0:
-        assert (goal_dists > 0).all(), f"BUG: goal-directed envs had zero initial_distance: {goal_dists}"
+    assert (dists > 0).all(), f"BUG: zero initial_distance: {dists}"
 
 
 # ── Fall detection + zero-cmd fixes (2026-04-19) ────────────────────────
@@ -200,7 +191,7 @@ def test_force_zero_yaw_conditional_frequency():
         )
 
 
-def test_force_zero_linvel_zeros_class_A_command():
+def test_force_zero_linvel_zeros_command():
     """Class A env with force_zero_linvel=True should have cmd[0]=cmd[1]=0 after step."""
     from jax_rl.envs.locomotion.go2_warp_curriculum import WarpJoystickCurriculum
     from jax_rl.envs.wrappers.terrain_curriculum_dr import TerrainCurriculumDRWrapper
@@ -215,14 +206,7 @@ def test_force_zero_linvel_zeros_class_A_command():
     state = wrapped.step(state, jnp.zeros((4, 12)))
 
     cmd = state.info["command"]
-    types = state.info["terrain_type"]
-    # Class A (rough=0, tilted=3): vx, vy must be zero
-    is_class_a = (types == 0) | (types == 3)
-    if is_class_a.any():
-        assert jnp.all(cmd[is_class_a, 0] == 0.0), f"Class A vx not zero: {cmd[is_class_a, 0]}"
-        assert jnp.all(cmd[is_class_a, 1] == 0.0), f"Class A vy not zero: {cmd[is_class_a, 1]}"
-    # Class B unaffected by force_zero — still gets holonomic goal cmd
-    is_class_b = (types == 1) | (types == 2)
-    if is_class_b.any():
-        mag = jnp.sqrt(cmd[is_class_b, 0] ** 2 + cmd[is_class_b, 1] ** 2)
-        assert jnp.all(mag > 0.1), f"Class B cmd unexpectedly zero: {cmd[is_class_b]}"
+    # Unified design: force_zero_linvel zeros cmd_vx/cmd_vy for ALL envs
+    # (all types are goal-directed; force_zero overrides the holonomic cmd).
+    assert jnp.all(cmd[:, 0] == 0.0), f"vx not zero: {cmd[:, 0]}"
+    assert jnp.all(cmd[:, 1] == 0.0), f"vy not zero: {cmd[:, 1]}"
