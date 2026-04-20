@@ -54,7 +54,7 @@
   7. Unified goal-directed (all 4 types spawn rim, goal center; single promote/demote rule; rotating body frame = free omnidirectional linvel DR)
   8. Zero linvel after reach (stand/spin at goal for rest of episode)
 - [ ] **Validate terrain curriculum in full 20M run** — pilot v5 (5M) climbing steadily; need 20M to see mean_level plateau / ceiling.
-- [ ] **Fix eval OOM on curriculum env** — separate Warp graph capture doubles VRAM. Options: `XLA_PYTHON_CLIENT_PREALLOCATE=false`, reuse training graph, or skip final eval.
+- [x] **Investigate eval OOM on curriculum env** (2026-04-20) — **non-issue**. Probed directly: Warp compiles kernels per-env-class, not per-instance. Both `WarpJoystickCurriculum` instances share the cache. Total curriculum VRAM at num_envs=32: ~500 MiB (train+eval combined). Historic eval OOMs were from num_envs=64 + training buffer pressure, not eval-env-specific. See journal 2026-04-20.
 - [ ] **Reduce num_rows 10→5** — halves geom count (~1500→750), potentially enables num_envs=64 on 16GB. Coarser curriculum steps but 2× throughput. Try after 20M baseline.
 - [ ] **Push-force curriculum** — follow-up plan, combine with torque-speed variant.
 - [x] **Re-benchmark Fast*/Flash* post-truncation-fix** (2026-04-13) — done. WandB project: `jax-rl-post-truncation-fix`. Results in AGENT_HANDOFF benchmark table.
