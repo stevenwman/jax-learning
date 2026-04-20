@@ -108,7 +108,6 @@ nav:
     - api/index.md
     - Algorithms: api/algos.md
     - Environments: api/envs.md
-    - Push Environments: api/push-env.md
     - PushT (vendored DP): api/pusht.md
     - Configs: api/configs.md
     - Buffers: api/buffers.md

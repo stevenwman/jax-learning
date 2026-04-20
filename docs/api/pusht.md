@@ -318,19 +318,6 @@ The `minimal_logbar` policy (`state + FS=1 + AR=2 + log_bar`, 0.939 sto on T) ru
 
 Run with `uv run python tools/record_pusht_shapes.py` — saves `.temp/pusht_shape_{tee,ellipse,triangle,s,u}_rollout.mp4` for visual inspection.
 
-## Comparison to `push_env.py`
-
-`jax_rl/envs/manipulation/push_env.py` is our custom shape-agnostic pushing benchmark for RL adaptability studies (train on T, zero-shot on L / circle / plus). Different purpose.
-
-| | PushTEnv (vendored) | PushEnv (ours) |
-|---|---|---|
-| Purpose | DP paper parity, BC comparisons | Shape-transfer adaptability benchmark |
-| Backend | pymunk 2D (CPU, single-env) | MuJoCo Warp (GPU, 1024+ envs vmap) |
-| Shapes | T only | T, L, circle, plus (swap via config) |
-| Obs | 5d state (DP) or pixels 96×96 | 16d state (pusher+block+vels+last_act) |
-| Action modes | Position-PD (fixed) | Position-PD / velocity-delta / teleport |
-| Reward modes | 4 (coverage/sparse/shaped/approach) | 3 (dense/sparse/shaped with 7 components) |
-| Expert demos | 206 teleops bundled | None |
-| Throughput | ~2k sps single process | 360k sps @ 1024 envs |
-
-Rule of thumb: **vendored pusht** for publishing numbers comparable to DP; **push_env** for large-batch GPU RL research.
+(Previous `push_env.py` MuJoCo-Warp push benchmark removed 2026-04-20 —
+cross-shape work moved entirely to the vendored gym-pusht env with pymunk
+shape builders described above.)

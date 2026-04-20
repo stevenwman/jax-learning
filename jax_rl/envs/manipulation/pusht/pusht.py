@@ -33,8 +33,12 @@ def pymunk_to_shapely(body, shapes):
             geoms.append(sg.Polygon(verts))
         else:
             raise RuntimeError(f"Unsupported shape type {type(shape)}")
-    geom = sg.MultiPolygon(geoms)
-    return geom
+    # unary_union + buffer(0) heals self-intersections from overlapping convex
+    # pieces (S uses two overlapping rings by design). MultiPolygon of overlapping
+    # members would raise GEOSException on .intersection. buffer(0) is the GEOS
+    # idiom for cleaning invalid topology.
+    from shapely.ops import unary_union
+    return unary_union(geoms).buffer(0)
 
 
 class PushTEnv(gym.Env):
@@ -149,6 +153,7 @@ class PushTEnv(gym.Env):
         coverage_shape="linear",
         coverage_eps=0.01,
         success_bonus=50.0,
+        block_shape="tee",
     ):
         """
         Args:
@@ -216,6 +221,14 @@ class PushTEnv(gym.Env):
                 f"Unknown reward_mode {reward_mode!r}. Must be one of "
                 "[coverage, sparse, shaped, approach, dense, contact_gated]."
             )
+        # block_shape: "tee" (default), "ellipse", "triangle", "s", or "dr".
+        # "dr" samples uniformly from the 4 concrete shapes per reset.
+        from .shapes import SHAPE_BUILDERS
+        self._dr_shapes = ("tee", "ellipse", "triangle", "s")
+        if block_shape != "dr" and block_shape not in ("tee",) + tuple(SHAPE_BUILDERS.keys()):
+            raise ValueError(f"Unknown block_shape {block_shape!r}.")
+        self.block_shape = block_shape
+        self._current_shape = block_shape
 
     def _initialize_observation_space(self):
         if self.obs_type == "state":
@@ -634,7 +647,15 @@ class PushTEnv(gym.Env):
 
         # Add agent, block, and goal zone
         self.agent = self.add_circle(self.space, (256, 400), 15)
-        self.block, self._block_shapes = self.add_tee(self.space, (256, 300), 0)
+        # DR mode: sample shape per reset; else use fixed block_shape.
+        if self.block_shape == "dr":
+            self._current_shape = self.np_random.choice(self._dr_shapes)
+        if self._current_shape == "tee":
+            self.block, self._block_shapes = self.add_tee(self.space, (256, 300), 0)
+        else:
+            from .shapes import SHAPE_BUILDERS
+            builder = SHAPE_BUILDERS[self._current_shape]
+            self.block, self._block_shapes = builder(self.space, (256, 300), 0)
         self.goal_pose = np.array([256, 256, np.pi / 4])  # x, y, theta (in radians)
         if self.block_cog is not None:
             self.block.center_of_gravity = self.block_cog

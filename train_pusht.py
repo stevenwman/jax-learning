@@ -136,9 +136,9 @@ class ActionRepeatWrapper(gym.Wrapper):
 
 
 def _make_env(reward_mode: str, obs_type: str, frame_stack: int = 1, action_repeat: int = 1,
-               max_episode_steps: int = 300, coverage_shape: str = "linear", coverage_eps: float = 0.01, success_threshold: float = 0.95, success_bonus: float = 50.0):
+               max_episode_steps: int = 300, coverage_shape: str = "linear", coverage_eps: float = 0.01, success_threshold: float = 0.95, success_bonus: float = 50.0, block_shape: str = "tee"):
     env = PushTEnv(obs_type=obs_type, reward_mode=reward_mode, render_mode="rgb_array",
-                   coverage_shape=coverage_shape, coverage_eps=coverage_eps, success_threshold=success_threshold, success_bonus=success_bonus)
+                   coverage_shape=coverage_shape, coverage_eps=coverage_eps, success_threshold=success_threshold, success_bonus=success_bonus, block_shape=block_shape)
     # CRITICAL: gym.make("gym_pusht/PushT-v0") auto-wraps with TimeLimit(300)
     # but direct PushTEnv(...) does not. Without this, failed episodes run
     # indefinitely, SAC target Q bootstraps infinite future, critic explodes.
@@ -155,27 +155,27 @@ def _make_env(reward_mode: str, obs_type: str, frame_stack: int = 1, action_repe
 
 
 def make_vec_env(n_envs: int, reward_mode: str, obs_type: str = "state",
-                  frame_stack: int = 1, action_repeat: int = 1, coverage_shape: str = "linear", coverage_eps: float = 0.01, success_threshold: float = 0.95, success_bonus: float = 50.0):
+                  frame_stack: int = 1, action_repeat: int = 1, coverage_shape: str = "linear", coverage_eps: float = 0.01, success_threshold: float = 0.95, success_bonus: float = 50.0, block_shape: str = "tee"):
     def make_single():
         def _thunk():
             return _make_env(reward_mode, obs_type, frame_stack, action_repeat,
-                             coverage_shape=coverage_shape, coverage_eps=coverage_eps, success_threshold=success_threshold, success_bonus=success_bonus)
+                             coverage_shape=coverage_shape, coverage_eps=coverage_eps, success_threshold=success_threshold, success_bonus=success_bonus, block_shape=block_shape)
         return _thunk
     return gym.vector.SyncVectorEnv([make_single() for _ in range(n_envs)])
 
 
 def make_eval_env(reward_mode: str, obs_type: str = "state",
-                  frame_stack: int = 1, action_repeat: int = 1, coverage_shape: str = "linear", coverage_eps: float = 0.01, success_threshold: float = 0.95, success_bonus: float = 50.0):
+                  frame_stack: int = 1, action_repeat: int = 1, coverage_shape: str = "linear", coverage_eps: float = 0.01, success_threshold: float = 0.95, success_bonus: float = 50.0, block_shape: str = "tee"):
     return _make_env(reward_mode, obs_type, frame_stack, action_repeat,
-                     coverage_shape=coverage_shape, coverage_eps=coverage_eps, success_threshold=success_threshold, success_bonus=success_bonus)
+                     coverage_shape=coverage_shape, coverage_eps=coverage_eps, success_threshold=success_threshold, success_bonus=success_bonus, block_shape=block_shape)
 
 
 # ═════════════════════════════════════════════════════════════════════
 # Eval
 # ═════════════════════════════════════════════════════════════════════
 
-def _rollout_once(algo, actor_params, reward_mode, obs_type, frame_stack, action_repeat, seed, max_steps, deterministic, key, coverage_shape: str = "linear", coverage_eps: float = 0.01, success_threshold: float = 0.95, success_bonus: float = 50.0):
-    env = make_eval_env(reward_mode, obs_type, frame_stack, action_repeat, coverage_shape=coverage_shape, coverage_eps=coverage_eps, success_threshold=success_threshold, success_bonus=success_bonus)
+def _rollout_once(algo, actor_params, reward_mode, obs_type, frame_stack, action_repeat, seed, max_steps, deterministic, key, coverage_shape: str = "linear", coverage_eps: float = 0.01, success_threshold: float = 0.95, success_bonus: float = 50.0, block_shape: str = "tee"):
+    env = make_eval_env(reward_mode, obs_type, frame_stack, action_repeat, coverage_shape=coverage_shape, coverage_eps=coverage_eps, success_threshold=success_threshold, success_bonus=success_bonus, block_shape=block_shape)
     obs, _ = env.reset(seed=seed)
     ep_r = 0.0
     info = {}
@@ -195,7 +195,7 @@ def _rollout_once(algo, actor_params, reward_mode, obs_type, frame_stack, action
 
 def evaluate(algo, actor_params, reward_mode: str, obs_type: str = "state",
              frame_stack: int = 1, action_repeat: int = 1,
-             n_episodes: int = 5, max_steps: int = 300, coverage_shape: str = "linear", coverage_eps: float = 0.01, success_threshold: float = 0.95, success_bonus: float = 50.0) -> dict:
+             n_episodes: int = 5, max_steps: int = 300, coverage_shape: str = "linear", coverage_eps: float = 0.01, success_threshold: float = 0.95, success_bonus: float = 50.0, block_shape: str = "tee") -> dict:
     # max_steps is in ENV-action units; divide when using action_repeat.
     max_policy_steps = max_steps // max(action_repeat, 1)
     det_ret, det_cov, det_succ = [], [], []
@@ -203,11 +203,11 @@ def evaluate(algo, actor_params, reward_mode: str, obs_type: str = "state",
     key = jax.random.PRNGKey(7777)
     for i in range(n_episodes):
         r, c, s = _rollout_once(algo, actor_params, reward_mode, obs_type, frame_stack, action_repeat,
-                                 1000 + i, max_policy_steps, True, key, coverage_shape=coverage_shape, coverage_eps=coverage_eps, success_threshold=success_threshold, success_bonus=success_bonus)
+                                 1000 + i, max_policy_steps, True, key, coverage_shape=coverage_shape, coverage_eps=coverage_eps, success_threshold=success_threshold, success_bonus=success_bonus, block_shape=block_shape)
         det_ret.append(r); det_cov.append(c); det_succ.append(s)
         key, sk = jax.random.split(key)
         r, c, s = _rollout_once(algo, actor_params, reward_mode, obs_type, frame_stack, action_repeat,
-                                 1000 + i, max_policy_steps, False, sk, coverage_shape=coverage_shape, coverage_eps=coverage_eps, success_threshold=success_threshold, success_bonus=success_bonus)
+                                 1000 + i, max_policy_steps, False, sk, coverage_shape=coverage_shape, coverage_eps=coverage_eps, success_threshold=success_threshold, success_bonus=success_bonus, block_shape=block_shape)
         sto_ret.append(r); sto_cov.append(c); sto_succ.append(s)
     return {
         "eval_return_mean": float(np.mean(det_ret)),
@@ -240,7 +240,7 @@ def train(
     obs_type: str = "state",
     frame_stack: int = 1,
     action_repeat: int = 1,
-    coverage_shape: str = "linear", coverage_eps: float = 0.01, success_threshold: float = 0.95, success_bonus: float = 50.0,
+    coverage_shape: str = "linear", coverage_eps: float = 0.01, success_threshold: float = 0.95, success_bonus: float = 50.0, block_shape: str = "tee",
     seed: int = 0,
     eval_every_n_steps: int = 50_000,
     ckpt_dir: str | None = None,
@@ -258,7 +258,7 @@ def train(
     key = jax.random.PRNGKey(seed)
 
     # Env
-    env = make_vec_env(num_envs, reward_mode, obs_type, frame_stack, action_repeat, coverage_shape=coverage_shape, coverage_eps=coverage_eps, success_threshold=success_threshold, success_bonus=success_bonus)
+    env = make_vec_env(num_envs, reward_mode, obs_type, frame_stack, action_repeat, coverage_shape=coverage_shape, coverage_eps=coverage_eps, success_threshold=success_threshold, success_bonus=success_bonus, block_shape=block_shape)
     print(f"  obs_type={obs_type}  frame_stack={frame_stack}  action_repeat={action_repeat}  "
           f"obs_dim={int(env.single_observation_space.shape[0])}")
     obs_dim = int(env.single_observation_space.shape[0])
@@ -391,7 +391,7 @@ def train(
 
         # Eval
         if (step + num_envs) % eval_every_n_steps < num_envs and buffer.size >= min_buffer_size:
-            eval_stats = evaluate(algo, training_state.actor_params, reward_mode, obs_type, frame_stack, action_repeat, coverage_shape=coverage_shape, coverage_eps=coverage_eps, success_threshold=success_threshold, success_bonus=success_bonus)
+            eval_stats = evaluate(algo, training_state.actor_params, reward_mode, obs_type, frame_stack, action_repeat, coverage_shape=coverage_shape, coverage_eps=coverage_eps, success_threshold=success_threshold, success_bonus=success_bonus, block_shape=block_shape)
             print(f"  EVAL @ step {step+num_envs:,}: "
                   f"det: r={eval_stats['eval_return_mean']:.2f}±{eval_stats['eval_return_std']:.2f} "
                   f"cov={eval_stats['eval_coverage_mean']:.3f} "
@@ -458,6 +458,10 @@ if __name__ == "__main__":
                          "human teleop peak 0.9489). Lower to 0.85 for tractable success events.")
     ap.add_argument("--success-bonus", type=float, default=50.0,
                     help="Terminal reward on success (contact_gated mode only). Default 50.")
+    ap.add_argument("--block-shape", type=str, default="tee",
+                    choices=["tee", "ellipse", "triangle", "s", "dr"],
+                    help="Block shape. 'dr' samples uniformly per episode from "
+                         "{tee, ellipse, triangle, s}.")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--eval-every-n-steps", type=int, default=50_000)
     ap.add_argument("--wandb", action="store_true")
@@ -481,6 +485,7 @@ if __name__ == "__main__":
         coverage_eps=args.coverage_eps,
         success_threshold=args.success_threshold,
         success_bonus=args.success_bonus,
+        block_shape=args.block_shape,
         seed=args.seed,
         eval_every_n_steps=args.eval_every_n_steps,
         use_wandb=args.wandb,

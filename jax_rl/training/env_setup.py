@@ -66,40 +66,8 @@ def _register_custom_envs():
             bongo_default_config,
         )
 
-    # ── Push-T manipulation variants ────────────────────────────────────
-    from mujoco_playground._src import manipulation as pg_manipulation
-    from jax_rl.envs.manipulation.push_env import PushEnv
-    from jax_rl.envs.manipulation.push_env import default_config as push_default_config
-
-    def _push_cfg_factory(shape: str, action_mode: str, reward_type: str = "dense"):
-        def _make():
-            cfg = push_default_config()
-            cfg.shape = shape
-            cfg.action_mode = action_mode
-            cfg.reward_type = reward_type
-            return cfg
-        return _make
-
-    # Name convention: Push{Shape}_{Mode}[_Shaped]
-    # Modes: Pos = position PD, Vel = velocity delta, Tele = teleport
-    # Optional _Shaped suffix = reward_type="shaped" (dense + approach + block_vel + contact).
-    _shape_key = {"T": "T", "L": "L", "Circle": "circle", "Plus": "plus"}
-    for display_shape, internal_shape in _shape_key.items():
-        for mode, mode_abbr in [("position", "Pos"), ("velocity", "Vel"), ("teleport", "Tele")]:
-            base_name = f"Push{display_shape}_{mode_abbr}"
-            if base_name not in pg_manipulation._envs:
-                pg_manipulation.register_environment(
-                    base_name,
-                    functools.partial(PushEnv),
-                    _push_cfg_factory(internal_shape, mode, "dense"),
-                )
-            shaped_name = f"{base_name}_Shaped"
-            if shaped_name not in pg_manipulation._envs:
-                pg_manipulation.register_environment(
-                    shaped_name,
-                    functools.partial(PushEnv),
-                    _push_cfg_factory(internal_shape, mode, "shaped"),
-                )
+    # (MuJoCo Warp PushEnv removed 2026-04-20 — replaced by vendored pymunk
+    # gym-pusht (`jax_rl/envs/manipulation/pusht/`) for cross-shape work.)
 
 
 _register_custom_envs()
