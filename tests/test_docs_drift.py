@@ -106,14 +106,34 @@ def test_no_reverted_obs_dims():
 
 def test_no_archived_script_refs():
     """`train_offpolicy.py` was split into per-algo scripts. Docs must not
-    cite it anymore (archives and journals are allowed)."""
-    hits = _grep_files(r"train_offpolicy\.py", list(_iter_md_files(DOCS_ROOT)))
+    cite it as a live script anymore.
+
+    Scope: ``docs/`` + ``.context/`` onboarding-surface docs (AGENT_HANDOFF,
+    NEW_AGENT_PROMPT, DOCS_AGENT_PROMPT, TODO). Excluded: archives, tmp,
+    journals (historical record), lessons (document the drift pattern),
+    plans/references/go2 (contain annotated historical plans with drift
+    notes).
+
+    Lines that qualify the path with ``archive/`` (e.g. ``archive/train_offpolicy.py``)
+    are accepted — they're explicit legacy markers, not ghost refs.
+    """
+    files = list(_iter_md_files(
+        DOCS_ROOT, CONTEXT_ROOT,
+        exclude_names=("archive", "tmp", "journals", "lessons", "plans",
+                       "references", "go2"),
+    ))
+    hits = _grep_files(r"train_offpolicy\.py", files)
+    # Allow lines that explicitly mark the script as archive/legacy.
+    hits = [(p, ln, line) for p, ln, line in hits if "archive/" not in line]
     if hits:
         msg = "\n".join(
             f"  {p.relative_to(REPO_ROOT)}:{ln} — {line.strip()}"
             for p, ln, line in hits
         )
-        pytest.fail(f"archived `train_offpolicy.py` referenced in docs:\n{msg}")
+        pytest.fail(
+            "bare `train_offpolicy.py` ghost refs (use `archive/train_offpolicy.py` "
+            f"to mark legacy, or replace with per-algo script):\n{msg}"
+        )
 
 
 # ---------------------------------------------------------------------------
