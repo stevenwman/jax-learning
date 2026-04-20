@@ -1,8 +1,8 @@
 # Agent Handoff — JAX RL Framework
 
-**Last updated:** 2026-04-17
+**Last updated:** 2026-04-20
 **Branch:** `new_slate_linen`
-**Status:** Active development — Go2 Phase A (PPO 244, motor actuators) and Phase B (FastSAC 226) COMPLETE. Sim2sim pipeline built, contact physics gap remaining.
+**Status:** Active — Go2 Warp stack (sim2sim gap closed via unitree MJCF). Current focus: terrain curriculum validation, PushT manipulation training. See latest journal for day-to-day state.
 
 > **Context budget:** This doc is your overview — skim structure, read details on demand. Other `.context/` docs are reference material. Don't pre-load them. When you hit a topic (Go2 rewards, PPO debugging, vision RL), grep or read the specific file. Treat `.context/` as a wiki, not a textbook.
 
@@ -89,8 +89,6 @@ WebFetch gets blocked by many sites. Workarounds:
 | `.context/LESSONS.md` → `.context/lessons/*.md` | Reusable debugging lessons | When you learn something future sessions need |
 | `.context/TODO.md` | Prioritized task list | When tasks complete or priorities shift |
 | `deploy/README.md` | Deploy setup, usage, troubleshooting | When deploy code, deps, or PD gains change |
-| `.context/go2/sac_phase_b.md` | SAC experiment plan + research | When SAC config or findings change |
-| `.context/go2/mjcf_comparison.md` | Training vs deploy physics diff | When env physics overrides change |
 
 **Don't forget non-.context docs.** `deploy/README.md` and `deploy/go2_constants.py` must stay in sync with training env changes (PD gains, default pose, action scale). If you change `go2_warp_joystick.py` or `go2_warp_base.py`, check whether deploy constants need updating too.
 
@@ -166,21 +164,22 @@ jax-learning/
 ├── train_fast_sac.py         # FastSAC (C51 + SAC)
 ├── train_fast_td3.py         # FastTD3 (C51 + TD3)
 ├── train_flashsac.py         # FlashSAC (inverted residual + BatchNorm + Zeta noise)
-├── train_offpolicy.py        # LEGACY: unified dispatcher, kept as reference only
+├── train_pusht.py            # PushT manipulation (SAC + keypoint obs + TimeLimit)
 ├── record_video.py           # Loads any checkpoint, renders rollout + _traj.npz
+├── archive/train_offpolicy.py # LEGACY: unified dispatcher, kept as reference only
 ├── jax_rl/algos/             # ppo.py, sac.py, td3.py, fast_td3.py, fast_sac.py, flash_sac.py
-├── jax_rl/envs/locomotion/   # go2_warp_base.py, go2_warp_joystick.py, go2_bongo_handstand.py (MJX files archived in archive/)
+├── jax_rl/envs/locomotion/   # go2_warp_base.py, go2_warp_joystick.py, go2_warp_curriculum.py, go2_bongo_handstand.py, go2_constants.py, go2_rendering.py, go2_sensors.py (MJX locomotion files deleted 2026-04-09)
 ├── jax_rl/configs/           # train_config.py, *_config.py, env_presets.py, flash_sac_config.py
-├── jax_rl/networks/          # flash_blocks.py (inverted residual blocks with BatchNorm + weight norm)
-├── jax_rl/utils/             # reward_scaling.py (adaptive reward normalization)
-├── jax_rl/training/          # checkpointing, eval_runner, env_setup, metrics_logger
-├── jax_rl/buffers/           # jax_replay_buffer.py, rollout_buffer.py
-├── jax_rl/envs/wrappers/     # FrameStackWrapper, vendored training wrappers (Vmap, Episode, AutoReset, DR), DomainRandWrapper (domain_rand.py, formerly DRv2)
-├── tests/                    # 243 tests (uv run python -m pytest tests/ -v)
+├── jax_rl/networks/          # builders.py (Actor/DeterministicActor/VCritic), flash_blocks.py, activations.py, distributions.py, encoders/, heads/
+├── jax_rl/utils/             # reward_scaling.py, normalization.py, frame_stack.py, distributional.py, eval.py, export.py, rollout.py
+├── jax_rl/training/          # checkpointing, eval_runner, env_setup, metrics_logger, offpolicy_loop, obs_pipeline
+├── jax_rl/buffers/           # jax_replay_buffer.py, rollout.py
+├── jax_rl/envs/wrappers/     # FrameStackWrapper, vendored training wrappers (Vmap, Episode, AutoReset, DR), DomainRandWrapper (domain_rand.py, formerly DRv2), action_delay.py, terrain_curriculum_dr.py, pipeline.py
+├── tests/                    # run `uv run python -m pytest tests/ --collect-only -q` for current count
 └── tools/brax_baselines/     # Brax PPO A/B test scripts
 ```
 
-**Off-policy training delegation:** The 4 non-FlashSAC off-policy scripts (`train_sac.py`, `train_td3.py`, `train_fast_sac.py`, `train_fast_td3.py`) delegate to `jax_rl/training/offpolicy_loop.py::run_offpolicy_loop` for the shared training loop and only contain algo-specific optimizer/explore decisions (~60 lines each). FlashSAC stays standalone (it has algo-specific BatchNorm state, Zeta noise, and adaptive reward scaling that don't fit the shared shape).
+**Off-policy training delegation:** The 4 non-FlashSAC off-policy scripts (`train_sac.py`, `train_td3.py`, `train_fast_sac.py`, `train_fast_td3.py`) delegate to `jax_rl/training/offpolicy_loop.py::run_offpolicy_loop` for the shared training loop and only contain algo-specific optimizer/explore decisions (~110–130 lines each). FlashSAC stays standalone (it has algo-specific BatchNorm state, Zeta noise, and adaptive reward scaling that don't fit the shared shape).
 
 ### Env framework coupling
 Training wrappers (Vmap, Episode, AutoReset, DR) are vendored in `jax_rl/envs/wrappers/training.py` — no Brax training wrapper dependency. **`DomainRandWrapper`** (`jax_rl/envs/wrappers/domain_rand.py`, formerly DRv2) replaces the full wrapper stack for Go2 — handles vmap, episode tracking, auto-reset, and per-episode domain randomization in one wrapper. Activated via `--reset-mode per_step` on train scripts. Env declares DR specs via `get_domain_randomization_spec()`. See `.context/lessons/autoreset_and_dr.md` for the full investigation.
@@ -207,88 +206,38 @@ Curriculum env: 64 envs @ 16GB GPU (not 1024 — ~1500 geoms vs ~100). Use `--nu
 - **Dict obs**: `{"state": (48,), "privileged_state": (122,)}`
 - **PPO**: asymmetric AC — actor sees "state", critic sees "privileged_state"
 - **SAC/TD3**: both actor AND critic see "state" — no asymmetric (FastSAC uses asymmetric automatically when dict obs detected)
-- **Actuator model**: `motor` (direct torque) + external PD per substep. Matches unitree_mujoco and real robot. (Was `general` with built-in PD — switched 2026-03-26.)
-- **Working PPO config**: tracking_lin_vel=10.0, tracking_ang_vel=5.0, height_termination=True, Kp=35, Kd=0.1, calf_torque=45.43Nm
-- **Best PPO**: eval 244 @ 50M steps (seed 4000, motor actuators)
-- **Warp env**: `Go2WarpJoystickFlat` — uses unitree_mujoco's go2.xml (full cylinder collision geometry) via MuJoCo Warp backend. Eliminates sim2sim gap. `contact_mode` flag: `"training"` (firm contacts) / `"deploy"` (unitree-native physics). **Kp=20, Kd=0.5** (matches unitree_rl_gym; reverted from a brief Kp=10/Kd=1.0 detour 2026-04-10 that caused 7x worse training). Best reproducible result on current 48d env: **eval 276.6** (no linvel, deploy obs space, DR). Prior 285.1/280.1 results were on an extended obs space (added linvel + accelerometer, reverted) that is not reproducible with the current 48-dim env. Sim2sim to CPU MuJoCo validated.
+- **Actuator model**: `motor` (direct torque) + external PD per substep. Matches unitree_mujoco and real robot.
+- **PD gains (Warp)**: `Kp=20, Kd=0.5` (matches unitree_rl_gym). Validated in training, not just static hold — see `lessons/warp.md`.
+- **Warp env**: `Go2WarpJoystickFlat` uses unitree_mujoco's go2.xml (full cylinder collision geometry) via MuJoCo Warp backend. Eliminates sim2sim gap. `contact_mode` flag: `"training"` (firm contacts) / `"deploy"` (unitree-native physics). Sim2sim to CPU MuJoCo validated.
 - **CRITICAL:** Warp env has joint→actuator remapping (`_act_to_joint`). Unitree XML has different qpos vs ctrl ordering. Without remap, PD applies torques to wrong legs.
 
 ### Algorithm quick reference
-| Algo | Training script | Key features | Notes |
-|------|-----------------|--------------|-------|
-| PPO | `train_ppo.py` / `train_ppo_fast.py` | On-policy, policy gradient, asymmetric AC for Go2 | Fast scan version; frozen obs norm; CheckpointManager |
-| SAC | `train_sac.py` | Off-policy, entropy regularization, symmetric AC | Vanilla SAC, 128 envs |
-| TD3 | `train_td3.py` | Off-policy, deterministic, delayed critic update, target noise | Vanilla TD3 |
-| FastTD3 | `train_fast_td3.py` | C51 distributional + TD3 | Eval **880** on CheetahRun (low-dim). Benchmark: 1024 envs, 86M steps |
-| FastSAC | `train_fast_sac.py` | C51 distributional + SAC + asymmetric critic (Go2) | Eval **892** on HumanoidRun, **279.2** on Go2. Benchmark: 1024 envs. |
-| **FlashSAC** | `train_flashsac.py` | Inverted residual blocks + BatchNorm + weight norm + adaptive reward scaling + Zeta noise | Eval **282.4** on Go2 @ 10M steps (comparable to FastSAC 276.5 @ 18M). Presets in `env_presets.py`. |
+| Algo | Training script | Key features |
+|------|-----------------|--------------|
+| PPO | `train_ppo.py` / `train_ppo_fast.py` | On-policy, policy gradient, asymmetric AC for Go2 |
+| SAC | `train_sac.py` | Off-policy, entropy regularization, symmetric AC |
+| TD3 | `train_td3.py` | Off-policy, deterministic, delayed critic update, target noise |
+| FastTD3 | `train_fast_td3.py` | C51 distributional + TD3 |
+| FastSAC | `train_fast_sac.py` | C51 distributional + SAC + asymmetric critic (Go2) |
+| FlashSAC | `train_flashsac.py` | Inverted residual blocks + BatchNorm + weight norm + adaptive reward scaling + Zeta noise |
+
+Full API reference (params, defaults, docstrings): `docs/api/algos.md` (autogen from source).
 
 ---
 
 ## Part 5: Current State
 
-### Benchmark results (as of 2026-03-26)
+### Current best results (one-line summary)
+Go2 Warp (48d state, post-truncation-fix 2026-04-13): FastSAC+torque-speed **286** / FlashSAC **284.5** / FastSAC **283.8** / FastTD3 **273.1**. DM Control: FastTD3 880 (CheetahRun), FastSAC 892 (HumanoidRun).
 
-> **Note on truncation fix (2026-04-12):** Every FastSAC/FastTD3/FlashSAC number in this section was produced BEFORE commit `82c9fe5`, which fixed a silent truncation-handling bug that systematically underestimated Q on long-horizon tasks. See `.context/lessons/offpolicy.md` §"Truncation Handling". The fix should raise ceilings on long-horizon results (Go2, Humanoid); short-horizon tasks are largely unaffected. Re-benchmark pending — see `.context/TODO.md` Active.
-
-**CheetahRun** (6-dim actions):
-| Algo | Eval | Steps | Notes |
-|------|------|-------|-------|
-| PPO | 826 | 20M | 2048 envs |
-| Vanilla SAC | 771 | 5M | 128 envs, 8 min |
-| **FastTD3** | **880** | 86M | 1024 envs |
-
-**HumanoidRun** (21-dim actions):
-| Algo | Eval | Steps | Notes |
-|------|------|-------|-------|
-| PPO | ~10 | 60M | Algorithm limit, not bug |
-| Vanilla SAC | 426 | 20M | 128 envs |
-| **FastSAC** | **892** | 100M | 1024 envs, SOTA |
-
-**Go2 Joystick — MJX (archived)** (Menagerie go2_mjx.xml, 12-dim actions; env files in `jax_rl/envs/locomotion/archive/`):
-| Algo | Eval | Steps | Notes |
-|------|------|-------|-------|
-| Our PPO (motor) | **244** | 50M | Seed 4000, motor actuators + external PD |
-| Our PPO (general) | 233 | 50M | Seed 2100, old general actuators (deprecated) |
-| FastSAC | 226 | 16M | Off-policy validated |
-| Brax PPO | 17.9 | 50M | A/B baseline |
-
-**Go2 Joystick — Warp** (unitree go2.xml, full collision geometry):
-
-*Post-truncation-fix runs (2026-04-13, commit `82c9fe5`+, 48d state, all single seed):*
-| Algo | Eval | Steps | Notes |
-|------|------|-------|-------|
-| **FlashSAC (DR off, preset)** | **284.5 ± 4.6** final | 10M | seed 100. wandb: `20c1pcge`. (Best in-loop 279.5; final beat best because final eval is a separate code path.) |
-| **FastSAC (DR per_step)** | **283.8** best in-loop / 283.5 final | 20M | seed 100. wandb: `w47hu6a5`. Q bias 0.10 (well-calibrated). |
-| **FastTD3 (DR per_step)** | **273.1** best in-loop / 272.2 ± 9.6 final | 20M | seed 100. **First TD3-family Go2 result.** Q bias 0.29. Within seed variance of FastSAC. |
-| **FastSAC (DR per_step, +torque-speed model)** | **286.0** best in-loop / 280.9 ± 7.3 final | 20M | seed 42. wandb: `jcr1mcfu`. `Go2WarpJoystickFlatTorqueSpeed` env. Linear torque-speed curve on actuator. Clip rarely fires at 1 m/s walking (0% saturation, mean scale 0.92) — see `.context/lessons/actuator_models.md`. |
-
-*Pre-truncation-fix runs (kept for context, NOT directly comparable to above):*
-| Algo | Eval | Steps | Notes |
-|------|------|-------|-------|
-| FastSAC (frame_stack=3, +linvel +accel, DR) | 285.1 | 20M | 2026-04-10 (trained on prior extended obs space with linvel+accel, not reproducible with current 48-dim env). |
-| FastSAC (no stack, +linvel +accel, DR) | 280.1 | 20M | 2026-04-10 (trained on prior extended obs space with linvel+accel, not reproducible with current 48-dim env). |
-| FastSAC (no stack, no linvel, DR — deploy obs) | 276.6 | 20M | State 48d, deploy-realistic. ONNX exported. |
-| FastSAC (asym critic) | 279.2 | 20M | Older config, no DR. |
-| FastSAC (symmetric) | 276.5 | 18M | Older config (seed 8001), no DR, sim2sim to CPU validated |
-| PPO | 132 | 50M | Kp=20/Kd=0.5, entropy collapsed to squat |
-
-**Post-fix improvement:** FastSAC went from 279.2 (best pre-fix reproducible, asymmetric/no DR) to 283.8 (per_step DR). FlashSAC went from 282.4-claimed (on the reverted frame-stack obs space, not reproducible) to 284.5 reproducible. Modest gains consistent with the truncation fix removing a small bias on long-horizon tasks. **All fix-era results trustworthy; all pre-fix results suspect on Go2/Humanoid scale tasks.**
-
-**Key takeaways (updated 2026-04-13 post-truncation-fix):**
-- ~~Low-dim → FastTD3, High-dim → FastSAC~~ — pre-fix advice. Post-fix on Go2 (48d state, locomotion): FastTD3 273.1 vs FastSAC 283.8 vs FlashSAC 284.5. All single seed; SAC-family slightly ahead but within seed variance. **Use FastSAC/FlashSAC by default for locomotion**, but FastTD3 is no longer obviously bad on high-dim.
-- gamma=0.97 for locomotion. C51 helps at scale. Vanilla algos at 128 envs are competitive for sample efficiency. Use `motor` actuators for sim2sim/sim2real transfer.
-- **Warp + unitree MJCF eliminates sim2sim gap.** FastSAC/FlashSAC on Warp surpass MJX PPO.
+Full benchmark history (tables, seeds, wandb IDs, pre/post-fix breakdown) moved to per-run journal entries — grep `.context/journals/` by date. Truncation-fix story in `lessons/offpolicy.md §Truncation Handling`.
 
 ### Roadmap
 See `TODO.md` for full prioritized list. Summary:
-- **Done:** Warp env (FastSAC 276.5), MJX→CPU transfer, DR v1, sim2sim validated.
-- **Short-term:** DIAYN (north star), curriculum DR (push forces + wider ranges), W&B HP tuning agent
-- **Mid-term:** Vision RL (CNN encoder, DrQ), real robot deployment
-- **Long-term:** DIAYN → METRA → USD (skill discovery on real Go2)
-
-### Strategic note: Warp is the sole Go2 backend
-**MJX Go2 env archived** (`jax_rl/envs/locomotion/archive/` — go2_base.py, go2_joystick.py, go2_cpu.py). `Go2WarpJoystickFlat` is the sole active Go2 locomotion env. `Go2BongoHandstand` (Warp, bongo board task) is also active. Warp is strictly better for our use case: supports cylinder collisions (MJX can't), trains on the exact unitree MJCF (zero sim2sim gap), faster on complex scenes, and we only use NVIDIA GPUs. New envs (other robots, terrains) should be built on Warp from the start. DIAYN, curriculum DR, frame stacking — all Warp-only.
+- **Done:** Warp env + sim2sim closed, DR per_step, post-truncation-fix sweep, torque-speed actuator, PushT env + vendored gym-pusht.
+- **Short-term:** Terrain curriculum validation, push-force curriculum, W&B HP tuning agent.
+- **Mid-term:** Vision RL (CNN encoder, DrQ), real robot deployment.
+- **Long-term:** DIAYN → METRA → USD (skill discovery on real Go2).
 
 ---
 
@@ -323,7 +272,5 @@ git add <files> && git commit -m "fix: description"  # No Co-Authored-By
 2. **JIT compilation takes 1-3 min** — empty output is normal at start
 3. **Can't run two 1024-env trainings** on 16GB — queue them
 4. **`| tail -N` pipe kills background processes** — never pipe background output
-5. **`@flax.struct.dataclass`** for training state, not regular `@dataclass`
-6. **`jnp.where` for conditional updates** — no Python `if` inside JIT'd functions
-7. **`XLA_CLIENT_MEM_FRACTION=0.7`** set in all train scripts — prevents OOM from MJX recompilation
-8. **Check lessons before debugging** — the answer might already be there
+5. **`XLA_CLIENT_MEM_FRACTION`** is set via shell env var, not in scripts (removed 2026-04-15). Use `0.7` default, drop to `0.55` if Warp needs room. See `lessons/memory_tuning.md`.
+6. **Check lessons before debugging** — the answer might already be there

@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Drift note (2026-04-20):** This plan predates the 2026-04-12 off-policy script split. References to `train_offpolicy.py` as "the starting point" should be read as "the per-algo script closest to your target (`train_sac.py`, `train_fast_sac.py`, etc.) plus the shared loop at `jax_rl/training/offpolicy_loop.py::run_offpolicy_loop`". The legacy dispatcher lives at `archive/train_offpolicy.py` for reference only.
+
 **Goal:** Factorized unsupervised skill discovery (DIAYN + METRA) as pluggable reward modules, algo-agnostic, validated on Go2 and DM Control envs.
 
 **Architecture:** DIAYN and METRA are reward modules that sit between env and algo. A SkillManager handles z lifecycle (sample/resample), state factorization (which obs dims → which method), and reward composition. The base RL algo (SAC) sees augmented obs (concat with z) and intrinsic rewards — it doesn't know skill discovery exists. The training script orchestrates everything.

@@ -75,11 +75,13 @@ Dispatch all 4 as background Opus agents. Compile results into prioritized actio
 | Algo | Script | Key feature |
 |------|--------|-------------|
 | PPO | `train_ppo_fast.py` | On-policy, asymmetric critic |
-| SAC | `train_offpolicy.py --algo sac` | Vanilla off-policy |
-| TD3 | `train_offpolicy.py --algo td3` | Deterministic off-policy |
-| FastSAC | `train_offpolicy.py --algo fast_sac` | C51 distributional + SAC, eval 276.5 Go2 |
-| FastTD3 | `train_offpolicy.py --algo fast_td3` | C51 distributional + TD3 |
-| FlashSAC | `train_flashsac.py` | Inverted residual + BatchNorm + weight norm, eval 282.4 Go2 |
+| SAC | `train_sac.py` | Vanilla off-policy |
+| TD3 | `train_td3.py` | Deterministic off-policy |
+| FastSAC | `train_fast_sac.py` | C51 distributional + SAC |
+| FastTD3 | `train_fast_td3.py` | C51 distributional + TD3 |
+| FlashSAC | `train_flashsac.py` | Inverted residual + BatchNorm + weight norm |
+
+(Off-policy dispatcher `train_offpolicy.py` was split into per-algo scripts 2026-04-12; shared loop lives at `jax_rl/training/offpolicy_loop.py::run_offpolicy_loop`. Legacy dispatcher kept at `archive/train_offpolicy.py` for reference.)
 
 ### Environments
 - **Go2WarpJoystickFlat** — primary locomotion env (Warp backend, Unitree MJCF)

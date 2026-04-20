@@ -4,6 +4,8 @@
 **Status:** Approved (implementation deferred — spec ready when needed)
 **Scope:** Autonomous/collaborative hyperparameter tuning via Claude Code session with file-based state
 
+> **Drift note (2026-04-20):** Example commands below use `train_offpolicy.py --algo <x> --env Go2JoystickFlat`. That dispatcher was split 2026-04-12 into per-algo scripts (`train_sac.py`, `train_td3.py`, `train_fast_sac.py`, `train_fast_td3.py`) and the MJX `Go2JoystickFlat` env was deleted 2026-04-09. When implementing, translate: `train_offpolicy.py --algo sac` → `train_sac.py`; `Go2JoystickFlat` → `Go2WarpJoystickFlat`.
+
 ---
 
 ## Problem

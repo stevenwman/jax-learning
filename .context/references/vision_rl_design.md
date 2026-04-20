@@ -224,7 +224,7 @@ Pixel replay buffers are much larger than state buffers. Rough estimates suggest
 2. ~~Unify builders (`make_encoder` factory)~~ — DONE (2026-03-22)
 3. Add CNN encoder (`jax_rl/networks/encoders/cnn.py`)
 4. Add encoder configs (`CnnEncoderConfig`, `AugmentationConfig`)
-5. Add `--vision` flag to `train_offpolicy.py` (consolidated script replaces train_sac.py/td3.py)
+5. Add `--vision` flag to per-algo train scripts (`train_sac.py`, `train_fast_sac.py`, etc.) — the `train_offpolicy.py` consolidation was reverted 2026-04-12; vision plumbing now goes through `jax_rl/training/offpolicy_loop.py::run_offpolicy_loop` + each thin wrapper.
 6. Verify on CartpoleBalance from pixels (Playground vision.ipynb as reference)
 7. Add DrQ augmentation as optional toggle
 8. Benchmark CNN vs CNN+DrQ vs state-based on same task

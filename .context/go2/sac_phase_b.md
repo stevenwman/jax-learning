@@ -73,8 +73,9 @@ Train PPO first, extract 2.5th/97.5th percentile of action distribution, use as 
 
 ### Phase 1: Vanilla SAC at 128 envs (baseline)
 ```bash
-uv run python train_offpolicy.py --algo sac --env Go2JoystickFlat --obs-norm
+uv run python train_sac.py --env Go2WarpJoystickFlat --obs-norm
 ```
+(Historical: originally ran as `train_offpolicy.py --algo sac --env Go2JoystickFlat` — dispatcher archived to `archive/train_offpolicy.py` on 2026-04-12 split; MJX env deleted 2026-04-09.)
 - Expect: eval ~140 range (based on prior run)
 - Watch: Q1 growth, entropy/alpha trajectory, reward breakdown
 
