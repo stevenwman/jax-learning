@@ -297,9 +297,9 @@ class TestSteppingStones:
 
 
 class TestTiltedGrid:
-    def test_generates_at_least_36_geoms(self):
+    def test_generates_at_least_9_geoms(self):
         out = TiltedGridTerrainCfg().generate(0.5, SIZE, _rng())
-        assert len(out.geoms) >= 36
+        assert len(out.geoms) >= 9  # 3×3 grid + base
 
     def test_zero_difficulty_all_identity_quats(self):
         out = TiltedGridTerrainCfg().generate(0.0, SIZE, _rng())

@@ -185,8 +185,20 @@ class WarpJoystickCurriculum(WarpJoystick):
     _IS_GOAL_DIRECTED = (True, True, True, True)
 
     def _sample_spawn_goal(self, terrain_type, tile_size, spawn_rng, yaw_rng):
-        """Rim-to-center spawn for all terrain types. Returns (spawn_local, goal_local, yaw)."""
-        return self._rim_to_center(spawn_rng, yaw_rng, tile_size)
+        """Rim-to-center spawn for all terrain types. Returns (spawn_local, goal_local, yaw).
+
+        Pyramids (types 1, 2) use face-toward-goal yaw — robot is not designed
+        for sideways stair climbing, spawn random yaw makes success too rare.
+        Rough (0) and tilted (3) keep random yaw for omnidirectional linvel DR
+        (goal-directed holonomic cmd rotates through body frame as yaw spins).
+        """
+        spawn, goal, random_yaw = self._rim_to_center(spawn_rng, yaw_rng, tile_size)
+        # For pyramids: override yaw to point at goal (world-frame atan2 on
+        # local coords, since spawn/goal are tile-local and tile has no rot).
+        goal_yaw = jp.arctan2(goal[1] - spawn[1], goal[0] - spawn[0])
+        is_pyramid = (terrain_type == 1) | (terrain_type == 2)
+        yaw = jp.where(is_pyramid, goal_yaw, random_yaw)
+        return spawn, goal, yaw
 
     def _rim_to_center(self, rng, yaw_rng, tile_size):
         """Spawn on outer TILE EDGE (not rim-circle), goal at tile center.

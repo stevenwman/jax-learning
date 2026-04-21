@@ -535,7 +535,7 @@ class TiltedGridTerrainCfg(SubTerrainCfg):
     platform.
     """
 
-    grid_size: tuple[int, int] = (6, 6)
+    grid_size: tuple[int, int] = (3, 3)
     max_tilt_deg: float = 25.0
     tile_thickness: float = 0.1
     base_depth: float = 0.3  # solid base below tiles — prevents fall-through gaps
