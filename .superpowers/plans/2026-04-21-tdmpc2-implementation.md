@@ -12,6 +12,37 @@
 
 ---
 
+## API Contracts (read before any coding)
+
+These naming conventions are referenced in every task below. Drift here causes "works on unit tests, fails on integration" bugs.
+
+**Param trees:**
+- `wm_params` = `{"encoder", "dynamics", "reward", "q_ensemble"}` — world-model params, updated by world-model optimizer.
+- `target_params` = same structure as `wm_params`, EMA-updated copies.
+- `policy_params` = PolicyPrior params, updated by separate policy optimizer. Threaded as its own argument to `world_model_loss` / `compute_td_target`; NEVER nested inside `wm_params` or `target_params` (keeps `jax.grad` clean).
+- `plan_params` = `{"encoder", "dynamics", "reward", "q_ensemble", "policy"}` — bundle used by MPPI at inference-only (both collect and eval). Built via `plan_params = {**wm_params, "policy": policy_params}` right before calling `plan()`.
+
+**Flax module instances:** all `Encoder.apply(params, ...)`-style calls in code samples below are SHORTHAND. In real implementation, instantiate modules ONCE at the top of the algo file:
+
+```python
+# In jax_rl/algos/tdmpc2.py, module-level (or inside a builder fn)
+encoder = Encoder(enc_dim=..., num_layers=..., latent_dim=..., simnorm_dim=...)
+dynamics = Dynamics(mlp_dim=..., latent_dim=..., simnorm_dim=...)
+reward_net = Reward(mlp_dim=..., num_bins=...)
+q_ensemble = QEnsemble(mlp_dim=..., num_bins=..., num_q=..., dropout=...)
+policy_net = PolicyPrior(mlp_dim=..., action_dim=..., log_std_min=..., log_std_max=...)
+```
+
+Then call `encoder.apply(params, obs)` (instance method, not class method) everywhere `Encoder.apply(params, obs)` appears below. The hyperparameters come from `cfg`, so this is a `build_modules(cfg)` factory returning a `dataclasses` or dict of module instances.
+
+**Optimizers live OUTSIDE `cfg`:** `optax.GradientTransformation` is not a JAX pytree leaf. Build optimizers in the training script and pass via `functools.partial` or `jax.jit(static_argnames=...)` — not as a `cfg` field.
+
+**`action_dim` flow:** the env determines `action_dim`, not the config defaults. `make_tdmpc2_config(episode_length, action_dim=env.action_space.shape[0], ...)` — `action_dim` is a required arg at preset-load time, threads through to MPPI and policy loss.
+
+**`cfg.discount`:** derived by `make_tdmpc2_config` from `episode_lengths[0]`. Do not instantiate `TDMPC2Config()` directly — always go through the factory.
+
+---
+
 ## Preflight
 
 - [ ] **Verify source clone exists at `/tmp/tdmpc2/`.** If missing:
@@ -610,16 +641,25 @@ git commit -m "feat(buffer): sample_sequence with per-episode window match"
 
 ```python
 def test_tdmpc2_config_defaults_match_spec():
-    from jax_rl.configs.tdmpc2_config import TDMPC2Config, compute_discount
-    c = TDMPC2Config()
+    from jax_rl.configs.tdmpc2_config import TDMPC2Config, compute_discount, make_tdmpc2_config
+    c = make_tdmpc2_config(action_dim=6, episode_length=500)
     # Bin size derived, not hardcoded
     assert (c.vmax - c.vmin) / (c.num_bins - 1) == 0.2
-    # Discount heuristic for ep_len=500 → 0.99
+    # action_dim wired through
+    assert c.action_dim == 6
+    # Discount heuristic
     assert compute_discount(500, 5, 0.95, 0.995) == 0.99
-    # Go2 ep_len=1000 → 0.995
     assert compute_discount(1000, 5, 0.95, 0.995) == 0.995
-    # Very short episode → clamp to min
     assert compute_discount(10, 5, 0.95, 0.995) == 0.95
+    # Factory wires discount onto cfg
+    assert make_tdmpc2_config(action_dim=6, episode_length=500).discount == 0.99
+    assert make_tdmpc2_config(action_dim=6, episode_length=1000).discount == 0.995
+
+def test_tdmpc2_config_rejects_zero_action_dim():
+    import pytest
+    from jax_rl.configs.tdmpc2_config import make_tdmpc2_config
+    with pytest.raises(AssertionError):
+        make_tdmpc2_config(action_dim=0)
 ```
 
 - [ ] **Step 2: Run, verify fail**
@@ -695,6 +735,9 @@ class TDMPC2Config:
     discount_max: float = 0.995
     discount: float = 0.99   # derived from episode_lengths[0] at preset load; see below
 
+    # Env spec (set by make_tdmpc2_config from env — NOT a true default)
+    action_dim: int = 0            # MUST be overridden at preset load; assertion elsewhere
+
     # Multi-task C-seams (B-mode defaults)
     num_tasks: int = 1
     task_names: tuple[str, ...] = ("single",)
@@ -709,16 +752,19 @@ def compute_discount(episode_length: int, denom: int, dmin: float, dmax: float) 
 
 
 def make_tdmpc2_config(
+    action_dim: int,
     episode_length: int = 500,
     task_name: str = "single",
     **overrides,
 ) -> TDMPC2Config:
-    """Factory: builds TDMPC2Config with `discount` derived from episode_length.
+    """Factory: builds TDMPC2Config with `discount` derived from episode_length and
+    `action_dim` pulled from the env spec. Both are required at preset-load time.
 
-    Use this instead of calling TDMPC2Config() directly — otherwise `cfg.discount`
-    defaults to the class-level 0.99 which is only correct for ep_len=500.
+    Use this instead of calling TDMPC2Config() directly.
     """
+    assert action_dim > 0, f"action_dim must be positive, got {action_dim}"
     base = TDMPC2Config(
+        action_dim=action_dim,
         episode_lengths=(episode_length,),
         task_names=(task_name,),
     )
@@ -1463,9 +1509,12 @@ def policy_loss(
     # One `.mean()` = 1/(H+1) normalization over time
     L_policy = -weighted.mean()
 
-    return L_policy, {"scaled_entropy_mean": scaled_entropy.mean(),
-                      "q_avg_mean": q_avg.mean(),
-                      "L_policy": L_policy}
+    return L_policy, {
+        "scaled_entropy_mean": scaled_entropy.mean(),
+        "q_avg_mean": q_avg.mean(),
+        "L_policy": L_policy,
+        "a_t0": jax.lax.stop_gradient(a[0]),  # (B, action_dim) — reused by Q-scale update in G2
+    }
 ```
 
 *Note: the `q_avg` path as-written takes `avg-of-2-decoded`. This matches source `return_type='avg'` which uses `.mean(0)` on the `(2, ...)` decoded tensor (source world_model.py:206-212).*
@@ -1574,8 +1623,9 @@ def test_mppi_score_has_gamma_powers_and_terminal_Q():
 - [ ] **Step 3: Implement MPPI as pure JAX function**
 
 ```python
-def mppi_rollout(wm_params, z_0: jax.Array, actions_seq: jax.Array,
+def mppi_rollout(plan_params, z_0: jax.Array, actions_seq: jax.Array,
                  cfg: TDMPC2Config, key: jax.Array) -> jax.Array:
+    """`plan_params` = {encoder, dynamics, reward, q_ensemble, policy} — see API Contracts."""
     """Roll dynamics forward H steps, accumulating discounted reward + terminal Q.
 
     Args:
@@ -1590,11 +1640,11 @@ def mppi_rollout(wm_params, z_0: jax.Array, actions_seq: jax.Array,
     def step(carry, inputs):
         z, discount_factor, G = carry
         a = inputs
-        r_logits = Reward.apply(wm_params["reward"], z, a)
+        r_logits = reward_net.apply(plan_params["reward"], z, a)
         r_probs = jax.nn.softmax(r_logits, axis=-1)
         r_hat = two_hot_inv(r_probs, cfg.vmin, cfg.vmax, cfg.num_bins, apply_symexp=True).squeeze(-1)
         G = G + discount_factor * r_hat
-        z_next = Dynamics.apply(wm_params["dynamics"], z, a)
+        z_next = dynamics.apply(plan_params["dynamics"], z, a)
         return (z_next, discount_factor * gamma, G), None
 
     (z_final, _, G_reward), _ = jax.lax.scan(
@@ -1603,8 +1653,8 @@ def mppi_rollout(wm_params, z_0: jax.Array, actions_seq: jax.Array,
 
     # Terminal Q bootstrap: γ^H · Q_avg_of_2(z_final, π(z_final))
     key_pi, key_q = jax.random.split(key, 2)
-    a_terminal, _ = PolicyPrior.apply(wm_params["policy"], z_final, key_pi)
-    q_logits = QEnsemble.apply(wm_params["q_ensemble"], z_final, a_terminal, deterministic=True)
+    a_terminal, _ = policy_net.apply(plan_params["policy"], z_final, key_pi)
+    q_logits = q_ensemble.apply(plan_params["q_ensemble"], z_final, a_terminal, deterministic=True)
     # Subsample 2 heads, decode, average (matches return_type='avg')
     perm = jax.random.permutation(key_q, cfg.num_q)[:2]
     q_selected = q_logits[perm]  # (2, N, num_bins)
@@ -1615,7 +1665,7 @@ def mppi_rollout(wm_params, z_0: jax.Array, actions_seq: jax.Array,
     return G_reward + (gamma ** H) * q_terminal
 
 
-def mppi_iteration(mean, std, wm_params, z_0, pi_trajs, cfg, key):
+def mppi_iteration(mean, std, plan_params, z_0, pi_trajs, cfg, key):
     """One MPPI iteration: sample, score, update mean/std with elite-weighted stats."""
     key_sample, key_rollout = jax.random.split(key, 2)
     N_gauss = cfg.num_samples - cfg.num_pi_trajs
@@ -1627,7 +1677,7 @@ def mppi_iteration(mean, std, wm_params, z_0, pi_trajs, cfg, key):
 
     # Score each trajectory by rolling from z_0
     z_0_broadcast = jnp.broadcast_to(z_0, (cfg.num_samples, z_0.shape[-1]))
-    scores = mppi_rollout(wm_params, z_0_broadcast, actions, cfg, key_rollout)
+    scores = mppi_rollout(plan_params, z_0_broadcast, actions, cfg, key_rollout)
 
     # Elite selection: top-K by score
     elite_idx = jax.lax.top_k(scores, cfg.num_elites)[1]  # (num_elites,)
@@ -1685,8 +1735,9 @@ def test_mppi_pi_seeds_dynamics_advances_count():
 - [ ] **Step 3: Implement**
 
 ```python
-def sample_pi_trajectories(wm_params, z_0: jax.Array, cfg: TDMPC2Config,
+def sample_pi_trajectories(plan_params, z_0: jax.Array, cfg: TDMPC2Config,
                             key: jax.Array) -> jax.Array:
+    """`plan_params` = {encoder, dynamics, reward, q_ensemble, policy} — see API Contracts."""
     """Roll policy prior forward through latent dynamics to produce seed trajectories.
 
     Source tdmpc2.py:155-165:
@@ -1701,12 +1752,12 @@ def sample_pi_trajectories(wm_params, z_0: jax.Array, cfg: TDMPC2Config,
     def step(carry, h_idx):
         z, key = carry
         key, subkey = jax.random.split(key)
-        a, _ = PolicyPrior.apply(wm_params["policy"], z, subkey)  # (N, action_dim)
+        a, _ = policy_net.apply(plan_params["policy"], z, subkey)  # (N, action_dim)
         # Advance dynamics ONLY for h < horizon - 1 (last step: sample a but don't advance)
         do_advance = h_idx < cfg.horizon - 1
         z_next = jnp.where(
             do_advance,
-            Dynamics.apply(wm_params["dynamics"], z, a),
+            dynamics.apply(plan_params["dynamics"], z, a),
             z,  # don't advance at the final step
         )
         return (z_next, key), a
@@ -1840,9 +1891,13 @@ def gumbel_sample_elite(key: jax.Array, weights: jax.Array, elite_actions: jax.A
     return elite_actions[0, idx]  # first action of sampled elite
 
 
-def plan(wm_params, z_0: jax.Array, prev_mean: jax.Array, t0: jax.Array,
+def plan(plan_params, z_0: jax.Array, prev_mean: jax.Array, t0: jax.Array,
          cfg: TDMPC2Config, key: jax.Array, eval_mode: bool = False
          ) -> tuple[jax.Array, jax.Array]:
+    """`plan_params` = {encoder, dynamics, reward, q_ensemble, policy} — see API Contracts.
+
+    Caller (train script) builds it via `{**wm_params, "policy": policy_params}` before this call.
+    """
     """Full MPPI planner for a single env (vmap externally for num_envs > 1).
 
     Args:
@@ -1861,7 +1916,7 @@ def plan(wm_params, z_0: jax.Array, prev_mean: jax.Array, t0: jax.Array,
     std = jnp.full((cfg.horizon, cfg.action_dim), cfg.mppi_max_std)
 
     # 2. Sample 24 pi trajectories ONCE at the start (source samples once, reuses each iteration)
-    pi_trajs = sample_pi_trajectories(wm_params, z_0, cfg, key_pi)
+    pi_trajs = sample_pi_trajectories(plan_params, z_0, cfg, key_pi)
 
     # 3. MPPI iteration loop
     iterations = cfg.mppi_iterations + (2 if cfg.action_dim >= 20 else 0)
@@ -1869,7 +1924,7 @@ def plan(wm_params, z_0: jax.Array, prev_mean: jax.Array, t0: jax.Array,
     def iter_body(carry, key_i):
         mean_c, std_c = carry
         new_mean, new_std, elite_actions, weights = mppi_iteration(
-            mean_c, std_c, wm_params, z_0, pi_trajs, cfg, key_i
+            mean_c, std_c, plan_params, z_0, pi_trajs, cfg, key_i
         )
         return (new_mean, new_std), (elite_actions, weights)
 
@@ -1971,9 +2026,16 @@ def test_update_smoke_no_nan():
 - [ ] **Step 3: Implement**
 
 ```python
-@jax.jit
-def update_step(state: TDMPC2State, batch: dict, cfg: TDMPC2Config) -> tuple[TDMPC2State, dict]:
-    """One gradient step. Order matters: world model → policy (on detached latents) → EMA → Q-scale."""
+def make_update_step(cfg: TDMPC2Config, wm_optimizer, policy_optimizer):
+    """Factory: returns a jit'd update_step closed over the (non-pytree) optimizers.
+
+    Optax GradientTransformation is not a pytree leaf, so it cannot live on cfg/state.
+    Caller builds optimizers once in the train script and calls this factory to get the
+    jit'd step fn.
+    """
+    @jax.jit
+    def update_step(state: TDMPC2State, batch: dict) -> tuple[TDMPC2State, dict]:
+        """One gradient step. Order matters: world model → policy (on detached latents) → EMA → Q-scale."""
     key_wm, key_pol, key_next = jax.random.split(state.key, 3)
 
     # 1. World model update
@@ -1991,7 +2053,7 @@ def update_step(state: TDMPC2State, batch: dict, cfg: TDMPC2Config) -> tuple[TDM
         world_model_loss, has_aux=True, argnums=0  # grad w.r.t. params (argnum 0)
     )(wm_params, target_params, state.policy_params, batch, cfg, key_wm)
     # Apply grad (multi_transform optimizer with encoder at scaled LR)
-    wm_updates, new_wm_opt_state = cfg.world_model_optimizer.update(
+    wm_updates, new_wm_opt_state = wm_optimizer.update(
         wm_grads, state.world_model_opt_state, wm_params
     )
     wm_params_new = optax.apply_updates(wm_params, wm_updates)
@@ -2005,14 +2067,27 @@ def update_step(state: TDMPC2State, batch: dict, cfg: TDMPC2Config) -> tuple[TDM
     (pol_loss, pol_metrics), pol_grads = jax.value_and_grad(
         policy_loss, has_aux=True
     )(pol_params, state.qscale, zs_detached, cfg, key_pol)
-    pol_updates, new_pol_opt_state = cfg.policy_optimizer.update(
+    pol_updates, new_pol_opt_state = policy_optimizer.update(
         pol_grads, state.policy_opt_state, pol_params
     )
     policy_params_new = optax.apply_updates(pol_params, pol_updates)["policy"]
 
-    # 3. Q-scale update from t=0 avg-of-2 Q values on zs_detached
-    # (Extract same avg-of-2 as in policy_loss.)
-    # ... (matches source tdmpc2.py:222)
+    # 3. Q-scale update from t=0 avg-of-2 Q values on zs_detached.
+    # Source tdmpc2.py:222: `self.scale.update(qs[0])` where qs is shape (H+1, B, 1) avg-of-2.
+    # We extract q_avg at t=0 the same way policy_loss does (avg of 2 random heads decoded).
+    key_qscale = jax.random.split(key_pol)[0]
+    perm_qs = jax.random.permutation(key_qscale, cfg.num_q)[:2]
+    q_logits_for_scale = q_ensemble.apply(
+        jax.lax.stop_gradient(wm_params_new["q_ensemble"]),
+        zs_detached[0],                    # t=0 latents, (B, latent_dim)
+        jax.lax.stop_gradient(pol_metrics["a_t0"]),  # t=0 sampled action (added to pol_metrics)
+        deterministic=True,
+    )  # (num_q, B, num_bins)
+    q_sel = q_logits_for_scale[perm_qs]   # (2, B, num_bins)
+    q_dec = two_hot_inv(jax.nn.softmax(q_sel, -1), cfg.vmin, cfg.vmax, cfg.num_bins,
+                        apply_symexp=True).squeeze(-1)  # (2, B)
+    q_avg_t0 = q_dec.mean(axis=0)          # (B,)
+    new_qscale = qscale_update(state.qscale, q_avg_t0, tau=cfg.tau)
 
     # 4. Target EMA
     def ema_tree(target, online, tau):
@@ -2024,15 +2099,28 @@ def update_step(state: TDMPC2State, batch: dict, cfg: TDMPC2Config) -> tuple[TDM
 
     # 5. Pack new state
     new_state = state.replace(
-        encoder_params=wm_params_new["encoder"], ...,
+        encoder_params=wm_params_new["encoder"],
+        dynamics_params=wm_params_new["dynamics"],
+        reward_params=wm_params_new["reward"],
+        q_ensemble_params=wm_params_new["q_ensemble"],
         policy_params=policy_params_new,
-        ...,
+        encoder_target_params=new_target_encoder,
+        dynamics_target_params=new_target_dynamics,
+        reward_target_params=new_target_reward,
+        q_ensemble_target_params=new_target_q,
+        world_model_opt_state=new_wm_opt_state,
+        policy_opt_state=new_pol_opt_state,
+        qscale=new_qscale,
         key=key_next,
         step=state.step + 1,
     )
 
     return new_state, {**wm_metrics, **pol_metrics}
+
+    return update_step   # factory returns the jit'd fn
 ```
+
+*Note:* `policy_loss` must add `a_t0 = sampled_actions[0]` (the t=0 sampled actions, stop-gradded) to its returned metrics dict so Q-scale can reuse it without re-sampling. See Task E3 and add `"a_t0": jax.lax.stop_gradient(a[0])` to the metrics return.
 
 - [ ] **Step 4: Pass.**
 - [ ] **Step 5: Commit.**
