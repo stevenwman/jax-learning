@@ -331,3 +331,36 @@ class TestExtraObsBuffer:
         """Buffer without extra_obs_dims should have empty mappings."""
         buf = JaxReplayBuffer(OBS_DIM, ACTION_DIM, max_size=100)
         assert not hasattr(buf, '_extra_next_keys') or buf._extra_obs_dims == {}
+
+
+# ── TD-MPC2 episode_id tests ─────────────────────────────────────────────
+
+import numpy as np
+
+
+def test_buffer_stores_episode_ids():
+    """episode_ids supplied via add_batch get stored and retrievable."""
+    buf = JaxReplayBuffer(obs_dim=3, action_dim=2, max_size=100)
+    # Add 5 transitions with explicit episode_ids: [0,0,0,1,1]
+    obs = np.stack([np.ones(3, dtype=np.float32) * i for i in range(5)])
+    next_obs = np.stack([np.ones(3, dtype=np.float32) * (i+1) for i in range(5)])
+    actions = np.ones((5, 2), dtype=np.float32)
+    rewards = np.zeros(5, dtype=np.float32)
+    dones = np.array([False, False, True, False, False], dtype=np.float32)
+    trunc = np.zeros(5, dtype=np.float32)
+    episode_ids = np.array([0, 0, 0, 1, 1], dtype=np.int32)
+    buf.add_batch(obs, actions, rewards, next_obs, dones, trunc,
+                  episode_ids=episode_ids)
+    stored = np.array(buf.episode_ids[:5])
+    assert list(stored) == [0, 0, 0, 1, 1], f"Got {list(stored)}"
+
+
+def test_buffer_episode_ids_default_zero_when_not_supplied():
+    """If episode_ids kwarg is omitted, buffer defaults to all zeros (backward compat)."""
+    buf = JaxReplayBuffer(obs_dim=3, action_dim=2, max_size=100)
+    obs = np.zeros((3, 3), dtype=np.float32)
+    next_obs = np.zeros((3, 3), dtype=np.float32)
+    actions = np.zeros((3, 2), dtype=np.float32)
+    buf.add_batch(obs, actions, np.zeros(3, dtype=np.float32), next_obs,
+                  np.zeros(3, dtype=np.float32), np.zeros(3, dtype=np.float32))
+    assert np.all(np.array(buf.episode_ids[:3]) == 0)

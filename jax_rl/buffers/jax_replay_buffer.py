@@ -62,6 +62,9 @@ class JaxReplayBuffer:
         self.rewards     = jnp.zeros((max_size, 1),            dtype=jnp.float32)
         self.dones       = jnp.zeros((max_size, 1),            dtype=jnp.float32)
         self.truncations = jnp.zeros((max_size, 1),            dtype=jnp.float32)
+        # Per-transition episode ID for TD-MPC2 per-episode sequence sampling (B2).
+        # Supplied externally via add_batch(..., episode_ids=...); defaults to zeros.
+        self.episode_ids = jnp.zeros((max_size,), dtype=jnp.int32)
 
         if frame_stack_config is None:
             self.next_obs = jnp.zeros((max_size, self.obs_dim), dtype=jnp.float32)
@@ -86,6 +89,7 @@ class JaxReplayBuffer:
         next_obs: jax.Array,
         done: jax.Array,
         truncation: jax.Array | None = None,
+        episode_ids: jax.Array | None = None,
         **extra: jax.Array,
     ) -> None:
         """Add a batch of transitions. Accepts jax.Array or numpy (auto-converts).
@@ -97,6 +101,9 @@ class JaxReplayBuffer:
             next_obs: (batch, obs_dim)
             done: (batch,) or (batch, 1)
             truncation: (batch,) or (batch, 1), optional
+            episode_ids: (batch,) int32, optional. Per-transition episode IDs for
+                TD-MPC2 per-episode sequence sampling (B2). Defaults to zeros if
+                not supplied (backward compatible).
             **extra: Extra obs fields matching extra_obs_dims keys
                 (e.g., critic_obs, next_critic_obs).
         """
@@ -136,6 +143,15 @@ class JaxReplayBuffer:
                 self.rewards, self.dones, self.truncations,
                 obs, next_obs, action, reward, done, truncation, ptr,
             )
+
+        # Scatter episode_ids via Python-level update (same pattern as extras below).
+        # Avoids touching _jit_add / _jit_add_fs closures.
+        if episode_ids is None:
+            episode_ids = jnp.zeros(n, dtype=jnp.int32)
+        else:
+            episode_ids = jnp.asarray(episode_ids, dtype=jnp.int32)
+        indices = (jnp.arange(n) + ptr) % self.max_size
+        self.episode_ids = self.episode_ids.at[indices].set(episode_ids)
 
         # Store extra obs (e.g., critic_obs, next_critic_obs) via non-JIT scatter.
         # Overhead is tiny (<0.1ms per extra field) — not worth a separate JIT path.
