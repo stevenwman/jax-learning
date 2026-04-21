@@ -35,6 +35,7 @@ def _base_config() -> config_dict.ConfigDict:
         action_scale=1.0,
         soft_joint_pos_limit_factor=0.95,
         observe_board_state=True,
+        observe_contraction=False,
         target_handstand_height=0.55,
         noise_config=config_dict.create(
             level=1.0,
@@ -240,6 +241,16 @@ class BongoHandstand(go2_warp_base.Go2WarpEnv):
         ]
 
         self._obs_groups = {"state": state_terms, "privileged_state": privileged_terms}
+
+        if self._config.observe_contraction:
+            target_g = jp.array([1.0, 0.0, 0.0])
+            contraction_terms = [
+                ObsTerm("c_gravity_residual",
+                        lambda data, **kw: self.get_gravity(data) - target_g),
+                ObsTerm("c_dot_gravity",
+                        lambda data, **kw: -jp.cross(self.get_gyro(data), self.get_gravity(data))),
+            ]
+            self._obs_groups["contraction_state"] = contraction_terms
 
         # Build reward spec from config keys — supports both B2 (exp) and C (cost) presets.
         target_gravity = jp.array([1.0, 0.0, 0.0])
