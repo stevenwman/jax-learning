@@ -165,6 +165,22 @@ DomainRandWrapper(env, episode_length=1000, mode="per_step")
 
 ---
 
+### TerrainCurriculumDRWrapper
+
+```python
+from jax_rl.envs.wrappers.terrain_curriculum_dr import TerrainCurriculumDRWrapper
+```
+
+`DomainRandWrapper` subclass for the `Go2WarpJoystickCurriculum*` envs. After `DomainRandWrapper`'s done-merge, overrides terrain-related fields per-env: `terrain_level` advances or demotes based on episode outcome, and `goal_xy` / spawn position resample for the new level. Terrain type (column) is fixed per env for all of training.
+
+```python
+TerrainCurriculumDRWrapper(env, episode_length=1000, mode="per_step", num_envs=1)
+```
+
+User-visible behavior (spawn policy, promote/demote rule, wandb metric keys) is documented on [`WarpJoystickCurriculum`](envs.md#warpjoystickcurriculum). This wrapper is a discoverability stub — see that page or the source for the full contract.
+
+---
+
 ### wrap_for_training
 
 ```python

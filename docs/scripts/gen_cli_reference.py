@@ -321,6 +321,59 @@ def build_flashsac_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def build_pusht_parser() -> argparse.ArgumentParser:
+    """Mirror of train_pusht.py's argparse setup."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--reward-mode", type=str, default="dense",
+                        choices=["coverage", "sparse", "shaped", "approach", "dense", "contact_gated"],
+                        help="Reward function. contact_gated is the working RL-from-scratch recipe.")
+    parser.add_argument("--total-timesteps", type=int, default=1_000_000,
+                        help="Total environment steps to train")
+    parser.add_argument("--num-envs", type=int, default=8,
+                        help="Number of parallel environments")
+    parser.add_argument("--buffer-size", type=int, default=500_000,
+                        help="Replay buffer capacity")
+    parser.add_argument("--batch-size", type=int, default=512,
+                        help="Batch size for gradient updates")
+    parser.add_argument("--grad-updates-per-step", type=int, default=1,
+                        help="Gradient updates per env step (UTD ratio)")
+    parser.add_argument("--lr", type=float, default=3e-4,
+                        help="Learning rate for actor and critic")
+    parser.add_argument("--gamma", type=float, default=0.99,
+                        help="Discount factor")
+    parser.add_argument("--reward-scale", type=float, default=1.0,
+                        help="Multiplier on env reward before replay. Use 0.1 for contact_gated.")
+    parser.add_argument("--grad-clip-norm", type=float, default=None,
+                        help="Global grad norm clip (e.g. 1.0). None = off.")
+    parser.add_argument("--target-entropy-scale", type=float, default=1.0,
+                        help="SAC target entropy = -scale * action_dim. Bigger = more explore.")
+    parser.add_argument("--obs-type", type=str, default="state",
+                        choices=["state", "environment_state_agent_pos"],
+                        help="state=5d, environment_state_agent_pos=18d (flattened keypoints + agent)")
+    parser.add_argument("--frame-stack", type=int, default=1,
+                        help="Stack N consecutive obs. Implicit velocity; flattened to obs_dim × N.")
+    parser.add_argument("--action-repeat", type=int, default=1,
+                        help="Repeat each action K env steps (frame skip). Commits policy to direction.")
+    parser.add_argument("--coverage-shape", type=str, default="linear",
+                        choices=["linear", "log_barrier"],
+                        help="r_coverage shape. 'linear' = raw coverage. 'log_barrier' = -log(1 - cov + eps): unbounded near goal, amplifies final-mile precision.")
+    parser.add_argument("--coverage-eps", type=float, default=0.01,
+                        help="Epsilon for log_barrier (sets max reward ceiling: ε=0.01 → r_max≈4.6).")
+    parser.add_argument("--success-threshold", type=float, default=0.95,
+                        help="Coverage threshold for terminated=True. DP paper uses 0.95. Lower to 0.85 for tractable success events.")
+    parser.add_argument("--success-bonus", type=float, default=50.0,
+                        help="Terminal reward on success (contact_gated mode only). Default 50.")
+    parser.add_argument("--block-shape", type=str, default="tee",
+                        choices=["tee", "ellipse", "triangle", "s", "dr"],
+                        help="Block shape. 'dr' samples uniformly per episode from {tee, ellipse, triangle, s}.")
+    parser.add_argument("--seed", type=int, default=0, help="Random seed")
+    parser.add_argument("--eval-every-n-steps", type=int, default=50_000,
+                        help="Evaluate every N environment steps")
+    parser.add_argument("--wandb", action="store_true",
+                        help="Enable W&B experiment tracking")
+    return parser
+
+
 def build_record_parser() -> argparse.ArgumentParser:
     """Mirror of record_video.py's argparse setup."""
     parser = argparse.ArgumentParser()
@@ -360,6 +413,7 @@ uv run python docs/scripts/gen_cli_reference.py
         render_parser("train_fast_sac.py", build_fast_sac_parser()),
         render_parser("train_fast_td3.py", build_fast_td3_parser()),
         render_parser("train_flashsac.py", build_flashsac_parser()),
+        render_parser("train_pusht.py", build_pusht_parser()),
         render_parser("record_video.py", build_record_parser()),
     ]
     output = header + "\n---\n\n".join(sections)

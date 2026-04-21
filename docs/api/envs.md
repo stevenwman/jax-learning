@@ -1,11 +1,13 @@
 # Environments
 
-MuJoCo-based environments for quadruped locomotion. All environments use MuJoCo Warp (`impl="warp"`) for GPU-accelerated physics.
+MuJoCo-based environments for quadruped locomotion. All environments use MuJoCo Warp (`impl="warp"`) for GPU-accelerated physics. For the planar-pushing manipulation benchmark, see [PushT](pusht.md).
 
 | Environment | Task | Obs (state) | Obs (privileged) | Actions |
 |-------------|------|-------------|-------------------|---------|
 | [WarpJoystick](#warpjoystick) | Track velocity command | 48d | 122d | 12 (joint targets) |
 | [WarpJoystick (+torque-speed)](#actuator-models) | Same, with motor saturation curve | 48d | 122d | 12 (joint targets) |
+| [WarpJoystickCurriculum](#warpjoystickcurriculum) | Goal-directed locomotion on 4-type × 10-level terrain grid | 48d | 122d | 12 (joint targets) |
+| [WarpJoystickCurriculum (+torque-speed)](#warpjoystickcurriculum) | Same, with motor saturation curve | 48d | 122d | 12 (joint targets) |
 | [BongoHandstand](#bongohandstand) | Handstand on bongo board | 42–46d | ~96d | 12 (joint targets) |
 
 Reward and observation specs are data-driven — swap terms without touching environment internals.

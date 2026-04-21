@@ -162,6 +162,35 @@ uv run python docs/scripts/gen_cli_reference.py
 
 ---
 
+## `train_pusht.py`
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--reward-mode` | str | `dense` | Reward function. contact_gated is the working RL-from-scratch recipe. |
+| `--total-timesteps` | int | `1000000` | Total environment steps to train |
+| `--num-envs` | int | `8` | Number of parallel environments |
+| `--buffer-size` | int | `500000` | Replay buffer capacity |
+| `--batch-size` | int | `512` | Batch size for gradient updates |
+| `--grad-updates-per-step` | int | `1` | Gradient updates per env step (UTD ratio) |
+| `--lr` | float | `0.0003` | Learning rate for actor and critic |
+| `--gamma` | float | `0.99` | Discount factor |
+| `--reward-scale` | float | `1.0` | Multiplier on env reward before replay. Use 0.1 for contact_gated. |
+| `--grad-clip-norm` | float | - | Global grad norm clip (e.g. 1.0). None = off. |
+| `--target-entropy-scale` | float | `1.0` | SAC target entropy = -scale * action_dim. Bigger = more explore. |
+| `--obs-type` | str | `state` | state=5d, environment_state_agent_pos=18d (flattened keypoints + agent) |
+| `--frame-stack` | int | `1` | Stack N consecutive obs. Implicit velocity; flattened to obs_dim × N. |
+| `--action-repeat` | int | `1` | Repeat each action K env steps (frame skip). Commits policy to direction. |
+| `--coverage-shape` | str | `linear` | r_coverage shape. 'linear' = raw coverage. 'log_barrier' = -log(1 - cov + eps): unbounded near goal, amplifies final-mile precision. |
+| `--coverage-eps` | float | `0.01` | Epsilon for log_barrier (sets max reward ceiling: ε=0.01 → r_max≈4.6). |
+| `--success-threshold` | float | `0.95` | Coverage threshold for terminated=True. DP paper uses 0.95. Lower to 0.85 for tractable success events. |
+| `--success-bonus` | float | `50.0` | Terminal reward on success (contact_gated mode only). Default 50. |
+| `--block-shape` | str | `tee` | Block shape. 'dr' samples uniformly per episode from {tee, ellipse, triangle, s}. |
+| `--seed` | int | `0` | Random seed |
+| `--eval-every-n-steps` | int | `50000` | Evaluate every N environment steps |
+| `--wandb` | flag | off | Enable W&B experiment tracking |
+
+---
+
 ## `record_video.py`
 
 | Flag | Type | Default | Description |
