@@ -17,6 +17,8 @@ class RolloutBatch(NamedTuple):
     values: jax.Array  # (num_steps, num_envs)
     advantages: jax.Array | None = None  # (num_steps, num_envs) - computed after collection
     returns: jax.Array | None = None  # (num_steps, num_envs) - computed after collection
+    contraction_c: jax.Array | None = None      # (num_steps, num_envs, constraint_dim)
+    contraction_c_dot: jax.Array | None = None  # (num_steps, num_envs, constraint_dim)
 
 
 class RolloutBuffer:

@@ -266,12 +266,11 @@ contraction_c: jax.Array | None = None       # (E, constraint_dim)
 contraction_c_dot: jax.Array | None = None   # (E, constraint_dim)
 ```
 
-- [ ] **Step 1: Append fields to RolloutBatch** (default `None` preserves existing call sites)
-- [ ] **Step 2: Append fields to StepData; update `collect_step`** to slice `env_state.obs["contraction_state"]` into `c` / `c_dot` using the split convention in Task 5 ("Packing convention")
-- [ ] **Step 3: Update post-scan `RolloutBatch(...)` construction (line 315-323) to forward new fields** — gated on `cfg.ppo.contraction is not None`
-- [ ] **Step 4: If also supporting `train_ppo.py` slow path: update `RolloutBuffer.__init__` + `add()`. Otherwise skip — plan defaults to fast path per Task 7 Step 1.**
-- [ ] **Step 5: Run existing PPO tests — must still pass** (`uv run pytest tests/ -k ppo -v`)
-- [ ] **Step 6: Commit**
+- [ ] **Step 1: Append fields to RolloutBatch** (default `None` preserves existing call sites). ✅ done.
+- [ ] **Step 2: Run existing PPO tests — must still pass** (`uv run pytest tests/ -k ppo -v`). ✅ done.
+- [ ] **Step 3: Commit**. ✅ done.
+
+**Moved to Task 7 (natural boundary):** `StepData` extension + `collect_step` slicing + post-scan `RolloutBatch(...)` forwarding all require scan-carry threading of contraction state, which is also where metric_params threading happens. Keeping Task 4 minimal keeps baseline PPO fully unchanged.
 
 ---
 
