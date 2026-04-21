@@ -4,6 +4,7 @@ from jax_rl.configs.networks_config import (
     EncoderConfig,
     PolicyHeadConfig,
 )
+from jax_rl.configs.contraction_config import ContractionConfig
 from jax_rl.configs.ppo_config import PPOConfig
 from jax_rl.configs.sac_config import SACConfig
 from jax_rl.configs.td3_config import TD3Config
@@ -18,6 +19,7 @@ from jax_rl.configs.env_presets import (
 __all__ = [
     "EncoderConfig",
     "PolicyHeadConfig",
+    "ContractionConfig",
     "PPOConfig",
     "SACConfig",
     "TD3Config",

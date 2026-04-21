@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, field
 from jax_rl.configs.networks_config import EncoderConfig, PolicyHeadConfig
+from jax_rl.configs.contraction_config import ContractionConfig
 
 
 @dataclass
@@ -48,3 +49,6 @@ class PPOConfig:
 
     # Advanced
     normalize_advantage: bool = True
+
+    # Contraction theory (None = disabled, baseline PPO)
+    contraction: ContractionConfig | None = None
