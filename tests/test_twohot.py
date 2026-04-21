@@ -23,7 +23,7 @@ def test_two_hot_decode_roundtrip():
         x = jnp.array([[x_val]])
         enc = two_hot(x, vmin=-10.0, vmax=10.0, num_bins=101)
         dec = two_hot_inv(enc, vmin=-10.0, vmax=10.0, num_bins=101, apply_symexp=False)
-        assert jnp.allclose(dec, x, atol=1e-4), f"Failed at {x_val}: got {float(dec)}"
+        assert jnp.allclose(dec, x, atol=1e-4), f"Failed at {x_val}: got {float(dec[0, 0])}"
 
 def test_two_hot_inv_with_symexp():
     r = jnp.array([[100.0], [-50.0], [0.0]])
