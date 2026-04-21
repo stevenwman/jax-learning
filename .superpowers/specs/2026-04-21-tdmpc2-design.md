@@ -1,7 +1,7 @@
 # TD-MPC2 JAX Reimplementation — Design Spec
 
-**Date:** 2026-04-21 (4 review iterations; each round found additional silent-failure bugs)
-**Status:** Design approved; four rounds of independent review findings integrated; pending user sign-off
+**Date:** 2026-04-21 (5 review iterations; iter-5 verified all prior fixes and found no new critical errors)
+**Status:** Design approved; iter-5 reviewer concluded no remaining critical silent-failure bugs; pending user sign-off
 **Target:** Port TD-MPC2 (Hansen et al. 2024, `nicklashansen/tdmpc2`) to this JAX/Flax framework
 
 ---
@@ -162,6 +162,7 @@ jax_rl/configs/env_presets.py       # Add TDMPC2 presets for DMC tasks + Go2
 - **`num_samples=512`** trajectories; **`horizon=3`**; **`num_elites=64`**; **`iterations=6`** (+2 if `action_dim ≥ 20`).
 - **`temperature=0.5`**; `min_std=0.05`, `max_std=2.0`.
 - **`num_pi_trajs=24`** of the 512 samples are seeded by rolling out the policy prior forward in latent space. Loop structure (from source `tdmpc2.py:155-165`): starting from current latent `z_0`, for `h = 0..horizon-1` sample `a_h = π(z_h)`, then for `h = 0..horizon-2` advance `z_{h+1} = dynamics(z_h, a_h)`. Net: `horizon` policy samples, `horizon - 1` dynamics advances. A naive `range(horizon)` both-loop rewrite would over-advance the latent by one step and produce OOD final samples.
+- **Gaussian samples** (the remaining `num_samples - num_pi_trajs = 488` trajectories): drawn i.i.d. from `Normal(mean, std)` with shape `(horizon, num_samples - num_pi_trajs, action_dim)` — fully independent across (time, sample, action_dim). No temporal smoothing, no OU noise, no colored samples. Source: `tdmpc2.py:177`.
 - **Mean warm-start across env steps (`_prev_mean`):** the MPPI mean trajectory is persisted across calls. At each new planner call with `t0=False`, initialize `mean[:-1] = prev_mean[1:]` and `mean[-1] = 0`. On episode reset or first step (`t0=True`), zero-initialize. This matches source (`tdmpc2.py:41, 167-168, 206`) and is a load-bearing mechanism — without it, every env step restarts planning from scratch and planner quality drops visibly. **Intentional vectorization deviation from source:** source stores `_prev_mean` as `(horizon, action_dim)` (single env). We store it as `(num_envs, horizon, action_dim)` to support `num_envs > 1` collect. Reset logic indexes per-env on `t0[i]=True`. Lives in `TrainState`.
 - **Collect and eval must NOT share `_prev_mean`.** The training `TrainState` carries the collect-env warm-start tensor. The eval runner carries its own `(num_eval_envs, horizon, action_dim)` tensor. Interleaving would mean eval mutates collect warm-start and vice versa — silent planner degradation. Eval `_prev_mean` resets at the start of each eval episode (`t0=True`).
 - **Per-iteration std update:** at each MPPI iteration, update mean and std from the elite-weighted empirical mean and variance, then clamp `std ∈ [min_std, max_std]`. Source `tdmpc2.py:194-195`.
@@ -214,12 +215,19 @@ L_world_total = consistency_coef · L_consistency + reward_coef · L_reward + va
 next_z_h = sg(encoder_online(o_{h+1}))            # for h=0..H-1; == z_targets_{h+1}
 
 # Target policy samples action from ONLINE policy on next_z (source uses online pi, not target pi).
-a_next_h = π_online(next_z_h)                     # sampled action; stop-grad on z
+# a_next_h is a REPARAMETERIZED SAMPLE (Gaussian + tanh), not the mean μ. Source: `world_model.py:154-173`.
+a_next_h = sample π_online(next_z_h)              # stochastic; stop-grad on z
 
-# Target Q is the target-network ensemble's min-of-2 subsample, decoded through two-hot→symexp.
-target_q_h = r_h + γ · (1 - terminated_h) · twohot_decode(
-    Q_target_min_of_2( next_z_h, a_next_h )
-)
+# Target Q pathway (source `world_model.py:205-215` for return_type='min', target=True):
+#   1. Evaluate all 5 target-Q heads → 5 logit tensors
+#   2. Random-permute head indices, take first 2 → two logit tensors (q_a, q_b)
+#   3. DECODE each through two-hot → symexp → two scalar Q values (q_a_dec, q_b_dec)
+#   4. Elementwise min across those two decoded scalars → Q_min (one scalar per sample)
+# Critical ordering: decode FIRST, min SECOND. Do NOT take min of logits then decode — logit magnitudes
+# between heads are not commensurate with the softmax-weighted decoded values.
+
+target_q_h = r_h + γ · (1 - terminated_h) · min( decode(Q_target_head_a(next_z_h, a_next_h)),
+                                                 decode(Q_target_head_b(next_z_h, a_next_h)) )
 ```
 **Critical:** the TD-target path does NOT use target dynamics. Source (`tdmpc2.py:253-264`):
 - `next_z = self.model.encode(obs[1:], task)` — online encoder applied to the real next observation
@@ -254,7 +262,7 @@ Using dynamics-rolled targets instead would compound model error into the bootst
 - At `_step == seed_steps` boundary: **burst of `seed_steps` gradient updates** (pretraining on filled buffer) before normal UTD=1 begins.
 
 ### Update loop (UTD=1 after warmup)
-1. Sample: `buffer.sample_sequence(batch=256, H=3)` → `(o_{0..H}, a_{0..H-1}, r_{0..H-1}, done, truncated)` shape `(H+1, B, …)`. Per-episode slice sampling guarantees all H+1 steps come from the same episode (§D4).
+1. Sample: `buffer.sample_sequence(batch=256, H=3)` → `(o_{0..H}, a_{0..H-1}, r_{0..H-1}, terminated_{0..H-1}, truncated_{0..H-1})` shape `(H+1, B, …)` for obs and `(H, B, …)` for the others. Per-episode slice sampling guarantees all H+1 steps come from the same episode (§D4). Note: buffer extension adds `truncated` as a separate field alongside the existing `terminated` (source stores only `terminated`; we extend).
 2. Encode entire observed sequence with online encoder under stop-grad → `z_targets_{0..H}`.
 3. Forward-roll dynamics from `z_0 = encoder(o_0)` to get `ẑ_{1..H}`.
 4. Compute reward/Q logits at each step.
@@ -346,12 +354,16 @@ class TDMPC2Config:
     mppi_max_std: float = 2.0
 
     # Training loop
+    total_steps: int = 1_000_000      # DMC default; source config.yaml uses 10M for MT, 1M single-task
     seed_steps: int = 2500            # random action warmup; source: max(1000, 5*episode_length)
     # Warmup gradient burst at _step == seed_steps: always performs `seed_steps` updates (multiplier=1 in source)
     utd: int = 1
     collect_mode: str = "mppi"        # "mppi" | "prior"
     num_envs: int = 8
     num_eval_envs: int = 8
+    eval_every: int = 50_000          # env steps between eval runs (source: eval_freq=50_000)
+    eval_episodes: int = 10           # episodes per eval run (source: eval_episodes=10)
+    buffer_size: int = 1_000_000      # source: 1M transitions
 
     # Per-task discount heuristic (source `tdmpc2.py:58-71`): discount = clamp((frac-1)/frac, min, max) with frac = ep_len / discount_denom
     discount_denom: int = 5
@@ -487,6 +499,8 @@ Everything else (losses, MPPI, Q, policy) unchanged — this is why the seams ar
 2. **Does `jax_rl/training/eval_runner.py` support two-mode eval out of the box**, or does TD-MPC2 need its own eval function? To be resolved during plan phase.
 3. **Go2 integration not yet designed in detail** — this spec covers scope and obs-handling default only. Separate design pass or incremental plan addition when P2 begins.
 4. **Optax `multi_transform` structure:** implementation must confirm the Optax recipe for single-optimizer + per-group LR (encoder at `lr·0.3`, rest at `lr`). If `multi_transform` is awkward for this shape, fall back to two Adam instances with distinct LRs (breaks source fidelity only in moment-state sharing; a tolerable deviation).
+5. **Flax init vs PyTorch override pattern:** source applies default PyTorch init then calls `init.weight_init()` and `zero_()` as post-hoc overrides on specific params (reward-head final linear, Q-ensemble final linear). Flax's `flax.linen.init` produces params in one shot — post-hoc overrides are not idiomatic. Implementation must supply a custom `kernel_init` callable to the relevant output `nn.Dense` layers (zero init for reward/Q final) and a `trunc_normal(0.02)` init to all other linears. Flag for plan phase.
+6. **Ensemble Q construction in JAX:** source uses `nn.ParameterList` over 5 heads with param-shape `(5, ..., ...)` and `torch.vmap` semantics. Flax-equivalent options: (a) single `nn.Dense` with output `5 * num_bins` then reshape, (b) `flax.linen.vmap` over a Dense module with `variable_axes={'params': 0}`, (c) explicit list of 5 Dense modules. Option (b) matches source's vmap-over-params semantics most cleanly. Flag for plan phase.
 
 ---
 
