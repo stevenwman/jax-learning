@@ -693,6 +693,7 @@ class TDMPC2Config:
     discount_denom: int = 5
     discount_min: float = 0.95
     discount_max: float = 0.995
+    discount: float = 0.99   # derived from episode_lengths[0] at preset load; see below
 
     # Multi-task C-seams (B-mode defaults)
     num_tasks: int = 1
@@ -705,6 +706,25 @@ def compute_discount(episode_length: int, denom: int, dmin: float, dmax: float) 
     frac = episode_length / denom
     d = max(0.0, (frac - 1) / frac) if frac > 0 else 0.0
     return float(max(dmin, min(d, dmax)))
+
+
+def make_tdmpc2_config(
+    episode_length: int = 500,
+    task_name: str = "single",
+    **overrides,
+) -> TDMPC2Config:
+    """Factory: builds TDMPC2Config with `discount` derived from episode_length.
+
+    Use this instead of calling TDMPC2Config() directly — otherwise `cfg.discount`
+    defaults to the class-level 0.99 which is only correct for ep_len=500.
+    """
+    base = TDMPC2Config(
+        episode_lengths=(episode_length,),
+        task_names=(task_name,),
+    )
+    d = compute_discount(episode_length, base.discount_denom, base.discount_min, base.discount_max)
+    from dataclasses import replace
+    return replace(base, discount=d, **overrides)
 ```
 
 - [ ] **Step 4: Run test, verify pass**
@@ -1167,12 +1187,16 @@ def test_world_model_loss_no_terminal_mask():
 
 ```python
 def world_model_loss(
-    params,
-    target_params,
-    batch,  # dict from buffer.sample_sequence
+    params,          # online world-model params: encoder, dynamics, reward, q_ensemble
+    target_params,   # target nets: encoder, dynamics, reward, q_ensemble (NO target policy)
+    policy_params,   # online policy — passed SEPARATELY, stop-grad inside compute_td_target
+    batch,           # dict from buffer.sample_sequence
     cfg: TDMPC2Config,
     key: jax.Array,
 ):
+    """Compute world model loss. `policy_params` kept separate so jax.grad w.r.t. `params`
+    does not produce spurious policy gradients.
+    """
     """Compute L_world_total = consistency_coef·L_c + reward_coef·L_r + value_coef·L_v.
 
     All three losses are UNMASKED (source does not mask by terminated/truncated).
@@ -1220,8 +1244,14 @@ def world_model_loss(
     L_reward = (rho_powers[:, None] * reward_ce_per_h).mean(axis=-1).sum() / H
 
     # 5. Value loss: compute target_q, CE over 5 heads summed, normalize by (H * num_q)
-    # (See Task E2 for target Q computation.)
-    target_q = compute_td_target(target_params, params, batch, cfg, key)  # (H, B, 1); see E2
+    # compute_td_target uses: encoder_online (params['encoder']) on obs[h+1], online policy
+    # (params['policy']), target Q ensemble (target_params['q_ensemble']). (See Task E2.)
+    target_q = compute_td_target(
+        target_params=target_params,     # target Q ensemble
+        online_wm_params=params,         # online encoder (stop-grad inside)
+        policy_params=jax.lax.stop_gradient(policy_params),  # online pi, detached
+        batch=batch, cfg=cfg, key=key,
+    )  # (H, B, 1) — fully detached from world model grad graph
     # q_logits_seq has shape (H, num_q, B, num_bins); reshape so CE computes per head
     # Value CE sum over heads
     def value_ce_per_head(q_logits_for_head):
@@ -1280,8 +1310,9 @@ def test_td_target_decodes_per_q_then_mins():
 
 ```python
 def compute_td_target(
-    target_params,
-    online_params,
+    target_params,     # target Q ensemble + (unused) target encoder/dynamics/reward
+    online_wm_params,  # online encoder for obs[h+1] encoding
+    policy_params,     # online policy (caller stop-grads before passing)
     batch,
     cfg: TDMPC2Config,
     key: jax.Array,
@@ -1305,13 +1336,13 @@ def compute_td_target(
     rewards = batch["rewards"]             # (H, B, 1)
     terminated = batch["dones"]            # (H, B, 1)
 
-    # 1. Online encoder on real next obs
-    next_z = jax.vmap(lambda o: Encoder.apply(online_params["encoder"], o))(obs_next)
+    # 1. Online encoder on real next obs (stop-grad — target is fully detached)
+    next_z = jax.vmap(lambda o: Encoder.apply(online_wm_params["encoder"], o))(obs_next)
     next_z = jax.lax.stop_gradient(next_z)  # (H, B, latent_dim)
 
-    # 2. Online policy sample
+    # 2. Online policy sample (policy_params already stop-gradded by caller)
     key_pi, key_q = jax.random.split(key, 2)
-    sample_pi = lambda z, k: PolicyPrior.apply(online_params["policy"], z, k)
+    sample_pi = lambda z, k: PolicyPrior.apply(policy_params, z, k)
     # vmap over H and B
     keys = jax.random.split(key_pi, H)
     a_next, _ = jax.vmap(sample_pi)(next_z, keys)  # (H, B, action_dim)
@@ -1416,12 +1447,21 @@ def policy_loss(
 
     qs_scaled = qscale_apply(qscale_state, q_avg)
 
-    # Source formula: pi_loss = -(entropy_coef * scaled_entropy + qs).mean_over_batch.
-    # Then * rho^t, then mean over time.
+    # Source formula (tdmpc2.py:227):
+    #   pi_loss = (-(entropy_coef * scaled_entropy + qs).mean(dim=(1,2)) * rho).mean()
+    #
+    # Step 1: mean over batch dim → (H+1,)
+    # Step 2: multiply by rho^t → (H+1,) weighted
+    # Step 3: mean over time (1/(H+1) normalization) → scalar
+    # Step 4: outer negation → scalar
+    #
+    # CRITICAL: do NOT double-mean. The `.mean()` over axis=-1 (batch) is the ONLY
+    # averaging done per-step; the time axis gets ONE `.mean()` at the end.
     per_step = cfg.entropy_coef * scaled_entropy + qs_scaled  # (H+1, B)
-    per_step_mean = per_step.mean(axis=-1)                     # (H+1,)
-    # Negative outside; divide by (H+1) via mean.
-    L_policy = -(rho_powers * per_step_mean).mean()
+    per_step_mean_over_batch = per_step.mean(axis=-1)          # (H+1,) — batch mean only
+    weighted = rho_powers * per_step_mean_over_batch           # (H+1,) — rho-weighted
+    # One `.mean()` = 1/(H+1) normalization over time
+    L_policy = -weighted.mean()
 
     return L_policy, {"scaled_entropy_mean": scaled_entropy.mean(),
                       "q_avg_mean": q_avg.mean(),
@@ -1435,27 +1475,184 @@ def policy_loss(
 
 ---
 
+### Task E4: `compute_all_latents` helper — roll dynamics forward to produce (H+1) latents
+
+**Files:** `jax_rl/algos/tdmpc2.py`, `tests/test_tdmpc2.py`.
+
+- [ ] **Step 1: Failing test** — encoder + H-step dynamics rollout produces correct shape.
+
+```python
+def test_compute_all_latents_shape():
+    from jax_rl.algos.tdmpc2 import compute_all_latents
+    # Build fake params, obs[0] shape (B, obs_dim), actions (H, B, action_dim)
+    # Assert output zs shape = (H+1, B, latent_dim)
+    pass
+```
+
+- [ ] **Step 2: Fail.**
+- [ ] **Step 3: Implement**
+
+```python
+def compute_all_latents(wm_params, obs_0: jax.Array, actions: jax.Array,
+                        cfg: TDMPC2Config) -> jax.Array:
+    """Encode obs_0 then roll dynamics forward H steps.
+
+    Returns zs of shape (H+1, B, latent_dim):
+      zs[0] = encoder(obs_0)
+      zs[h+1] = dynamics(zs[h], actions[h])  for h = 0..H-1
+    """
+    H = actions.shape[0]
+    z_0 = Encoder.apply(wm_params["encoder"], obs_0)  # (B, latent_dim)
+
+    def scan_body(z, a):
+        z_next = Dynamics.apply(wm_params["dynamics"], z, a)
+        return z_next, z_next
+
+    _, zs_rest = jax.lax.scan(scan_body, z_0, actions)  # zs_rest: (H, B, latent_dim)
+    zs = jnp.concatenate([z_0[None, :], zs_rest], axis=0)  # (H+1, B, latent_dim)
+    return zs
+```
+
+- [ ] **Step 4: Pass.**
+- [ ] **Step 5: Commit.**
+
+---
+
+### Task E5: End-to-end loss parity against source (sanity guardrail)
+
+**Files:** `tests/test_tdmpc2.py`.
+
+**Purpose:** the only ironclad defense against iter-1..iter-5-style silent bugs: feed identical `(obs, actions, rewards, terminated)` and identical network params to both our JAX impl and the PyTorch source impl, compare scalar loss values.
+
+- [ ] **Step 1: Write fixture that builds a tiny TDMPC2 model in both frameworks** with matching init (set seed, use same trunc_normal std, zero-init same output layers).
+
+- [ ] **Step 2: Run source's `_update` once on fixed batch**, capture: `consistency_loss`, `reward_loss`, `value_loss`, `pi_loss` scalars.
+
+- [ ] **Step 3: Run our `world_model_loss` + `policy_loss` once on same batch**, capture our scalars.
+
+- [ ] **Step 4: Assert each pair within `1e-3` relative tolerance.** If any diverges, debug BEFORE wiring training loop.
+
+*This test exists specifically because 5 spec-review iterations found critical bugs. If it passes, we're done with silent-failure-class bugs. If it fails, the test pinpoints which loss component is wrong.*
+
+- [ ] **Step 5: Commit.**
+
+```bash
+git add tests/test_tdmpc2.py
+git commit -m "test(tdmpc2): E5 end-to-end loss parity vs PyTorch source"
+```
+
+---
+
 ## Phase F — MPPI planner
 
 ### Task F1: MPPI core iteration (sample → rollout → score → elite select → mean/std update)
 
-**Files:** same.
+**Files:** `jax_rl/algos/tdmpc2.py`, `tests/test_tdmpc2.py`.
+
+**Reference:** source `/tmp/tdmpc2/tdmpc2/tdmpc2.py:plan()` lines 140-207.
 
 - [ ] **Step 1: Failing test**
 
 ```python
 def test_mppi_converges_on_toy_landscape():
-    """On a toy reward landscape r(a) = -||a - target||², MPPI should move mean toward target."""
+    """Toy landscape: reward = -||a - target||². After N MPPI iterations, mean ≈ target."""
+    # Build "fake" world model where dynamics is identity and reward = -||a - target||²
+    # Run plan() with fixed key; assert elite-weighted mean moves from 0 toward target.
+    pass  # expand during implementation
+
+def test_mppi_trajectory_shapes():
+    """Gaussian samples have shape (horizon, num_samples - num_pi_trajs, action_dim)."""
+    pass
+
+def test_mppi_score_has_gamma_powers_and_terminal_Q():
+    """score(τ) = Σ_h γ^h · r̂(z_h, a_h) + γ^H · Q_avg_of_2(z_H, π(z_H))."""
     pass
 ```
 
 - [ ] **Step 2: Fail.**
-- [ ] **Step 3: Implement MPPI as a pure function** that takes (z_0, params, prev_mean, cfg, key, t0) and returns (action, new_prev_mean).
 
-See source `tdmpc2.py:plan()` lines 140-207 for the reference. Factor into helper fns for testability: `sample_trajectories`, `score_trajectory`, `update_mean_std`.
+- [ ] **Step 3: Implement MPPI as pure JAX function**
+
+```python
+def mppi_rollout(wm_params, z_0: jax.Array, actions_seq: jax.Array,
+                 cfg: TDMPC2Config, key: jax.Array) -> jax.Array:
+    """Roll dynamics forward H steps, accumulating discounted reward + terminal Q.
+
+    Args:
+        z_0: (N, latent_dim) — latent starting points (N = num_samples)
+        actions_seq: (horizon, N, action_dim) — candidate actions per horizon step
+    Returns:
+        (N,) — predicted return per trajectory.
+    """
+    H = actions_seq.shape[0]
+    gamma = cfg.discount
+
+    def step(carry, inputs):
+        z, discount_factor, G = carry
+        a = inputs
+        r_logits = Reward.apply(wm_params["reward"], z, a)
+        r_probs = jax.nn.softmax(r_logits, axis=-1)
+        r_hat = two_hot_inv(r_probs, cfg.vmin, cfg.vmax, cfg.num_bins, apply_symexp=True).squeeze(-1)
+        G = G + discount_factor * r_hat
+        z_next = Dynamics.apply(wm_params["dynamics"], z, a)
+        return (z_next, discount_factor * gamma, G), None
+
+    (z_final, _, G_reward), _ = jax.lax.scan(
+        step, (z_0, jnp.ones(z_0.shape[0]), jnp.zeros(z_0.shape[0])), actions_seq
+    )
+
+    # Terminal Q bootstrap: γ^H · Q_avg_of_2(z_final, π(z_final))
+    key_pi, key_q = jax.random.split(key, 2)
+    a_terminal, _ = PolicyPrior.apply(wm_params["policy"], z_final, key_pi)
+    q_logits = QEnsemble.apply(wm_params["q_ensemble"], z_final, a_terminal, deterministic=True)
+    # Subsample 2 heads, decode, average (matches return_type='avg')
+    perm = jax.random.permutation(key_q, cfg.num_q)[:2]
+    q_selected = q_logits[perm]  # (2, N, num_bins)
+    q_probs = jax.nn.softmax(q_selected, axis=-1)
+    q_decoded = two_hot_inv(q_probs, cfg.vmin, cfg.vmax, cfg.num_bins, apply_symexp=True).squeeze(-1)
+    q_terminal = q_decoded.mean(axis=0)  # (N,)
+
+    return G_reward + (gamma ** H) * q_terminal
+
+
+def mppi_iteration(mean, std, wm_params, z_0, pi_trajs, cfg, key):
+    """One MPPI iteration: sample, score, update mean/std with elite-weighted stats."""
+    key_sample, key_rollout = jax.random.split(key, 2)
+    N_gauss = cfg.num_samples - cfg.num_pi_trajs
+    # Gaussian samples: i.i.d. across (horizon, N_gauss, action_dim)
+    eps = jax.random.normal(key_sample, (cfg.horizon, N_gauss, cfg.action_dim))
+    gauss_actions = jnp.clip(mean[:, None, :] + std[:, None, :] * eps, -1.0, 1.0)
+    # Concatenate pi_trajs (horizon, num_pi_trajs, action_dim) and gauss_actions
+    actions = jnp.concatenate([pi_trajs, gauss_actions], axis=1)  # (H, num_samples, action_dim)
+
+    # Score each trajectory by rolling from z_0
+    z_0_broadcast = jnp.broadcast_to(z_0, (cfg.num_samples, z_0.shape[-1]))
+    scores = mppi_rollout(wm_params, z_0_broadcast, actions, cfg, key_rollout)
+
+    # Elite selection: top-K by score
+    elite_idx = jax.lax.top_k(scores, cfg.num_elites)[1]  # (num_elites,)
+    elite_scores = scores[elite_idx]
+    elite_actions = actions[:, elite_idx, :]  # (H, num_elites, action_dim)
+
+    # Elite weights: softmax with temperature
+    max_score = elite_scores.max()
+    exp_scores = jnp.exp((elite_scores - max_score) / cfg.mppi_temperature)
+    weights = exp_scores / (exp_scores.sum() + 1e-9)  # (num_elites,)
+
+    # Update mean/std (weighted empirical moments over elite actions)
+    new_mean = (weights[None, :, None] * elite_actions).sum(axis=1)  # (H, action_dim)
+    var = (weights[None, :, None] * (elite_actions - new_mean[:, None, :]) ** 2).sum(axis=1)
+    new_std = jnp.clip(jnp.sqrt(var), cfg.mppi_min_std, cfg.mppi_max_std)
+
+    return new_mean, new_std, elite_actions, weights
+```
 
 - [ ] **Step 4: Pass.**
 - [ ] **Step 5: Commit.**
+
+```bash
+git commit -m "feat(tdmpc2): MPPI rollout + iteration core (score, elite select, mean/std update)"
+```
 
 ---
 
@@ -1463,16 +1660,64 @@ See source `tdmpc2.py:plan()` lines 140-207 for the reference. Factor into helpe
 
 **Files:** same.
 
-- [ ] **Step 1: Failing test** — verify loop structure.
+**Reference:** source `/tmp/tdmpc2/tdmpc2/tdmpc2.py:155-165`.
+
+- [ ] **Step 1: Failing test**
 
 ```python
-def test_mppi_pi_seeds_have_correct_loop_structure():
-    """24 seed trajectories: horizon policy samples, horizon-1 dynamics advances."""
-    # Trace the latent-sequence length from a known z_0; assert shape.
+def test_mppi_pi_seeds_shape():
+    """Pi-seeded actions have shape (horizon, num_pi_trajs, action_dim)."""
+    from jax_rl.algos.tdmpc2 import sample_pi_trajectories
+    z_0 = jnp.zeros((cfg.latent_dim,))  # single-env latent
+    key = jax.random.PRNGKey(0)
+    pi_trajs = sample_pi_trajectories(wm_params, z_0, cfg, key)
+    assert pi_trajs.shape == (cfg.horizon, cfg.num_pi_trajs, cfg.action_dim)
+
+def test_mppi_pi_seeds_dynamics_advances_count():
+    """horizon policy samples but only horizon-1 dynamics advances (latent at last step
+    is z_{horizon-1}, policy sampled from it but no advance after)."""
+    # Patch Dynamics.apply to count calls.
     pass
 ```
 
-- [ ] **Step 2-5:** as above.
+- [ ] **Step 2: Fail.**
+
+- [ ] **Step 3: Implement**
+
+```python
+def sample_pi_trajectories(wm_params, z_0: jax.Array, cfg: TDMPC2Config,
+                            key: jax.Array) -> jax.Array:
+    """Roll policy prior forward through latent dynamics to produce seed trajectories.
+
+    Source tdmpc2.py:155-165:
+      - Broadcast z_0 to (num_pi_trajs, latent_dim)
+      - For h in range(horizon): sample a_h ~ π(z_h), store a_h
+        - For h in range(horizon - 1) only: advance z_{h+1} = dynamics(z_h, a_h)
+      - Return stacked actions shape (horizon, num_pi_trajs, action_dim)
+    """
+    N = cfg.num_pi_trajs
+    z = jnp.broadcast_to(z_0, (N,) + z_0.shape)  # (N, latent_dim)
+
+    def step(carry, h_idx):
+        z, key = carry
+        key, subkey = jax.random.split(key)
+        a, _ = PolicyPrior.apply(wm_params["policy"], z, subkey)  # (N, action_dim)
+        # Advance dynamics ONLY for h < horizon - 1 (last step: sample a but don't advance)
+        do_advance = h_idx < cfg.horizon - 1
+        z_next = jnp.where(
+            do_advance,
+            Dynamics.apply(wm_params["dynamics"], z, a),
+            z,  # don't advance at the final step
+        )
+        return (z_next, key), a
+
+    _, actions = jax.lax.scan(step, (z, key), jnp.arange(cfg.horizon))
+    # actions shape: (horizon, N, action_dim)
+    return actions
+```
+
+- [ ] **Step 4: Pass.**
+- [ ] **Step 5: Commit.**
 
 ---
 
@@ -1480,49 +1725,191 @@ def test_mppi_pi_seeds_have_correct_loop_structure():
 
 **Files:** same.
 
-- [ ] **Step 1: Failing tests — Test 5 (d), (e), (f) from spec**
-
-```python
-def test_prev_mean_shift_on_t0_false():
-    """mean[:-1] = prev_mean[1:]; mean[-1] = 0."""
-    pass
-
-def test_prev_mean_reset_on_t0_true():
-    """On new episode, _prev_mean zeroed."""
-    pass
-
-def test_prev_mean_batched_env_independence():
-    """With num_envs=4, each env's _prev_mean evolves independently."""
-    pass
-```
-
-- [ ] **Step 2-5:** as above.
-
----
-
-### Task F4: Single-elite Gumbel action + `std[0]`·ε noise (eval skips)
-
-**Files:** same.
+**Reference:** source `/tmp/tdmpc2/tdmpc2/tdmpc2.py:41, 167-168, 206`.
 
 - [ ] **Step 1: Failing tests**
 
 ```python
-def test_mppi_single_elite_gumbel_sampling():
-    """Action is from a SINGLE elite sampled via Gumbel on scores, NOT weighted mean."""
-    # Run MPPI with fixed seed twice; assert deterministic output matches expected
-    # single-elite path (can be computed by mirroring source formula).
-    pass
+def test_prev_mean_shift_on_t0_false():
+    """mean[:-1] = prev_mean[1:]; mean[-1] = 0."""
+    from jax_rl.algos.tdmpc2 import init_mppi_mean
+    prev = jnp.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])  # (horizon=3, action_dim=2)
+    t0 = jnp.array(False)
+    new = init_mppi_mean(prev, t0, horizon=3, action_dim=2)
+    # new[0] = prev[1] = [3,4], new[1] = prev[2] = [5,6], new[2] = 0
+    assert jnp.allclose(new, jnp.array([[3.0, 4.0], [5.0, 6.0], [0.0, 0.0]]))
 
-def test_mppi_noise_from_std_t0_not_elite_std():
-    """Noise added to action is std[0]·ε, where std is the final MPPI std at t=0."""
+def test_prev_mean_reset_on_t0_true():
+    """On new episode, init_mppi_mean returns zeros."""
+    from jax_rl.algos.tdmpc2 import init_mppi_mean
+    prev = jnp.ones((3, 2))
+    t0 = jnp.array(True)
+    new = init_mppi_mean(prev, t0, horizon=3, action_dim=2)
+    assert jnp.allclose(new, jnp.zeros((3, 2)))
+
+def test_prev_mean_batched_env_independence():
+    """Per-env shift + reset: each env's prev_mean handled independently."""
+    from jax_rl.algos.tdmpc2 import init_mppi_mean_batched
+    prev = jnp.tile(jnp.arange(6, dtype=jnp.float32).reshape(3, 2), (4, 1, 1))
+    # (num_envs=4, horizon=3, action_dim=2)
+    t0 = jnp.array([True, False, True, False])  # envs 0 and 2 just reset
+    new = init_mppi_mean_batched(prev, t0, horizon=3, action_dim=2)
+    # Envs 0, 2: zeros; envs 1, 3: shifted prev
+    assert jnp.allclose(new[0], jnp.zeros((3, 2)))
+    assert jnp.allclose(new[2], jnp.zeros((3, 2)))
+    expected_shift = jnp.stack([prev[1, 1], prev[1, 2], jnp.zeros(2)])
+    assert jnp.allclose(new[1], expected_shift)
+```
+
+- [ ] **Step 2: Fail.**
+
+- [ ] **Step 3: Implement**
+
+```python
+def init_mppi_mean(prev_mean: jax.Array, t0: jax.Array, horizon: int, action_dim: int) -> jax.Array:
+    """Warm-start the MPPI mean for a single env.
+
+    If t0 is True, return zeros. Otherwise, shift prev_mean by one: new[:-1] = prev[1:], new[-1] = 0.
+    """
+    shifted = jnp.concatenate([prev_mean[1:], jnp.zeros((1, action_dim))], axis=0)
+    return jnp.where(t0, jnp.zeros_like(shifted), shifted)
+
+
+def init_mppi_mean_batched(prev_mean: jax.Array, t0: jax.Array, horizon: int,
+                            action_dim: int) -> jax.Array:
+    """Per-env warm-start. prev_mean: (num_envs, horizon, action_dim); t0: (num_envs,)."""
+    return jax.vmap(lambda p, t: init_mppi_mean(p, t, horizon, action_dim))(prev_mean, t0)
+```
+
+- [ ] **Step 4: Pass.**
+- [ ] **Step 5: Commit.**
+
+---
+
+### Task F4: Single-elite Gumbel action + `std[0]`·ε noise (eval skips) + full `plan()` fn
+
+**Files:** same.
+
+**Reference:** source `/tmp/tdmpc2/tdmpc2/tdmpc2.py:201-207`.
+
+- [ ] **Step 1: Failing tests**
+
+```python
+def test_mppi_gumbel_single_elite_sampling():
+    """Source line 203-204: idx = sample from Categorical(weights); action = elite_actions[0, idx].
+
+    With fixed key and fixed weights [0.9, 0.1, ...], Gumbel-softmax should pick idx=0 consistently.
+    """
+    from jax_rl.algos.tdmpc2 import gumbel_sample_elite
+    weights = jnp.array([0.9, 0.05, 0.03, 0.02])
+    elite_actions = jnp.array([[1.0], [2.0], [3.0], [4.0]])  # action_dim=1
+    samples = [gumbel_sample_elite(jax.random.PRNGKey(i), weights, elite_actions) for i in range(20)]
+    # Most samples should be 1.0 (the high-weight elite)
+    from collections import Counter
+    counts = Counter([float(s) for s in samples])
+    assert counts[1.0] >= 15  # ~90% with noise tolerance
+
+def test_mppi_noise_is_std_at_t0():
+    """When eval_mode=False, action = elite_t0 + std[0]·ε.
+
+    Verify noise magnitude matches std[0], not std of all elites."""
     pass
 
 def test_mppi_eval_mode_skips_noise():
-    """With eval_mode=True, no exploration noise applied."""
+    """With eval_mode=True, planner returns elite_t0 without added noise."""
     pass
 ```
 
-- [ ] **Step 2-5:** as above.
+- [ ] **Step 2: Fail.**
+
+- [ ] **Step 3: Implement Gumbel sampling + final `plan()` wrapper**
+
+```python
+def gumbel_sample_elite(key: jax.Array, weights: jax.Array, elite_actions: jax.Array) -> jax.Array:
+    """Sample one elite via categorical on weights (Gumbel-softmax argmax trick).
+
+    Args:
+        weights: (num_elites,) — elite weights (should sum to 1).
+        elite_actions: (horizon, num_elites, action_dim) — elite action sequences.
+    Returns:
+        action_t0: (action_dim,) — first action of the sampled elite trajectory.
+    """
+    logits = jnp.log(weights + 1e-9)
+    gumbels = -jnp.log(-jnp.log(jax.random.uniform(key, logits.shape) + 1e-9) + 1e-9)
+    idx = jnp.argmax(logits + gumbels)
+    return elite_actions[0, idx]  # first action of sampled elite
+
+
+def plan(wm_params, z_0: jax.Array, prev_mean: jax.Array, t0: jax.Array,
+         cfg: TDMPC2Config, key: jax.Array, eval_mode: bool = False
+         ) -> tuple[jax.Array, jax.Array]:
+    """Full MPPI planner for a single env (vmap externally for num_envs > 1).
+
+    Args:
+        z_0: (latent_dim,) — current latent.
+        prev_mean: (horizon, action_dim) — previous optimized mean.
+        t0: scalar bool — True if this is a new episode.
+    Returns:
+        (action, new_prev_mean):
+          action: (action_dim,) — action to execute this step.
+          new_prev_mean: (horizon, action_dim) — optimized mean for next step's warm-start.
+    """
+    key_init, key_pi, key_iter, key_action = jax.random.split(key, 4)
+
+    # 1. Warm-start mean + init std
+    mean = init_mppi_mean(prev_mean, t0, cfg.horizon, cfg.action_dim)
+    std = jnp.full((cfg.horizon, cfg.action_dim), cfg.mppi_max_std)
+
+    # 2. Sample 24 pi trajectories ONCE at the start (source samples once, reuses each iteration)
+    pi_trajs = sample_pi_trajectories(wm_params, z_0, cfg, key_pi)
+
+    # 3. MPPI iteration loop
+    iterations = cfg.mppi_iterations + (2 if cfg.action_dim >= 20 else 0)
+
+    def iter_body(carry, key_i):
+        mean_c, std_c = carry
+        new_mean, new_std, elite_actions, weights = mppi_iteration(
+            mean_c, std_c, wm_params, z_0, pi_trajs, cfg, key_i
+        )
+        return (new_mean, new_std), (elite_actions, weights)
+
+    iter_keys = jax.random.split(key_iter, iterations)
+    (final_mean, final_std), (all_elites, all_weights) = jax.lax.scan(
+        iter_body, (mean, std), iter_keys
+    )
+    # Use final iteration's elites + weights for action sampling
+    elite_actions = all_elites[-1]  # (horizon, num_elites, action_dim)
+    weights = all_weights[-1]       # (num_elites,)
+
+    # 4. Sample single elite via Gumbel, take its t=0 action
+    action = gumbel_sample_elite(key_action, weights, elite_actions)
+
+    # 5. Add exploration noise (skip in eval_mode)
+    noise = jax.random.normal(jax.random.fold_in(key_action, 1), (cfg.action_dim,)) * final_std[0]
+    action = jnp.where(eval_mode, action, action + noise)
+    action = jnp.clip(action, -1.0, 1.0)
+
+    return action, final_mean  # new_prev_mean = final_mean
+
+
+# Batched MPPI over envs:
+plan_batched = jax.vmap(plan, in_axes=(None, 0, 0, 0, None, 0, None))
+#   wm_params: shared across envs (None)
+#   z_0, prev_mean, t0, key: per-env (0)
+#   cfg, eval_mode: static (None)
+```
+
+- [ ] **Step 4: Pass all F1-F4 tests.**
+
+```bash
+uv run python -m pytest tests/test_tdmpc2.py -v -k mppi
+```
+
+- [ ] **Step 5: Commit.**
+
+```bash
+git commit -m "feat(tdmpc2): MPPI plan() with Gumbel elite sampling, std[0] noise, eval skip, vmap over envs"
+```
 
 ---
 
@@ -1598,11 +1985,11 @@ def update_step(state: TDMPC2State, batch: dict, cfg: TDMPC2Config) -> tuple[TDM
         "encoder": state.encoder_target_params, "dynamics": state.dynamics_target_params,
         "reward": state.reward_target_params, "q_ensemble": state.q_ensemble_target_params,
     }
-    # Include policy in target_params for TD-target policy call
-    target_params["policy"] = state.policy_params  # source uses ONLINE policy in TD target
+    # world_model_loss receives policy_params SEPARATELY (not inside wm_params), so jax.grad
+    # w.r.t. wm_params does not produce policy gradients.
     (wm_loss, wm_metrics), wm_grads = jax.value_and_grad(
-        world_model_loss, has_aux=True
-    )(wm_params, target_params, batch, cfg, key_wm)
+        world_model_loss, has_aux=True, argnums=0  # grad w.r.t. params (argnum 0)
+    )(wm_params, target_params, state.policy_params, batch, cfg, key_wm)
     # Apply grad (multi_transform optimizer with encoder at scaled LR)
     wm_updates, new_wm_opt_state = cfg.world_model_optimizer.update(
         wm_grads, state.world_model_opt_state, wm_params
@@ -1610,9 +1997,10 @@ def update_step(state: TDMPC2State, batch: dict, cfg: TDMPC2Config) -> tuple[TDM
     wm_params_new = optax.apply_updates(wm_params, wm_updates)
 
     # 2. Policy update (detached latents from updated world model)
-    # Encode + roll dynamics once to get zs, then .stop_gradient.
-    # (For brevity, see source tdmpc2.py:314.)
-    zs_detached = jax.lax.stop_gradient(compute_all_latents(wm_params_new, batch, cfg))
+    # Encode + roll dynamics once to get (H+1) latents, then stop-grad.
+    zs_detached = jax.lax.stop_gradient(
+        compute_all_latents(wm_params_new, batch["obs"][0], batch["actions"], cfg)
+    )
     pol_params = {"policy": state.policy_params, "q_ensemble": wm_params_new["q_ensemble"]}
     (pol_loss, pol_metrics), pol_grads = jax.value_and_grad(
         policy_loss, has_aux=True
@@ -1661,30 +2049,55 @@ def update_step(state: TDMPC2State, batch: dict, cfg: TDMPC2Config) -> tuple[TDM
 
 ```python
 def build_world_model_optimizer(cfg: TDMPC2Config):
-    """Single Adam with param-group LRs via multi_transform.
+    """Single Adam with per-param-group LR via multi_transform.
 
-    Group A (scaled): encoder — lr · enc_lr_scale
-    Group B (default): dynamics, reward, q_ensemble (+ task_emb if present)
+    Group "a" (scaled LR): encoder  → lr · enc_lr_scale = 9e-5
+    Group "b" (default LR): dynamics, reward, q_ensemble (+ task_emb if present) → lr = 3e-4
     """
     tx_a = optax.adam(cfg.lr * cfg.enc_lr_scale)
     tx_b = optax.adam(cfg.lr)
 
     def label_fn(params):
-        # Label leaves: "a" for encoder, "b" for everything else.
-        labels = {}
-        for k in params:
-            labels[k] = "a" if k == "encoder" else "b"
-        # But this labels top-level only. For nested params, use tree_util.
-        # Proper impl: return a pytree with same structure filled with labels.
-        return labels
-    # (Exact implementation: use jax.tree_util.tree_map_with_path to label leaves based on
-    #  whether the path starts with "encoder". Commit a helper that matches the params struct.)
+        """Walk the params pytree and label each LEAF based on its path prefix.
+
+        Returns a pytree with identical structure, leaves replaced by "a" or "b".
+        The top-level dict should have keys {"encoder", "dynamics", "reward", "q_ensemble"[, "task_emb"]}.
+        """
+        from jax.tree_util import tree_map_with_path
+
+        def _label(path, _leaf):
+            # `path` is a tuple of keys like (DictKey("encoder"), DictKey("Dense_0"), ...)
+            # Top-level key is path[0]. Use DictKey('key').key attribute.
+            top_key = path[0].key if hasattr(path[0], "key") else str(path[0])
+            return "a" if top_key == "encoder" else "b"
+
+        return tree_map_with_path(_label, params)
 
     return optax.chain(
         optax.clip_by_global_norm(cfg.grad_clip_norm),
         optax.multi_transform({"a": tx_a, "b": tx_b}, label_fn),
     )
 ```
+
+**Test it explicitly:**
+```python
+def test_multi_transform_label_fn():
+    # Build fake params tree with encoder + dynamics top-level dicts
+    params = {
+        "encoder": {"Dense_0": {"kernel": jnp.zeros((4, 8)), "bias": jnp.zeros((8,))}},
+        "dynamics": {"Dense_0": {"kernel": jnp.zeros((4, 8))}},
+    }
+    tx = build_world_model_optimizer(TDMPC2Config())
+    state = tx.init(params)
+    # Take a step with grads of 1.0 → encoder should move by ~9e-5, dynamics by ~3e-4
+    grads = jax.tree_util.tree_map(jnp.ones_like, params)
+    updates, _ = tx.update(grads, state, params)
+    new = optax.apply_updates(params, updates)
+    enc_delta = jnp.abs(new["encoder"]["Dense_0"]["kernel"]).mean()
+    dyn_delta = jnp.abs(new["dynamics"]["Dense_0"]["kernel"]).mean()
+    assert dyn_delta > enc_delta * 3.0  # default LR is > 3× encoder LR
+```
+
 
 - [ ] **Step 5: Commit.**
 
