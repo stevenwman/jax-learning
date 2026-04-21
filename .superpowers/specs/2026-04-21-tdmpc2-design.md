@@ -1,7 +1,7 @@
 # TD-MPC2 JAX Reimplementation — Design Spec
 
-**Date:** 2026-04-21 (revised post independent review)
-**Status:** Design approved; independent review findings integrated; pending user sign-off
+**Date:** 2026-04-21 (3 review iterations; paper+code audit incorporated)
+**Status:** Design approved; three rounds of independent review findings integrated; pending user sign-off
 **Target:** Port TD-MPC2 (Hansen et al. 2024, `nicklashansen/tdmpc2`) to this JAX/Flax framework
 
 ---
@@ -128,7 +128,7 @@ jax_rl/configs/env_presets.py       # Add TDMPC2 presets for DMC tasks + Go2
 
 ### 5.4 Terminal Q `Q(z, a) → q_logits`
 - Ensemble of **`num_q=5`** heads, each 2 hidden × 512 + 101-way logit output.
-- **Dropout = 0.01 on first hidden layer of Q heads only** (not on reward/policy/dynamics).
+- **Dropout = 0.01 on first hidden layer of Q heads only.** Source `world_model.py:30` passes `dropout=cfg.dropout` to the Q-ensemble `mlp()` call; dynamics/reward/pi call `mlp()` without the kwarg (default `0`). Implementer note: do NOT wire dropout into the shared MLP builder's default — keep it an explicit Q-only argument.
 - Targets: **min of 2 random Qs** for TD target. Subsample draws **a fresh random pair per update step** (per-batch, not per-batch-element — matches source `world_model.py:212-215`).
 - Policy-update Q: **avg of 2 random Qs** using stop-grad alias `_detach_Qs` (online params, detached — NOT target params).
 - Value loss: CE over all 5 heads, summed over H rollout steps, normalized by `H · num_q`.
@@ -147,17 +147,19 @@ jax_rl/configs/env_presets.py       # Add TDMPC2 presets for DMC tasks + Go2
 - **`tau=0.01`**, soft update every gradient step.
 
 ### 5.7 Q-scale running tracker
-- Tracks **5th and 95th percentiles** of Q outputs across recent updates, EMA'd with **the same `tau=0.01`** as target networks (source `common/scale.py:42` reuses cfg `tau`).
-- Scales Q in policy loss: `qs_scaled = qs / (p95 - p5 + eps)`.
+- Tracks **5th and 95th percentiles** of Q outputs (batch-dim percentiles) across recent updates, EMA'd with **the same `tau=0.01`** as target networks (source `common/scale.py:42` reuses cfg `tau`).
+- **Input:** the first of the two randomly subsampled detached Qs used in policy loss — `self.scale.update(qs[0])` in source `tdmpc2.py:222`, where `qs[0]` is shape `(batch,)` or `(H+1, batch)` of scalar Q values. Percentiles computed over the batch dimension.
+- **Range clamp:** `range = max(p95 - p5, 1.0)` before the EMA step (source `scale.py` clamps `min=1.`). Without this, early-training small Q ranges (e.g. 0.01) divide the policy gradient by a tiny number and blow up. **Load-bearing.**
+- Scales Q in policy loss: `qs_scaled = qs / range_ema`.
 - Without this, `entropy_coef=1e-4` is the wrong magnitude — Q values must be scale-normalized before adding the entropy bonus.
 - Lives in `jax_rl/utils/qscale.py`; part of `TrainState`.
-- **Bootstrap:** initialize scale to `1.0` and populate the percentile tracker during the `seed_steps` warmup gradient burst (§7 "Warmup"). By the time regular updates begin, the tracker is warm; no special-case in policy loss.
+- **Bootstrap:** initialize `range_ema` to `1.0` and populate during the `seed_steps` warmup gradient burst (§7 "Warmup"). By the time regular updates begin, the tracker is warm; no special-case in policy loss.
 
 ### 5.8 MPPI planner (non-network)
 - **`num_samples=512`** trajectories; **`horizon=3`**; **`num_elites=64`**; **`iterations=6`** (+2 if `action_dim ≥ 20`).
 - **`temperature=0.5`**; `min_std=0.05`, `max_std=2.0`.
 - **`num_pi_trajs=24`** of the 512 samples are seeded by rolling out the policy prior forward in latent space.
-- **Mean warm-start across env steps (`_prev_mean`):** the MPPI mean trajectory is persisted across calls. At each new planner call with `t0=False`, initialize `mean[:-1] = prev_mean[1:]` and `mean[-1] = 0`. On episode reset or first step (`t0=True`), zero-initialize. This matches source (`tdmpc2.py:41, 167-168, 206`) and is a load-bearing mechanism — without it, every env step restarts planning from scratch and planner quality drops visibly. `_prev_mean` is per-env (shape `(num_envs, horizon, action_dim)`) and lives in `TrainState`.
+- **Mean warm-start across env steps (`_prev_mean`):** the MPPI mean trajectory is persisted across calls. At each new planner call with `t0=False`, initialize `mean[:-1] = prev_mean[1:]` and `mean[-1] = 0`. On episode reset or first step (`t0=True`), zero-initialize. This matches source (`tdmpc2.py:41, 167-168, 206`) and is a load-bearing mechanism — without it, every env step restarts planning from scratch and planner quality drops visibly. **Intentional vectorization deviation from source:** source stores `_prev_mean` as `(horizon, action_dim)` (single env). We store it as `(num_envs, horizon, action_dim)` to support `num_envs > 1` collect. Reset logic indexes per-env on `t0[i]=True`. Lives in `TrainState`.
 - **Per-iteration std update:** at each MPPI iteration, update mean and std from the elite-weighted empirical mean and variance, then clamp `std ∈ [min_std, max_std]`. Source `tdmpc2.py:194-195`.
 - Scoring: `return(τ) = Σ_h γ^h · r̂(z_h, a_h) + γ^H · Q_avg_of_2(z_H, π(z_H))`, decoded through two-hot → symexp.
 - **Action returned:** sample a **single elite trajectory** via Gumbel-softmax on elite scores (source `tdmpc2.py:201-205`), take its first action, and add exploration noise `std_{t=0} · ε` (the MPPI-updated std at horizon index 0; not an "elite std"). In `eval_mode=True`, skip the noise. Previous draft of this spec wrongly said "elite-weighted mean + elite_std noise" — corrected.
@@ -177,9 +179,9 @@ for h in 0..H-1:
     r̂_h     = reward(ẑ_h, a_h)
     q̂_h     = Q(ẑ_h, a_h)                       # all 5 heads
 
-L_consistency = (1/H) · Σ_h  rho^h · MSE(ẑ_h, sg(z_targets_h))                         # no terminal mask (matches source)
-L_reward      = (1/H) · Σ_h  rho^h · mask_h · CE(r̂_logits_h, twohot(r_h))
-L_value       = (1/(H·num_q)) · Σ_h  rho^h · mask_h · Σ_q CE(q̂_logits_{h,q}, twohot(target_q_h))
+L_consistency = (1/H) · Σ_h  rho^h · MSE(ẑ_h, sg(z_targets_h))                     # unmasked (source)
+L_reward      = (1/H) · Σ_h  rho^h · CE(r̂_logits_h, twohot(r_h))                   # unmasked (source)
+L_value       = (1/(H·num_q)) · Σ_h  rho^h · Σ_q CE(q̂_logits_{h,q}, twohot(target_q_h))  # unmasked (source)
 L_policy      = E_τ [ Σ_h rho^h · (entropy_coef · scaled_entropy_h - qs_scaled_h) ] / (H+1)
 
 L_world_total = consistency_coef · L_consistency + reward_coef · L_reward + value_coef · L_value
@@ -187,7 +189,7 @@ L_world_total = consistency_coef · L_consistency + reward_coef · L_reward + va
 
 **Normalization is load-bearing.** Source divides `consistency_loss / H`, `reward_loss / H`, and `value_loss / (H · num_q)` before applying coefficients. Without these divisions our tuned coefficients (`consistency=20, reward=0.1, value=0.1`) are silently miscalibrated by ~3×.
 
-**Consistency mask:** source does NOT mask consistency loss by `done_natural`. We follow source (unmasked consistency). Earlier draft of this spec proposed masking — dropped.
+**No per-step terminal mask on ANY of the three world-model losses.** Source applies neither a `done` nor `truncated` mask to `L_consistency`, `L_reward`, or `L_value`. See `tdmpc2.py:273-305`. The `(1 - terminated)` factor appears ONLY inside the TD target computation (see "Target Q" below). Earlier draft of this spec wrongly applied `mask_h` to reward/value — corrected. The per-episode slice sampler (§D4) is what keeps sequence windows from crossing episode boundaries; no per-step mask is needed once sampling is correct.
 
 ### Coefficients (audited)
 - **`consistency_coef=20`**
@@ -200,16 +202,18 @@ L_world_total = consistency_coef · L_consistency + reward_coef · L_reward + va
 
 ### Target Q
 ```
-target_q_h = r_h + γ · (1 - done_natural_h) · twohot_decode(
+target_q_h = r_h + γ · (1 - terminated_h) · twohot_decode(
     Q_target_min_of_2( dynamics_target(z_h, a_h), π(dynamics_target(z_h, a_h)) )
 )
 ```
+`terminated_h` is the raw `terminated` flag from the buffer at step `h` (not a derived `done_natural`). `truncated` does NOT zero the bootstrap. For DMC with `episodic=false`, `terminated_h ≡ 0` → full bootstrap always.
 
 ### Truncation handling
-- `done_natural = done AND NOT truncated` — separate `truncated` flag stored in buffer.
-- `mask_h = 1` until first `done_natural` in the H-window, then `0`. Applied to reward and value losses (see loss composition above). Not applied to consistency (matches source).
-- Losses past `truncated` still apply (episode was just cut, latent is still well-defined).
-- **Deviation from source:** source assumes `episodic=false` for DMC and raises if any `terminated=True` arrives (`online_trainer.py:91-93`). We explicitly support truncated vs. natural-done separation so the same code handles Go2 (where `truncated` from time limits is the dominant signal). This is an additive extension, not a divergence from source semantics for DMC.
+- Buffer stores `terminated` and `truncated` flags per transition.
+- **Loss side (reward, value, consistency):** NONE are masked by terminal or truncation flags. Windows are kept within-episode by the per-episode slice sampler (§D4); any `H+1` window fully inside a single episode has well-defined latents and transitions end-to-end.
+- **TD-target side (only place `terminated` matters):** see "Target Q" below — the bootstrap term carries `(1 - terminated)`. `truncated` does NOT zero the bootstrap (truncation = time cutoff, future value still exists).
+- **For DMC tasks (episodic=false):** `terminated` is always `False` (matches source `online_trainer.py:91-93` which hard-raises on any `terminated=True` when non-episodic). All windows behave identically. The per-episode sampler still excludes windows crossing episode boundaries (episodes end via truncation at step 500).
+- **For Go2 tasks:** truncation at time limits is the dominant episode terminator; `terminated` fires only on actual fall. Same code path handles both.
 
 ---
 
@@ -319,18 +323,25 @@ class TDMPC2Config:
     mppi_max_std: float = 2.0
 
     # Training loop
-    seed_steps: int = 2500           # random action warmup (DMC)
-    warmup_burst_multiplier: int = 1  # gradient updates = warmup_burst_multiplier * seed_steps at transition
+    seed_steps: int = 2500            # random action warmup; source: max(1000, 5*episode_length)
+    # Warmup gradient burst at _step == seed_steps: always performs `seed_steps` updates (multiplier=1 in source)
     utd: int = 1
     collect_mode: str = "mppi"        # "mppi" | "prior"
     num_envs: int = 8
     num_eval_envs: int = 8
 
+    # Per-task discount heuristic (source `tdmpc2.py:58-71`): discount = clamp((frac-1)/frac, min, max) with frac = ep_len / discount_denom
+    discount_denom: int = 5
+    discount_min: float = 0.95
+    discount_max: float = 0.995
+
     # Multi-task seams (B-mode defaults)
     num_tasks: int = 1
     task_names: tuple[str, ...] = ("single",)
-    episode_lengths: tuple[int, ...] = (500,)   # per-task; used by source's discount heuristic, kept as C-seam
+    episode_lengths: tuple[int, ...] = (500,)   # per-task; feeds the discount heuristic above. For DMC: 500 → discount=0.99. For Go2 (ep_len=1000): 1000 → discount=0.995.
 ```
+
+**`discount` is derived, not a flat default.** In B-mode the single-task discount is computed at config load as `discount = clamp((frac-1)/frac, discount_min, discount_max)` with `frac = episode_lengths[0] / discount_denom`. For DMC this yields `0.99`; for Go2 `0.995`. In C-mode this trivially extends to per-task discounts without config surgery — the seam is live, not dead.
 
 Presets in `env_presets.py`:
 - `TDMPC2_DMC_CheetahRun` (std defaults, discount=0.99)
@@ -358,8 +369,9 @@ Presets in `env_presets.py`:
    - If saturating, bump `vmax` via config — do not silently clip.
 
 4. **Truncation mishandling**
-   - Explicit `done_natural` vs. `truncated` separation (buffer stores both).
-   - Unit test: inject H=3 window with natural done at h=1, assert losses at h=2 mask to zero.
+   - Buffer stores `terminated` and `truncated` as separate flags (source stores only `terminated`; we extend).
+   - `terminated` zeros the TD-target bootstrap via `(1 - terminated)`. `truncated` does NOT zero it (future value still exists). Neither flag masks the per-step world-model losses (consistency/reward/value are unmasked — matches source).
+   - Unit test (Test 23): batch with mixed `terminated`/`truncated`/normal transitions; assert TD target uses correct `(1 - terminated)` multiplier and no per-step mask is applied to any of the three world-model losses.
 
 5. **Consistency collapse (all z → same vector)**
    - SimNorm structurally prevents zero latent (each chunk is a softmax).
@@ -412,16 +424,18 @@ See `tests/test_tdmpc2.py`. Target ~40 tests.
 13. Planner vs. prior action diff post-training — mean `||a_mppi - a_prior|| > 0.01`.
 
 ### Benchmark validation (blocking before claiming success)
-14. DMC CheetahRun — 1M env steps, `mppi_return ≥ 850` (paper ~900).
-15. DMC HumanoidRun — 1M env steps, `mppi_return ≥ 800` (paper ~850).
+14. DMC CheetahRun — 1M env steps, `mppi_return ≥ 850`. **Bar is a repo-level expectation**, not cited from the paper (paper was not accessible at spec-drafting time). Revise once paper score is confirmed.
+15. DMC HumanoidRun — 1M env steps, `mppi_return ≥ 800`. Same caveat — repo-level expectation.
 16. MPPI gap — `mppi_return − prior_return ≥ 10%` of prior at end of training.
 
 ### Failure probes
 17. Force NaN into encoder output, assert MPPI skip-on-nonfinite works without crash.
 18. Reward=1e4 env — assert saturation warning fires, symlog compresses, training stable.
 19. Synthetic H=3 with done_natural at h=1 — assert losses at h=2 are zero-contributed (reward + value). Consistency loss NOT masked (matches source).
-20. Cross-episode buffer window — populate buffer with 2 episodes of length 3 each (total 6 transitions), assert sampler never returns a window crossing the boundary.
+20. Cross-episode buffer window — populate buffer with 2 episodes of length 3 each (total 6 transitions), assert sampler never returns a window crossing the boundary. Also log sampler rejection rate as a training diagnostic to catch pathological cases (buffer with few long episodes near capacity).
 21. Loss-normalization regression — compute loss scalars for a hand-crafted batch with `H=3`; assert `L_consistency`, `L_reward`, `L_value` each include the `/H` (and `/num_q`) factor. Catches silent rescale if someone drops the division.
+22. Q-scale range clamp — feed Q tensor with `p95 − p5 = 0.01`; assert EMA `range_ema` clamps to `1.0` not `0.01`. Prevents early-training gradient blowup.
+23. Truncation-vs-terminated semantics — construct batch with window `[..., truncated=True, ...]`; assert (a) reward/value/consistency losses are NOT masked at or past the truncated slot, (b) `(1 - terminated)` in TD target is still 1 (truncation doesn't zero bootstrap), and conversely for `terminated=True` case: bootstrap zeroed but reward/value loss still applied.
 
 ---
 
@@ -458,7 +472,8 @@ Spec is implementable when:
 - [x] File layout fits existing repo philosophy
 - [x] C-migration seams identified and cheap (~10% B overhead, ~80% C savings)
 - [x] Failure modes + test plan cover known risks
-- [x] Independent-review findings (MPPI action selection, `_prev_mean`, loss normalization, per-episode sampling, tanh-bounded log_std, weight init, single-Adam-with-param-groups, scaled_entropy formula, tanh-squash numerical safety) resolved in §§5-11
+- [x] Independent-review findings (MPPI action selection, `_prev_mean`, loss normalization, per-episode sampling, tanh-bounded log_std, weight init, single-Adam-with-param-groups, scaled_entropy formula, tanh-squash numerical safety, no per-step mask on world-model losses, Q-scale `min=1.` clamp, per-task discount heuristic, dropout scope, vectorized `_prev_mean`) resolved in §§5-11
+- [x] Paper access caveat acknowledged — acceptance bars (§14) marked as repo-level expectations, not paper citations (paper was inaccessible at spec time)
 - [ ] Implementation plan drafted (next step: `writing-plans` skill)
 - [ ] Benchmark validation passes (P1): CheetahRun ≥ 850, HumanoidRun ≥ 800
 
