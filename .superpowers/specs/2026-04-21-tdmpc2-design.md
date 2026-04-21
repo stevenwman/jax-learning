@@ -1,7 +1,7 @@
 # TD-MPC2 JAX Reimplementation — Design Spec
 
-**Date:** 2026-04-21
-**Status:** Design approved, pending spec review
+**Date:** 2026-04-21 (revised post independent review)
+**Status:** Design approved; independent review findings integrated; pending user sign-off
 **Target:** Port TD-MPC2 (Hansen et al. 2024, `nicklashansen/tdmpc2`) to this JAX/Flax framework
 
 ---
@@ -56,11 +56,12 @@
 - **Why:** DMC is flat-vector obs, decision does not apply there; state-only keeps Go2 deploy story open (privileged obs only available in sim).
 - **Revisit trigger:** if state-only Go2 run underperforms FastSAC by > 20%, consider asymmetric (privileged to world model + Q, state to policy).
 
-### D4: Replay buffer — extend existing, not new class
-- **Chosen:** add `sample_sequence(batch, H)` method to `jax_rl/buffers/jax_replay_buffer.py`.
-- **Mechanism:** store transitions flat (existing). Sample sequences by drawing starting indices in `[0, size - H]`, read H+1 contiguous slots, return with a done-mask that zeros out post-natural-terminal steps. Reject windows that cross buffer wrap.
-- **Why not new class:** single buffer implementation to maintain; additive change breaks nothing; ~60 LOC.
+### D4: Replay buffer — extend existing with per-episode slice sampling
+- **Chosen:** add `sample_sequence(batch, H)` method to `jax_rl/buffers/jax_replay_buffer.py`; store a per-transition `episode_id` alongside existing fields.
+- **Mechanism:** store transitions flat (existing). On `add`, increment `episode_id` whenever the previous transition's `done OR truncated` is true. On sample, draw starting indices uniformly from valid slots (`0 ≤ i ≤ size - (H+1)`), read `H+1` contiguous slots, and **reject any window whose `episode_id` is not constant across all H+1 slots**. Also reject windows crossing the buffer ring wrap. Resample until `batch` valid windows collected (paper source uses `torchrl.SliceSampler` keyed on `traj_key='episode'` — our per-episode `episode_id` match matches its guarantee).
+- **Why not new class:** single buffer implementation to maintain; additive change breaks nothing; ~80 LOC.
 - **Why not episode buffer:** Go2 episodes are 1000 steps; episode-as-unit wastes memory.
+- **Reviewer-flagged bug avoided:** spec earlier proposed only rejecting wrap-around. That would silently sample across episode boundaries whenever the buffer was full of multiple episodes — a real bug. Per-episode `episode_id` match closes it.
 
 ### D5: Training script — standalone (FlashSAC precedent)
 - **Chosen:** `train_tdmpc2.py` owns its own loop; does not delegate to `offpolicy_loop.py`.
@@ -69,11 +70,13 @@
 ### D6: Eval uses both MPPI and policy prior every eval
 - **Chosen:** each eval reports two scores — `mppi_return` and `prior_return` — plus their gap.
 - **Why:** prior-eval is nearly free (one extra forward pass vs. MPPI's 1536 latent rollouts); the gap is a load-bearing diagnostic signal (is the planner actually helping?).
+- **Paper-comparable score:** `mppi_return` is the paper-comparable number. `prior_return` is a diagnostic auxiliary only. Journals and benchmark tables report `mppi_return`; `prior_return` used for bottleneck analysis and deploy cost estimation.
 - **Checkpoint contract:** `actor_params.npy` stores policy prior params only. MPPI requires the full world model checkpoint (saved as `world_model_params.npy`). Deploy paths that only load `actor_params.npy` continue to work.
 
-### D7: Collect uses MPPI with small env count (paper-faithful)
+### D7: Collect uses MPPI with small env count (paper-adjacent)
 - **Chosen:** default `--num-envs 8 --collect-mode mppi`. Alternative mode `--collect-mode prior` (fast, non-paper) exposed for ablation.
 - **Why:** TD-MPC2 is designed for 1-env-high-UTD regime, not 1024-env prior collect. Running 1024 envs with MPPI defeats its own sample-efficiency pitch (and is GPU-infeasible).
+- **Deviation acknowledged:** source uses `num_envs=1`. Our default `num_envs=8` is a deliberate throughput deviation — trades some sample efficiency for wall-clock. Benchmark phase will A/B test `num_envs ∈ {1, 4, 8}` on CheetahRun to quantify the cost before locking.
 
 ### D8: Paper HPs come from source audit, not paper text
 - **Chosen:** every HP cited in this spec was verified against `/tmp/tdmpc2/tdmpc2/config.yaml` and `tdmpc2/*.py`. No values paraphrased from paper text.
@@ -110,40 +113,54 @@ jax_rl/configs/env_presets.py       # Add TDMPC2 presets for DMC tasks + Go2
 - Input: concat `(z, a)`.
 - Arch: 2 hidden × `mlp_dim=512` NormedLinear blocks → linear to `latent_dim=512` → SimNorm.
 
+### 5.X Weight init (applies to all nets above)
+- **Linear layer weights:** `trunc_normal(std=0.02)` (source `common/init.py:4-16`).
+- **Biases:** zero.
+- **Output layers with zero-init weights:** reward head final linear, each Q head final linear (source `common/world_model.py:31-32`). Zero-init keeps initial reward/value predictions at the bin center post-symlog.
+- All other output layers: standard trunc_normal.
+- SimNorm activation has no trainable parameters beyond the preceding Linear.
+
 ### 5.3 Reward head `R(z, a) → r̂_logits`
 - Arch: 2 hidden × 512 NormedLinear → linear to **`num_bins=101`**.
 - Target: two-hot over `symlog(r)` clamped to `[vmin=-10, vmax=+10]`.
-- Bin size: **0.2**.
+- Bin size: computed as `(vmax - vmin) / (num_bins - 1) = 0.2` — do not hardcode; derive from config so changes to `vmin/vmax/num_bins` propagate.
+- **Output layer weight init: zero** (source `common/init.py`; matches reward head in `world_model.py`). Biases zero.
 
 ### 5.4 Terminal Q `Q(z, a) → q_logits`
 - Ensemble of **`num_q=5`** heads, each 2 hidden × 512 + 101-way logit output.
 - **Dropout = 0.01 on first hidden layer of Q heads only** (not on reward/policy/dynamics).
-- Targets: **min of 2 random Qs** (permutation subsample) for TD target.
+- Targets: **min of 2 random Qs** for TD target. Subsample draws **a fresh random pair per update step** (per-batch, not per-batch-element — matches source `world_model.py:212-215`).
 - Policy-update Q: **avg of 2 random Qs** using stop-grad alias `_detach_Qs` (online params, detached — NOT target params).
 - Value loss: CE over all 5 heads, summed over H rollout steps, normalized by `H · num_q`.
+- **Output layer weight init: zero** (source `common/init.py`). Biases zero.
 
 ### 5.5 Policy prior `π(z) → (μ, log_σ)`
-- Tanh-squashed Gaussian, reparameterized (SAC-style sampling).
+- Tanh-squashed action, reparameterized sampling.
 - Arch: 2 hidden × 512 NormedLinear → linear to `2 · action_dim`.
+- `μ` unbounded. `log_σ` **tanh-bounded** between `log_std_min=-10` and `log_std_max=2` via `low + 0.5·(high−low)·(tanh(raw)+1)` (source `common/math.py:13-14`) — NOT a hard clamp, NOT free parameter.
+- Action `a = tanh(μ + σ·ε)` with log-prob Jacobian correction `-Σ log(relu(1 − a²) + 1e-6)` — matches source `common/math.py` `squash()`. The `relu` + `1e-6` floor is load-bearing numerical safety (prevents log of ≤0 when `|tanh| ≈ 1`). A naive `1 - tanh²` would NaN at saturation.
 - **No target entropy, no Lagrangian.** Fixed **`entropy_coef=1e-4`**.
-- Entropy term uses **scaled_entropy** = `-log_prob · (action_dim / |log_prob|)` per sample (action-dim normalization; see source `common/world_model.py:169-183`).
+- Entropy term uses **scaled_entropy** ≈ `-log_prob · action_dim` per sample (action-dim normalization). Source implements this as the ratio `(-log_prob · action_dim) / (log_prob + 1e-8)` multiplied back into `log_prob` — a numerical-identity trick that lets multi-task code zero out masked action dimensions without changing the scalar. Single-task implementation may simplify to `-log_prob · action_dim` directly; test must match the source's post-mask value in both single- and multi-task configurations. Source: `common/world_model.py:176-183`.
 
 ### 5.6 Target nets
 - **EMA on encoder, dynamics, reward, Q.** No target policy.
 - **`tau=0.01`**, soft update every gradient step.
 
 ### 5.7 Q-scale running tracker
-- Tracks **5th and 95th percentiles** of Q outputs across recent updates, EMA'd with `tau=0.01`.
+- Tracks **5th and 95th percentiles** of Q outputs across recent updates, EMA'd with **the same `tau=0.01`** as target networks (source `common/scale.py:42` reuses cfg `tau`).
 - Scales Q in policy loss: `qs_scaled = qs / (p95 - p5 + eps)`.
 - Without this, `entropy_coef=1e-4` is the wrong magnitude — Q values must be scale-normalized before adding the entropy bonus.
 - Lives in `jax_rl/utils/qscale.py`; part of `TrainState`.
+- **Bootstrap:** initialize scale to `1.0` and populate the percentile tracker during the `seed_steps` warmup gradient burst (§7 "Warmup"). By the time regular updates begin, the tracker is warm; no special-case in policy loss.
 
 ### 5.8 MPPI planner (non-network)
 - **`num_samples=512`** trajectories; **`horizon=3`**; **`num_elites=64`**; **`iterations=6`** (+2 if `action_dim ≥ 20`).
 - **`temperature=0.5`**; `min_std=0.05`, `max_std=2.0`.
 - **`num_pi_trajs=24`** of the 512 samples are seeded by rolling out the policy prior forward in latent space.
+- **Mean warm-start across env steps (`_prev_mean`):** the MPPI mean trajectory is persisted across calls. At each new planner call with `t0=False`, initialize `mean[:-1] = prev_mean[1:]` and `mean[-1] = 0`. On episode reset or first step (`t0=True`), zero-initialize. This matches source (`tdmpc2.py:41, 167-168, 206`) and is a load-bearing mechanism — without it, every env step restarts planning from scratch and planner quality drops visibly. `_prev_mean` is per-env (shape `(num_envs, horizon, action_dim)`) and lives in `TrainState`.
+- **Per-iteration std update:** at each MPPI iteration, update mean and std from the elite-weighted empirical mean and variance, then clamp `std ∈ [min_std, max_std]`. Source `tdmpc2.py:194-195`.
 - Scoring: `return(τ) = Σ_h γ^h · r̂(z_h, a_h) + γ^H · Q_avg_of_2(z_H, π(z_H))`, decoded through two-hot → symexp.
-- Action returned: first action of elite-weighted mean trajectory, sampled via Gumbel on elite scores, plus `elite_std · ε` noise (unless `eval_mode=True`).
+- **Action returned:** sample a **single elite trajectory** via Gumbel-softmax on elite scores (source `tdmpc2.py:201-205`), take its first action, and add exploration noise `std_{t=0} · ε` (the MPPI-updated std at horizon index 0; not an "elite std"). In `eval_mode=True`, skip the noise. Previous draft of this spec wrongly said "elite-weighted mean + elite_std noise" — corrected.
 - Pure JAX, `jit`-compiled, `vmap` over batch of envs.
 
 ---
@@ -160,13 +177,17 @@ for h in 0..H-1:
     r̂_h     = reward(ẑ_h, a_h)
     q̂_h     = Q(ẑ_h, a_h)                       # all 5 heads
 
-L_consistency = Σ_h  rho^h · mask_h · MSE(ẑ_h, sg(z_targets_h))
-L_reward      = Σ_h  rho^h · mask_h · CE(r̂_logits_h, twohot(r_h))
-L_value       = Σ_h  rho^h · mask_h · Σ_q CE(q̂_logits_{h,q}, twohot(target_q_h))  / (H · num_q)
-L_policy      = E_τ [ rho^h · (entropy_coef · scaled_entropy - qs_scaled) ]
+L_consistency = (1/H) · Σ_h  rho^h · MSE(ẑ_h, sg(z_targets_h))                         # no terminal mask (matches source)
+L_reward      = (1/H) · Σ_h  rho^h · mask_h · CE(r̂_logits_h, twohot(r_h))
+L_value       = (1/(H·num_q)) · Σ_h  rho^h · mask_h · Σ_q CE(q̂_logits_{h,q}, twohot(target_q_h))
+L_policy      = E_τ [ Σ_h rho^h · (entropy_coef · scaled_entropy_h - qs_scaled_h) ] / (H+1)
 
 L_world_total = consistency_coef · L_consistency + reward_coef · L_reward + value_coef · L_value
 ```
+
+**Normalization is load-bearing.** Source divides `consistency_loss / H`, `reward_loss / H`, and `value_loss / (H · num_q)` before applying coefficients. Without these divisions our tuned coefficients (`consistency=20, reward=0.1, value=0.1`) are silently miscalibrated by ~3×.
+
+**Consistency mask:** source does NOT mask consistency loss by `done_natural`. We follow source (unmasked consistency). Earlier draft of this spec proposed masking — dropped.
 
 ### Coefficients (audited)
 - **`consistency_coef=20`**
@@ -186,8 +207,9 @@ target_q_h = r_h + γ · (1 - done_natural_h) · twohot_decode(
 
 ### Truncation handling
 - `done_natural = done AND NOT truncated` — separate `truncated` flag stored in buffer.
-- `mask_h = 1` until first `done_natural` in the H-window, then `0`.
-- Consistency loss masked by `done_natural` (can't match latent past true terminal). Losses past `truncated` still apply (episode was just cut).
+- `mask_h = 1` until first `done_natural` in the H-window, then `0`. Applied to reward and value losses (see loss composition above). Not applied to consistency (matches source).
+- Losses past `truncated` still apply (episode was just cut, latent is still well-defined).
+- **Deviation from source:** source assumes `episodic=false` for DMC and raises if any `terminated=True` arrives (`online_trainer.py:91-93`). We explicitly support truncated vs. natural-done separation so the same code handles Go2 (where `truncated` from time limits is the dominant signal). This is an additive extension, not a divergence from source semantics for DMC.
 
 ---
 
@@ -205,14 +227,17 @@ target_q_h = r_h + γ · (1 - done_natural_h) · twohot_decode(
 - At `_step == seed_steps` boundary: **burst of `seed_steps` gradient updates** (pretraining on filled buffer) before normal UTD=1 begins.
 
 ### Update loop (UTD=1 after warmup)
-1. Sample: `buffer.sample_sequence(batch=256, H=3)` → `(o_{0..H}, a_{0..H-1}, r_{0..H-1}, done, truncated)` shape `(H+1, B, …)`.
+1. Sample: `buffer.sample_sequence(batch=256, H=3)` → `(o_{0..H}, a_{0..H-1}, r_{0..H-1}, done, truncated)` shape `(H+1, B, …)`. Per-episode slice sampling guarantees all H+1 steps come from the same episode (§D4).
 2. Encode entire observed sequence with online encoder under stop-grad → `z_targets_{0..H}`.
 3. Forward-roll dynamics from `z_0 = encoder(o_0)` to get `ẑ_{1..H}`.
 4. Compute reward/Q logits at each step.
-5. Compute `L_world_total` (consistency + reward + value, with per-step `rho^h` discount).
-6. Backprop through world model optimizer (encoder+dynamics+reward+Qs, plus `task_emb` placeholder).
-   - Encoder param group uses `lr · 0.3 = 9e-5`; rest use **`lr=3e-4`**.
-7. Compute `L_policy` on same sequence with frozen (stop-grad) world model; backprop through policy optimizer (LR `3e-4`, Adam `eps=1e-5`).
+5. Compute `L_world_total` (consistency + reward + value, with per-step `rho^h` discount, then per-H normalization per §6).
+6. Backprop through **world model optimizer**:
+   - **Single Adam, two param groups** (matches source `tdmpc2.py:23-31`). Implemented via Optax `multi_transform` or equivalent — NOT two separate optimizers.
+   - Group A (scaled LR): **encoder only** at `lr · enc_lr_scale = 3e-4 · 0.3 = 9e-5`.
+   - Group B (default LR): dynamics + reward + Qs **+ `task_emb`** at `lr = 3e-4`. (Source puts `task_emb` in the default group, not the scaled encoder group — important for Phase 4 C-migration, do not conflate.)
+   - Grad clip `max_norm=20` applied to the combined gradient tree.
+7. Compute `L_policy` on detached latents from step 3 (stop-grad on world model); backprop through **policy optimizer** (separate Adam, LR `3e-4`, `eps=1e-5`, grad clip `max_norm=20`).
 8. Update Q-scale EMA (5th/95th percentile) with online Q outputs.
 9. Soft-update target nets: `θ_target ← θ_target + tau · (θ - θ_target)` on encoder, dynamics, reward, Q only.
 
@@ -273,12 +298,16 @@ class TDMPC2Config:
 
     # Optimization
     lr: float = 3e-4
-    enc_lr_scale: float = 0.3
+    enc_lr_scale: float = 0.3          # applied to encoder param group in world model optimizer
     pi_optim_eps: float = 1e-5
-    tau: float = 0.01
+    tau: float = 0.01                   # shared by target EMA and Q-scale EMA
     batch_size: int = 256
     horizon: int = 3
-    discount: float = 0.99
+    discount: float = 0.99              # DMC default; Go2 TBD
+
+    # Policy prior bounds
+    log_std_min: float = -10.0
+    log_std_max: float = 2.0
 
     # MPPI
     num_samples: int = 512
@@ -300,6 +329,7 @@ class TDMPC2Config:
     # Multi-task seams (B-mode defaults)
     num_tasks: int = 1
     task_names: tuple[str, ...] = ("single",)
+    episode_lengths: tuple[int, ...] = (500,)   # per-task; used by source's discount heuristic, kept as C-seam
 ```
 
 Presets in `env_presets.py`:
@@ -336,11 +366,11 @@ Presets in `env_presets.py`:
    - Monitor `std(z)` across batch; alert if < 0.01.
 
 6. **Buffer edge cases**
-   - Reject sequence windows that cross wrap-around boundary.
+   - Reject sequence windows that cross (a) buffer ring-wrap or (b) episode boundary (per-episode `episode_id` must be constant across all H+1 slots).
    - If `buffer.size < H + 1`, skip update.
 
 7. **Policy prior entropy collapse**
-   - `log_σ` clamped to `[-5, 2]`.
+   - `log_σ` tanh-bounded between **`log_std_min=-10`** and **`log_std_max=2`** (not a hard clamp — see §5.5).
    - Monitor `entropy(π)`; alert if < 0.01 for > 100 updates.
 
 8. **GPU OOM in MPPI**
@@ -351,8 +381,11 @@ Presets in `env_presets.py`:
    - Log `||θ - θ_target||` per component.
 
 10. **Q-scale EMA instability early in training**
-    - First `seed_steps` gradient burst populates scale tracker before it's used in policy loss.
-    - Bootstrap scale to `1.0` until first `num_q` samples observed.
+    - Initialize scale to `1.0`; populated by the `seed_steps` warmup gradient burst before regular updates begin (see §5.7 + §7 "Warmup"). By the time policy updates start, the tracker is warm.
+
+11. **MPPI `_prev_mean` staleness at episode boundary**
+    - On episode reset (new `t0=True`), zero-initialize `_prev_mean` for that env. Without this, the planner warm-starts with trajectories from the prior episode's end — correlated with terminal states and actively misleading.
+    - Unit test: simulate two sequential episodes through planner, assert `_prev_mean` resets at boundary.
 
 ---
 
@@ -365,9 +398,10 @@ See `tests/test_tdmpc2.py`. Target ~40 tests.
 2. Two-hot + symlog/symexp roundtrip; boundary clamping.
 3. Encoder/dynamics/reward/Q forward shapes across batch × H.
 4. Single-batch loss — each component finite, matches hand-computed.
-5. MPPI — determinism with fixed seed; bounded actions; converges on toy reward landscape; 24 π-seeds wired correctly.
+5. MPPI — (a) determinism with fixed seed; (b) bounded actions; (c) converges on toy reward landscape; (d) 24 π-seeds wired correctly; (e) single-elite Gumbel sampling matches source's categorical sample distribution; (f) `_prev_mean` warm-start applied on `t0=False` and reset on `t0=True`.
 6. Q-scale EMA — percentile math + EMA follows `tau`.
-7. Buffer sequence sampling — windows at boundaries (size 5/10/100); done-mask correctness; truncation vs. natural-done separation; wrap-around rejection.
+7. Buffer sequence sampling — windows at boundaries (size 5/10/100); done-mask correctness; truncation vs. natural-done separation; **per-episode `episode_id` match rejects cross-episode windows**; wrap-around rejection.
+7b. Tanh-Gaussian log-prob Jacobian — cross-check against source `common/math.py` `gaussian_logprob` + `squash` formulas numerically. Tests must cover the saturation edge case (`|tanh| → 1`): our impl uses `relu(1 - a²) + 1e-6` floor (matches source); a naive `1 - tanh²` version would return `-inf` at saturation. Random μ, σ, ε sweep; our log_prob ≈ source log_prob to 1e-5 across the range `|μ+σε| ∈ [0, 10]`.
 8. Target EMA — one step of soft update moves params by `tau · Δ`.
 9. Scaled entropy matches source formula (action-dim normalization).
 10. Rho discount applied correctly per horizon step.
@@ -385,7 +419,9 @@ See `tests/test_tdmpc2.py`. Target ~40 tests.
 ### Failure probes
 17. Force NaN into encoder output, assert MPPI skip-on-nonfinite works without crash.
 18. Reward=1e4 env — assert saturation warning fires, symlog compresses, training stable.
-19. Synthetic H=3 with done_natural at h=1 — assert losses at h=2 are zero-contributed.
+19. Synthetic H=3 with done_natural at h=1 — assert losses at h=2 are zero-contributed (reward + value). Consistency loss NOT masked (matches source).
+20. Cross-episode buffer window — populate buffer with 2 episodes of length 3 each (total 6 transitions), assert sampler never returns a window crossing the boundary.
+21. Loss-normalization regression — compute loss scalars for a hand-crafted batch with `H=3`; assert `L_consistency`, `L_reward`, `L_value` each include the `/H` (and `/num_q`) factor. Catches silent rescale if someone drops the division.
 
 ---
 
@@ -409,7 +445,7 @@ Everything else (losses, MPPI, Q, policy) unchanged — this is why the seams ar
 1. **DMC env integration path:** existing `env_setup.py` uses Playground's registry. Does it already register DMC tasks, or is there new registration work? To be resolved during plan phase.
 2. **Does `jax_rl/training/eval_runner.py` support two-mode eval out of the box**, or does TD-MPC2 need its own eval function? To be resolved during plan phase.
 3. **Go2 integration not yet designed in detail** — this spec covers scope and obs-handling default only. Separate design pass or incremental plan addition when P2 begins.
-4. **Numerical: double-check `log_prob` formula for tanh-squashed Gaussian in JAX**, ensure Jacobian correction matches SAC's and source's formula exactly.
+4. **Optax `multi_transform` structure:** implementation must confirm the Optax recipe for single-optimizer + per-group LR (encoder at `lr·0.3`, rest at `lr`). If `multi_transform` is awkward for this shape, fall back to two Adam instances with distinct LRs (breaks source fidelity only in moment-state sharing; a tolerable deviation).
 
 ---
 
@@ -417,11 +453,12 @@ Everything else (losses, MPPI, Q, policy) unchanged — this is why the seams ar
 
 Spec is implementable when:
 - [x] All P1 HPs have a source file:line citation
-- [x] Loss formulas match source (audited)
-- [x] MPPI algorithm steps match source (audited)
+- [x] Loss formulas match source (audited) — including per-H normalization on consistency/reward and per-(H·num_q) on value
+- [x] MPPI algorithm steps match source (audited) — including single-elite Gumbel sampling, `std_{t=0}·ε` noise, and `_prev_mean` warm-start across env steps
 - [x] File layout fits existing repo philosophy
 - [x] C-migration seams identified and cheap (~10% B overhead, ~80% C savings)
 - [x] Failure modes + test plan cover known risks
+- [x] Independent-review findings (MPPI action selection, `_prev_mean`, loss normalization, per-episode sampling, tanh-bounded log_std, weight init, single-Adam-with-param-groups, scaled_entropy formula, tanh-squash numerical safety) resolved in §§5-11
 - [ ] Implementation plan drafted (next step: `writing-plans` skill)
 - [ ] Benchmark validation passes (P1): CheetahRun ≥ 850, HumanoidRun ≥ 800
 
