@@ -431,7 +431,7 @@ See `tests/test_tdmpc2.py`. Target ~40 tests.
 ### Failure probes
 17. Force NaN into encoder output, assert MPPI skip-on-nonfinite works without crash.
 18. Reward=1e4 env — assert saturation warning fires, symlog compresses, training stable.
-19. Synthetic H=3 with done_natural at h=1 — assert losses at h=2 are zero-contributed (reward + value). Consistency loss NOT masked (matches source).
+19. Synthetic H=3 window with `terminated=True` at h=1 — assert (a) reward/value/consistency losses at h=2 are computed normally (NOT masked; matches source), (b) the `(1 - terminated)` factor in the TD target correctly zeros the bootstrap term at h=1 only. Earlier draft of this test asserted h=2 losses mask to zero — that was based on the pre-fix `mask_h` design and is now wrong; this test version matches the corrected §6.
 20. Cross-episode buffer window — populate buffer with 2 episodes of length 3 each (total 6 transitions), assert sampler never returns a window crossing the boundary. Also log sampler rejection rate as a training diagnostic to catch pathological cases (buffer with few long episodes near capacity).
 21. Loss-normalization regression — compute loss scalars for a hand-crafted batch with `H=3`; assert `L_consistency`, `L_reward`, `L_value` each include the `/H` (and `/num_q`) factor. Catches silent rescale if someone drops the division.
 22. Q-scale range clamp — feed Q tensor with `p95 − p5 = 0.01`; assert EMA `range_ema` clamps to `1.0` not `0.01`. Prevents early-training gradient blowup.
