@@ -364,3 +364,49 @@ def test_buffer_episode_ids_default_zero_when_not_supplied():
     buf.add_batch(obs, actions, np.zeros(3, dtype=np.float32), next_obs,
                   np.zeros(3, dtype=np.float32), np.zeros(3, dtype=np.float32))
     assert np.all(np.array(buf.episode_ids[:3]) == 0)
+
+
+# ── sample_sequence (TD-MPC2 B2) tests ──────────────────────────────────
+
+
+def _fill_one_episode(buf, length, episode_id=0):
+    """Helper: fill buf with one episode of `length` transitions."""
+    obs = np.stack([np.ones(buf.obs_dim, dtype=np.float32) * i for i in range(length)])
+    next_obs = np.stack([np.ones(buf.obs_dim, dtype=np.float32) * (i + 1) for i in range(length)])
+    actions = np.ones((length, buf.action_dim), dtype=np.float32)
+    rewards = np.zeros(length, dtype=np.float32)
+    dones = np.zeros(length, dtype=np.float32)
+    dones[-1] = 1.0  # done at last step
+    trunc = np.zeros(length, dtype=np.float32)
+    episode_ids = np.full(length, episode_id, dtype=np.int32)
+    buf.add_batch(obs, actions, rewards, next_obs, dones, trunc, episode_ids=episode_ids)
+
+
+def test_sample_sequence_shape():
+    buf = JaxReplayBuffer(obs_dim=3, action_dim=2, max_size=100)
+    _fill_one_episode(buf, length=50, episode_id=0)
+    seq = buf.sample_sequence(batch=8, H=3, key=jax.random.PRNGKey(0))
+    assert seq["obs"].shape == (4, 8, 3)
+    assert seq["actions"].shape == (3, 8, 2)
+    assert seq["rewards"].shape == (3, 8, 1)
+    assert seq["dones"].shape == (3, 8, 1)
+    assert seq["truncations"].shape == (3, 8, 1)
+
+
+def test_sample_sequence_rejects_cross_episode():
+    """No sampled window should span two episodes."""
+    buf = JaxReplayBuffer(obs_dim=2, action_dim=1, max_size=100)
+    _fill_one_episode(buf, length=5, episode_id=0)  # indices 0..4
+    _fill_one_episode(buf, length=5, episode_id=1)  # indices 5..9
+    seq = buf.sample_sequence(batch=64, H=3, key=jax.random.PRNGKey(42))
+    starts = np.array(seq["obs"][0, :, 0])
+    valid_starts = {0, 1, 2, 5, 6}
+    for s in starts:
+        assert int(round(float(s))) in valid_starts, f"Invalid start {s}"
+
+
+def test_sample_sequence_handles_small_buffer():
+    buf = JaxReplayBuffer(obs_dim=2, action_dim=1, max_size=100)
+    _fill_one_episode(buf, length=2, episode_id=0)
+    with pytest.raises(ValueError):
+        buf.sample_sequence(batch=4, H=3, key=jax.random.PRNGKey(0))

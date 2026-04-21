@@ -372,5 +372,66 @@ class JaxReplayBuffer:
             return batch, idx
         return _sample
 
+    def sample_sequence(self, batch: int, H: int, key: jax.Array) -> dict:
+        """Sample `batch` contiguous H+1 sequence windows, all within a single episode.
+
+        Uses rejection sampling: oversample candidate start indices 4x and filter by
+        constant-episode-id-across-window. Rejection rate expected <1% in normal training.
+
+        Args:
+            batch: number of sequences to return.
+            H: horizon (actions/rewards per window; obs has H+1 steps).
+            key: JAX PRNGKey.
+
+        Returns:
+            Dict with:
+              obs          (H+1, batch, obs_dim)
+              actions      (H,   batch, action_dim)
+              rewards      (H,   batch, 1)
+              dones        (H,   batch, 1)        -- "terminated" flags
+              truncations  (H,   batch, 1)
+
+        Raises:
+            ValueError: if buffer has fewer than H+1 transitions, or if oversample
+                cannot find `batch` valid windows.
+        """
+        if self.size < H + 1:
+            raise ValueError(f"Buffer has {self.size} transitions; need >= {H + 1}")
+
+        max_start = self.size - (H + 1)
+        n_candidates = 4 * batch
+
+        candidates = jax.random.randint(key, (n_candidates,), 0, max_start + 1)
+        offsets = jnp.arange(H + 1)
+        eids = self.episode_ids[candidates[:, None] + offsets[None, :]]
+        valid = jnp.all(eids == eids[:, :1], axis=1)
+
+        n_valid = int(valid.sum())
+        if n_valid < batch:
+            raise ValueError(
+                f"Only {n_valid}/{batch} valid sequence windows in {n_candidates} candidates; "
+                f"buffer may be full of very short episodes."
+            )
+
+        order = jnp.argsort(-valid.astype(jnp.int32))
+        starts = candidates[order][:batch]
+
+        obs_idx = starts[:, None] + jnp.arange(H + 1)[None, :]
+        trans_idx = starts[:, None] + jnp.arange(H)[None, :]
+
+        obs = self.obs[obs_idx].transpose(1, 0, 2)
+        actions = self.actions[trans_idx].transpose(1, 0, 2)
+        rewards = self.rewards[trans_idx].transpose(1, 0, 2)
+        dones = self.dones[trans_idx].transpose(1, 0, 2)
+        truncations = self.truncations[trans_idx].transpose(1, 0, 2)
+
+        return {
+            "obs": obs,
+            "actions": actions,
+            "rewards": rewards,
+            "dones": dones,
+            "truncations": truncations,
+        }
+
     def __len__(self) -> int:
         return self.size
