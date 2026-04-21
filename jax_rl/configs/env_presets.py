@@ -451,7 +451,7 @@ from jax_rl.configs.tdmpc2_config import TDMPC2Config, make_tdmpc2_config
 TDMPC2_PRESETS: dict[str, TDMPC2Config] = {
     "CheetahRun": make_tdmpc2_config(action_dim=6, episode_length=1000, task_name="CheetahRun"),
     "HumanoidRun": make_tdmpc2_config(action_dim=21, episode_length=1000, task_name="HumanoidRun"),
-    "AcrobatSwingup": make_tdmpc2_config(action_dim=1, episode_length=1000, task_name="AcrobatSwingup"),
+    "AcrobotSwingup": make_tdmpc2_config(action_dim=1, episode_length=1000, task_name="AcrobotSwingup"),
 }
 
 
