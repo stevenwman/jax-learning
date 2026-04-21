@@ -675,7 +675,7 @@ citing source lines.
 from dataclasses import dataclass, field
 
 
-@dataclass
+@dataclass(frozen=True)  # frozen → hashable → safe as `jax.jit(static_argnames="cfg")` arg
 class TDMPC2Config:
     # Architecture
     latent_dim: int = 512
@@ -1382,17 +1382,27 @@ def compute_td_target(
     rewards = batch["rewards"]             # (H, B, 1)
     terminated = batch["dones"]            # (H, B, 1)
 
-    # 1. Online encoder on real next obs (stop-grad — target is fully detached)
-    next_z = jax.vmap(lambda o: Encoder.apply(online_wm_params["encoder"], o))(obs_next)
-    next_z = jax.lax.stop_gradient(next_z)  # (H, B, latent_dim)
+    # 1. Online encoder on real next obs (stop-grad — target is fully detached).
+    # obs_next shape: (H, B, obs_dim). Encoder expects (batch, obs_dim) — LayerNorm is per-example.
+    # Flatten (H, B) → (H*B,) for a single apply, then reshape back. Avoids vmap-over-time
+    # which would produce correlated dropout/noise across the time axis when modules are stochastic.
+    H, B = obs_next.shape[:2]
+    next_z = encoder.apply(online_wm_params["encoder"], obs_next.reshape(H * B, -1))
+    next_z = jax.lax.stop_gradient(next_z.reshape(H, B, -1))
 
-    # 2. Online policy sample (policy_params already stop-gradded by caller)
+    # 2. Online policy sample (policy_params already stop-gradded by caller).
+    # One PRNGKey per (h, b) pair — split over both axes to avoid noise correlation across B.
     key_pi, key_q = jax.random.split(key, 2)
-    sample_pi = lambda z, k: PolicyPrior.apply(policy_params, z, k)
-    # vmap over H and B
-    keys = jax.random.split(key_pi, H)
-    a_next, _ = jax.vmap(sample_pi)(next_z, keys)  # (H, B, action_dim)
-    a_next = jax.lax.stop_gradient(a_next)
+    keys_pi = jax.random.split(key_pi, H * B).reshape(H, B, 2)  # (H, B, 2) key array
+    sample_pi = lambda z, k: policy_net.apply(policy_params, z[None], k)[0]  # (action_dim,)
+    # Nested vmap over (H, B): independent PRNG noise per element
+    a_next_fn = jax.vmap(jax.vmap(sample_pi, in_axes=(0, 0)), in_axes=(0, 0))
+    # But PolicyPrior returns (action, extras) — just take action
+    def _sample_action(z, k):
+        a, _ = policy_net.apply(policy_params, z[None], k)
+        return a[0]
+    a_next = jax.vmap(jax.vmap(_sample_action, in_axes=(0, 0)), in_axes=(0, 0))(next_z, keys_pi)
+    a_next = jax.lax.stop_gradient(a_next)  # (H, B, action_dim)
 
     # 3. Target Q ensemble logits, all 5 heads
     q_logits = jax.vmap(lambda z, a: QEnsemble.apply(
@@ -2031,11 +2041,15 @@ def make_update_step(cfg: TDMPC2Config, wm_optimizer, policy_optimizer):
 
     Optax GradientTransformation is not a pytree leaf, so it cannot live on cfg/state.
     Caller builds optimizers once in the train script and calls this factory to get the
-    jit'd step fn.
+    jit'd step fn. cfg is `@dataclass(frozen=True)`, hashable, safe as a closure over @jit.
+
+    IMPORTANT — INDENTATION: every line below up to `return update_step` must be nested
+    inside `update_step`. Do NOT flatten when transcribing.
     """
     @jax.jit
     def update_step(state: TDMPC2State, batch: dict) -> tuple[TDMPC2State, dict]:
         """One gradient step. Order matters: world model → policy (on detached latents) → EMA → Q-scale."""
+        # (all the body that follows must be indented 8 spaces — inside update_step)
     key_wm, key_pol, key_next = jax.random.split(state.key, 3)
 
     # 1. World model update
@@ -2116,8 +2130,12 @@ def make_update_step(cfg: TDMPC2Config, wm_optimizer, policy_optimizer):
     )
 
     return new_state, {**wm_metrics, **pol_metrics}
+    # ^^^ end of update_step body (all lines since `key_wm, key_pol, key_next = ...` must
+    # be indented 8 spaces — inside update_step). The code samples above are written at
+    # 4-space indent for readability; the transcriber MUST indent the whole block one level
+    # deeper when copying into the real file.
 
-    return update_step   # factory returns the jit'd fn
+    return update_step   # OUTSIDE update_step, inside make_update_step — returns the jit'd fn
 ```
 
 *Note:* `policy_loss` must add `a_t0 = sampled_actions[0]` (the t=0 sampled actions, stop-gradded) to its returned metrics dict so Q-scale can reuse it without re-sampling. See Task E3 and add `"a_t0": jax.lax.stop_gradient(a[0])` to the metrics return.
