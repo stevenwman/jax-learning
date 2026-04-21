@@ -437,3 +437,29 @@ def get_preset(env_name: str) -> TrainConfig:
     if env_name in PRESETS:
         return PRESETS[env_name]
     return TrainConfig(env_name=env_name, total_timesteps=3_000_000)
+
+
+# -----------------------------------------------------------------------------
+# TD-MPC2 presets (DMC single-task phase P1).
+# -----------------------------------------------------------------------------
+# Unlike other algos, TDMPC2Config bundles training-loop fields (total_steps,
+# num_envs, eval_every, buffer_size) alongside algorithm hparams, so presets
+# return TDMPC2Config directly rather than a (TrainConfig, AlgoConfig) tuple.
+
+from jax_rl.configs.tdmpc2_config import TDMPC2Config, make_tdmpc2_config
+
+TDMPC2_PRESETS: dict[str, TDMPC2Config] = {
+    "CheetahRun": make_tdmpc2_config(action_dim=6, episode_length=1000, task_name="CheetahRun"),
+    "HumanoidRun": make_tdmpc2_config(action_dim=21, episode_length=1000, task_name="HumanoidRun"),
+    "AcrobatSwingup": make_tdmpc2_config(action_dim=1, episode_length=1000, task_name="AcrobatSwingup"),
+}
+
+
+def get_tdmpc2_preset(env_name: str) -> TDMPC2Config:
+    """Return TDMPC2Config for env. Raises KeyError if unknown
+    (action_dim and episode_length are required env-specific values, so no safe default)."""
+    if env_name not in TDMPC2_PRESETS:
+        raise KeyError(
+            f"No TDMPC2 preset for env '{env_name}'. Add one to TDMPC2_PRESETS in env_presets.py."
+        )
+    return TDMPC2_PRESETS[env_name]
