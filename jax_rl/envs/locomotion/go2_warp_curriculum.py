@@ -38,6 +38,13 @@ def default_config() -> config_dict.ConfigDict:
     # preceding flips on pyramid_up L1 / pyramid_down L3. 5× stronger penalty
     # (was -0.01 from WarpJoystick default) encourages smoother gait.
     cfg.reward_config.scales.action_rate = -0.05
+    # Weaker orientation penalty on terrain. Reward analysis (2026-04-21)
+    # showed orient cost scales 190× from flat to tilted L2 (-0.01 → -1.71),
+    # because upvector_z penalizes body-z misalignment with world-z — robot
+    # upright on a tilted tile looks "wrong" to this cost. Reduce 5× so
+    # terrain-induced tilt isn't catastrophically punished. Flipped detection
+    # still handled via termination (upvector_z < 0).
+    cfg.reward_config.scales.orientation = -1.0
     # Terrain grid has ~1500 geoms (vs ~100 for flat). Warp emits "nefc overflow
     # - please increase njmax" at init; safe to ignore — sim functions at
     # defaults (njmax=100, naconmax=32768). Bumping higher causes VRAM OOM.

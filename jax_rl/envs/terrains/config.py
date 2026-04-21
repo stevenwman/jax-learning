@@ -58,7 +58,7 @@ class TerrainGridCfg:
 # ---------------------------------------------------------------------------
 
 GO2_DEFAULT_CFG = TerrainGridCfg(
-    num_rows=10,
+    num_rows=6,
     tile_size=(9.6, 9.6),
     border_width=20.0,
     terrain_types=[
