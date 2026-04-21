@@ -211,6 +211,22 @@
 - [ ] Muon optimizer (`optax.contrib.muon`) — matrix-whitening via Newton-Schulz orthogonalization. Already in optax 0.2.6, drop-in `GradientTransformation`. Auto-routes 2D weights → Muon, biases/norms → AdamW internally. **RL caveat:** zero published RL benchmarks, untested on non-stationary targets + small MLPs. Start with actor-only Muon, keep critic on AdamW. First/last layer should stay Adam per author guidance.
 - [ ] Shampoo / other second-order optimizers — evaluate if Muon shows promise on RL
 
+## Mid-term — Contraction-theory off-policy extension
+
+Port done 2026-04-21 for PPO (`jax_rl/algos/ppo_contraction.py`, plan at `.superpowers/plans/2026-04-21-contraction-ppo.md`). Paper (Zinage et al., Caltech, https://contractionppo.github.io/) is on-policy only. Off-policy extension is untested in literature — potentially novel contribution.
+
+Why it should work: contraction signal enters via reward augmentation `R_c = (ε − ReLU(V̇ + αV + ε)) * penalty_coef`. Any RL algorithm maximizing E[Σ R_t] can absorb it. Metric loss is pure supervised on (c, ċ) pairs — off-policy agnostic.
+
+- [ ] **SAC/FastSAC port** — `sac_contraction.py` (fork) or merge into `sac.py`. ~200-300 lines.
+  - Replay buffer: add `contraction_c`, `contraction_c_dot` fields (20 lines in buffer code).
+  - Decide: compute `R_c` at **storage time** (fixed in buffer, stale metric) vs **sample time** (always fresh metric, slight extra compute per minibatch). Recommend sample-time — matches "metric influence via rewards" principle with fresh params.
+  - Metric training: runs on minibatches sampled from replay — gets ~batch_size×epochs more gradient steps per env sample than PPO version → faster metric convergence expected.
+  - Tuning: Q magnitudes ≫ rollout rewards → rescale `penalty_coef`. Start ~0.01× of PPO value.
+  - Ablation to run: SAC entropy bonus vs contraction's stability pull at high α_entropy — do they fight?
+- [ ] **TD3 / FastTD3 port** — mostly identical to SAC modulo entropy term. Deterministic target policy aligns cleanly with contraction's determinism assumption.
+- [ ] **Compare on-policy (PPO) vs off-policy (SAC) contraction** — same env (go2_bongo_handstand, same α/ε), same total steps. Does off-policy's replay-driven metric training actually converge faster?
+- [ ] **Caveat to verify first:** PPO port must actually improve robustness (paper's claim) before scoping off-policy extension. If PPO port is neutral/negative, off-policy scope-cut.
+
 ## Short-term — MJX archival
 - [x] MJX Go2 env deleted 2026-04-09 (go2_base.py, go2_joystick.py, go2_cpu.py removed outright; record_video_cpu.py moved to `archive/`). Doc cleanup done 2026-04-20 (audit `.context/tmp/audit_2026-04-19.md`). Spec: `docs/superpowers/specs/2026-04-06-archive-mjx-go2.md`.
 
