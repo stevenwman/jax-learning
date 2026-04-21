@@ -13,3 +13,4 @@ site/
 .temp/
 logs/
 .claude/scheduled_tasks.lock
+.worktrees/
