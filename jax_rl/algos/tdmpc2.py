@@ -91,3 +91,25 @@ class Dynamics(nn.Module):
             bias_init=nn.initializers.zeros,
         )(x)
         return simnorm(x, V=self.simnorm_dim)
+
+
+class Reward(nn.Module):
+    """R(z, a) → reward logits over num_bins (two-hot target).
+
+    Arch: 2 × NormedLinear(mlp_dim) → Dense(num_bins) with **zero-init output kernel**.
+    Source: /tmp/tdmpc2/tdmpc2/common/world_model.py:31.
+    """
+    mlp_dim: int
+    num_bins: int
+
+    @nn.compact
+    def __call__(self, z, a):
+        x = jnp.concatenate([z, a], axis=-1)
+        x = NormedLinear(features=self.mlp_dim)(x)
+        x = NormedLinear(features=self.mlp_dim)(x)
+        # Zero-init output kernel (source common/world_model.py:31)
+        return nn.Dense(
+            features=self.num_bins,
+            kernel_init=nn.initializers.zeros,
+            bias_init=nn.initializers.zeros,
+        )(x)

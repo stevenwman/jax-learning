@@ -78,3 +78,33 @@ def test_dynamics_concatenates_z_and_action():
     out1 = dyn.apply(params, z, jnp.zeros((2, 3)))
     out2 = dyn.apply(params, z, jnp.ones((2, 3)))
     assert not jnp.allclose(out1, out2)
+
+
+def test_reward_output_shape():
+    from jax_rl.algos.tdmpc2 import Reward
+    r = Reward(mlp_dim=512, num_bins=101)
+    params = r.init(jax.random.PRNGKey(0), jnp.zeros((4, 512)), jnp.zeros((4, 6)))
+    out = r.apply(params, jnp.ones((4, 512)), jnp.ones((4, 6)))
+    assert out.shape == (4, 101)
+
+
+def test_reward_output_layer_zero_init():
+    """Final Dense kernel must be zero at init (load-bearing, source world_model.py:31).
+
+    Zero init ensures initial reward predictions center on the bin corresponding to
+    symlog(0) = 0, preventing early-training bias.
+    """
+    from jax_rl.algos.tdmpc2 import Reward
+    r = Reward(mlp_dim=64, num_bins=21)
+    params = r.init(jax.random.PRNGKey(0), jnp.zeros((2, 32)), jnp.zeros((2, 3)))
+    # The output layer is the last Dense; in Flax naming, nth module of its type.
+    # Since there's only one bare `nn.Dense` (the output), Dense_0 in the apex scope.
+    # Safer: check that at least one leaf in params tree is all zeros with shape ending in num_bins.
+    leaves = jax.tree_util.tree_leaves_with_path(params)
+    # Find the kernel with last dim == num_bins
+    output_kernels = [leaf for path, leaf in leaves
+                       if leaf.ndim == 2 and leaf.shape[-1] == 21 and "kernel" in str(path).lower()]
+    assert len(output_kernels) >= 1, f"No output kernel found with trailing dim {21}"
+    # At least one matching kernel should be all zeros
+    assert any(jnp.allclose(k, 0.0) for k in output_kernels), \
+        "Expected output layer kernel to be zero-init"
