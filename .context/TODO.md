@@ -1,5 +1,23 @@
 # TODO
 
+## Completed (2026-04-21) — ContractionPPO port
+- [x] Read Zinage et al. ContractionPPO paper/repo, extract algorithm
+- [x] Flax `ContractionMetric` with Lipschitz MLP → SPD output (`jax_rl/networks/contraction_metric.py`)
+- [x] `ContractionConfig` dataclass, wired into `PPOConfig` (optional)
+- [x] `PPOContraction` algorithm (`jax_rl/algos/ppo_contraction.py`) — baseline bit-identity test passes
+- [x] Opt-in `observe_contraction` obs group on `go2_bongo_handstand`
+- [x] `make_collect` factory (`jax_rl/training/onpolicy_collect.py`) — partial on-policy extraction with extras + reward_augment hooks
+- [x] `train_ppo_contraction.py` + `Go2BongoHandstandContraction` env variant + PPO preset for both
+- [x] Smoke run validated end-to-end: CPen 60% drop in 2 iters, no NaN, metric learning confirmed
+- [x] 26 tests green
+
+### Research work remaining (code-complete, needs GPU time)
+- [ ] Pin PPO baseline on `Go2BongoHandstand` — 20M steps with new preset
+- [ ] Matched 20M on `Go2BongoHandstandContraction` (α=0.1, ε=1e-3, penalty_coef=1.0)
+- [ ] Success criteria: return ≥ 80% of baseline, final CPen < 0.5× init, no NaN, ||L||_F < 10× init
+- [ ] If ||L||_F criterion fails → add power-iteration spectral norm (Deviation 1 trigger)
+- [ ] α, ε, penalty_coef sweep if PPO version validates
+
 ## Completed (2026-03-22)
 - [x] FastTD3 HumanoidRun — **665 eval** @ 100M steps
 - [x] FastSAC HumanoidRun — **892 eval** @ 100M steps

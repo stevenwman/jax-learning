@@ -88,6 +88,34 @@ PRESETS["Go2WarpJoystickCurriculumTorqueSpeed"] = dataclasses.replace(
     reset_mode="per_step",
 )
 
+# Bongo handstand (balance task). Episode 250 steps.
+# PPO baseline preset — tuned only for reproducible ContractionPPO comparisons,
+# not optimized for peak return. Use as-is for A/B.
+PRESETS["Go2BongoHandstand"] = TrainConfig(
+    env_name="Go2BongoHandstand",
+    total_timesteps=20_000_000,
+    num_envs=1024,
+    gamma=0.99,
+    lr=3e-4,
+    reward_scaling=1.0,
+    episode_length=250,
+    ppo=PPOConfig(
+        num_steps=32,
+        num_minibatches=32,
+        num_updates_per_batch=4,
+        num_epochs=4,
+        entropy_coef=1e-2,
+        max_grad_norm=1.0,
+        policy_hidden_dim=(256, 256, 128),
+        value_hidden_dim=(256, 256, 128),
+    ),
+)
+# Contraction variant — same hyperparams, observe_contraction=True via env registry.
+PRESETS["Go2BongoHandstandContraction"] = dataclasses.replace(
+    PRESETS["Go2BongoHandstand"],
+    env_name="Go2BongoHandstandContraction",
+)
+
 
 # SAC presets — matching MuJoCo Playground dm_control_suite_params.brax_sac_config()
 # Reference HPs: lr=1e-3, batch_size=512, grad_updates_per_step=8, q_layer_norm=True
