@@ -108,3 +108,62 @@ def test_reward_output_layer_zero_init():
     # At least one matching kernel should be all zeros
     assert any(jnp.allclose(k, 0.0) for k in output_kernels), \
         "Expected output layer kernel to be zero-init"
+
+
+def test_q_ensemble_output_shape():
+    from jax_rl.algos.tdmpc2 import QEnsemble
+    q = QEnsemble(mlp_dim=512, num_bins=101, num_q=5, dropout=0.01)
+    params = q.init(
+        {"params": jax.random.PRNGKey(0), "dropout": jax.random.PRNGKey(1)},
+        jnp.zeros((4, 512)),
+        jnp.zeros((4, 6)),
+        deterministic=True,
+    )
+    out = q.apply(
+        params,
+        jnp.ones((4, 512)),
+        jnp.ones((4, 6)),
+        deterministic=True,
+    )
+    assert out.shape == (5, 4, 101), f"Expected (5, 4, 101), got {out.shape}"
+
+
+def test_q_ensemble_output_zero_at_init():
+    """Each Q head has zero-init final Dense layer → output near 0 at init."""
+    from jax_rl.algos.tdmpc2 import QEnsemble
+    q = QEnsemble(mlp_dim=64, num_bins=21, num_q=3, dropout=0.0)
+    params = q.init(
+        {"params": jax.random.PRNGKey(0)},
+        jnp.zeros((2, 32)),
+        jnp.zeros((2, 4)),
+        deterministic=True,
+    )
+    out = q.apply(params, jnp.ones((2, 32)), jnp.ones((2, 4)), deterministic=True)
+    # Zero-init on final kernel → output is exactly 0 (since bias is also zero)
+    assert jnp.allclose(out, 0.0, atol=1e-6)
+
+
+def test_q_ensemble_heads_have_independent_params():
+    """vmap over params means each head has distinct kernel values after init."""
+    from jax_rl.algos.tdmpc2 import QEnsemble
+    q = QEnsemble(mlp_dim=32, num_bins=11, num_q=4, dropout=0.0)
+    params = q.init(
+        {"params": jax.random.PRNGKey(0)},
+        jnp.zeros((1, 16)),
+        jnp.zeros((1, 2)),
+        deterministic=True,
+    )
+    # Walk the tree, find a NormedLinear kernel; its leading dim should equal num_q=4
+    # and values across the 4 heads should differ.
+    leaves = jax.tree_util.tree_leaves(params)
+    # Find a kernel with 3 dimensions (num_q stacked) — e.g. shape (4, in_dim, out_dim).
+    # Exclude all-zero kernels (zero-init output Dense layer) — those are identical across
+    # heads by design and would give a false "params shared" signal.
+    stacked_kernels = [
+        leaf for leaf in leaves
+        if leaf.ndim == 3 and leaf.shape[0] == 4 and not jnp.allclose(leaf, 0.0)
+    ]
+    assert len(stacked_kernels) >= 1, "No non-zero stacked (num_q, ...) kernel found — vmap not wiring params"
+    # Across heads, params should differ (not all identical)
+    k = stacked_kernels[0]
+    assert not jnp.allclose(k[0], k[1]), "Q heads share params — vmap should make them independent"

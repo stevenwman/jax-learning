@@ -113,3 +113,59 @@ class Reward(nn.Module):
             kernel_init=nn.initializers.zeros,
             bias_init=nn.initializers.zeros,
         )(x)
+
+
+class QHead(nn.Module):
+    """Single Q head: NormedLinear (w/ dropout) → NormedLinear → Dense(num_bins).
+
+    Dropout is applied ONLY on the first hidden layer (source world_model.py:30 passes
+    dropout=cfg.dropout to Q's mlp() call; dynamics/reward/policy call mlp() without it).
+    Final Dense layer is zero-initialized (source world_model.py:32).
+    """
+    mlp_dim: int
+    num_bins: int
+    dropout: float
+
+    @nn.compact
+    def __call__(self, z, a, deterministic: bool):
+        x = jnp.concatenate([z, a], axis=-1)
+        x = NormedLinear(
+            features=self.mlp_dim,
+            dropout=self.dropout,
+            deterministic=deterministic,
+        )(x)
+        x = NormedLinear(features=self.mlp_dim)(x)  # no dropout on second layer
+        return nn.Dense(
+            features=self.num_bins,
+            kernel_init=nn.initializers.zeros,
+            bias_init=nn.initializers.zeros,
+        )(x)
+
+
+class QEnsemble(nn.Module):
+    """num_q Q heads via vmap-over-params.
+
+    Output shape: (num_q, batch, num_bins).
+    Matches source `nn.ParameterList` semantics via Flax's `linen.vmap` with
+    `variable_axes={'params': 0}`.
+    """
+    mlp_dim: int
+    num_bins: int
+    num_q: int
+    dropout: float
+
+    @nn.compact
+    def __call__(self, z, a, deterministic: bool):
+        VmappedQ = nn.vmap(
+            QHead,
+            in_axes=None,
+            out_axes=0,
+            variable_axes={"params": 0},
+            split_rngs={"params": True, "dropout": True},
+            axis_size=self.num_q,
+        )
+        return VmappedQ(
+            mlp_dim=self.mlp_dim,
+            num_bins=self.num_bins,
+            dropout=self.dropout,
+        )(z, a, deterministic)
