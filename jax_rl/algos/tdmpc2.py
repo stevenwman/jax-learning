@@ -13,7 +13,7 @@ import jax
 import jax.numpy as jnp
 
 from jax_rl.utils.simnorm import simnorm
-from jax_rl.utils.twohot import two_hot_inv
+from jax_rl.utils.twohot import two_hot_inv, two_hot_ce_loss
 
 
 # ------------------ Activations ------------------
@@ -363,3 +363,114 @@ def compute_td_target(
     # 6. Bootstrap target; terminated zeros the Q term, truncated does NOT.
     target = rewards + gamma * (1.0 - terminated) * q_min       # (H, B, 1)
     return jax.lax.stop_gradient(target)
+
+
+# ------------------ World-model loss ------------------
+
+def world_model_loss(
+    params,
+    target_params,
+    policy_params,
+    batch,
+    cfg,
+    key: jax.Array,
+    *,
+    encoder: "Encoder",
+    dynamics: "Dynamics",
+    reward_net: "Reward",
+    q_ensemble_net: "QEnsemble",
+    policy_net: "PolicyPrior",
+):
+    """Compute world-model loss = consistency + reward + value (all unmasked, per-H normalized).
+
+    Source: /tmp/tdmpc2/tdmpc2/tdmpc2.py:270-320.
+
+    Load-bearing:
+      - Per-H normalization on consistency and reward (/H); value normalized by (H*num_q)
+      - Rho discount rho^h applied per step
+      - All three losses UNMASKED (source does not mask by terminated or truncated)
+      - Consistency target = stop-grad(encoder_online(obs[h+1]))
+      - TD target path uses encoder_online(obs[h+1]), not dynamics rollout (handled in compute_td_target)
+
+    Returns (L_total, metrics) for jax.value_and_grad with has_aux=True.
+    """
+    H = cfg.horizon
+    obs_seq = batch["obs"]          # (H+1, B, obs_dim)
+    actions = batch["actions"]      # (H, B, action_dim)
+    rewards = batch["rewards"]      # (H, B, 1)
+    B = obs_seq.shape[1]
+
+    # 1. Encode all observed steps with online encoder, stop-grad → consistency targets.
+    obs_flat = obs_seq.reshape((H + 1) * B, -1)
+    z_targets_flat = encoder.apply(params["encoder"], obs_flat)
+    z_targets = z_targets_flat.reshape(H + 1, B, -1)
+    z_targets = jax.lax.stop_gradient(z_targets)               # (H+1, B, latent_dim)
+
+    # 2. Forward-roll dynamics from z_0 (gradient-carrying).
+    z_0 = encoder.apply(params["encoder"], obs_seq[0])         # (B, latent_dim), grad
+
+    def scan_body(z, a):
+        z_next = dynamics.apply(params["dynamics"], z, a)
+        r_logits = reward_net.apply(params["reward"], z, a)
+        q_logits = q_ensemble_net.apply(
+            params["q_ensemble"], z, a, deterministic=True,
+        )
+        return z_next, (z_next, r_logits, q_logits)
+
+    _, (z_pred_seq, r_logits_seq, q_logits_seq) = jax.lax.scan(
+        scan_body, z_0, actions
+    )
+    # z_pred_seq: (H, B, latent_dim) — predicted ẑ_{1..H}
+    # r_logits_seq: (H, B, num_bins)
+    # q_logits_seq: (H, num_q, B, num_bins)
+
+    # Rho discount per step
+    rho_powers = cfg.rho ** jnp.arange(H)                      # (H,)
+
+    # 3. Consistency loss: MSE(ẑ_{h+1}, sg(z_targets_{h+1})) for h=0..H-1, UNMASKED.
+    z_target_next = z_targets[1:]                              # (H, B, latent_dim)
+    consistency_per_h = jnp.mean((z_pred_seq - z_target_next) ** 2, axis=-1)  # (H, B)
+    # Normalize: sum over H with rho discount, mean over B, divide by H.
+    L_consistency = (rho_powers[:, None] * consistency_per_h).mean(axis=-1).sum() / H
+
+    # 4. Reward loss: CE(r̂_logits_h, twohot(symlog(r_h))), UNMASKED. Normalized by H.
+    reward_ce_per_h = two_hot_ce_loss(
+        r_logits_seq, rewards,
+        cfg.vmin, cfg.vmax, cfg.num_bins, apply_symlog=True,
+    )  # (H, B)
+    L_reward = (rho_powers[:, None] * reward_ce_per_h).mean(axis=-1).sum() / H
+
+    # 5. Value loss: CE over all num_q heads, summed over heads, rho-discounted, normalized by (H*num_q).
+    target_q = compute_td_target(
+        target_params=target_params,
+        online_wm_params=params,
+        policy_params=jax.lax.stop_gradient(policy_params),
+        batch=batch, cfg=cfg, key=key,
+        encoder=encoder, policy_net=policy_net, q_ensemble_net=q_ensemble_net,
+    )  # (H, B, 1)
+
+    # q_logits_seq: (H, num_q, B, num_bins). vmap value_ce over num_q axis (axis=1).
+    def value_ce_per_head(q_logits_for_head):
+        # q_logits_for_head: (H, B, num_bins)
+        return two_hot_ce_loss(
+            q_logits_for_head, target_q,
+            cfg.vmin, cfg.vmax, cfg.num_bins, apply_symlog=True,
+        )  # (H, B)
+
+    ce_all_heads = jax.vmap(value_ce_per_head, in_axes=1, out_axes=1)(q_logits_seq)  # (H, num_q, B)
+    value_ce_summed = ce_all_heads.sum(axis=1)                 # (H, B)
+    L_value = (rho_powers[:, None] * value_ce_summed).mean(axis=-1).sum() / (H * cfg.num_q)
+
+    # 6. Aggregate
+    L_total = (
+        cfg.consistency_coef * L_consistency
+        + cfg.reward_coef * L_reward
+        + cfg.value_coef * L_value
+    )
+    metrics = {
+        "L_consistency_raw": L_consistency,
+        "L_reward_raw": L_reward,
+        "L_value_raw": L_value,
+        "L_world_total": L_total,
+    }
+    return L_total, metrics

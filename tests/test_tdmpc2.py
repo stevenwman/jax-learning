@@ -451,3 +451,137 @@ def test_compute_td_target_zeros_bootstrap_on_terminated():
     # A stronger check: td_trunc shape + finiteness.
     assert td_trunc.shape == (cfg.horizon, B, 1)
     assert jnp.all(jnp.isfinite(td_trunc))
+
+
+# ------------------ world_model_loss helpers ------------------
+
+def _build_small_cfg_and_modules(horizon=3, action_dim=2, obs_dim=10, B=4):
+    """Build a tiny but functional config + module set for testing."""
+    from jax_rl.configs.tdmpc2_config import make_tdmpc2_config
+    from jax_rl.algos.tdmpc2 import Encoder, Dynamics, Reward, QEnsemble, PolicyPrior
+    cfg = make_tdmpc2_config(
+        action_dim=action_dim, episode_length=500, horizon=horizon,
+        num_q=2, num_bins=11, enc_dim=16, latent_dim=8, simnorm_dim=2, mlp_dim=16,
+    )
+    encoder = Encoder(enc_dim=cfg.enc_dim, num_layers=cfg.num_enc_layers,
+                      latent_dim=cfg.latent_dim, simnorm_dim=cfg.simnorm_dim)
+    dynamics = Dynamics(mlp_dim=cfg.mlp_dim, latent_dim=cfg.latent_dim, simnorm_dim=cfg.simnorm_dim)
+    reward_net = Reward(mlp_dim=cfg.mlp_dim, num_bins=cfg.num_bins)
+    q_ensemble = QEnsemble(mlp_dim=cfg.mlp_dim, num_bins=cfg.num_bins,
+                            num_q=cfg.num_q, dropout=0.0)
+    policy = PolicyPrior(mlp_dim=cfg.mlp_dim, action_dim=cfg.action_dim,
+                          log_std_min=cfg.log_std_min, log_std_max=cfg.log_std_max)
+    return cfg, encoder, dynamics, reward_net, q_ensemble, policy, B, obs_dim
+
+
+def _init_small_params(cfg, encoder, dynamics, reward_net, q_ensemble, policy, B, obs_dim, key):
+    ks = jax.random.split(key, 6)
+    enc_params = encoder.init(ks[0], jnp.zeros((B, obs_dim)))
+    dyn_params = dynamics.init(ks[1], jnp.zeros((B, cfg.latent_dim)), jnp.zeros((B, cfg.action_dim)))
+    rwd_params = reward_net.init(ks[2], jnp.zeros((B, cfg.latent_dim)), jnp.zeros((B, cfg.action_dim)))
+    q_params = q_ensemble.init(
+        {"params": ks[3]},
+        jnp.zeros((B, cfg.latent_dim)), jnp.zeros((B, cfg.action_dim)),
+        deterministic=True,
+    )
+    pol_params = policy.init(ks[4], jnp.zeros((B, cfg.latent_dim)), ks[5])
+    params = {"encoder": enc_params, "dynamics": dyn_params,
+              "reward": rwd_params, "q_ensemble": q_params}
+    target_params = params  # use same params for online + target at init
+    return params, target_params, pol_params
+
+
+def test_world_model_loss_shape_and_metrics():
+    from jax_rl.algos.tdmpc2 import world_model_loss
+    cfg, enc, dyn, rwd, qen, pol, B, obs_dim = _build_small_cfg_and_modules()
+    params, target_params, policy_params = _init_small_params(
+        cfg, enc, dyn, rwd, qen, pol, B, obs_dim, jax.random.PRNGKey(0)
+    )
+    batch = {
+        "obs": jnp.ones((cfg.horizon + 1, B, obs_dim)),
+        "actions": jnp.ones((cfg.horizon, B, cfg.action_dim)),
+        "rewards": jnp.ones((cfg.horizon, B, 1)),
+        "dones": jnp.zeros((cfg.horizon, B, 1)),
+        "truncations": jnp.zeros((cfg.horizon, B, 1)),
+    }
+    total, metrics = world_model_loss(
+        params, target_params, policy_params, batch, cfg, jax.random.PRNGKey(1),
+        encoder=enc, dynamics=dyn, reward_net=rwd, q_ensemble_net=qen, policy_net=pol,
+    )
+    # Scalar loss
+    assert total.shape == ()
+    assert jnp.isfinite(total)
+    # Metrics contain expected keys
+    for k in ("L_consistency_raw", "L_reward_raw", "L_value_raw", "L_world_total"):
+        assert k in metrics, f"Missing metric: {k}"
+        assert jnp.isfinite(metrics[k])
+
+
+def test_world_model_loss_weights_apply_correctly():
+    """L_world_total == consistency_coef*L_c + reward_coef*L_r + value_coef*L_v."""
+    from jax_rl.algos.tdmpc2 import world_model_loss
+    cfg, enc, dyn, rwd, qen, pol, B, obs_dim = _build_small_cfg_and_modules()
+    params, target_params, policy_params = _init_small_params(
+        cfg, enc, dyn, rwd, qen, pol, B, obs_dim, jax.random.PRNGKey(0)
+    )
+    batch = {
+        "obs": jnp.ones((cfg.horizon + 1, B, obs_dim)),
+        "actions": jnp.ones((cfg.horizon, B, cfg.action_dim)),
+        "rewards": jnp.ones((cfg.horizon, B, 1)),
+        "dones": jnp.zeros((cfg.horizon, B, 1)),
+        "truncations": jnp.zeros((cfg.horizon, B, 1)),
+    }
+    total, metrics = world_model_loss(
+        params, target_params, policy_params, batch, cfg, jax.random.PRNGKey(1),
+        encoder=enc, dynamics=dyn, reward_net=rwd, q_ensemble_net=qen, policy_net=pol,
+    )
+    expected = (
+        cfg.consistency_coef * metrics["L_consistency_raw"]
+        + cfg.reward_coef * metrics["L_reward_raw"]
+        + cfg.value_coef * metrics["L_value_raw"]
+    )
+    assert jnp.allclose(total, expected, atol=1e-5)
+
+
+def test_world_model_loss_terminated_does_not_mask():
+    """CRITICAL (iter-3 fix): setting terminated=True on all steps must NOT mask
+    consistency/reward/value losses at those steps. The only place terminated matters
+    is inside compute_td_target's (1 - terminated) bootstrap zeroing.
+
+    Compare L_consistency_raw between terminated=all-True and terminated=all-False —
+    with identical obs/actions/rewards/policy-RNG, consistency MSE should be IDENTICAL
+    (it doesn't even see terminated). Reward loss should also be IDENTICAL (r_h unchanged).
+    """
+    from jax_rl.algos.tdmpc2 import world_model_loss
+    cfg, enc, dyn, rwd, qen, pol, B, obs_dim = _build_small_cfg_and_modules()
+    params, target_params, policy_params = _init_small_params(
+        cfg, enc, dyn, rwd, qen, pol, B, obs_dim, jax.random.PRNGKey(0)
+    )
+    # Fixed RNG keys used throughout
+    batch_base = {
+        "obs": jnp.ones((cfg.horizon + 1, B, obs_dim)),
+        "actions": jnp.ones((cfg.horizon, B, cfg.action_dim)),
+        "rewards": jnp.ones((cfg.horizon, B, 1)),
+        "truncations": jnp.zeros((cfg.horizon, B, 1)),
+    }
+    # Case A: terminated everywhere
+    batch_a = {**batch_base, "dones": jnp.ones((cfg.horizon, B, 1))}
+    # Case B: terminated nowhere
+    batch_b = {**batch_base, "dones": jnp.zeros((cfg.horizon, B, 1))}
+
+    key = jax.random.PRNGKey(42)
+    _, m_a = world_model_loss(
+        params, target_params, policy_params, batch_a, cfg, key,
+        encoder=enc, dynamics=dyn, reward_net=rwd, q_ensemble_net=qen, policy_net=pol,
+    )
+    _, m_b = world_model_loss(
+        params, target_params, policy_params, batch_b, cfg, key,
+        encoder=enc, dynamics=dyn, reward_net=rwd, q_ensemble_net=qen, policy_net=pol,
+    )
+    # Consistency is computed only from obs (no dependence on terminated/rewards)
+    assert jnp.allclose(m_a["L_consistency_raw"], m_b["L_consistency_raw"], atol=1e-6), \
+        "Consistency loss incorrectly depends on terminated — losses should NOT be masked"
+    # Reward loss only depends on rewards (not terminated)
+    assert jnp.allclose(m_a["L_reward_raw"], m_b["L_reward_raw"], atol=1e-6), \
+        "Reward loss incorrectly depends on terminated — losses should NOT be masked"
+    # Value loss DOES depend on terminated (through TD target bootstrap), so skip strict equality
