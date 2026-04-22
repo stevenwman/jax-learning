@@ -169,3 +169,78 @@ class QEnsemble(nn.Module):
             num_bins=self.num_bins,
             dropout=self.dropout,
         )(z, a, deterministic)
+
+
+# ------------------ Policy-prior helpers ------------------
+
+def bound_log_std(raw: jax.Array, log_std_min: float, log_std_max: float) -> jax.Array:
+    """Tanh-based mapping: low + 0.5·(high−low)·(tanh(raw)+1).
+
+    Source: /tmp/tdmpc2/tdmpc2/common/math.py:13-14. NOT a hard clamp.
+    """
+    return log_std_min + 0.5 * (log_std_max - log_std_min) * (jnp.tanh(raw) + 1.0)
+
+
+def squash_log_prob_correction(a: jax.Array) -> jax.Array:
+    """Jacobian correction for tanh squash: Σ log(relu(1 - a²) + 1e-6) over last dim.
+
+    Returns a POSITIVE quantity (the thing to SUBTRACT from pre-squash log-prob).
+    Source: /tmp/tdmpc2/tdmpc2/common/math.py `squash()`. The relu + 1e-6 floor is
+    load-bearing — naive `1 - tanh²` NaNs at saturation (|tanh| → 1).
+    """
+    return jnp.sum(jnp.log(jax.nn.relu(1.0 - a ** 2) + 1e-6), axis=-1)
+
+
+def gaussian_log_prob(x: jax.Array, mean: jax.Array, log_std: jax.Array) -> jax.Array:
+    """Standard Gaussian log-prob, summed over last dim.
+
+    -0.5 · Σ [((x - mean)/std)² + 2·log_std + log(2π)]
+    """
+    return -0.5 * jnp.sum(
+        ((x - mean) / jnp.exp(log_std)) ** 2 + 2.0 * log_std + jnp.log(2 * jnp.pi),
+        axis=-1,
+    )
+
+
+# ------------------ Policy prior ------------------
+
+class PolicyPrior(nn.Module):
+    """π(z) → tanh-squashed reparameterized Gaussian action.
+
+    Returns (action, extras) where extras exposes pre/post-squash log-probs separately:
+      - log_prob_pre: Gaussian log-prob of the pre-squash sample (used by scaled_entropy).
+      - log_prob_post: Jacobian-corrected log-prob of the squashed action (policy log-prob).
+
+    Arch: 2 × NormedLinear(mlp_dim) → Dense(2·action_dim, trunc_normal 0.02, zero bias).
+    log_std output is tanh-bounded into [log_std_min, log_std_max]. Squash uses the
+    relu + 1e-6 floor for numerical safety.
+    """
+    mlp_dim: int
+    action_dim: int
+    log_std_min: float
+    log_std_max: float
+
+    @nn.compact
+    def __call__(self, z, key):
+        x = NormedLinear(features=self.mlp_dim)(z)
+        x = NormedLinear(features=self.mlp_dim)(x)
+        out = nn.Dense(
+            features=2 * self.action_dim,
+            kernel_init=nn.initializers.truncated_normal(stddev=0.02),
+            bias_init=nn.initializers.zeros,
+        )(x)
+        mean, raw_log_std = jnp.split(out, 2, axis=-1)
+        log_std = bound_log_std(raw_log_std, self.log_std_min, self.log_std_max)
+        std = jnp.exp(log_std)
+        eps = jax.random.normal(key, mean.shape)
+        pre = mean + std * eps
+        action = jnp.tanh(pre)
+        log_prob_pre = gaussian_log_prob(pre, mean, log_std)
+        log_prob_post = log_prob_pre - squash_log_prob_correction(action)
+        return action, {
+            "pre": pre,
+            "mean": mean,
+            "log_std": log_std,
+            "log_prob_pre": log_prob_pre,
+            "log_prob_post": log_prob_post,
+        }

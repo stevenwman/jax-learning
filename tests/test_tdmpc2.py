@@ -167,3 +167,69 @@ def test_q_ensemble_heads_have_independent_params():
     # Across heads, params should differ (not all identical)
     k = stacked_kernels[0]
     assert not jnp.allclose(k[0], k[1]), "Q heads share params — vmap should make them independent"
+
+
+def test_bound_log_std_maps_to_range():
+    """bound_log_std: raw=-inf → log_std_min; raw=+inf → log_std_max; raw=0 → midpoint."""
+    from jax_rl.algos.tdmpc2 import bound_log_std
+    raw = jnp.array([-10.0, 0.0, 10.0])
+    bounded = bound_log_std(raw, log_std_min=-10.0, log_std_max=2.0)
+    # At raw=-10, bounded ≈ log_std_min; at raw=+10, ≈ log_std_max
+    assert float(bounded[0]) < -9.5
+    assert float(bounded[2]) > 1.5
+    # Midpoint at raw=0
+    mid = (-10.0 + 2.0) / 2
+    assert abs(float(bounded[1]) - mid) < 0.5
+
+
+def test_squash_log_prob_correction_saturation_safe():
+    """At |tanh| → 1, naive 1-tanh² is 0 → log(0) = -inf. Source uses relu(1-a²)+1e-6."""
+    from jax_rl.algos.tdmpc2 import squash_log_prob_correction
+    # Actions at near-saturation
+    pre = jnp.array([[20.0, -20.0], [0.1, -0.1]])
+    a = jnp.tanh(pre)
+    corr = squash_log_prob_correction(a)  # (batch,)
+    assert corr.shape == (2,)
+    assert jnp.all(jnp.isfinite(corr)), f"Non-finite at saturation: {corr}"
+
+
+def test_gaussian_log_prob_matches_scipy():
+    """Sanity: gaussian_log_prob on independent dims matches sum of per-dim log N(x; μ, σ)."""
+    from jax_rl.algos.tdmpc2 import gaussian_log_prob
+    import math
+    x = jnp.array([[0.5, -1.0, 2.0]])
+    mean = jnp.array([[0.0, 0.0, 0.0]])
+    log_std = jnp.array([[0.0, 0.0, 0.0]])  # std=1
+    lp = gaussian_log_prob(x, mean, log_std)
+    # Sum of log N(x; 0, 1) = -0.5·Σx² - 0.5·D·log(2π)
+    expected = -0.5 * (0.25 + 1.0 + 4.0) - 0.5 * 3 * math.log(2 * math.pi)
+    assert jnp.allclose(lp, expected, atol=1e-5)
+
+
+def test_policy_prior_output_shapes_and_bounds():
+    from jax_rl.algos.tdmpc2 import PolicyPrior
+    pol = PolicyPrior(mlp_dim=512, action_dim=6, log_std_min=-10.0, log_std_max=2.0)
+    params = pol.init(jax.random.PRNGKey(0), jnp.zeros((4, 512)), jax.random.PRNGKey(1))
+    action, extras = pol.apply(params, jnp.ones((4, 512)), jax.random.PRNGKey(2))
+    assert action.shape == (4, 6)
+    # Tanh-squashed
+    assert jnp.all(jnp.abs(action) <= 1.0)
+    # Extras contain both log-probs
+    assert "log_prob_pre" in extras
+    assert "log_prob_post" in extras
+    assert "mean" in extras and "log_std" in extras and "pre" in extras
+    assert extras["log_prob_pre"].shape == (4,)
+    assert extras["log_prob_post"].shape == (4,)
+    # log_std bounded in [log_std_min, log_std_max]
+    assert jnp.all(extras["log_std"] >= -10.0 - 1e-5)
+    assert jnp.all(extras["log_std"] <= 2.0 + 1e-5)
+
+
+def test_policy_prior_log_prob_post_equals_pre_minus_correction():
+    """log_prob_post = log_prob_pre - squash_log_prob_correction(action)."""
+    from jax_rl.algos.tdmpc2 import PolicyPrior, squash_log_prob_correction
+    pol = PolicyPrior(mlp_dim=64, action_dim=3, log_std_min=-10.0, log_std_max=2.0)
+    params = pol.init(jax.random.PRNGKey(0), jnp.zeros((2, 32)), jax.random.PRNGKey(1))
+    action, extras = pol.apply(params, jnp.ones((2, 32)), jax.random.PRNGKey(2))
+    expected_post = extras["log_prob_pre"] - squash_log_prob_correction(action)
+    assert jnp.allclose(extras["log_prob_post"], expected_post, atol=1e-5)
