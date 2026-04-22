@@ -247,3 +247,38 @@ class PolicyPrior(nn.Module):
             "log_prob_pre": log_prob_pre,
             "log_prob_post": log_prob_post,
         }
+
+
+# ------------------ Latent rollout helper ------------------
+
+def compute_all_latents(
+    wm_params,
+    obs_0: jax.Array,
+    actions: jax.Array,
+    *,
+    encoder: "Encoder",
+    dynamics: "Dynamics",
+) -> jax.Array:
+    """Encode obs_0 then roll dynamics forward H steps.
+
+    Args:
+        wm_params: dict with keys 'encoder', 'dynamics' (Flax param trees).
+        obs_0: (B, obs_dim) — initial observation.
+        actions: (H, B, action_dim) — actions to roll forward.
+        encoder: Encoder module instance.
+        dynamics: Dynamics module instance.
+
+    Returns:
+        zs of shape (H+1, B, latent_dim):
+          zs[0]     = encoder(obs_0)
+          zs[h+1]   = dynamics(zs[h], actions[h])  for h = 0..H-1
+    """
+    z_0 = encoder.apply(wm_params["encoder"], obs_0)  # (B, latent_dim)
+
+    def scan_body(z, a):
+        z_next = dynamics.apply(wm_params["dynamics"], z, a)
+        return z_next, z_next
+
+    _, zs_rest = jax.lax.scan(scan_body, z_0, actions)  # (H, B, latent_dim)
+    zs = jnp.concatenate([z_0[None, :], zs_rest], axis=0)  # (H+1, B, latent_dim)
+    return zs

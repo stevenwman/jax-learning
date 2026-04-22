@@ -233,3 +233,56 @@ def test_policy_prior_log_prob_post_equals_pre_minus_correction():
     action, extras = pol.apply(params, jnp.ones((2, 32)), jax.random.PRNGKey(2))
     expected_post = extras["log_prob_pre"] - squash_log_prob_correction(action)
     assert jnp.allclose(extras["log_prob_post"], expected_post, atol=1e-5)
+
+
+def test_compute_all_latents_shape():
+    from jax_rl.algos.tdmpc2 import compute_all_latents, Encoder, Dynamics
+    B, H, obs_dim, action_dim = 4, 3, 10, 2
+    latent_dim, simnorm_dim = 32, 4
+    encoder = Encoder(enc_dim=16, num_layers=2, latent_dim=latent_dim, simnorm_dim=simnorm_dim)
+    dynamics = Dynamics(mlp_dim=32, latent_dim=latent_dim, simnorm_dim=simnorm_dim)
+    key = jax.random.PRNGKey(0)
+    enc_params = encoder.init(key, jnp.zeros((B, obs_dim)))
+    dyn_params = dynamics.init(key, jnp.zeros((B, latent_dim)), jnp.zeros((B, action_dim)))
+    wm_params = {"encoder": enc_params, "dynamics": dyn_params}
+    obs_0 = jnp.ones((B, obs_dim))
+    actions = jnp.ones((H, B, action_dim))
+    zs = compute_all_latents(wm_params, obs_0, actions, encoder=encoder, dynamics=dynamics)
+    assert zs.shape == (H + 1, B, latent_dim), f"Expected ({H+1}, {B}, {latent_dim}), got {zs.shape}"
+
+
+def test_compute_all_latents_first_is_encoder_output():
+    """zs[0] must equal encoder(obs_0) exactly."""
+    from jax_rl.algos.tdmpc2 import compute_all_latents, Encoder, Dynamics
+    B, H, obs_dim, action_dim = 2, 3, 8, 1
+    latent_dim, simnorm_dim = 16, 4
+    encoder = Encoder(enc_dim=8, num_layers=2, latent_dim=latent_dim, simnorm_dim=simnorm_dim)
+    dynamics = Dynamics(mlp_dim=16, latent_dim=latent_dim, simnorm_dim=simnorm_dim)
+    key = jax.random.PRNGKey(0)
+    enc_params = encoder.init(key, jnp.zeros((B, obs_dim)))
+    dyn_params = dynamics.init(key, jnp.zeros((B, latent_dim)), jnp.zeros((B, action_dim)))
+    wm_params = {"encoder": enc_params, "dynamics": dyn_params}
+    obs_0 = jax.random.normal(key, (B, obs_dim))
+    actions = jax.random.normal(key, (H, B, action_dim))
+    zs = compute_all_latents(wm_params, obs_0, actions, encoder=encoder, dynamics=dynamics)
+    z_0_expected = encoder.apply(enc_params, obs_0)
+    assert jnp.allclose(zs[0], z_0_expected, atol=1e-6)
+
+
+def test_compute_all_latents_advances_via_dynamics():
+    """zs[h+1] must equal dynamics(zs[h], actions[h]) for each h in 0..H-1."""
+    from jax_rl.algos.tdmpc2 import compute_all_latents, Encoder, Dynamics
+    B, H, obs_dim, action_dim = 2, 3, 8, 1
+    latent_dim, simnorm_dim = 16, 4
+    encoder = Encoder(enc_dim=8, num_layers=2, latent_dim=latent_dim, simnorm_dim=simnorm_dim)
+    dynamics = Dynamics(mlp_dim=16, latent_dim=latent_dim, simnorm_dim=simnorm_dim)
+    key = jax.random.PRNGKey(0)
+    enc_params = encoder.init(key, jnp.zeros((B, obs_dim)))
+    dyn_params = dynamics.init(key, jnp.zeros((B, latent_dim)), jnp.zeros((B, action_dim)))
+    wm_params = {"encoder": enc_params, "dynamics": dyn_params}
+    obs_0 = jax.random.normal(key, (B, obs_dim))
+    actions = jax.random.normal(key, (H, B, action_dim))
+    zs = compute_all_latents(wm_params, obs_0, actions, encoder=encoder, dynamics=dynamics)
+    for h in range(H):
+        expected = dynamics.apply(dyn_params, zs[h], actions[h])
+        assert jnp.allclose(zs[h + 1], expected, atol=1e-6)
