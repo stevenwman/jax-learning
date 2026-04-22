@@ -69,3 +69,25 @@ class Encoder(nn.Module):
             bias_init=nn.initializers.zeros,
         )(x)
         return simnorm(x, V=self.simnorm_dim)
+
+
+class Dynamics(nn.Module):
+    """d(z, a) → z' with SimNorm output.
+
+    Arch: 2 × NormedLinear(mlp_dim) → Dense(latent_dim) → SimNorm.
+    """
+    mlp_dim: int
+    latent_dim: int
+    simnorm_dim: int
+
+    @nn.compact
+    def __call__(self, z, a):
+        x = jnp.concatenate([z, a], axis=-1)
+        x = NormedLinear(features=self.mlp_dim)(x)
+        x = NormedLinear(features=self.mlp_dim)(x)
+        x = nn.Dense(
+            features=self.latent_dim,
+            kernel_init=nn.initializers.truncated_normal(stddev=0.02),
+            bias_init=nn.initializers.zeros,
+        )(x)
+        return simnorm(x, V=self.simnorm_dim)

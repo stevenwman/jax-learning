@@ -57,3 +57,24 @@ def test_encoder_gradient_flows():
     # Gradient tree should be fully finite
     leaves = jax.tree_util.tree_leaves(g)
     assert all(jnp.all(jnp.isfinite(leaf)) for leaf in leaves)
+
+
+def test_dynamics_output_shape_and_simnorm():
+    from jax_rl.algos.tdmpc2 import Dynamics
+    dyn = Dynamics(mlp_dim=512, latent_dim=512, simnorm_dim=8)
+    params = dyn.init(jax.random.PRNGKey(0), jnp.zeros((4, 512)), jnp.zeros((4, 6)))
+    z_next = dyn.apply(params, jnp.ones((4, 512)), jnp.ones((4, 6)))
+    assert z_next.shape == (4, 512)
+    chunks = z_next.reshape(4, 512 // 8, 8)
+    assert jnp.allclose(chunks.sum(-1), 1.0, atol=1e-5)
+
+
+def test_dynamics_concatenates_z_and_action():
+    """Changing action should change output (dynamics actually uses action)."""
+    from jax_rl.algos.tdmpc2 import Dynamics
+    dyn = Dynamics(mlp_dim=64, latent_dim=32, simnorm_dim=4)
+    params = dyn.init(jax.random.PRNGKey(0), jnp.zeros((2, 32)), jnp.zeros((2, 3)))
+    z = jnp.ones((2, 32))
+    out1 = dyn.apply(params, z, jnp.zeros((2, 3)))
+    out2 = dyn.apply(params, z, jnp.ones((2, 3)))
+    assert not jnp.allclose(out1, out2)
