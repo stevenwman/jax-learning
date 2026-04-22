@@ -12,6 +12,8 @@ import flax.linen as nn
 import jax
 import jax.numpy as jnp
 
+from jax_rl.utils.simnorm import simnorm
+
 
 # ------------------ Activations ------------------
 
@@ -43,3 +45,27 @@ class NormedLinear(nn.Module):
         if self.dropout > 0:
             x = nn.Dropout(rate=self.dropout, deterministic=self.deterministic)(x)
         return x
+
+
+class Encoder(nn.Module):
+    """h(obs) → z with SimNorm output.
+
+    Arch: num_layers × NormedLinear(enc_dim) → Dense(latent_dim) → SimNorm.
+    Source: /tmp/tdmpc2/tdmpc2/common/layers.py:enc(), config.yaml num_enc_layers=2, enc_dim=256.
+    """
+    enc_dim: int
+    num_layers: int
+    latent_dim: int
+    simnorm_dim: int
+
+    @nn.compact
+    def __call__(self, obs):
+        x = obs
+        for _ in range(self.num_layers):
+            x = NormedLinear(features=self.enc_dim)(x)
+        x = nn.Dense(
+            features=self.latent_dim,
+            kernel_init=nn.initializers.truncated_normal(stddev=0.02),
+            bias_init=nn.initializers.zeros,
+        )(x)
+        return simnorm(x, V=self.simnorm_dim)

@@ -34,3 +34,26 @@ def test_normed_linear_dropout_off_by_default():
     y1 = layer.apply(params, jnp.ones((2, 4)))
     y2 = layer.apply(params, jnp.ones((2, 4)))
     assert jnp.allclose(y1, y2)
+
+
+def test_encoder_output_shape_and_simnorm():
+    from jax_rl.algos.tdmpc2 import Encoder
+    enc = Encoder(enc_dim=256, num_layers=2, latent_dim=512, simnorm_dim=8)
+    params = enc.init(jax.random.PRNGKey(0), jnp.zeros((4, 48)))
+    z = enc.apply(params, jnp.ones((4, 48)))
+    assert z.shape == (4, 512)
+    # Latent respects SimNorm (chunks sum to 1)
+    chunks = z.reshape(4, 512 // 8, 8)
+    assert jnp.allclose(chunks.sum(-1), 1.0, atol=1e-5)
+
+
+def test_encoder_gradient_flows():
+    from jax_rl.algos.tdmpc2 import Encoder
+    enc = Encoder(enc_dim=64, num_layers=2, latent_dim=32, simnorm_dim=4)
+    params = enc.init(jax.random.PRNGKey(0), jnp.zeros((2, 10)))
+    def loss(p, x):
+        return enc.apply(p, x).sum()
+    g = jax.grad(loss)(params, jnp.ones((2, 10)))
+    # Gradient tree should be fully finite
+    leaves = jax.tree_util.tree_leaves(g)
+    assert all(jnp.all(jnp.isfinite(leaf)) for leaf in leaves)
