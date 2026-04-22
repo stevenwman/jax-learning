@@ -184,9 +184,12 @@ def bound_log_std(raw: jax.Array, log_std_min: float, log_std_max: float) -> jax
 def squash_log_prob_correction(a: jax.Array) -> jax.Array:
     """Jacobian correction for tanh squash: Σ log(relu(1 - a²) + 1e-6) over last dim.
 
-    Returns a POSITIVE quantity (the thing to SUBTRACT from pre-squash log-prob).
-    Source: /tmp/tdmpc2/tdmpc2/common/math.py `squash()`. The relu + 1e-6 floor is
-    load-bearing — naive `1 - tanh²` NaNs at saturation (|tanh| → 1).
+    Returns a NON-POSITIVE scalar (log of quantities ≤ 1). Caller subtracts it:
+        log_prob_post = log_prob_pre - squash_log_prob_correction(action)
+    Since correction ≤ 0, log_prob_post ≥ log_prob_pre — squashed density concentrates
+    on [-1,1]^D as expected. The relu + 1e-6 floor is load-bearing — naive `1 - tanh²`
+    hits zero at saturation (|a| → 1) and produces -inf in log.
+    Source: /tmp/tdmpc2/tdmpc2/common/math.py `squash()`.
     """
     return jnp.sum(jnp.log(jax.nn.relu(1.0 - a ** 2) + 1e-6), axis=-1)
 
