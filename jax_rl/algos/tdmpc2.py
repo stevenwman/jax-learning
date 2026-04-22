@@ -13,6 +13,7 @@ import jax
 import jax.numpy as jnp
 
 from jax_rl.utils.simnorm import simnorm
+from jax_rl.utils.twohot import two_hot_inv
 
 
 # ------------------ Activations ------------------
@@ -282,3 +283,83 @@ def compute_all_latents(
     _, zs_rest = jax.lax.scan(scan_body, z_0, actions)  # (H, B, latent_dim)
     zs = jnp.concatenate([z_0[None, :], zs_rest], axis=0)  # (H+1, B, latent_dim)
     return zs
+
+
+# ------------------ TD target ------------------
+
+def compute_td_target(
+    *,
+    target_params,
+    online_wm_params,
+    policy_params,
+    batch,
+    cfg,
+    key: jax.Array,
+    encoder: "Encoder",
+    policy_net: "PolicyPrior",
+    q_ensemble_net: "QEnsemble",
+) -> jax.Array:
+    """Compute TD target for world-model value loss.
+
+    Path (source tdmpc2.py:253-264):
+      1. next_z_h = encoder_online(obs[h+1])  — ONLINE encoder, NOT dynamics rollout
+      2. a_next_h = sample π_online(next_z_h) — ONLINE policy, reparameterized sample
+      3. Q_target_all = q_ensemble_target(next_z_h, a_next_h) — ALL heads
+      4. Random-permute head indices, take 2. Softmax each, decode each via two_hot_inv(..., apply_symexp=True).
+      5. Elementwise min across the 2 decoded scalars.
+      6. target_q = reward + γ · (1 - terminated) · q_min
+      7. stop-grad on the whole thing.
+
+    Shapes:
+      obs       (H+1, B, obs_dim)
+      rewards   (H, B, 1)
+      dones     (H, B, 1)   -- `terminated` flags
+      Returns:  (H, B, 1)
+    """
+    H = cfg.horizon
+    gamma = cfg.discount
+    obs_next = batch["obs"][1:]         # (H, B, obs_dim)
+    rewards = batch["rewards"]          # (H, B, 1)
+    terminated = batch["dones"]         # (H, B, 1)
+    B = obs_next.shape[1]
+
+    # 1. Online encoder on real next obs. Flatten (H, B) for batched apply; reshape back.
+    obs_next_flat = obs_next.reshape(H * B, -1)                # (H*B, obs_dim)
+    next_z_flat = encoder.apply(online_wm_params["encoder"], obs_next_flat)
+    next_z = next_z_flat.reshape(H, B, -1)                     # (H, B, latent_dim)
+    next_z = jax.lax.stop_gradient(next_z)
+
+    # 2. Online policy sample — independent PRNG per (h, b)
+    key_pi, key_q = jax.random.split(key, 2)
+    pi_keys = jax.random.split(key_pi, H * B).reshape(H, B, 2)
+
+    def _sample_action(z, k):
+        a, _ = policy_net.apply(policy_params, z[None, :], k)
+        return a[0]
+
+    # vmap over B (inner), then over H (outer)
+    a_next = jax.vmap(jax.vmap(_sample_action, in_axes=(0, 0)), in_axes=(0, 0))(next_z, pi_keys)
+    a_next = jax.lax.stop_gradient(a_next)                     # (H, B, action_dim)
+
+    # 3. Target Q ensemble, all heads. Flatten (H, B) again.
+    next_z_flat = next_z.reshape(H * B, -1)
+    a_next_flat = a_next.reshape(H * B, -1)
+    q_logits_flat = q_ensemble_net.apply(
+        target_params["q_ensemble"],
+        next_z_flat, a_next_flat,
+        deterministic=True,
+    )  # (num_q, H*B, num_bins)
+    q_logits = q_logits_flat.reshape(cfg.num_q, H, B, cfg.num_bins)
+
+    # 4-5. Subsample 2 random heads (one permutation per update step, not per element).
+    #      Decode FIRST, then elementwise min.
+    perm = jax.random.permutation(key_q, cfg.num_q)[:2]        # (2,)
+    q_selected = q_logits[perm]                                 # (2, H, B, num_bins)
+    probs = jax.nn.softmax(q_selected, axis=-1)                 # (2, H, B, num_bins)
+    decoded = two_hot_inv(probs, cfg.vmin, cfg.vmax, cfg.num_bins,
+                          apply_symexp=True)                    # (2, H, B, 1)
+    q_min = jnp.min(decoded, axis=0)                            # (H, B, 1)
+
+    # 6. Bootstrap target; terminated zeros the Q term, truncated does NOT.
+    target = rewards + gamma * (1.0 - terminated) * q_min       # (H, B, 1)
+    return jax.lax.stop_gradient(target)
