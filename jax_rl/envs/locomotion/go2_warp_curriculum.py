@@ -49,9 +49,16 @@ def default_config() -> config_dict.ConfigDict:
     # crouching to ~0.20m (vs target 0.27m) — low stance saves balance on
     # terrain, tracking reward stays high, and the old weight -5 gave only
     # 0.024/step cost at crouch depth. Policy rationally ignored. Bump to
-    # -20 to make stance height matter for reward optimization. Same target
-    # (0.27m), same quadratic shape, 4× penalty.
+    # -20 to make stance height matter. Cost is overridden to feet-relative
+    # (see _cost_base_height override below) to work on elevated terrain.
     cfg.reward_config.scales.base_height = -20.0
+    # Drop world-frame feet_clearance + feet_height costs. These reward
+    # foot elevation relative to WORLD z=0 (target 0.1m). On elevated
+    # terrain (pyramid rings at z=0.3+), foot_z is already high while
+    # grounded — penalty fires during normal stair walking. legged_gym
+    # doesn't use these; feet_air_time alone handles gait shaping.
+    cfg.reward_config.scales.feet_clearance = 0.0
+    cfg.reward_config.scales.feet_height = 0.0
     # Terrain grid has ~1500 geoms (vs ~100 for flat). Warp emits "nefc overflow
     # - please increase njmax" at init; safe to ignore — sim functions at
     # defaults (njmax=100, naconmax=32768). Bumping higher causes VRAM OOM.
@@ -278,6 +285,27 @@ class WarpJoystickCurriculum(WarpJoystick):
         state.info["episode_fallen"] = state.done.astype(jp.bool_)
 
         return state
+
+    # ── Terrain-aware reward overrides ─────────────────────────────────────
+    # Parent's _cost_orientation already uses sum(upvector[:2]²) which equals
+    # sin²(tilt_from_world_up) — same as legged_gym's projected_gravity form.
+    # Only the WEIGHT was misconfigured for terrain (dampened in default_config).
+    # Parent's _cost_base_height is world-z subtree_com; that DOES break on
+    # elevated/depressed terrain. Override below.
+
+    def _cost_base_height(self, data: mjx.Data) -> jax.Array:
+        """Override: feet-relative base height (terrain-invariant).
+
+        Parent uses world-z subtree_com; false-penalizes robot in pyramid pit
+        or on elevated stair. We measure torso COM height ABOVE median foot
+        z — the stance height we actually care about. Target: 0.27m (same
+        as parent's target, since robot kinematics haven't changed).
+        """
+        torso_z = data.subtree_com[self._torso_body_id][2]
+        feet_z = data.site_xpos[self._feet_site_id][..., 2]
+        ground_z = jp.median(feet_z)
+        stance_height = torso_z - ground_z
+        return jp.square(stance_height - 0.27)
 
     def _get_termination(self, data: mjx.Data) -> jax.Array:
         """Terrain-agnostic termination.
