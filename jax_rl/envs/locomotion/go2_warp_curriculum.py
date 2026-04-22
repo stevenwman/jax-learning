@@ -45,6 +45,13 @@ def default_config() -> config_dict.ConfigDict:
     # terrain-induced tilt isn't catastrophically punished. Flipped detection
     # still handled via termination (upvector_z < 0).
     cfg.reward_config.scales.orientation = -1.0
+    # Stronger base_height pressure. v11 policy transfer probe showed robot
+    # crouching to ~0.20m (vs target 0.27m) — low stance saves balance on
+    # terrain, tracking reward stays high, and the old weight -5 gave only
+    # 0.024/step cost at crouch depth. Policy rationally ignored. Bump to
+    # -20 to make stance height matter for reward optimization. Same target
+    # (0.27m), same quadratic shape, 4× penalty.
+    cfg.reward_config.scales.base_height = -20.0
     # Terrain grid has ~1500 geoms (vs ~100 for flat). Warp emits "nefc overflow
     # - please increase njmax" at init; safe to ignore — sim functions at
     # defaults (njmax=100, naconmax=32768). Bumping higher causes VRAM OOM.
