@@ -65,6 +65,16 @@ def _register_custom_envs():
             functools.partial(BongoHandstand, task="bongo_handstand"),
             bongo_default_config,
         )
+    def _bongo_default_config_contraction():
+        c = bongo_default_config()
+        c.observe_contraction = True
+        return c
+    if "Go2BongoHandstandContraction" not in pg_locomotion._envs:
+        pg_locomotion.register_environment(
+            "Go2BongoHandstandContraction",
+            functools.partial(BongoHandstand, task="bongo_handstand"),
+            _bongo_default_config_contraction,
+        )
 
     # (MuJoCo Warp PushEnv removed 2026-04-20 — replaced by vendored pymunk
     # gym-pusht (`jax_rl/envs/manipulation/pusht/`) for cross-shape work.)
