@@ -227,7 +227,7 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
     # Force spawn at a specific (terrain_level, terrain_type) tile. Useful for
     # isolating failure modes: e.g., "does policy handle pyramid_down L7?".
     if terrain_level is not None or terrain_type is not None:
-        _TERRAIN_TYPE_NAMES = ["rough", "pyramid_up", "pyramid_down", "tilted"]
+        _TERRAIN_TYPE_NAMES = ["rough", "pyramid_up", "pyramid_down", "tilted", "flat"]
         base_env = env
         while hasattr(base_env, "env"):
             base_env = base_env.env
@@ -391,7 +391,7 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
             cam = mujoco.MjvCamera()
             cam.type = mujoco.mjtCamera.mjCAMERA_TRACKING
             cam.trackbodyid = 1  # base/base_link (body ID 1 in both models)
-            cam.distance = 12.0  # zoomed out to frame robot + elevated goal sphere
+            cam.distance = 6.0  # close tracking (was 12.0)
             cam.azimuth = 135
             cam.elevation = -30
             renderer.update_scene(mj_data, camera=cam)

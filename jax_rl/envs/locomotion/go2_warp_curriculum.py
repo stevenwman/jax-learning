@@ -192,26 +192,45 @@ class WarpJoystickCurriculum(WarpJoystick):
 
         return state
 
-    # All 4 types are goal-directed: spawn on rim, walk to tile center.
-    # Holonomic body-frame cmd; random yaw (parent's Bernoulli) + goal direction
-    # together produce omnidirectional linvel DR in body frame — as yaw rotates,
-    # the goal-directed cmd_vx/vy rotate through all body-frame directions.
-    _IS_GOAL_DIRECTED = (True, True, True, True)
+    # Type index → goal-directed. Types 0-3 (rough/pyr_up/pyr_dn/tilted) use
+    # holonomic goal-directed cmd (rim→center). Type 4 (flat) uses parent's
+    # Bernoulli cmd — matches flat joystick env's training distribution for
+    # flat-ground sim2real transfer.
+    _IS_GOAL_DIRECTED = (True, True, True, True, False)
 
     def _sample_spawn_goal(self, terrain_type, tile_size, spawn_rng, yaw_rng):
-        """Rim-to-center spawn for all terrain types. Returns (spawn_local, goal_local, yaw).
+        """Spawn + goal + yaw. Returns (spawn_local, goal_local, yaw).
 
-        Pyramids (types 1, 2) use face-toward-goal yaw — robot is not designed
-        for sideways stair climbing, spawn random yaw makes success too rare.
-        Rough (0) and tilted (3) keep random yaw for omnidirectional linvel DR
-        (goal-directed holonomic cmd rotates through body frame as yaw spins).
+        Types 0-3 (terrain): rim→center spawn, holonomic cmd. Pyramids face
+        goal (types 1,2); rough/tilted keep random yaw for omni DR.
+        Type 4 (flat): center spawn with jitter, random yaw. Parent's
+        Bernoulli cmd sampler takes over (see step()).
         """
-        spawn, goal, random_yaw = self._rim_to_center(spawn_rng, yaw_rng, tile_size)
-        # For pyramids: override yaw to point at goal (world-frame atan2 on
-        # local coords, since spawn/goal are tile-local and tile has no rot).
+        # Branch on terrain_type via lax.switch.
+        branches = [
+            lambda r: self._rim_to_center(r, yaw_rng, tile_size),   # 0 rough
+            lambda r: self._rim_to_center(r, yaw_rng, tile_size),   # 1 pyr_up
+            lambda r: self._rim_to_center(r, yaw_rng, tile_size),   # 2 pyr_dn
+            lambda r: self._rim_to_center(r, yaw_rng, tile_size),   # 3 tilted
+            lambda r: self._center_spawn(r, yaw_rng, tile_size),    # 4 flat
+        ]
+        spawn, goal, random_yaw = jax.lax.switch(terrain_type, branches, spawn_rng)
+        # Pyramids face toward goal; else random yaw
         goal_yaw = jp.arctan2(goal[1] - spawn[1], goal[0] - spawn[0])
         is_pyramid = (terrain_type == 1) | (terrain_type == 2)
         yaw = jp.where(is_pyramid, goal_yaw, random_yaw)
+        return spawn, goal, yaw
+
+    def _center_spawn(self, rng, yaw_rng, tile_size):
+        """Center spawn with small xy jitter. For flat type (no goal)."""
+        dx_rng, dy_rng = jax.random.split(rng)
+        hx = tile_size[0] / 2.0
+        hy = tile_size[1] / 2.0
+        dx = jax.random.uniform(dx_rng, (), minval=-0.2 * hx, maxval=0.2 * hx)
+        dy = jax.random.uniform(dy_rng, (), minval=-0.2 * hy, maxval=0.2 * hy)
+        spawn = jp.array([dx, dy, jp.float32(0.3)])
+        goal = jp.array([dx, dy, jp.float32(0.0)])  # placeholder; unused
+        yaw = jax.random.uniform(yaw_rng, (), minval=-jp.pi, maxval=jp.pi)
         return spawn, goal, yaw
 
     def _rim_to_center(self, rng, yaw_rng, tile_size):
@@ -254,14 +273,23 @@ class WarpJoystickCurriculum(WarpJoystick):
         # stationary. Episode continues to truncation, not cut on reach.
         force_zero = state.info["force_zero_linvel"]
         force_zero_yaw = state.info["force_zero_yaw"]
+        tt = state.info["terrain_type"]
+        is_goal = jp.asarray(self._IS_GOAL_DIRECTED, dtype=jp.bool_)[tt]
 
         def _override(cmd):
-            # Read reached from current state.info (may have flipped in super.step)
             reached = state.info["episode_reached_goal"]
-            zero_linvel = force_zero | reached
+            # goal-directed types: holonomic cmd, zeroed after reach
+            # flat type: keep parent's Bernoulli cmd unless force_zero
             body_vx, body_vy = self._goal_linvel_body(state)
-            new_vx = jp.where(zero_linvel, jp.float32(0.0), body_vx)
-            new_vy = jp.where(zero_linvel, jp.float32(0.0), body_vy)
+            # For goal-directed: body_vx/vy; after reach or force_zero → 0
+            # For flat (is_goal=False): cmd[0]/cmd[1] from Bernoulli sampler,
+            # unless force_zero_linvel → 0
+            goal_vx = jp.where(force_zero | reached, jp.float32(0.0), body_vx)
+            goal_vy = jp.where(force_zero | reached, jp.float32(0.0), body_vy)
+            flat_vx = jp.where(force_zero, jp.float32(0.0), cmd[0])
+            flat_vy = jp.where(force_zero, jp.float32(0.0), cmd[1])
+            new_vx = jp.where(is_goal, goal_vx, flat_vx)
+            new_vy = jp.where(is_goal, goal_vy, flat_vy)
             new_yaw = jp.where(force_zero_yaw, jp.float32(0.0), cmd[2])
             return cmd.at[0].set(new_vx).at[1].set(new_vy).at[2].set(new_yaw)
 
@@ -279,9 +307,9 @@ class WarpJoystickCurriculum(WarpJoystick):
         state.info["episode_min_distance"] = jp.minimum(
             state.info["episode_min_distance"], dist_to_goal
         )
-        state.info["episode_reached_goal"] = state.info["episode_reached_goal"] | (
-            dist_to_goal < jp.float32(0.5)
-        )
+        # Reach only for goal-directed types; flat (goal=spawn placeholder) stays False.
+        new_reach = state.info["episode_reached_goal"] | (dist_to_goal < jp.float32(0.5))
+        state.info["episode_reached_goal"] = jp.where(is_goal, new_reach, jp.bool_(False))
         state.info["episode_fallen"] = state.done.astype(jp.bool_)
 
         return state

@@ -208,7 +208,7 @@ def wandb_finish() -> None:
         pass
 
 
-TERRAIN_TYPE_NAMES = ["rough", "pyramid_up", "pyramid_down", "tilted"]
+TERRAIN_TYPE_NAMES = ["rough", "pyramid_up", "pyramid_down", "tilted", "flat"]
 
 
 def log_terrain_metrics(info: dict, terrain_type_names: list[str] = None,

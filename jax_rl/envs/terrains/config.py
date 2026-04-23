@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .primitives import (
+    FlatTerrainCfg,
     InvertedPyramidStairsTerrainCfg,
     PyramidStairsTerrainCfg,
     RoughTerrainCfg,
@@ -66,5 +67,6 @@ GO2_DEFAULT_CFG = TerrainGridCfg(
         PyramidStairsTerrainCfg(),
         InvertedPyramidStairsTerrainCfg(),
         TiltedGridTerrainCfg(),
+        FlatTerrainCfg(),  # 5th column: flat locomotion with Bernoulli cmd
     ],
 )

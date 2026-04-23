@@ -7,9 +7,9 @@ def test_env_loads():
     from jax_rl.envs.locomotion.go2_warp_curriculum import WarpJoystickCurriculum
     env = WarpJoystickCurriculum()
     assert env.action_size == 12
-    assert env._terrain_origins.shape == (6, 4, 3)
+    assert env._terrain_origins.shape == (6, 5, 3)
     assert env._num_rows == 6
-    assert env._num_cols == 4
+    assert env._num_cols == 5
 
 
 def test_env_model_has_terrain_geoms():
