@@ -1,5 +1,25 @@
 # TODO
 
+## 🔥 High priority — Privileged-obs normalization
+
+Bandaid applied 2026-04-22 in `train_ppo_fast.py` and `jax_rl/training/onpolicy_collect.py`: critic (privileged) obs now uses plain `norm_normalize` not `normalize_stacked`. Fixes silent bug where privileged_state was treated as 3 stacked frames of `critic_obs_dim // 3` when FrameStackWrapper only stacks policy obs. Broadcast crashed loudly once privileged dim became non-divisible by frame-stack (96→98 dims).
+
+**What's still wrong / missing:**
+- Off-policy (`jax_rl/training/obs_pipeline.py:87-107`): when `has_privileged=True`, critic_obs never normalized at all — passes raw. Subtle divergence from the (now-fixed) on-policy path that DOES normalize privileged single-frame.
+- "Match off-policy behavior" would be: skip critic normalization entirely. "Match on-policy (bandaid)" means use plain running stats. Different design choices — pick one and apply consistently.
+
+**Proper fix (feature, not bug):**
+- Decide: should privileged critic obs be normalized? Mixed-unit heterogeneous obs (positions, velocities, forces, contacts) argue yes. Running-stats normalization applies cleanly since privileged is never stacked.
+- Implement `obs_pipeline.update_critic_stats()` + `normalize_critic()` for off-policy, symmetric to policy obs.
+- Wire into `offpolicy_loop` (add `critic_norm_state` alongside `norm_state`).
+- On-policy: ensure same semantics (currently bandaid normalizes critic).
+- Tests: verify normalized critic yields stable value loss vs raw on a representative env (e.g. Go2WarpJoystickFlat with privileged).
+- Doc: add config flag `algo_cfg.privileged_normalization: bool = True` with default aligned to whatever proves best in A/B.
+
+**Why urgent:**
+- PPO4 (2026-04-03, eval 46.9 on bongo) ran with buggy privileged-as-stacked normalization. Results may have been suboptimal or subtly miscalibrated.
+- Any new asymmetric critic training using train_ppo_fast.py needs the bandaid active — a regression would silently break.
+
 ## Completed (2026-04-21) — ContractionPPO port
 - [x] Read Zinage et al. ContractionPPO paper/repo, extract algorithm
 - [x] Flax `ContractionMetric` with Lipschitz MLP → SPD output (`jax_rl/networks/contraction_metric.py`)

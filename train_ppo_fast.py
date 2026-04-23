@@ -159,7 +159,10 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
     n_frame_stack = cfg.n_frame_stack
     # Per-frame normalization: track stats on single-frame obs when stacking
     policy_raw_dim = obs_dim // n_frame_stack if n_frame_stack > 1 else obs_dim
-    critic_raw_dim = critic_obs_dim // n_frame_stack if n_frame_stack > 1 else critic_obs_dim
+    # BANDAID: FrameStackWrapper stacks ONLY obs["state"], NOT privileged_state.
+    # Critic always sees single-frame privileged obs → use full critic_obs_dim.
+    # See TODO "proper privileged-obs normalization" for real fix.
+    critic_raw_dim = critic_obs_dim
     norm_state = norm_init(policy_raw_dim)
     critic_norm_state = norm_init(critic_raw_dim)
 
@@ -200,7 +203,8 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
 
             # Normalize with FROZEN stats (updated after full rollout, like Brax)
             normed_obs = norm_normalize_stacked(ns, policy_obs, n_frame_stack) if n_frame_stack > 1 else norm_normalize(ns, policy_obs)
-            normed_critic_obs = norm_normalize_stacked(cns, critic_obs, n_frame_stack) if n_frame_stack > 1 else norm_normalize(cns, critic_obs)
+            # Critic is NEVER stacked (FrameStackWrapper only touches policy obs)
+            normed_critic_obs = norm_normalize(cns, critic_obs)
 
             # Select action
             key, action_key = jax.random.split(key)
@@ -253,10 +257,10 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
         # raw_policy_obs: (num_steps, num_envs, obs_dim) → reshape to (N, obs_dim)
         flat_policy_obs = raw_policy_obs.reshape(-1, raw_policy_obs.shape[-1])
         flat_critic_obs = raw_critic_obs.reshape(-1, raw_critic_obs.shape[-1])
-        # When frame stacking, update stats with newest frame only (raw_dim)
+        # When frame stacking, update POLICY stats with newest frame only.
+        # Critic (privileged) is never stacked → use full flat_critic_obs.
         if n_frame_stack > 1:
             flat_policy_obs = flat_policy_obs[:, :policy_raw_dim]
-            flat_critic_obs = flat_critic_obs[:, :critic_raw_dim]
         norm_state = norm_update(norm_state, flat_policy_obs)
         critic_norm_state = norm_update(critic_norm_state, flat_critic_obs)
 
@@ -264,7 +268,8 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
         next_policy_obs = _get_policy_obs(env_state.obs)
         next_critic_obs = _get_critic_obs(env_state.obs)
         normed_next = norm_normalize_stacked(norm_state, next_policy_obs, n_frame_stack) if n_frame_stack > 1 else norm_normalize(norm_state, next_policy_obs)
-        normed_next_critic = norm_normalize_stacked(critic_norm_state, next_critic_obs, n_frame_stack) if n_frame_stack > 1 else norm_normalize(critic_norm_state, next_critic_obs)
+        # Critic is never stacked — always plain normalize.
+        normed_next_critic = norm_normalize(critic_norm_state, next_critic_obs)
         _, _, next_value = _select_deterministic(
             training_state.actor_params, training_state.critic_params,
             normed_next, normed_next_critic,

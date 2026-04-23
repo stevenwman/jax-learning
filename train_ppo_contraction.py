@@ -157,7 +157,9 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
     # ── Normalization ────────────────────────────────────────────────────
     n_frame_stack = cfg.n_frame_stack
     policy_raw_dim = obs_dim // n_frame_stack if n_frame_stack > 1 else obs_dim
-    critic_raw_dim = critic_obs_dim // n_frame_stack if n_frame_stack > 1 else critic_obs_dim
+    # BANDAID: FrameStackWrapper only stacks policy obs, not privileged_state.
+    # See TODO "proper privileged-obs normalization".
+    critic_raw_dim = critic_obs_dim
     norm_state = norm_init(policy_raw_dim)
     critic_norm_state = norm_init(critic_raw_dim)
 

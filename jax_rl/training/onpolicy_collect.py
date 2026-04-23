@@ -86,8 +86,8 @@ def make_collect(
 
             normed_obs = (norm_normalize_stacked(ns, policy_obs, n_frame_stack)
                           if n_frame_stack > 1 else norm_normalize(ns, policy_obs))
-            normed_critic_obs = (norm_normalize_stacked(cns, critic_obs, n_frame_stack)
-                                 if n_frame_stack > 1 else norm_normalize(cns, critic_obs))
+            # BANDAID: critic never stacked (FrameStackWrapper only stacks state). Plain normalize.
+            normed_critic_obs = norm_normalize(cns, critic_obs)
 
             # Capture pre-step extras (matches ref ContractionPPO off-by-one semantics)
             if has_extras:
@@ -148,9 +148,9 @@ def make_collect(
 
         flat_policy_obs = raw_policy_obs.reshape(-1, raw_policy_obs.shape[-1])
         flat_critic_obs = raw_critic_obs.reshape(-1, raw_critic_obs.shape[-1])
+        # BANDAID: policy may be stacked, critic never is.
         if n_frame_stack > 1:
             flat_policy_obs = flat_policy_obs[:, :policy_raw_dim]
-            flat_critic_obs = flat_critic_obs[:, :critic_raw_dim]
         norm_state = norm_update(norm_state, flat_policy_obs)
         critic_norm_state = norm_update(critic_norm_state, flat_critic_obs)
 
@@ -158,8 +158,7 @@ def make_collect(
         next_critic_obs = get_critic_obs(env_state.obs)
         normed_next = (norm_normalize_stacked(norm_state, next_policy_obs, n_frame_stack)
                        if n_frame_stack > 1 else norm_normalize(norm_state, next_policy_obs))
-        normed_next_critic = (norm_normalize_stacked(critic_norm_state, next_critic_obs, n_frame_stack)
-                              if n_frame_stack > 1 else norm_normalize(critic_norm_state, next_critic_obs))
+        normed_next_critic = norm_normalize(critic_norm_state, next_critic_obs)
         _, _, next_value = select_deterministic(
             training_state.actor_params, training_state.critic_params,
             normed_next, normed_next_critic,
