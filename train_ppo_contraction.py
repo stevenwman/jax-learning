@@ -320,6 +320,7 @@ if __name__ == "__main__":
     parser.add_argument("--reward-scaling", type=float, default=None)
     parser.add_argument("--episode-length", type=int, default=None)
     parser.add_argument("--log-interval", type=int, default=None)
+    parser.add_argument("--frame-stack", type=int, default=None)
     parser.add_argument("--wandb", action="store_true")
     parser.add_argument("--wandb-project", type=str, default="jax-rl")
     # Contraction knobs
@@ -339,6 +340,7 @@ if __name__ == "__main__":
     if args.reward_scaling is not None: cfg_overrides["reward_scaling"] = args.reward_scaling
     if args.episode_length is not None: cfg_overrides["episode_length"] = args.episode_length
     if args.log_interval is not None: cfg_overrides["log_interval"] = args.log_interval
+    if args.frame_stack is not None: cfg_overrides["n_frame_stack"] = args.frame_stack
 
     # Inject ContractionConfig into ppo
     contraction = ContractionConfig(

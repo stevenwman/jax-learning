@@ -312,7 +312,10 @@ class PPOContraction:
         self._select_eval = _select_eval
 
     def init(self, key: jax.Array) -> TrainingState:
-        actor_key, critic_key, metric_key = jax.random.split(key, 3)
+        # Match baseline PPO's 2-way split for actor/critic so same seed
+        # produces byte-identical initial weights. Metric key derived from a
+        # fresh split of the remaining entropy.
+        actor_key, critic_key = jax.random.split(key, 2)
         dummy_obs = jnp.zeros(self.obs_dim)
         dummy_critic_obs = jnp.zeros(self.critic_obs_dim)
 
@@ -320,6 +323,8 @@ class PPOContraction:
         critic_params = self.critic.init(critic_key, dummy_critic_obs)
 
         if self._contraction_enabled:
+            # Fold metric_key off actor_key (deterministic, doesn't change actor init)
+            metric_key = jax.random.fold_in(actor_key, 0xC070AC)
             cdim = self.config.contraction.constraint_dim
             metric_params = self.metric.init(metric_key, jnp.zeros((1, cdim)))
             metric_opt_state = self.metric_optimizer.init(metric_params)
