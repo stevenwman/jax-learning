@@ -18,9 +18,11 @@ from train_tdmpc2 import train
 
 cfg = get_tdmpc2_preset('CheetahRun')
 # Tiny: 2 envs, 4 seed steps, batch 4. Main loop runs for a few outer iters.
+# Cut MPPI cost (default 512 samples × 6 iterations is too slow for smoke tests).
 cfg = dataclasses.replace(
     cfg, num_envs=2, seed_steps=4, batch_size=4, utd=1,
     eval_every=1000, total_steps=20,
+    mppi_iterations=1, num_samples=8, num_elites=2, num_pi_trajs=1,
 )
 # Run for total_timesteps = 4 (seed) + 8 (main, 4 iters * 2 envs) = 12
 train(cfg, 'CheetahRun', total_timesteps=12, seed=0)
