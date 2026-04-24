@@ -207,43 +207,42 @@ def main():
             obs_type="state", reward_mode="contact_gated", render_mode="rgb_array",
         )
         type(render_env)._shape_builder = staticmethod(SHAPE_BUILDERS[shape])
-        render_env.reset(seed=1000)
 
-        obs, _ = env.reset(seed=1000)
-        frames = [render_env.render()]
-        for _ in range(args.max_steps):
-            key, ak = jax.random.split(key)
-            a_pm1 = np.asarray(act(actor_params, jnp.asarray(obs[None]), ak))[0]
-            a_gym = policy_to_gym_action(a_pm1).astype(np.float32)
-            obs, r, term, trunc, info = env.step(a_gym)
-            for _ in range(2):  # mirror action repeat on render env
-                _, _, rt, ru, _ = render_env.step(a_gym)
-                frames.append(render_env.render())
-                if rt or ru:
+        for ep in range(args.n_episodes):
+            render_env.reset(seed=1000 + ep)
+            obs, _ = env.reset(seed=1000 + ep)
+            frames = [render_env.render()]
+            for _ in range(args.max_steps):
+                key, ak = jax.random.split(key)
+                a_pm1 = np.asarray(act(actor_params, jnp.asarray(obs[None]), ak))[0]
+                a_gym = policy_to_gym_action(a_pm1).astype(np.float32)
+                obs, r, term, trunc, info = env.step(a_gym)
+                for _ in range(2):
+                    _, _, rt, ru, _ = render_env.step(a_gym)
+                    frames.append(render_env.render())
+                    if rt or ru:
+                        break
+                if term or trunc:
                     break
-            if term or trunc:
-                break
-        cov = info.get("coverage", 0.0)
-        print(f"  cov={cov:.3f}  frames={len(frames)}")
+            cov = info.get("coverage", 0.0)
+            print(f"  ep {ep}: cov={cov:.3f}  frames={len(frames)}")
 
-        # Save mp4
-        tmp = out / f"_pusht_{shape}"
-        tmp.mkdir(exist_ok=True)
-        for i, f in enumerate(frames):
-            Image.fromarray(f).save(tmp / f"{i:04d}.png")
-        mp4 = out / f"pusht_shape_{shape}_rollout.mp4"
-        subprocess.run([
-            "ffmpeg", "-y", "-framerate", "20",
-            "-i", str(tmp / "%04d.png"),
-            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20",
-            str(mp4),
-        ], check=True, capture_output=True)
-        for p in tmp.iterdir():
-            p.unlink()
-        tmp.rmdir()
+            tmp = out / f"_pusht_{shape}_ep{ep}"
+            tmp.mkdir(exist_ok=True)
+            for i, f in enumerate(frames):
+                Image.fromarray(f).save(tmp / f"{i:04d}.png")
+            mp4 = out / f"pusht_shape_{shape}_ep{ep}.mp4"
+            subprocess.run([
+                "ffmpeg", "-y", "-framerate", "20",
+                "-i", str(tmp / "%04d.png"),
+                "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20",
+                str(mp4),
+            ], check=True, capture_output=True)
+            for p in tmp.iterdir():
+                p.unlink()
+            tmp.rmdir()
         env.close()
         render_env.close()
-        print(f"  → {mp4}")
 
 
 if __name__ == "__main__":
