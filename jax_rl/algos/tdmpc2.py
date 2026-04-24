@@ -11,6 +11,7 @@ import flax
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
+import optax
 
 from jax_rl.utils.simnorm import simnorm
 from jax_rl.utils.twohot import two_hot_inv, two_hot_ce_loss
@@ -888,3 +889,43 @@ class TDMPC2State:
     prev_mean: jax.Array         # (num_envs, horizon, action_dim)
     key: jax.Array
     step: jax.Array              # scalar int32
+
+
+# ------------------ Optimizers ------------------
+
+
+def build_world_model_optimizer(cfg):
+    """Single Adam with per-param-group LR via Optax multi_transform.
+
+    Group "a" (scaled LR): encoder → lr · enc_lr_scale.
+    Group "b" (default LR): dynamics + reward + q_ensemble (+ task_emb in C-mode).
+    Grad clipping by global norm applied before the Adam transform.
+
+    Returns an Optax GradientTransformation. Caller provides `wm_params` tree at init.
+    """
+    tx_a = optax.adam(cfg.lr * cfg.enc_lr_scale)
+    tx_b = optax.adam(cfg.lr)
+
+    def label_fn(params):
+        """Label each LEAF based on top-level key 'encoder' vs anything else."""
+        def _label(path, _leaf):
+            # path[0] is DictKey(key=<top-level-name>); handle both DictKey and bare-str
+            top = path[0].key if hasattr(path[0], "key") else str(path[0])
+            return "a" if top == "encoder" else "b"
+        return jax.tree_util.tree_map_with_path(_label, params)
+
+    return optax.chain(
+        optax.clip_by_global_norm(cfg.grad_clip_norm),
+        optax.multi_transform({"a": tx_a, "b": tx_b}, label_fn),
+    )
+
+
+def build_policy_optimizer(cfg):
+    """Single Adam for policy prior, with grad clip.
+
+    Source tdmpc2.py:32 — uses Adam with eps=1e-5 for policy optimizer.
+    """
+    return optax.chain(
+        optax.clip_by_global_norm(cfg.grad_clip_norm),
+        optax.adam(cfg.lr, eps=cfg.pi_optim_eps),
+    )
