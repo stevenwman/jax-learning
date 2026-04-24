@@ -13,6 +13,7 @@ sys.stdout.reconfigure(line_buffering=True)
 import argparse
 import dataclasses
 
+import numpy as np
 import jax
 import jax.numpy as jnp
 
@@ -140,6 +141,95 @@ def build_train_config_from_tdmpc2(
     )
 
 
+def _pipe_obs(obs, dict_obs: bool):
+    """Extract 'state' key if dict obs, else pass through."""
+    if dict_obs:
+        return obs["state"]
+    return obs
+
+
+def run_warmup(
+    state: "TDMPC2State",
+    env_bundle,
+    buffer,
+    update_step,
+    cfg: "TDMPC2Config",
+    key: jax.Array,
+) -> tuple:
+    """Run seed_steps random-action collect, then seed_steps gradient updates.
+
+    Source: /tmp/tdmpc2/tdmpc2/trainer/online_trainer.py:107-122.
+
+    Returns: (state, env_state, key, episode_ids_per_env, prev_done_or_trunc)
+             — the post-warmup handoff tuple.
+    """
+    env_step = env_bundle.env_step
+    env_state = env_bundle.env_state
+    dict_obs = env_bundle.dict_obs
+    num_envs = cfg.num_envs
+    action_dim = cfg.action_dim
+
+    print(f"[tdmpc2] warmup: {cfg.seed_steps} random-action collect steps")
+    episode_ids_per_env = jnp.zeros(num_envs, dtype=jnp.int32)
+    prev_done_or_trunc = jnp.zeros(num_envs, dtype=jnp.bool_)
+
+    for step in range(cfg.seed_steps):
+        key, subkey = jax.random.split(key)
+        action = jax.random.uniform(
+            subkey, (num_envs, action_dim), minval=-1.0, maxval=1.0
+        )
+        obs = _pipe_obs(env_state.obs, dict_obs)
+        env_state = env_step(env_state, action)
+        next_obs = _pipe_obs(env_state.obs, dict_obs)
+        reward = env_state.reward
+        done = env_state.done
+        if hasattr(env_state, "info") and isinstance(env_state.info, dict):
+            truncation = env_state.info.get("truncation", jnp.zeros_like(done))
+        else:
+            truncation = jnp.zeros_like(done)
+
+        # Increment episode_id on PREVIOUS done-or-trunc
+        episode_ids_now = episode_ids_per_env + prev_done_or_trunc.astype(jnp.int32)
+
+        buffer.add_batch(
+            obs=np.asarray(obs),
+            action=np.asarray(action),
+            reward=np.asarray(reward),
+            next_obs=np.asarray(next_obs),
+            done=np.asarray(done),
+            truncation=np.asarray(truncation),
+            episode_ids=np.asarray(episode_ids_now),
+        )
+        prev_done_or_trunc = done.astype(jnp.bool_) | truncation.astype(jnp.bool_)
+        episode_ids_per_env = episode_ids_now
+
+    print(f"[tdmpc2] warmup collect done; buffer size={buffer.size}")
+
+    # Gradient burst: only if buffer has enough for a valid sequence window
+    min_needed = cfg.horizon + 1
+    if buffer.size >= min_needed:
+        print(f"[tdmpc2] warmup: {cfg.seed_steps} gradient updates")
+        burst_log_every = max(1, cfg.seed_steps // 20)
+        for step in range(cfg.seed_steps):
+            key, batch_key = jax.random.split(key)
+            batch = buffer.sample_sequence(cfg.batch_size, cfg.horizon, batch_key)
+            state, metrics = update_step(state, batch)
+            if step % burst_log_every == 0:
+                print(
+                    f"[tdmpc2]   burst step {step}/{cfg.seed_steps} "
+                    f"L_world={float(metrics['L_world_total']):.4f} "
+                    f"L_policy={float(metrics['L_policy']):.4f}"
+                )
+    else:
+        print(
+            f"[tdmpc2] warmup: skipping gradient burst — buffer size {buffer.size} "
+            f"< horizon+1 ({min_needed})"
+        )
+
+    print(f"[tdmpc2] warmup complete; state.step={int(state.step)}")
+    return state, env_state, key, episode_ids_per_env, prev_done_or_trunc
+
+
 def train(
     cfg: TDMPC2Config,
     env_name: str,
@@ -194,8 +284,14 @@ def train(
         print(f"[tdmpc2] --total-timesteps=0 → init-only smoke, exiting cleanly")
         return state
 
-    # H2-H5 will fill in warmup + main loop + eval + checkpointing here
-    raise NotImplementedError("Training loop comes in Task H2-H5")
+    # H2: warmup (random collect + gradient burst)
+    key = jax.random.PRNGKey(seed + 42)  # separate from init key
+    state, env_state, key, episode_ids, prev_done_or_trunc = run_warmup(
+        state, env_bundle, buffer, update_step, cfg, key,
+    )
+
+    # H3-H5 will continue from here
+    raise NotImplementedError("Main loop comes in Task H3")
 
 
 def main():
