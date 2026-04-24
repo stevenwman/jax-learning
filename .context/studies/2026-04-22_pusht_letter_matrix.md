@@ -110,11 +110,19 @@ DR det row-mean **57.8%** (vs V1 24.8%, +33pp).
 | **dr (5M)** | 54.2% (0.0–87.0) | 6.0% (0.0–30.2) | 16.7% (2.5–30.4) | 22.4% (14.1–31.7) |
 | _dr (2M, prior)_ | _31.5 (10.4–48.3)_ | _7.9 (0.0–39.6)_ | _15.3 (0.0–24.4)_ | _17.2 (13.2–24.1)_ |
 
-## Visual grid (V1 — N=11 pad)
+## Visual grid (V2 — N=10 dense)
 
-Full 5×4 mosaic (stale — from V1 ckpts, not yet regenerated for V2):
+5×4 mosaic, 1 episode per cell (seed=2000), last-frame with coverage % overlay.
+Color: green ≥60%, orange ≥30%, red <30%. Diagonals marked ★.
+Single seed — cells will differ from 5-eps means in the matrix tables above.
 
-![letter matrix grid](assets/2026-04-22_pusht_letters/letter_matrix_grid_sto.png)
+![letter matrix grid V2](assets/2026-04-22_pusht_letters/letter_matrix_n10_grid_sto.png)
+
+## Visual grid (V1 — N=11 pad, stale)
+
+Full 5×4 mosaic from V1 ckpts (kept for V1↔V2 contrast):
+
+![letter matrix grid V1](assets/2026-04-22_pusht_letters/letter_matrix_grid_sto.png)
 
 Spot examples:
 

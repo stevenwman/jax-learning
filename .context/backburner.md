@@ -51,6 +51,23 @@ action correlation. Revisit when flow-matching SAC infra lands.
 
 ---
 
+## tools/ dir convention drift (2026-04-24)
+
+`tools/` started as "general utilities" but is now a mix of project-specific
+runnable scripts (pusht_*, handstand_*, bongo_*, render_terrain_*,
+render_curriculum_*) and actual utilities. ~15 files, no clear separation.
+
+**What to do:**
+- Move project-specific scripts → `jax_rl/envs/<group>/<env>/scripts/` (e.g.
+  pusht_*.py → `jax_rl/envs/manipulation/pusht/scripts/`).
+- Or rename `tools/` → `scripts/` and accept the convention drift.
+
+**Priority:** low. Tools work where they are; just hard to discover and
+the directory name is misleading. Defer until someone is actively touching
+multiple of these scripts at once.
+
+---
+
 ## DR + FS=3 mixed signal on cross-shape (2026-04-21)
 
 See `.context/studies/2026-04-21_pusht_transfer_matrix.md` §7. FS=3 helps
