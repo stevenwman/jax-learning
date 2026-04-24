@@ -1,5 +1,30 @@
 # TODO
 
+## 🔥 High priority — FlashSAC resume eval regression
+
+After landing `reward_norm_state` persistence (commit 6a17f9b, 2026-04-24), verified the reward-norm fix works via direct ckpt inspection (G_count=499968, G_r_max=33.28, RewScale=8.4318 matches pre-resume log's 8.435 to 3 decimals). But: resume still shows a large eval drop — CartpoleBalance hit 996 pre-resume then 747 at first eval after resume.
+
+`reward_norm_state` is persisted correctly, so the regression is from another non-persisted piece of state. Candidates:
+1. **Replay buffer not persisted** — `JaxReplayBuffer` starts empty on resume. First 10k env steps = random-uniform warmup, then gradient updates start from a buffer that has no policy-on-distribution data. The pre-resume policy's behaviour (cartpole-balancing) drifts during this gap. Most likely root cause.
+2. **EpisodeTracker reset** (`train_flashsac.py:215`) — fresh `n_episodes=0` means first eval fires when few episodes have completed post-resume; eval_mean could be noisier.
+3. **BN running stats** — `actor_batch_stats`, `q{1,2}_batch_stats`, `target_q{1,2}_batch_stats` ARE persisted via TrainingState. But critic targets update their BN running stats via `train=True` forwards in-process; after resume these may drift before stabilizing.
+4. **Zeta noise `count`/`repeat_n` fields** — persisted. Unlikely.
+
+**Diagnostic plan:**
+- Log `buffer_size` at each eval post-resume — confirm it starts at 0 and grows.
+- Add a pre-resume "micro-eval" (5 eps) immediately on load, before any env steps, to isolate whether the policy itself regressed vs a warmup-gap artifact.
+- Run the same resume experiment on a harder env (Go2WarpJoystickFlat) where cartpole's "easy to recover" dynamics don't mask regressions.
+
+**Fix candidates (if root cause is replay buffer):**
+1. Persist replay buffer alongside orbax ckpt. Reference (Holiday-Robot/FlashSAC) has `save_replay_buffer` / `load_replay_buffer`. ~50 LOC + test.
+2. Skip the random-uniform warmup on resume (if buffer loaded) OR retain policy actions during resume warmup (safer than random).
+
+Not blocking — resume is rare in practice — but should be understood before claiming "checkpoint+resume is correct" for FlashSAC.
+
+## Completed (2026-04-24) — FlashSAC reward_norm_state persistence
+
+Folded `RewardNormState` into `TrainingState` (matches `noise_state` pattern for per-env state). Zero changes to checkpointing.py / eval_runner.py — orbax serializes via existing `training_state` entry. Aligns with reference Holiday-Robot/FlashSAC which saves `reward_normalizer.pt` as first-class artifact. Verified via direct ckpt inspection post-save: G_count=499968 (matches 500k env steps), G_r_max=33.28, G_var=71.10, RewScale=8.4318 matches pre-resume log exactly. Commit: 6a17f9b.
+
 ## Completed (2026-04-24) — Privileged-obs normalization
 
 Unified + persisted critic normalization for both on-policy and off-policy paths.
@@ -92,7 +117,12 @@ Unified + persisted critic normalization for both on-policy and off-policy paths
   - v16 (5-col incl flat, commit 0676e47): eval **290.3 ± 6.8** (best 294.7), mean_level 0.73 excl flat (rough 0.62, pyramid_up 0.27, pyramid_down 1.00, tilted 1.04), fall=0.00 everywhere
   - flat column stays at L0 by design (not goal-directed, no advancement) — trains on it via Bernoulli cmd for distribution coverage
   - pyramid_up remains hard case (stuck L0–L1). See journal 2026-04-24.
-- [ ] **pyramid_up stall** — type consistently <0.4 mean_level at 20M. Needs targeted fix (cmd alignment, reward, or face-stair spawn refinement). Open.
+- [ ] **pyramid_up stall** — type consistently <0.4 mean_level at 20M. Root-caused 2026-04-24 via v16 L1 traj analysis: robot faces goal correctly, walks on flat ring 0, collides with 8cm ring-1 step face (quat stays upright, torso pitch spike at collision → `base_contact` termination). L0 is fully flat (step_h=0) so demotion doesn't teach climbing — oscillates L0↔L1. Fix candidates, cheap→expensive:
+  1. Quadratic difficulty curve: `step_h = difficulty² × max_step_height` in `jax_rl/envs/terrains/primitives.py:233` (L1: 80mm→16mm, L5 unchanged). One-line change.
+  2. Relative `feet_clearance` reward (foot-z above local ground plane median). Was zeroed in v13 to kill world-frame artifacts on tilted terrain; re-introduce a stance-relative version. ~20 LOC.
+  3. Lower `max_step_height` 0.4→0.25 (changes semantics of L5 ceiling).
+  4. Approach-spawn specialization: half-spawn robots already on ring 1 facing inward. Structural.
+  Try #1 first; stack #2 if still stuck. See journal 2026-04-23 §pyramid_up or lessons/terrain_curriculum.md §"pyramid_up L1 failure mode".
 - [ ] **Flat env robustness non-deterministic** — v16 on Go2WarpJoystickCurriculum flat col: seed 0 died 607, seed 1 died 871, seeds 2/3 full 1000. Warp seed behavior or residual policy fragility. Investigate.
 - [x] **Investigate eval OOM on curriculum env** (2026-04-20) — **non-issue**. Probed directly: Warp compiles kernels per-env-class, not per-instance. Both `WarpJoystickCurriculum` instances share the cache. Total curriculum VRAM at num_envs=32: ~500 MiB (train+eval combined). Historic eval OOMs were from num_envs=64 + training buffer pressure, not eval-env-specific. See journal 2026-04-20.
 - [ ] **Reduce num_rows 10→5** — halves geom count (~1500→750), potentially enables num_envs=64 on 16GB. Coarser curriculum steps but 2× throughput. Try after 20M baseline.
