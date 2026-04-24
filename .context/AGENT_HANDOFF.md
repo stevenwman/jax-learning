@@ -222,6 +222,7 @@ Curriculum env: 128 envs @ 16GB GPU (6 rows × 5 cols = 30 tiles vs 40 previousl
 | FastTD3 | `train_fast_td3.py` | C51 distributional + TD3 |
 | FastSAC | `train_fast_sac.py` | C51 distributional + SAC + asymmetric critic (Go2) |
 | FlashSAC | `train_flashsac.py` | Inverted residual blocks + BatchNorm + weight norm + adaptive reward scaling + Zeta noise |
+| TD-MPC2 | `train_tdmpc2.py` | Model-based: learned world model (encoder/dynamics/reward/Q) + MPPI planner in latent space + SAC-style policy prior. Single-task B (C-seams). DMC P1; Go2 P2 pending. See `.context/journals/2026-04-24.md`. |
 
 Full API reference (params, defaults, docstrings): `docs/api/algos.md` (autogen from source).
 

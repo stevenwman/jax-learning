@@ -101,6 +101,9 @@ Unified + persisted critic normalization for both on-policy and off-policy paths
 - [x] PandaPickCube SAC — **reward 1386, cube lifted 22cm** @ 10M steps. Preset added to env_presets.py.
 - [x] Manipulation benchmark survey — MuJoCo Playground already has 10 tasks (PandaPickCube, LeapCubeReorient, AlohaSinglePegInsertion, etc.)
 
+## Completed (2026-04-24)
+- [x] **TD-MPC2 port (Phases A-I)** — branch `tdmpc2-impl`. Full model-based RL pipeline: SimNorm/two-hot/qscale utilities, per-episode sequence buffer, networks (Encoder/Dynamics/Reward/QEnsemble/PolicyPrior), losses (world model + policy with iter-4 sign fix + iter-3 no-mask fix), MPPI planner (Gumbel single-elite + `_prev_mean` warm-start + horizon/horizon-1 loop asymmetry), TDMPC2State + multi_transform optimizer + update_step factory, standalone `train_tdmpc2.py` with warmup/collect/UTD/eval/checkpoint. ~80 unit tests passing; 5 spec + 3 plan review iterations caught 14+ silent-failure bugs before coding. See `.context/journals/2026-04-24.md`. Benchmarks (J2-J4) deferred to user-initiated multi-hour runs.
+
 ## Active
 - [x] **Terrain curriculum (Phases 1-4)** — 2026-04-17. 4 types × 10 levels grid, goal-directed commands, binary reach/fall advancement. Tests pass (42 primitives + generator, 9 env, 7 wrapper, 3 metrics). Presets wired for PPO/FastSAC/FlashSAC.
 - [x] **Curriculum fix marathon** (2026-04-20) — 8 fixes + unified redesign. Commits 07679e6, 7afadee, 8463b17, ceb72c2. See `.context/journals/2026-04-20.md`. Pilot v5 (5M) advancing at 4× v3 pace with unified rim-to-center design.
