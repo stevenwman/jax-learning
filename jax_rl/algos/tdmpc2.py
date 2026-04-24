@@ -14,6 +14,7 @@ import jax.numpy as jnp
 
 from jax_rl.utils.simnorm import simnorm
 from jax_rl.utils.twohot import two_hot_inv, two_hot_ce_loss
+from jax_rl.utils.qscale import QScaleState, qscale_apply
 
 
 # ------------------ Activations ------------------
@@ -474,3 +475,89 @@ def world_model_loss(
         "L_world_total": L_total,
     }
     return L_total, metrics
+
+
+# ------------------ Policy loss ------------------
+
+def compute_scaled_entropy(log_prob_pre: jax.Array, action_dim: int) -> jax.Array:
+    """Single-task simplification of source's scaled_entropy formula.
+
+    Source: /tmp/tdmpc2/tdmpc2/common/world_model.py:176-183. Pre-squash log_prob × action_dim.
+
+    scaled_entropy = -log_prob_pre * action_dim
+    """
+    return -log_prob_pre * action_dim
+
+
+def policy_loss(
+    online_params,       # {"policy": ..., "q_ensemble": ...}
+    qscale_state: "QScaleState",
+    zs_detached: jax.Array,  # (H+1, B, latent_dim), already stop-gradded
+    cfg,
+    key: jax.Array,
+    *,
+    policy_net: "PolicyPrior",
+    q_ensemble_net: "QEnsemble",
+):
+    """Policy loss. Source: /tmp/tdmpc2/tdmpc2/tdmpc2.py:219-227.
+
+    Formula (NOTE SIGN):
+      L_policy = -(1/(H+1)) · Σ_h rho^h · mean_over_batch(entropy_coef·scaled_entropy + qs_scaled)
+
+    OUTER NEGATIVE wraps both entropy bonus AND Q term.
+    scaled_entropy uses pre-squash log_prob (D6's extras["log_prob_pre"]).
+    Q path: detached online q_ensemble params, avg-of-2 random heads, decode-per-head.
+
+    Returns (L_policy, metrics). metrics["a_t0"] exposed for Q-scale update reuse.
+    """
+    H_plus_1, B = zs_detached.shape[0], zs_detached.shape[1]
+    rho_powers = cfg.rho ** jnp.arange(H_plus_1)  # (H+1,)
+
+    # Sample action at each (h, b) with independent PRNG.
+    key_pi, key_q = jax.random.split(key, 2)
+    pi_keys = jax.random.split(key_pi, H_plus_1 * B).reshape(H_plus_1, B, 2)
+
+    def _sample(z, k):
+        a, extras = policy_net.apply(online_params["policy"], z[None, :], k)
+        return a[0], extras["log_prob_pre"][0]
+
+    a_all, log_prob_pre_all = jax.vmap(
+        jax.vmap(_sample, in_axes=(0, 0)), in_axes=(0, 0)
+    )(zs_detached, pi_keys)
+    # a_all: (H+1, B, action_dim); log_prob_pre_all: (H+1, B)
+
+    scaled_entropy = compute_scaled_entropy(log_prob_pre_all, cfg.action_dim)  # (H+1, B)
+
+    # Detached online Q ensemble on (zs, a_all), subsample 2 heads, decode, average.
+    z_flat = zs_detached.reshape(H_plus_1 * B, -1)
+    a_flat = a_all.reshape(H_plus_1 * B, -1)
+    q_logits_flat = q_ensemble_net.apply(
+        jax.lax.stop_gradient(online_params["q_ensemble"]),
+        z_flat, a_flat,
+        deterministic=True,
+    )  # (num_q, (H+1)*B, num_bins)
+    q_logits = q_logits_flat.reshape(cfg.num_q, H_plus_1, B, cfg.num_bins)
+
+    perm = jax.random.permutation(key_q, cfg.num_q)[:2]
+    q_selected = q_logits[perm]  # (2, H+1, B, num_bins)
+    q_probs = jax.nn.softmax(q_selected, axis=-1)
+    q_decoded = two_hot_inv(
+        q_probs, cfg.vmin, cfg.vmax, cfg.num_bins, apply_symexp=True,
+    )  # (2, H+1, B, 1)
+    q_avg = q_decoded.mean(axis=0).squeeze(-1)  # (H+1, B)
+
+    qs_scaled = qscale_apply(qscale_state, q_avg)  # (H+1, B)
+
+    # Source formula: pi_loss = (-(entropy_coef · scaled_entropy + qs).mean(dim=(1,2)) * rho).mean()
+    per_step = cfg.entropy_coef * scaled_entropy + qs_scaled  # (H+1, B)
+    per_step_mean_over_batch = per_step.mean(axis=-1)  # (H+1,)
+    weighted = rho_powers * per_step_mean_over_batch  # (H+1,)
+    L_policy = -weighted.mean()  # outer negative, single .mean() → 1/(H+1)
+
+    metrics = {
+        "L_policy": L_policy,
+        "scaled_entropy_mean": scaled_entropy.mean(),
+        "q_avg_mean": q_avg.mean(),
+        "a_t0": jax.lax.stop_gradient(a_all[0]),  # (B, action_dim)
+    }
+    return L_policy, metrics

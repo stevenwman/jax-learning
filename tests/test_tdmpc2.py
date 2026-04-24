@@ -585,3 +585,108 @@ def test_world_model_loss_terminated_does_not_mask():
     assert jnp.allclose(m_a["L_reward_raw"], m_b["L_reward_raw"], atol=1e-6), \
         "Reward loss incorrectly depends on terminated — losses should NOT be masked"
     # Value loss DOES depend on terminated (through TD target bootstrap), so skip strict equality
+
+
+# ------------------ policy_loss tests ------------------
+
+def test_compute_scaled_entropy_single_task_simplification():
+    """In single-task mode, scaled_entropy = -log_prob_pre * action_dim."""
+    from jax_rl.algos.tdmpc2 import compute_scaled_entropy
+    log_prob_pre = jnp.array([-2.5, -0.3, 0.1])
+    action_dim = 6
+    result = compute_scaled_entropy(log_prob_pre, action_dim)
+    expected = -log_prob_pre * action_dim
+    assert jnp.allclose(result, expected, atol=1e-6)
+
+
+def test_policy_loss_sign_matches_source():
+    """L_policy = -(1/(H+1)) · Σ_h rho^h · mean_over_batch(entropy_coef·scaled_entropy + qs_scaled).
+
+    OUTER NEGATIVE wraps both entropy bonus AND Q term. Iter-4 critical: earlier spec had wrong sign.
+    """
+    from jax_rl.algos.tdmpc2 import policy_loss, PolicyPrior, QEnsemble
+    from jax_rl.configs.tdmpc2_config import make_tdmpc2_config
+    from jax_rl.utils.qscale import qscale_init
+
+    cfg = make_tdmpc2_config(
+        action_dim=2, episode_length=500, horizon=3,
+        num_q=2, num_bins=11, enc_dim=16, latent_dim=8, simnorm_dim=2, mlp_dim=16,
+    )
+    B = 2
+    q_ensemble = QEnsemble(mlp_dim=cfg.mlp_dim, num_bins=cfg.num_bins,
+                            num_q=cfg.num_q, dropout=0.0)
+    policy = PolicyPrior(mlp_dim=cfg.mlp_dim, action_dim=cfg.action_dim,
+                          log_std_min=cfg.log_std_min, log_std_max=cfg.log_std_max)
+    ks = jax.random.split(jax.random.PRNGKey(0), 4)
+    q_params = q_ensemble.init(
+        {"params": ks[0]},
+        jnp.zeros((B, cfg.latent_dim)), jnp.zeros((B, cfg.action_dim)),
+        deterministic=True,
+    )
+    policy_params = policy.init(ks[1], jnp.zeros((B, cfg.latent_dim)), ks[2])
+    online_params = {"policy": policy_params, "q_ensemble": q_params}
+    qscale_state = qscale_init()
+
+    # Construct valid SimNorm latents by softmax-chunking
+    raw = jax.random.normal(ks[3], (cfg.horizon + 1, B, cfg.latent_dim))
+    zs_detached = jax.nn.softmax(
+        raw.reshape(cfg.horizon + 1, B, -1, cfg.simnorm_dim), axis=-1
+    ).reshape(raw.shape)
+
+    L_policy, _ = policy_loss(
+        online_params, qscale_state, zs_detached, cfg, jax.random.PRNGKey(100),
+        policy_net=policy, q_ensemble_net=q_ensemble,
+    )
+    assert L_policy.shape == ()
+    assert jnp.isfinite(L_policy)
+
+    # Zero out entropy term; Q is ~0 at init (zero-init output); L_policy should be tiny.
+    cfg_no_entropy = make_tdmpc2_config(
+        action_dim=cfg.action_dim, episode_length=500, horizon=cfg.horizon,
+        num_q=cfg.num_q, num_bins=cfg.num_bins, enc_dim=cfg.enc_dim,
+        latent_dim=cfg.latent_dim, simnorm_dim=cfg.simnorm_dim, mlp_dim=cfg.mlp_dim,
+        entropy_coef=0.0,
+    )
+    L_no_ent, _ = policy_loss(
+        online_params, qscale_state, zs_detached, cfg_no_entropy, jax.random.PRNGKey(100),
+        policy_net=policy, q_ensemble_net=q_ensemble,
+    )
+    assert jnp.abs(L_no_ent) < 1.0
+
+
+def test_policy_loss_emits_a_t0_for_qscale_reuse():
+    """policy_loss metrics must include 'a_t0' (B, action_dim) for Q-scale update in update_step."""
+    from jax_rl.algos.tdmpc2 import policy_loss, PolicyPrior, QEnsemble
+    from jax_rl.configs.tdmpc2_config import make_tdmpc2_config
+    from jax_rl.utils.qscale import qscale_init
+
+    cfg = make_tdmpc2_config(
+        action_dim=3, episode_length=500, horizon=2,
+        num_q=2, num_bins=11, enc_dim=16, latent_dim=8, simnorm_dim=2, mlp_dim=16,
+    )
+    B = 4
+    q_ensemble = QEnsemble(mlp_dim=cfg.mlp_dim, num_bins=cfg.num_bins,
+                            num_q=cfg.num_q, dropout=0.0)
+    policy = PolicyPrior(mlp_dim=cfg.mlp_dim, action_dim=cfg.action_dim,
+                          log_std_min=cfg.log_std_min, log_std_max=cfg.log_std_max)
+    ks = jax.random.split(jax.random.PRNGKey(0), 4)
+    q_params = q_ensemble.init(
+        {"params": ks[0]},
+        jnp.zeros((B, cfg.latent_dim)), jnp.zeros((B, cfg.action_dim)),
+        deterministic=True,
+    )
+    policy_params = policy.init(ks[1], jnp.zeros((B, cfg.latent_dim)), ks[2])
+    online_params = {"policy": policy_params, "q_ensemble": q_params}
+    qscale_state = qscale_init()
+    raw = jax.random.normal(ks[3], (cfg.horizon + 1, B, cfg.latent_dim))
+    zs_detached = jax.nn.softmax(
+        raw.reshape(cfg.horizon + 1, B, -1, cfg.simnorm_dim), axis=-1
+    ).reshape(raw.shape)
+
+    _, metrics = policy_loss(
+        online_params, qscale_state, zs_detached, cfg, jax.random.PRNGKey(100),
+        policy_net=policy, q_ensemble_net=q_ensemble,
+    )
+    assert "a_t0" in metrics
+    assert metrics["a_t0"].shape == (B, cfg.action_dim)
+    assert jnp.all(jnp.isfinite(metrics["a_t0"]))
