@@ -115,6 +115,91 @@ def init_train_state(
     return state, wm_opt, pol_opt
 
 
+def _policy_prior_greedy(policy_params, z, policy):
+    """Greedy prior action: take tanh of the Gaussian mean (no sampling noise).
+
+    Used in eval's prior mode. Deterministic given same latent state.
+    """
+    dummy_key = jax.random.PRNGKey(0)
+    _, extras = policy.apply(policy_params, z, dummy_key)
+    return jnp.tanh(extras["mean"])
+
+
+def run_eval(
+    state: "TDMPC2State",
+    env_bundle,
+    plan_fn,
+    modules: tuple,
+    cfg: "TDMPC2Config",
+    key: jax.Array,
+) -> dict:
+    """Evaluate with both MPPI and policy-prior modes.
+
+    Uses eval_env (separate from training env). Each mode gets its OWN
+    prev_mean tensor (local to this call — NOT shared with state.prev_mean,
+    satisfying the iter-4 isolation requirement).
+
+    Rolls num_eval_envs envs for one full episode. Returns mean return over envs.
+    Returns dict with mppi_return, prior_return, mppi_prior_gap.
+    """
+    encoder, dynamics, reward_net, q_ensemble, policy = modules
+    eval_env = env_bundle.eval_env
+    num_eval = cfg.num_eval_envs
+    dict_obs = env_bundle.dict_obs
+
+    plan_params = {
+        "encoder": state.encoder_params,
+        "dynamics": state.dynamics_params,
+        "reward": state.reward_params,
+        "q_ensemble": state.q_ensemble_params,
+        "policy": state.policy_params,
+    }
+
+    # Reuse the already-JIT'd training env step — eval_env has the same wrapped class
+    # and episode_length so the state types are compatible. Avoids triggering a second
+    # Warp CUDA graph creation (which would OOM when JAX already owns most GPU RAM).
+    eval_step = env_bundle.env_step
+    ep_len = cfg.episode_lengths[0] if cfg.episode_lengths else 1000
+
+    def _rollout(mode: str, key: jax.Array) -> float:
+        """Roll num_eval envs for ep_len steps. Return mean total reward."""
+        key, reset_key = jax.random.split(key)
+        env_state = eval_env.reset(jax.random.split(reset_key, num_eval))
+        # Isolated prev_mean — local, never touches state.prev_mean
+        eval_prev_mean = jnp.zeros((num_eval, cfg.horizon, cfg.action_dim))
+        t0 = jnp.ones(num_eval, dtype=jnp.bool_)
+        total_reward = jnp.zeros(num_eval)
+
+        for _ in range(ep_len):
+            obs = _pipe_obs(env_state.obs, dict_obs)
+            z_0 = encoder.apply(plan_params["encoder"], obs)  # (num_eval, latent_dim)
+
+            if mode == "mppi":
+                key, plan_key = jax.random.split(key)
+                plan_keys = jax.random.split(plan_key, num_eval)
+                action, eval_prev_mean = plan_fn(
+                    plan_params, z_0, eval_prev_mean, t0, cfg, plan_keys, True,
+                )
+            else:  # prior
+                action = _policy_prior_greedy(plan_params["policy"], z_0, policy)
+
+            env_state = eval_step(env_state, action)
+            total_reward = total_reward + env_state.reward
+            t0 = env_state.done.astype(jnp.bool_)
+
+        return float(jnp.mean(total_reward))
+
+    key, mppi_key, prior_key = jax.random.split(key, 3)
+    mppi_return = _rollout("mppi", mppi_key)
+    prior_return = _rollout("prior", prior_key)
+
+    return {
+        "mppi_return": mppi_return,
+        "prior_return": prior_return,
+        "mppi_prior_gap": mppi_return - prior_return,
+    }
+
+
 def build_train_config_from_tdmpc2(
     tdmpc2_cfg: TDMPC2Config,
     env_name: str,
@@ -348,10 +433,17 @@ def run_main_loop(
         outer_idx += 1
 
         # ------------------------------------------------------------------ #
-        # 6. Periodic eval placeholder (H4 will flesh this out)
+        # 6. Periodic eval (MPPI + prior modes)
         # ------------------------------------------------------------------ #
         if step_counter % cfg.eval_every == 0 or step_counter >= total_timesteps:
-            print(f"[tdmpc2] step={step_counter:_}: (eval placeholder — H4)")
+            key, eval_key = jax.random.split(key)
+            eval_metrics = run_eval(state, env_bundle, plan_fn, modules, cfg, eval_key)
+            print(
+                f"[tdmpc2] step={step_counter:_} EVAL "
+                f"mppi={eval_metrics['mppi_return']:.2f} "
+                f"prior={eval_metrics['prior_return']:.2f} "
+                f"gap={eval_metrics['mppi_prior_gap']:+.2f}"
+            )
 
         # ------------------------------------------------------------------ #
         # 7. Periodic logging
