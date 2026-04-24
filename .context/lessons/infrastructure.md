@@ -429,3 +429,24 @@ grep -rE '\[[A-Za-z][^\]]*\]\([^)]+\)\{\.' site/ | head  # hook output that didn
 Zero matches = clean. Any matches = an HTML wrapper is missing `markdown`.
 
 **Applies to:** Any MkDocs Material site using `md_in_html` + a markdown-generating hook (glossary auto-linking, shortcode expansion, term replacement) + custom HTML wrappers (video grids, card layouts, hero banners, two-column sections). The combination is the failure mode. Single-component usage is fine.
+
+---
+
+## Schema-from-Checkpoint for Deploy Obs (2026-04-24)
+
+**Problem:** deploy code hardcoded the obs layout. The only sim↔deploy contract was `obs_dim` (an int). When sim added/removed/reordered an obs term, deploy stayed silently mis-wired as long as the total dim still matched. Twice (linvel removed 2026-04-10, accelerometer added later) → ~14 days of Go2 ckpts where deploy passed real `gyro` data into the slot the policy interpreted as `accelerometer`. No test caught it because dim equality held.
+
+**Fix:** treat the obs term list as part of the checkpoint. At save time, serialize `env._obs_groups` to `meta.json["obs_schema"]["state"]` = ordered list of term names (resolving `IncludeGroup` references). At load time, `ObsBuilder.from_checkpoint(ckpt_dir)` reads the schema and composes obs in the saved order via a sensor-fetcher registry keyed by term name. Adding a sim term = 1 line in env + 1 line in deploy registry; new ckpts deploy automatically; old ckpts ignore unknown terms.
+
+**Pattern, when applicable:**
+- The producer (training env) and consumer (deploy / inference) are decoupled in time and codebase.
+- The interface is a positional vector with named components.
+- A hash check on dim alone is insufficient — content can drift while dim is preserved.
+
+→ Serialize the schema, not just the dim. Deploy reads it. Lookup table at the consumer maps name → fetcher fn. Unknown name = clear error pointing at the file to edit, not silent miswiring.
+
+**Anti-pattern this replaces:** "we just need to remember to update both files together." Twice in our codebase, that broke. A second source of truth for the obs layout (in deploy code) cannot stay in sync with the env definition by convention alone — the env is allowed to change, deploy is allowed to be stale, and there's no compiler check.
+
+**Cost:** ~150 LOC across `obs_spec.py:schema_from_obs_groups`, `checkpointing.py` (5-line addition piggybacking on existing env-load for dr_specs), `deploy/obs_builder.py` (sensor registry + factory). Plus 9 unit tests. Backward-compat: schema-less ckpts fall back to a printed default.
+
+**Generalizes to:** any environment with composable obs (privileged_state, contraction obs groups, vision tokens). Same `_obs_groups` mechanism, same `schema_from_obs_groups` flatten. Bongo and pusht envs would benefit immediately if/when they get deployed.

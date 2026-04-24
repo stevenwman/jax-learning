@@ -92,6 +92,8 @@ WebFetch gets blocked by many sites. Workarounds:
 
 **Don't forget non-.context docs.** `deploy/README.md` and `deploy/go2_constants.py` must stay in sync with training env changes (PD gains, default pose, action scale). If you change `go2_warp_joystick.py` or `go2_warp_base.py`, check whether deploy constants need updating too.
 
+**Obs term changes auto-sync to deploy** (since 2026-04-24, commit 437f530). `meta.json["obs_schema"]["state"]` carries the term-name list; `deploy/obs_builder.ObsBuilder.from_checkpoint(ckpt_dir)` reads it. To add a new sim obs term: edit `_obs_groups` in the env, then add a fetcher to `_signals()` + width to `_TERM_DIMS` in `deploy/obs_builder.py`. Removing/reordering terms requires no deploy change at all. Unknown term in a ckpt → `ValueError` pointing at the file to edit.
+
 ### The refactor philosophy
 Brax-style shared utilities. No Trainer base class, no BaseAlgorithm ABC. Envs are self-contained black boxes, algos own their math, training scripts mediate. See `.context/archive/refactor_idea.md` for the full reasoning.
 
