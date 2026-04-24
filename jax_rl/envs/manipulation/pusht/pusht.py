@@ -224,7 +224,7 @@ class PushTEnv(gym.Env):
         # block_shape: "tee" (default), "ellipse", "triangle", "s", or "dr".
         # "dr" samples uniformly from the 4 concrete shapes per reset.
         from .shapes import SHAPE_BUILDERS
-        self._dr_shapes = ("tee", "ellipse", "triangle", "s")
+        self._dr_shapes = ("tee", "l", "k", "s")   # letter set for cross-shape matrix
         if block_shape != "dr" and block_shape not in ("tee",) + tuple(SHAPE_BUILDERS.keys()):
             raise ValueError(f"Unknown block_shape {block_shape!r}.")
         self.block_shape = block_shape
@@ -238,6 +238,21 @@ class PushTEnv(gym.Env):
                 high=np.array([512, 512, 512, 512, 2 * np.pi]),
                 dtype=np.float64,
             )
+        elif self.obs_type == "keypoints":
+            # [state 5d + keypoints 2*MAX_KEYPOINTS] = 25d at N=10. Layout:
+            # [agent_x, agent_y, block_x, block_y, block_yaw,
+            #  kp_0_x, kp_0_y, ..., kp_10_x, kp_10_y].
+            from .shapes import MAX_KEYPOINTS
+            dim = 5 + 2 * MAX_KEYPOINTS
+            low = np.concatenate([
+                [0, 0, 0, 0, 0],
+                np.zeros(2 * MAX_KEYPOINTS),
+            ])
+            high = np.concatenate([
+                [512, 512, 512, 512, 2 * np.pi],
+                np.full(2 * MAX_KEYPOINTS, 512.0),
+            ])
+            self.observation_space = spaces.Box(low=low, high=high, dtype=np.float64)
         elif self.obs_type == "environment_state_agent_pos":
             self.observation_space = spaces.Dict(
                 {
@@ -588,6 +603,22 @@ class PushTEnv(gym.Env):
             block_position = np.array(self.block.position)
             block_angle = self.block.angle % (2 * np.pi)
             return np.concatenate([agent_position, block_position, [block_angle]], dtype=np.float64)
+
+        if self.obs_type == "keypoints":
+            from .shapes import MAX_KEYPOINTS, SHAPE_KEYPOINTS
+            kps_local = SHAPE_KEYPOINTS.get(self._current_shape, [])
+            agent_pos = np.array(self.agent.position, dtype=np.float64)
+            block_pos = np.array(self.block.position, dtype=np.float64)
+            block_yaw = self.block.angle % (2 * np.pi)
+            out = np.zeros(5 + 2 * MAX_KEYPOINTS, dtype=np.float64)
+            out[0:2] = agent_pos
+            out[2:4] = block_pos
+            out[4]   = block_yaw
+            for i, (x, y) in enumerate(kps_local):
+                wx, wy = self.block.local_to_world((x, y))
+                out[5 + 2*i]     = wx
+                out[5 + 2*i + 1] = wy
+            return out
 
         if self.obs_type == "environment_state_agent_pos":
             return {

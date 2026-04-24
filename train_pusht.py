@@ -440,8 +440,9 @@ if __name__ == "__main__":
     ap.add_argument("--target-entropy-scale", type=float, default=1.0,
                     help="SAC target entropy = -scale * action_dim. Bigger = more explore.")
     ap.add_argument("--obs-type", type=str, default="state",
-                    choices=["state", "environment_state_agent_pos"],
-                    help="state=5d, environment_state_agent_pos=18d (flattened keypoints + agent)")
+                    choices=["state", "keypoints", "environment_state_agent_pos"],
+                    help="state=5d; keypoints=25d (5d state + 10 dense arc-length KPs per shape); "
+                         "environment_state_agent_pos=18d (T-only keypoints + agent).")
     ap.add_argument("--frame-stack", type=int, default=1,
                     help="Stack N consecutive obs. Implicit velocity; flattened to obs_dim × N.")
     ap.add_argument("--action-repeat", type=int, default=1,
@@ -459,9 +460,8 @@ if __name__ == "__main__":
     ap.add_argument("--success-bonus", type=float, default=50.0,
                     help="Terminal reward on success (contact_gated mode only). Default 50.")
     ap.add_argument("--block-shape", type=str, default="tee",
-                    choices=["tee", "ellipse", "triangle", "s", "dr"],
-                    help="Block shape. 'dr' samples uniformly per episode from "
-                         "{tee, ellipse, triangle, s}.")
+                    choices=["tee", "l", "k", "s", "ellipse", "triangle", "dr"],
+                    help="Block shape. 'dr' samples per episode from letter set {tee, l, k, s}.")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--eval-every-n-steps", type=int, default=50_000)
     ap.add_argument("--wandb", action="store_true")
