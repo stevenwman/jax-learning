@@ -561,3 +561,126 @@ def policy_loss(
         "a_t0": jax.lax.stop_gradient(a_all[0]),  # (B, action_dim)
     }
     return L_policy, metrics
+
+
+# ------------------ MPPI core ------------------
+
+
+def mppi_rollout(
+    plan_params,
+    z_0: jax.Array,           # (N, latent_dim) — N = num_samples per env
+    actions_seq: jax.Array,   # (horizon, N, action_dim)
+    cfg,
+    key: jax.Array,
+    *,
+    dynamics: "Dynamics",
+    reward_net: "Reward",
+    q_ensemble_net: "QEnsemble",
+    policy_net: "PolicyPrior",
+) -> jax.Array:
+    """Score N candidate action trajectories by rolling the world model forward.
+
+    Score formula (source tdmpc2.py:128-136):
+      score(τ) = Σ_{h=0..H-1} γ^h · r̂(z_h, a_h) + γ^H · Q_avg_of_2(z_H, π(z_H))
+
+    Reward/Q decoded through two_hot_inv(apply_symexp=True).
+    Online Q ensemble used (NOT target Q — MPPI is inference-time).
+
+    Returns: (N,) predicted returns.
+    """
+    N = z_0.shape[0]
+    gamma = cfg.discount
+
+    def step(carry, a):
+        z, discount_factor, G = carry
+        r_logits = reward_net.apply(plan_params["reward"], z, a)
+        r_probs = jax.nn.softmax(r_logits, axis=-1)
+        r_hat = two_hot_inv(
+            r_probs, cfg.vmin, cfg.vmax, cfg.num_bins, apply_symexp=True,
+        ).squeeze(-1)  # (N,)
+        G_next = G + discount_factor * r_hat
+        z_next = dynamics.apply(plan_params["dynamics"], z, a)
+        return (z_next, discount_factor * gamma, G_next), None
+
+    initial_carry = (z_0, jnp.ones(N), jnp.zeros(N))
+    (z_final, discount_final, G_reward), _ = jax.lax.scan(step, initial_carry, actions_seq)
+
+    # Terminal Q bootstrap: γ^H · Q_avg_of_2(z_final, π(z_final))
+    key_pi, key_q = jax.random.split(key, 2)
+    a_terminal, _ = policy_net.apply(plan_params["policy"], z_final, key_pi)
+    q_logits = q_ensemble_net.apply(
+        plan_params["q_ensemble"], z_final, a_terminal, deterministic=True,
+    )  # (num_q, N, num_bins)
+    perm = jax.random.permutation(key_q, cfg.num_q)[:2]
+    q_selected = q_logits[perm]  # (2, N, num_bins)
+    q_probs = jax.nn.softmax(q_selected, axis=-1)
+    q_decoded = two_hot_inv(
+        q_probs, cfg.vmin, cfg.vmax, cfg.num_bins, apply_symexp=True,
+    ).squeeze(-1)  # (2, N)
+    q_terminal = q_decoded.mean(axis=0)  # (N,)
+
+    return G_reward + discount_final * q_terminal
+
+
+def mppi_iteration(
+    mean: jax.Array,          # (horizon, action_dim)
+    std: jax.Array,           # (horizon, action_dim)
+    plan_params,
+    z_0: jax.Array,           # (latent_dim,) — single env
+    pi_trajs: jax.Array,      # (horizon, num_pi_trajs, action_dim)
+    cfg,
+    key: jax.Array,
+    *,
+    dynamics: "Dynamics",
+    reward_net: "Reward",
+    q_ensemble_net: "QEnsemble",
+    policy_net: "PolicyPrior",
+) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
+    """One MPPI iteration: sample, score, select elites, update (mean, std).
+
+    Args:
+        mean, std: current sampling distribution, shape (horizon, action_dim).
+        pi_trajs: (horizon, num_pi_trajs, action_dim) — policy-seeded samples (from F2).
+        z_0: single-env starting latent.
+
+    Returns (new_mean, new_std, elite_actions, weights):
+        new_mean, new_std: (horizon, action_dim)
+        elite_actions: (horizon, num_elites, action_dim) — kept for F4 Gumbel action selection
+        weights: (num_elites,) softmax-over-scores
+    """
+    key_sample, key_rollout = jax.random.split(key, 2)
+
+    # Gaussian samples: i.i.d. across (horizon, num_samples - num_pi_trajs, action_dim)
+    N_gauss = cfg.num_samples - cfg.num_pi_trajs
+    eps = jax.random.normal(key_sample, (cfg.horizon, N_gauss, cfg.action_dim))
+    gauss_actions = jnp.clip(
+        mean[:, None, :] + std[:, None, :] * eps,
+        -1.0, 1.0,
+    )
+    # Stack: [pi_trajs, gauss_actions] → (horizon, num_samples, action_dim)
+    actions = jnp.concatenate([pi_trajs, gauss_actions], axis=1)
+
+    # Broadcast z_0 to (num_samples, latent_dim) and score
+    z_0_broadcast = jnp.broadcast_to(z_0, (cfg.num_samples,) + z_0.shape)
+    scores = mppi_rollout(
+        plan_params, z_0_broadcast, actions, cfg, key_rollout,
+        dynamics=dynamics, reward_net=reward_net,
+        q_ensemble_net=q_ensemble_net, policy_net=policy_net,
+    )  # (num_samples,)
+
+    # Elite selection: top-K by score
+    _, elite_idx = jax.lax.top_k(scores, cfg.num_elites)  # (num_elites,)
+    elite_scores = scores[elite_idx]
+    elite_actions = actions[:, elite_idx, :]  # (horizon, num_elites, action_dim)
+
+    # Elite weights: softmax with temperature (numerically stable)
+    max_score = elite_scores.max()
+    exp_scores = jnp.exp((elite_scores - max_score) / cfg.mppi_temperature)
+    weights = exp_scores / (exp_scores.sum() + 1e-9)  # (num_elites,)
+
+    # Update mean/std (elite-weighted)
+    new_mean = (weights[None, :, None] * elite_actions).sum(axis=1)  # (horizon, action_dim)
+    var = (weights[None, :, None] * (elite_actions - new_mean[:, None, :]) ** 2).sum(axis=1)
+    new_std = jnp.clip(jnp.sqrt(var), cfg.mppi_min_std, cfg.mppi_max_std)
+
+    return new_mean, new_std, elite_actions, weights

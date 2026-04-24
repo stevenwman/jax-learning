@@ -690,3 +690,123 @@ def test_policy_loss_emits_a_t0_for_qscale_reuse():
     assert "a_t0" in metrics
     assert metrics["a_t0"].shape == (B, cfg.action_dim)
     assert jnp.all(jnp.isfinite(metrics["a_t0"]))
+
+
+# ------------------ MPPI tests ------------------
+
+def _build_plan_params(cfg, key=jax.random.PRNGKey(0)):
+    """Build plan_params dict (encoder, dynamics, reward, q_ensemble, policy) + modules."""
+    from jax_rl.algos.tdmpc2 import Encoder, Dynamics, Reward, QEnsemble, PolicyPrior
+    encoder = Encoder(enc_dim=cfg.enc_dim, num_layers=cfg.num_enc_layers,
+                      latent_dim=cfg.latent_dim, simnorm_dim=cfg.simnorm_dim)
+    dynamics = Dynamics(mlp_dim=cfg.mlp_dim, latent_dim=cfg.latent_dim, simnorm_dim=cfg.simnorm_dim)
+    reward_net = Reward(mlp_dim=cfg.mlp_dim, num_bins=cfg.num_bins)
+    q_ensemble = QEnsemble(mlp_dim=cfg.mlp_dim, num_bins=cfg.num_bins,
+                            num_q=cfg.num_q, dropout=0.0)
+    policy = PolicyPrior(mlp_dim=cfg.mlp_dim, action_dim=cfg.action_dim,
+                          log_std_min=cfg.log_std_min, log_std_max=cfg.log_std_max)
+    ks = jax.random.split(key, 5)
+    enc_params = encoder.init(ks[0], jnp.zeros((1, 4)))  # tiny obs_dim
+    dyn_params = dynamics.init(ks[1], jnp.zeros((1, cfg.latent_dim)),
+                                jnp.zeros((1, cfg.action_dim)))
+    rwd_params = reward_net.init(ks[2], jnp.zeros((1, cfg.latent_dim)),
+                                  jnp.zeros((1, cfg.action_dim)))
+    q_params = q_ensemble.init(
+        {"params": ks[3]},
+        jnp.zeros((1, cfg.latent_dim)), jnp.zeros((1, cfg.action_dim)),
+        deterministic=True,
+    )
+    pol_params = policy.init(ks[4], jnp.zeros((1, cfg.latent_dim)), ks[4])
+    plan_params = {
+        "encoder": enc_params, "dynamics": dyn_params, "reward": rwd_params,
+        "q_ensemble": q_params, "policy": pol_params,
+    }
+    return plan_params, encoder, dynamics, reward_net, q_ensemble, policy
+
+
+def test_mppi_rollout_shape_and_finiteness():
+    from jax_rl.algos.tdmpc2 import mppi_rollout
+    from jax_rl.configs.tdmpc2_config import make_tdmpc2_config
+    cfg = make_tdmpc2_config(
+        action_dim=2, episode_length=500, horizon=3,
+        num_q=2, num_bins=11, enc_dim=8, latent_dim=8, simnorm_dim=2, mlp_dim=16,
+        num_samples=32, num_elites=8, num_pi_trajs=4,
+    )
+    plan_params, enc, dyn, rwd, qen, pol = _build_plan_params(cfg)
+    N = cfg.num_samples
+    z_0 = jax.nn.softmax(
+        jax.random.normal(jax.random.PRNGKey(0), (N, cfg.latent_dim)).reshape(
+            N, -1, cfg.simnorm_dim
+        ), axis=-1,
+    ).reshape(N, cfg.latent_dim)
+    actions = jax.random.uniform(jax.random.PRNGKey(1), (cfg.horizon, N, cfg.action_dim), minval=-1, maxval=1)
+    scores = mppi_rollout(
+        plan_params, z_0, actions, cfg, jax.random.PRNGKey(2),
+        dynamics=dyn, reward_net=rwd, q_ensemble_net=qen, policy_net=pol,
+    )
+    assert scores.shape == (N,), f"Expected ({N},), got {scores.shape}"
+    assert jnp.all(jnp.isfinite(scores))
+
+
+def test_mppi_iteration_updates_mean_toward_elite_actions():
+    """After one iteration, mean should move toward elite actions (weighted by score)."""
+    from jax_rl.algos.tdmpc2 import mppi_iteration
+    from jax_rl.configs.tdmpc2_config import make_tdmpc2_config
+
+    cfg = make_tdmpc2_config(
+        action_dim=1, episode_length=500, horizon=3,
+        num_q=2, num_bins=11, enc_dim=8, latent_dim=8, simnorm_dim=2, mlp_dim=16,
+        num_samples=16, num_elites=4, num_pi_trajs=0, mppi_temperature=0.5,
+    )
+    plan_params, enc, dyn, rwd, qen, pol = _build_plan_params(cfg)
+    z_0 = jax.nn.softmax(
+        jax.random.normal(jax.random.PRNGKey(0), (cfg.latent_dim,)).reshape(
+            -1, cfg.simnorm_dim
+        ), axis=-1,
+    ).reshape(cfg.latent_dim)
+
+    mean = jnp.zeros((cfg.horizon, cfg.action_dim))
+    std = jnp.full((cfg.horizon, cfg.action_dim), 1.0)
+    pi_trajs = jnp.zeros((cfg.horizon, cfg.num_pi_trajs, cfg.action_dim))  # empty
+
+    new_mean, new_std, elite_actions, weights = mppi_iteration(
+        mean, std, plan_params, z_0, pi_trajs, cfg, jax.random.PRNGKey(10),
+        dynamics=dyn, reward_net=rwd, q_ensemble_net=qen, policy_net=pol,
+    )
+    assert new_mean.shape == (cfg.horizon, cfg.action_dim)
+    assert new_std.shape == (cfg.horizon, cfg.action_dim)
+    assert elite_actions.shape == (cfg.horizon, cfg.num_elites, cfg.action_dim)
+    assert weights.shape == (cfg.num_elites,)
+    # Weights sum to ~1
+    assert jnp.isclose(weights.sum(), 1.0, atol=1e-4)
+    # Std clamped
+    assert jnp.all(new_std >= cfg.mppi_min_std - 1e-5)
+    assert jnp.all(new_std <= cfg.mppi_max_std + 1e-5)
+
+
+def test_mppi_iteration_std_clamped():
+    """With elite spread > max_std or < min_std, std clamps correctly."""
+    from jax_rl.algos.tdmpc2 import mppi_iteration
+    from jax_rl.configs.tdmpc2_config import make_tdmpc2_config
+
+    cfg = make_tdmpc2_config(
+        action_dim=1, episode_length=500, horizon=2,
+        num_q=2, num_bins=11, enc_dim=8, latent_dim=8, simnorm_dim=2, mlp_dim=16,
+        num_samples=8, num_elites=4, num_pi_trajs=0,
+        mppi_min_std=0.05, mppi_max_std=2.0,
+    )
+    plan_params, enc, dyn, rwd, qen, pol = _build_plan_params(cfg)
+    z_0 = jax.nn.softmax(
+        jax.random.normal(jax.random.PRNGKey(0), (cfg.latent_dim,)).reshape(
+            -1, cfg.simnorm_dim
+        ), axis=-1,
+    ).reshape(cfg.latent_dim)
+    mean = jnp.zeros((cfg.horizon, cfg.action_dim))
+    std_input = jnp.full((cfg.horizon, cfg.action_dim), 10.0)  # huge
+    pi_trajs = jnp.zeros((cfg.horizon, cfg.num_pi_trajs, cfg.action_dim))
+    _, new_std, _, _ = mppi_iteration(
+        mean, std_input, plan_params, z_0, pi_trajs, cfg, jax.random.PRNGKey(10),
+        dynamics=dyn, reward_net=rwd, q_ensemble_net=qen, policy_net=pol,
+    )
+    assert jnp.all(new_std <= cfg.mppi_max_std + 1e-5)
+    assert jnp.all(new_std >= cfg.mppi_min_std - 1e-5)
