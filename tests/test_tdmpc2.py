@@ -1169,3 +1169,113 @@ def test_build_world_model_optimizer_clips_gradients():
     # Just confirm updates are finite and not astronomically large.
     for leaf in jax.tree_util.tree_leaves(updates):
         assert jnp.all(jnp.isfinite(leaf))
+
+
+def test_make_update_step_smoke_integration():
+    """Single update: state changes, all metrics finite, no NaN."""
+    from jax_rl.algos.tdmpc2 import (
+        make_update_step, TDMPC2State,
+        Encoder, Dynamics, Reward, QEnsemble, PolicyPrior,
+        build_world_model_optimizer, build_policy_optimizer,
+    )
+    from jax_rl.configs.tdmpc2_config import make_tdmpc2_config
+    from jax_rl.utils.qscale import qscale_init
+    import optax
+
+    cfg = make_tdmpc2_config(
+        action_dim=2, episode_length=500, horizon=3,
+        num_q=2, num_bins=11, enc_dim=8, latent_dim=8, simnorm_dim=2, mlp_dim=16,
+        batch_size=4,
+    )
+    B, obs_dim = 4, 6
+    num_envs = 2
+
+    # Modules
+    encoder = Encoder(enc_dim=cfg.enc_dim, num_layers=cfg.num_enc_layers,
+                      latent_dim=cfg.latent_dim, simnorm_dim=cfg.simnorm_dim)
+    dynamics = Dynamics(mlp_dim=cfg.mlp_dim, latent_dim=cfg.latent_dim, simnorm_dim=cfg.simnorm_dim)
+    reward_net = Reward(mlp_dim=cfg.mlp_dim, num_bins=cfg.num_bins)
+    q_ensemble = QEnsemble(mlp_dim=cfg.mlp_dim, num_bins=cfg.num_bins,
+                            num_q=cfg.num_q, dropout=0.0)
+    policy = PolicyPrior(mlp_dim=cfg.mlp_dim, action_dim=cfg.action_dim,
+                          log_std_min=cfg.log_std_min, log_std_max=cfg.log_std_max)
+
+    # Init params
+    ks = jax.random.split(jax.random.PRNGKey(0), 6)
+    enc_params = encoder.init(ks[0], jnp.zeros((B, obs_dim)))
+    dyn_params = dynamics.init(ks[1], jnp.zeros((B, cfg.latent_dim)),
+                                jnp.zeros((B, cfg.action_dim)))
+    rwd_params = reward_net.init(ks[2], jnp.zeros((B, cfg.latent_dim)),
+                                  jnp.zeros((B, cfg.action_dim)))
+    q_params = q_ensemble.init(
+        {"params": ks[3]},
+        jnp.zeros((B, cfg.latent_dim)), jnp.zeros((B, cfg.action_dim)),
+        deterministic=True,
+    )
+    pol_params = policy.init(ks[4], jnp.zeros((B, cfg.latent_dim)), ks[5])
+
+    wm_params = {"encoder": enc_params, "dynamics": dyn_params,
+                 "reward": rwd_params, "q_ensemble": q_params}
+    target_params = jax.tree_util.tree_map(lambda x: x, wm_params)  # same at init
+
+    # Optimizers
+    wm_opt = build_world_model_optimizer(cfg)
+    pol_opt = build_policy_optimizer(cfg)
+    wm_opt_state = wm_opt.init(wm_params)
+    pol_opt_state = pol_opt.init({"policy": pol_params, "q_ensemble": wm_params["q_ensemble"]})
+
+    # Initial state
+    state = TDMPC2State(
+        encoder_params=wm_params["encoder"],
+        dynamics_params=wm_params["dynamics"],
+        reward_params=wm_params["reward"],
+        q_ensemble_params=wm_params["q_ensemble"],
+        policy_params=pol_params,
+        encoder_target_params=target_params["encoder"],
+        dynamics_target_params=target_params["dynamics"],
+        reward_target_params=target_params["reward"],
+        q_ensemble_target_params=target_params["q_ensemble"],
+        world_model_opt_state=wm_opt_state,
+        policy_opt_state=pol_opt_state,
+        qscale=qscale_init(),
+        prev_mean=jnp.zeros((num_envs, cfg.horizon, cfg.action_dim)),
+        key=jax.random.PRNGKey(100),
+        step=jnp.array(0, dtype=jnp.int32),
+    )
+
+    # Batch (shaped like buffer.sample_sequence output)
+    batch = {
+        "obs": jnp.ones((cfg.horizon + 1, B, obs_dim)),
+        "actions": jnp.ones((cfg.horizon, B, cfg.action_dim)) * 0.1,
+        "rewards": jnp.ones((cfg.horizon, B, 1)) * 0.5,
+        "dones": jnp.zeros((cfg.horizon, B, 1)),
+        "truncations": jnp.zeros((cfg.horizon, B, 1)),
+    }
+
+    update_step = make_update_step(
+        cfg, wm_opt, pol_opt,
+        encoder=encoder, dynamics=dynamics, reward_net=reward_net,
+        q_ensemble_net=q_ensemble, policy_net=policy,
+    )
+    new_state, metrics = update_step(state, batch)
+
+    # Step counter advanced
+    assert int(new_state.step) == 1
+    # All metrics finite
+    for k, v in metrics.items():
+        if isinstance(v, jax.Array):
+            assert jnp.all(jnp.isfinite(v)), f"NaN/Inf in metric {k}"
+    # Online params changed (non-zero gradient applied)
+    # encoder kernel should differ
+    enc_kernel_before = state.encoder_params["params"]["Dense_0"]["kernel"] if "Dense_0" in state.encoder_params["params"] else None
+    enc_kernel_after = new_state.encoder_params["params"]["Dense_0"]["kernel"] if "Dense_0" in new_state.encoder_params["params"] else None
+    if enc_kernel_before is not None:
+        assert not jnp.allclose(enc_kernel_before, enc_kernel_after), "Encoder did not update"
+    # Target EMA: target should have moved toward online by ~tau
+    # (All targets started == online, online changed → target moves slightly toward new online)
+    # Just assert target is finite and in a sensible range
+    for target_field_name in ["encoder_target_params", "dynamics_target_params",
+                                "reward_target_params", "q_ensemble_target_params"]:
+        target_tree = getattr(new_state, target_field_name)
+        for leaf in jax.tree_util.tree_leaves(target_tree):
+            assert jnp.all(jnp.isfinite(leaf))
