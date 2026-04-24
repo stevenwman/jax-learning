@@ -873,3 +873,43 @@ def test_sample_pi_trajectories_counts_horizon_minus_1_dynamics_calls():
     #   - all actions finite
     assert pi_trajs.shape == (cfg.horizon, cfg.num_pi_trajs, cfg.action_dim)
     assert jnp.all(jnp.isfinite(pi_trajs))
+
+
+def test_init_mppi_mean_shift_on_t0_false():
+    """mean[:-1] = prev_mean[1:]; mean[-1] = 0."""
+    from jax_rl.algos.tdmpc2 import init_mppi_mean
+    prev = jnp.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])  # (horizon=3, action_dim=2)
+    new = init_mppi_mean(prev, t0=jnp.array(False), horizon=3, action_dim=2)
+    expected = jnp.array([[3.0, 4.0], [5.0, 6.0], [0.0, 0.0]])
+    assert jnp.allclose(new, expected)
+
+
+def test_init_mppi_mean_reset_on_t0_true():
+    """t0=True → zero-init."""
+    from jax_rl.algos.tdmpc2 import init_mppi_mean
+    prev = jnp.ones((3, 2))
+    new = init_mppi_mean(prev, t0=jnp.array(True), horizon=3, action_dim=2)
+    assert jnp.allclose(new, jnp.zeros((3, 2)))
+
+
+def test_init_mppi_mean_batched_per_env_independence():
+    """With num_envs=4, each env's shift/reset is independent."""
+    from jax_rl.algos.tdmpc2 import init_mppi_mean_batched
+    horizon, action_dim, num_envs = 3, 2, 4
+    # Build 4 distinct prev_mean tensors
+    prev = jnp.stack([
+        jnp.arange(horizon * action_dim, dtype=jnp.float32).reshape(horizon, action_dim) + env * 10
+        for env in range(num_envs)
+    ])  # (4, 3, 2)
+    t0 = jnp.array([True, False, True, False])  # envs 0 and 2 reset
+    new = init_mppi_mean_batched(prev, t0, horizon=horizon, action_dim=action_dim)
+
+    # Envs 0, 2: zeros
+    assert jnp.allclose(new[0], jnp.zeros((horizon, action_dim)))
+    assert jnp.allclose(new[2], jnp.zeros((horizon, action_dim)))
+    # Env 1: shifted prev[1]
+    expected_1 = jnp.stack([prev[1, 1], prev[1, 2], jnp.zeros(action_dim)])
+    assert jnp.allclose(new[1], expected_1)
+    # Env 3: shifted prev[3]
+    expected_3 = jnp.stack([prev[3, 1], prev[3, 2], jnp.zeros(action_dim)])
+    assert jnp.allclose(new[3], expected_3)

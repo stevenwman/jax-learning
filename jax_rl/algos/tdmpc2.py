@@ -724,3 +724,33 @@ def sample_pi_trajectories(
     _, actions = jax.lax.scan(step, (z, key), jnp.arange(cfg.horizon))
     # actions: (horizon, N, action_dim)
     return actions
+
+
+def init_mppi_mean(prev_mean: jax.Array, t0: jax.Array,
+                    horizon: int, action_dim: int) -> jax.Array:
+    """Warm-start MPPI mean for a single env.
+
+    If t0 is True, return zeros. Otherwise shift: new[:-1] = prev[1:], new[-1] = 0.
+    Source: /tmp/tdmpc2/tdmpc2/tdmpc2.py:167-168.
+
+    Args:
+        prev_mean: (horizon, action_dim) — last optimized mean.
+        t0: scalar bool — True on new episode.
+    """
+    shifted = jnp.concatenate([prev_mean[1:], jnp.zeros((1, action_dim))], axis=0)
+    return jnp.where(t0, jnp.zeros_like(shifted), shifted)
+
+
+def init_mppi_mean_batched(prev_mean: jax.Array, t0: jax.Array,
+                            horizon: int, action_dim: int) -> jax.Array:
+    """Per-env warm-start.
+
+    Args:
+        prev_mean: (num_envs, horizon, action_dim)
+        t0:        (num_envs,) bool
+    Returns:
+        (num_envs, horizon, action_dim)
+    """
+    return jax.vmap(
+        lambda p, t: init_mppi_mean(p, t, horizon, action_dim)
+    )(prev_mean, t0)
