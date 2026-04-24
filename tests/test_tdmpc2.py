@@ -1279,3 +1279,66 @@ def test_make_update_step_smoke_integration():
         target_tree = getattr(new_state, target_field_name)
         for leaf in jax.tree_util.tree_leaves(target_tree):
             assert jnp.all(jnp.isfinite(leaf))
+
+
+# ------ Test 21: loss /H normalization strict scalar check ------
+
+def test_world_model_loss_normalizes_by_H():
+    """Strict regression guard: L_consistency and L_reward are divided by H before weighting.
+
+    Strategy: set rho=1 so rho^h=1 for all h. With identical per-step inputs at every horizon
+    step, summing H equal-magnitude losses and then dividing by H must yield the same scalar
+    regardless of H. Without /H the H=3 value would be 3x the H=1 value.
+
+    Only L_consistency_raw and L_reward_raw are tested — both are deterministic given fixed
+    params and constant inputs. L_value_raw involves stochastic policy sampling and is excluded.
+    """
+    import dataclasses
+    from jax_rl.algos.tdmpc2 import world_model_loss
+
+    cfg_base, enc, dyn, rwd, qen, pol, B, obs_dim = _build_small_cfg_and_modules(horizon=3)
+    cfg_h1 = dataclasses.replace(cfg_base, horizon=1, rho=1.0)
+    cfg_h3 = dataclasses.replace(cfg_base, horizon=3, rho=1.0)
+
+    params, target_params, policy_params = _init_small_params(
+        cfg_base, enc, dyn, rwd, qen, pol, B, obs_dim, jax.random.PRNGKey(0),
+    )
+
+    # Constant obs/actions/rewards across all steps — per-step MSE and CE are identical at every h.
+    batch_h1 = {
+        "obs": jnp.ones((2, B, obs_dim)),           # (H+1=2, B, obs_dim)
+        "actions": jnp.ones((1, B, cfg_base.action_dim)),
+        "rewards": jnp.ones((1, B, 1)),
+        "dones": jnp.zeros((1, B, 1)),
+        "truncations": jnp.zeros((1, B, 1)),
+    }
+    batch_h3 = {
+        "obs": jnp.ones((4, B, obs_dim)),           # (H+1=4, B, obs_dim)
+        "actions": jnp.ones((3, B, cfg_base.action_dim)),
+        "rewards": jnp.ones((3, B, 1)),
+        "dones": jnp.zeros((3, B, 1)),
+        "truncations": jnp.zeros((3, B, 1)),
+    }
+
+    _, m_h1 = world_model_loss(
+        params, target_params, policy_params, batch_h1, cfg_h1, jax.random.PRNGKey(1),
+        encoder=enc, dynamics=dyn, reward_net=rwd, q_ensemble_net=qen, policy_net=pol,
+    )
+    _, m_h3 = world_model_loss(
+        params, target_params, policy_params, batch_h3, cfg_h3, jax.random.PRNGKey(1),
+        encoder=enc, dynamics=dyn, reward_net=rwd, q_ensemble_net=qen, policy_net=pol,
+    )
+
+    ratio_c = float(m_h3["L_consistency_raw"]) / float(m_h1["L_consistency_raw"])
+    ratio_r = float(m_h3["L_reward_raw"]) / float(m_h1["L_reward_raw"])
+
+    assert jnp.allclose(m_h3["L_consistency_raw"], m_h1["L_consistency_raw"], atol=1e-3), (
+        f"L_consistency /H check failed: H=1 → {m_h1['L_consistency_raw']:.6f}, "
+        f"H=3 → {m_h3['L_consistency_raw']:.6f} (ratio={ratio_c:.3f}, expected ~1.0; "
+        f"without /H it would be ~3.0)"
+    )
+    assert jnp.allclose(m_h3["L_reward_raw"], m_h1["L_reward_raw"], atol=1e-3), (
+        f"L_reward /H check failed: H=1 → {m_h1['L_reward_raw']:.6f}, "
+        f"H=3 → {m_h3['L_reward_raw']:.6f} (ratio={ratio_r:.3f}, expected ~1.0; "
+        f"without /H it would be ~3.0)"
+    )
