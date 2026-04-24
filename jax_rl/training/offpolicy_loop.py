@@ -119,12 +119,17 @@ def run_offpolicy_loop(
         critic_obs_dim=critic_obs_dim, num_envs=cfg.num_envs,
     )
     norm_state = pipe.init_norm_state(obs_dim)
+    critic_norm_state = pipe.init_critic_norm_state(critic_obs_dim) if has_privileged else None
 
     # ── Resume ─────────────────────────────────────────────────────────────
     start_step = 0
     if resume is not None:
         print(f"\n  Resuming from {resume}")
-        training_state, norm_state, start_step = load_checkpoint(resume, training_state, norm_state)
+        loaded = load_checkpoint(resume, training_state, norm_state, critic_norm_state)
+        if has_privileged and len(loaded) == 4:
+            training_state, norm_state, start_step, critic_norm_state = loaded
+        else:
+            training_state, norm_state, start_step = loaded[:3]
         print(f"  Resuming from step {start_step:,}")
 
     # ── Tracker + ctx + checkpoint manager ─────────────────────────────────
@@ -156,6 +161,8 @@ def run_offpolicy_loop(
 
         # Obs normalization
         norm_state = pipe.update_stats(raw_obs, norm_state)
+        if has_privileged:
+            critic_norm_state = pipe.update_critic_stats(critic_raw_obs, critic_norm_state)
         obs_for_action = pipe.normalize_for_action(raw_obs, norm_state)
 
         # Action selection
@@ -198,7 +205,7 @@ def run_offpolicy_loop(
             for _ in range(algo_cfg.grad_updates_per_step):
                 key, sample_key = jax.random.split(key)
                 jax_batch = buffer.sample(algo_cfg.batch_size, key=sample_key)
-                jax_batch = pipe.normalize_batch(jax_batch, norm_state)
+                jax_batch = pipe.normalize_batch(jax_batch, norm_state, critic_norm_state=critic_norm_state)
                 training_state, step_metrics = algo.update(training_state, jax_batch)
                 total_gradient_steps += 1
                 last_metrics = step_metrics
@@ -237,28 +244,47 @@ def run_offpolicy_loop(
         # Eval + checkpoint. q_fn closes over training_state directly: the
         # lambda is called synchronously inside maybe_eval_and_checkpoint
         # → evaluate() → q_fn(obs, action), so there is no cross-iteration
-        # capture risk.
+        # capture risk. Critic obs is normalized via critic_norm_state so
+        # Q-value logs are comparable to training-time Q.
         obs_norm_fn = pipe.make_obs_norm_fn(norm_state)
+
+        def _q_fn(obs, action):
+            policy_obs = pipe.get_obs(obs)
+            raw_critic = (obs["privileged_state"]
+                          if isinstance(obs, dict) and "privileged_state" in obs
+                          else None)
+            normed_critic = (pipe.normalize_critic(raw_critic, critic_norm_state)
+                             if raw_critic is not None and has_privileged else None)
+            return algo.get_q_value(training_state, policy_obs, action,
+                                    critic_obs=normed_critic)
+
         last_eval_eps, key = maybe_eval_and_checkpoint(
             algo.select_action, training_state.actor_params, eval_env, tracker,
             ctx, training_state, norm_state, last_eval_eps, key,
             obs_normalize_fn=obs_norm_fn,
-            q_fn=lambda obs, action: algo.get_q_value(
-                training_state, pipe.get_obs(obs), action,
-                critic_obs=obs["privileged_state"]
-                           if isinstance(obs, dict) and "privileged_state" in obs else None),
+            q_fn=_q_fn,
+            critic_norm_state=critic_norm_state,
         )
 
     # ── Final eval ─────────────────────────────────────────────────────────
     obs_norm_fn = pipe.make_obs_norm_fn(norm_state)
+
+    def _q_fn_final(obs, action):
+        policy_obs = pipe.get_obs(obs)
+        raw_critic = (obs["privileged_state"]
+                      if isinstance(obs, dict) and "privileged_state" in obs
+                      else None)
+        normed_critic = (pipe.normalize_critic(raw_critic, critic_norm_state)
+                         if raw_critic is not None and has_privileged else None)
+        return algo.get_q_value(training_state, policy_obs, action,
+                                critic_obs=normed_critic)
+
     final_eval_and_checkpoint(
         algo.select_action, training_state.actor_params, eval_env, tracker,
         ctx, training_state, norm_state, key, total_gradient_steps,
         obs_normalize_fn=obs_norm_fn,
-        q_fn=lambda obs, action: algo.get_q_value(
-            training_state, pipe.get_obs(obs), action,
-            critic_obs=obs["privileged_state"]
-                       if isinstance(obs, dict) and "privileged_state" in obs else None),
+        q_fn=_q_fn_final,
+        critic_norm_state=critic_norm_state,
     )
 
     wandb_finish()

@@ -159,9 +159,8 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
     n_frame_stack = cfg.n_frame_stack
     # Per-frame normalization: track stats on single-frame obs when stacking
     policy_raw_dim = obs_dim // n_frame_stack if n_frame_stack > 1 else obs_dim
-    # BANDAID: FrameStackWrapper stacks ONLY obs["state"], NOT privileged_state.
-    # Critic always sees single-frame privileged obs → use full critic_obs_dim.
-    # See TODO "proper privileged-obs normalization" for real fix.
+    # FrameStackWrapper stacks ONLY obs["state"], not privileged_state. Critic
+    # always sees single-frame privileged obs → critic_raw_dim = critic_obs_dim.
     critic_raw_dim = critic_obs_dim
     norm_state = norm_init(policy_raw_dim)
     critic_norm_state = norm_init(critic_raw_dim)
@@ -170,7 +169,13 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
     start_iteration = 0
     if resume is not None:
         print(f"\n  Resuming from {resume}")
-        training_state, norm_state, start_step = load_checkpoint(resume, training_state, norm_state)
+        loaded = load_checkpoint(resume, training_state, norm_state, critic_norm_state)
+        if len(loaded) == 4:
+            training_state, norm_state, start_step, critic_norm_state = loaded
+        else:
+            training_state, norm_state, start_step = loaded[:3]
+            print("  WARNING: no critic_norm_state in checkpoint — resuming with fresh "
+                  "critic stats. Results pre- and post-resume may diverge.")
         start_iteration = start_step // samples_per_iter if start_step > 0 else 0
         print(f"  Resuming from iteration {start_iteration} (step {start_iteration * samples_per_iter:,})")
 
@@ -407,6 +412,7 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
                 training_state, norm_state, cfg, cfg.ppo,
                 "ppo", obs_dim, action_dim, metrics_log, resume,
                 eval_mean=eval_metrics['eval_mean'],
+                critic_norm_state=critic_norm_state,
             )
             if is_best:
                 print(f"  New best! eval={ckpt_mgr.best_eval:.1f}")
@@ -428,7 +434,8 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
     )
     ckpt_mgr.save(training_state, norm_state, cfg, cfg.ppo,
                    "ppo", obs_dim, action_dim, metrics_log, resume,
-                   eval_mean=eval_metrics['eval_mean'])
+                   eval_mean=eval_metrics['eval_mean'],
+                   critic_norm_state=critic_norm_state)
     print("=" * 80)
     print(f"Training complete.")
     if tracker.completed_returns:

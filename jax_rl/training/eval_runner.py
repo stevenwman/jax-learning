@@ -21,6 +21,7 @@ def maybe_eval_and_checkpoint(
     key: jax.Array,
     obs_normalize_fn=None,
     q_fn=None,
+    critic_norm_state=None,
 ) -> tuple[int, jax.Array]:
     """Run eval + save checkpoint if enough episodes completed since last eval.
 
@@ -73,6 +74,7 @@ def maybe_eval_and_checkpoint(
             training_state, norm_state, cfg, ctx.algo_cfg,
             ctx.algo_name, ctx.obs_dim, ctx.action_dim, metrics_log, ctx.resume,
             eval_mean=eval_metrics['eval_mean'],
+            critic_norm_state=critic_norm_state,
         )
         if is_best:
             print(f"  New best! eval={ctx.ckpt_mgr.best_eval:.1f}")
@@ -80,7 +82,8 @@ def maybe_eval_and_checkpoint(
             print(f"  Checkpoint saved to {ctx.ckpt_dir}")
     else:
         save_checkpoint(ctx.ckpt_dir, training_state, norm_state, cfg, ctx.algo_cfg,
-                        ctx.algo_name, ctx.obs_dim, ctx.action_dim, metrics_log, ctx.resume)
+                        ctx.algo_name, ctx.obs_dim, ctx.action_dim, metrics_log, ctx.resume,
+                        critic_norm_state=critic_norm_state)
         print(f"  Checkpoint saved to {ctx.ckpt_dir}")
 
     return n_eps, key
@@ -98,6 +101,7 @@ def final_eval_and_checkpoint(
     total_gradient_steps: int,
     obs_normalize_fn=None,
     q_fn=None,
+    critic_norm_state=None,
 ) -> dict:
     """Run final eval + save checkpoint after training completes. Returns eval_metrics."""
     cfg = ctx.cfg
@@ -119,12 +123,14 @@ def final_eval_and_checkpoint(
             training_state, norm_state, cfg, ctx.algo_cfg,
             ctx.algo_name, ctx.obs_dim, ctx.action_dim, metrics_log, ctx.resume,
             eval_mean=eval_metrics['eval_mean'],
+            critic_norm_state=critic_norm_state,
         )
         if is_best:
             print(f"  New best! eval={ctx.ckpt_mgr.best_eval:.1f}")
     else:
         save_checkpoint(ctx.ckpt_dir, training_state, norm_state, cfg, ctx.algo_cfg,
-                        ctx.algo_name, ctx.obs_dim, ctx.action_dim, metrics_log, ctx.resume)
+                        ctx.algo_name, ctx.obs_dim, ctx.action_dim, metrics_log, ctx.resume,
+                        critic_norm_state=critic_norm_state)
 
     print("=" * 80)
     print("Training complete.")

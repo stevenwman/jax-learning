@@ -183,6 +183,48 @@ def test_orbax_restore(checkpoint):
     )
 
 
+def test_critic_norm_state_roundtrip(tmp_path):
+    """Save + load_checkpoint roundtrips critic_norm_state when provided."""
+    from jax_rl.training.checkpointing import load_checkpoint
+    _, training_state = make_ppo_and_state()
+    norm_state = make_norm_state()
+    critic_norm_state = norm_init(7)
+    # Perturb so we can check load returns the saved (not the caller's fresh) stats
+    from jax_rl.utils.normalization import update as norm_update
+    critic_norm_state = norm_update(critic_norm_state, jnp.ones((16, 7)) * 3.3)
+
+    cfg = TrainConfig(env_name="CartpoleBalance")
+    ckpt_dir = str(tmp_path / "run_with_critic")
+    save_checkpoint(ckpt_dir, training_state, norm_state, cfg, cfg.ppo, "ppo",
+                    OBS_DIM, ACTION_DIM, make_metrics_log(n=2), resume=None,
+                    critic_norm_state=critic_norm_state)
+
+    fresh_critic = norm_init(7)
+    loaded = load_checkpoint(ckpt_dir, training_state, norm_state, critic_norm_state=fresh_critic)
+    assert len(loaded) == 4
+    _, _, _, restored = loaded
+    np.testing.assert_allclose(np.array(restored.mean), np.array(critic_norm_state.mean), rtol=1e-5)
+    assert int(restored.count) == int(critic_norm_state.count)
+
+
+def test_load_old_ckpt_without_critic_norm_fallback(tmp_path):
+    """Old checkpoint without critic_norm_state: load returns 3-tuple + warning."""
+    from jax_rl.training.checkpointing import load_checkpoint
+    _, training_state = make_ppo_and_state()
+    norm_state = make_norm_state()
+
+    cfg = TrainConfig(env_name="CartpoleBalance")
+    ckpt_dir = str(tmp_path / "old_run")
+    # Save WITHOUT critic_norm_state (pre-2026-04-24 behavior)
+    save_checkpoint(ckpt_dir, training_state, norm_state, cfg, cfg.ppo, "ppo",
+                    OBS_DIM, ACTION_DIM, make_metrics_log(n=2), resume=None)
+
+    # Caller asks for critic_norm_state but ckpt doesn't have it.
+    fresh_critic = norm_init(7)
+    loaded = load_checkpoint(ckpt_dir, training_state, norm_state, critic_norm_state=fresh_critic)
+    assert len(loaded) == 3
+
+
 def test_metrics_csv_resume_appends(tmp_path):
     """Saving a second checkpoint with resume should prepend prior rows."""
     _, training_state = make_ppo_and_state()

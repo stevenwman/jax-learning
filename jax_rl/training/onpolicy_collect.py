@@ -86,7 +86,7 @@ def make_collect(
 
             normed_obs = (norm_normalize_stacked(ns, policy_obs, n_frame_stack)
                           if n_frame_stack > 1 else norm_normalize(ns, policy_obs))
-            # BANDAID: critic never stacked (FrameStackWrapper only stacks state). Plain normalize.
+            # Critic (privileged) never frame-stacked → plain normalize.
             normed_critic_obs = norm_normalize(cns, critic_obs)
 
             # Capture pre-step extras (matches ref ContractionPPO off-by-one semantics)
@@ -148,7 +148,7 @@ def make_collect(
 
         flat_policy_obs = raw_policy_obs.reshape(-1, raw_policy_obs.shape[-1])
         flat_critic_obs = raw_critic_obs.reshape(-1, raw_critic_obs.shape[-1])
-        # BANDAID: policy may be stacked, critic never is.
+        # Policy may be stacked (newest frame only); critic is never stacked.
         if n_frame_stack > 1:
             flat_policy_obs = flat_policy_obs[:, :policy_raw_dim]
         norm_state = norm_update(norm_state, flat_policy_obs)

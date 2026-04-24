@@ -77,18 +77,28 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
     env, env_step, env_state, eval_env, obs_dim, action_dim, key = make_envs(cfg, seed)
 
     dict_obs = isinstance(env_state.obs, dict)
-    if not dict_obs:
-        raise ValueError("ContractionPPO requires dict obs with 'contraction_state' key.")
-    critic_obs_dim = env_state.obs["privileged_state"].shape[-1]
-
-    if "contraction_state" not in env_state.obs:
-        raise ValueError(
-            "env_state.obs missing 'contraction_state'. Enable the env's "
-            "observe_contraction config flag (e.g. cfg.observe_contraction=True)."
-        )
-    c_state = env_state.obs["contraction_state"]
-    constraint_dim = c_state.shape[-1] // 2
-    print(f"  Contraction: constraint_dim={constraint_dim} (packed={c_state.shape[-1]})")
+    if dict_obs:
+        critic_obs_dim = env_state.obs["privileged_state"].shape[-1]
+        if "contraction_state" not in env_state.obs:
+            raise ValueError(
+                "env_state.obs missing 'contraction_state'. Enable the env's "
+                "observe_contraction config flag (e.g. cfg.observe_contraction=True)."
+            )
+        c_state = env_state.obs["contraction_state"]
+        constraint_dim = c_state.shape[-1] // 2
+        print(f"  Contraction: constraint_dim={constraint_dim} (packed={c_state.shape[-1]}) [dict obs]")
+    else:
+        # Flat-obs path: symmetric actor/critic, per-env contraction feature fn.
+        critic_obs_dim = obs_dim
+        if cfg.env_name in ("CartpoleSwingup", "CartpoleSwingupSparse"):
+            # obs = [cart_pos, cos θ, sin θ, cart_vel, θ̇]. Equilibrium = upright (θ=0).
+            constraint_dim = 3
+        else:
+            raise ValueError(
+                f"Flat-obs contraction not wired for env '{cfg.env_name}'. "
+                "Add a feature fn case or use a dict-obs env."
+            )
+        print(f"  Contraction: constraint_dim={constraint_dim} [flat obs, env={cfg.env_name}]")
 
     # ── Config plumbing ───────────────────────────────────────────────────
     ppo_cfg = cfg.ppo
@@ -157,24 +167,46 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
     # ── Normalization ────────────────────────────────────────────────────
     n_frame_stack = cfg.n_frame_stack
     policy_raw_dim = obs_dim // n_frame_stack if n_frame_stack > 1 else obs_dim
-    # BANDAID: FrameStackWrapper only stacks policy obs, not privileged_state.
-    # See TODO "proper privileged-obs normalization".
+    # FrameStackWrapper only stacks policy obs, not privileged_state → critic
+    # sees single-frame privileged obs (critic_raw_dim = critic_obs_dim).
     critic_raw_dim = critic_obs_dim
     norm_state = norm_init(policy_raw_dim)
     critic_norm_state = norm_init(critic_raw_dim)
 
     start_iteration = 0
     if resume is not None:
-        training_state, norm_state, start_step = load_checkpoint(resume, training_state, norm_state)
+        loaded = load_checkpoint(resume, training_state, norm_state, critic_norm_state)
+        if len(loaded) == 4:
+            training_state, norm_state, start_step, critic_norm_state = loaded
+        else:
+            training_state, norm_state, start_step = loaded[:3]
+            print("  WARNING: no critic_norm_state in checkpoint — resuming with fresh "
+                  "critic stats. Results pre- and post-resume may diverge.")
         start_iteration = start_step // samples_per_iter if start_step > 0 else 0
         print(f"  Resuming from iteration {start_iteration}")
 
     # ── Obs extractors + hooks ────────────────────────────────────────────
-    def _get_policy_obs(obs): return obs["state"]
-    def _get_critic_obs(obs): return obs["privileged_state"]
-    def _get_contraction_obs(obs):
-        cs = obs["contraction_state"]
-        return cs[..., :constraint_dim], cs[..., constraint_dim:]
+    if dict_obs:
+        def _get_policy_obs(obs): return obs["state"]
+        def _get_critic_obs(obs): return obs["privileged_state"]
+        def _get_contraction_obs(obs):
+            cs = obs["contraction_state"]
+            return cs[..., :constraint_dim], cs[..., constraint_dim:]
+    else:
+        def _get_policy_obs(obs): return obs
+        def _get_critic_obs(obs): return obs
+        if cfg.env_name in ("CartpoleSwingup", "CartpoleSwingupSparse"):
+            def _get_contraction_obs(obs):
+                cart_pos = obs[..., 0:1]
+                cos_t = obs[..., 1:2]
+                sin_t = obs[..., 2:3]
+                cart_vel = obs[..., 3:4]
+                th_dot = obs[..., 4:5]
+                c = jnp.concatenate([cart_pos, cos_t - 1.0, sin_t], axis=-1)
+                c_dot = jnp.concatenate([cart_vel, -sin_t * th_dot, cos_t * th_dot], axis=-1)
+                return c, c_dot
+        else:
+            raise ValueError(f"Flat-obs contraction fn not wired for '{cfg.env_name}'.")
 
     def extra_rollout_fn(ts, env_state, key):
         c, c_dot = _get_contraction_obs(env_state.obs)
@@ -303,7 +335,8 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
             wandb_log(eval_metrics, step=total_steps)
             ckpt_mgr.save(training_state, norm_state, cfg, cfg.ppo,
                           "ppocontr", obs_dim, action_dim, metrics_log, resume,
-                          eval_mean=eval_metrics['eval_mean'])
+                          eval_mean=eval_metrics['eval_mean'],
+                          critic_norm_state=critic_norm_state)
             last_eval_eps = n_eps_total
 
     print("=" * 80)

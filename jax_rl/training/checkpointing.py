@@ -165,12 +165,28 @@ def load_checkpoint(
     norm_state: NormalizationState,
     critic_norm_state: NormalizationState | None = None,
 ) -> tuple:
-    """Load orbax checkpoint. Returns (training_state, norm_state, start_step[, critic_norm_state])."""
+    """Load orbax checkpoint. Returns (training_state, norm_state, start_step[, critic_norm_state]).
+
+    When critic_norm_state is provided but the saved checkpoint predates the
+    critic-norm feature, falls back to a 3-tuple return and the caller's
+    critic_norm_state is not updated (fresh stats). This preserves backwards
+    compat with pre-2026-04-24 checkpoints.
+    """
     orbax_dir = os.path.join(ckpt_dir, "orbax")
     target = {"training_state": training_state, "norm_state": norm_state}
     if critic_norm_state is not None:
         target["critic_norm_state"] = critic_norm_state
-    ckpt = ocp.StandardCheckpointer().restore(os.path.abspath(orbax_dir), target=target)
+    try:
+        ckpt = ocp.StandardCheckpointer().restore(os.path.abspath(orbax_dir), target=target)
+    except Exception as e:
+        # Retry without critic_norm_state — old checkpoint predating the key.
+        if critic_norm_state is None:
+            raise
+        target_compat = {"training_state": training_state, "norm_state": norm_state}
+        ckpt = ocp.StandardCheckpointer().restore(
+            os.path.abspath(orbax_dir), target=target_compat
+        )
+        print(f"  (load_checkpoint: old format, no critic_norm_state in ckpt — {type(e).__name__})")
 
     start_step = 0
     metrics_csv = os.path.join(ckpt_dir, "metrics.csv")

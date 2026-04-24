@@ -220,3 +220,128 @@ def test_make_buffer_privileged_without_critic_obs_dim_raises():
     pipe = ObsPipeline(dict_obs=True, has_privileged=True, use_obs_norm=False)
     with pytest.raises(ValueError, match="critic_obs_dim required"):
         pipe.make_buffer(obs_dim=17, action_dim=6, buffer_size=1000)
+
+
+# ── Critic obs normalization (privileged path) ───────────────────────────
+
+
+def test_init_critic_norm_state_fresh_when_enabled():
+    """Enabled obs_norm → fresh running stats at given critic_obs_dim."""
+    pipe = ObsPipeline(dict_obs=True, has_privileged=True, use_obs_norm=True)
+    cns = pipe.init_critic_norm_state(critic_obs_dim=16)
+    assert cns.mean.shape == (16,)
+    assert int(cns.count) == 0
+
+
+def test_init_critic_norm_state_identity_when_disabled():
+    """Disabled obs_norm → identity stats (mean=0, var=1, count=1)."""
+    pipe = ObsPipeline(dict_obs=True, has_privileged=True, use_obs_norm=False)
+    cns = pipe.init_critic_norm_state(critic_obs_dim=16)
+    assert cns.mean.shape == (16,)
+    assert int(cns.count) >= 1
+    assert jnp.allclose(cns.mean, 0.0)
+
+
+def test_update_critic_stats_noop_when_disabled():
+    pipe = ObsPipeline(dict_obs=True, has_privileged=True, use_obs_norm=False)
+    cns = pipe.init_critic_norm_state(critic_obs_dim=8)
+    obs = jnp.ones((4, 8))
+    out = pipe.update_critic_stats(obs, cns)
+    assert out is cns
+
+
+def test_update_critic_stats_accumulates():
+    """Count goes up; mean moves toward data."""
+    pipe = ObsPipeline(dict_obs=True, has_privileged=True, use_obs_norm=True)
+    cns = pipe.init_critic_norm_state(critic_obs_dim=8)
+    obs = jnp.ones((4, 8)) * 3.0
+    cns = pipe.update_critic_stats(obs, cns)
+    assert int(cns.count) == 4
+    assert jnp.allclose(cns.mean, 3.0, atol=1e-5)
+
+
+def test_normalize_critic_whitens():
+    """After many updates, normalize_critic produces mean≈0, std≈1."""
+    pipe = ObsPipeline(dict_obs=True, has_privileged=True, use_obs_norm=True)
+    cns = pipe.init_critic_norm_state(critic_obs_dim=4)
+    key = jax.random.PRNGKey(0)
+    for _ in range(50):
+        key, sk = jax.random.split(key)
+        obs = jax.random.normal(sk, (64, 4)) * 3.0 + 5.0
+        cns = pipe.update_critic_stats(obs, cns)
+    key, sk = jax.random.split(key)
+    obs = jax.random.normal(sk, (1024, 4)) * 3.0 + 5.0
+    whitened = pipe.normalize_critic(obs, cns)
+    assert jnp.allclose(whitened.mean(axis=0), 0.0, atol=0.2)
+    assert jnp.allclose(whitened.std(axis=0), 1.0, atol=0.2)
+
+
+def test_normalize_critic_never_stacked():
+    """normalize_critic ignores n_frame_stack — privileged obs is never stacked."""
+    pipe = ObsPipeline(dict_obs=True, has_privileged=True, use_obs_norm=True,
+                       n_frame_stack=3)
+    cns = pipe.init_critic_norm_state(critic_obs_dim=16)
+    # If it tried to treat as stacked (16/3), shape math would break.
+    obs = jnp.ones((8, 16)) * 5.0
+    cns = pipe.update_critic_stats(obs, cns)
+    out = pipe.normalize_critic(obs, cns)
+    assert out.shape == (8, 16)
+
+
+def test_normalize_batch_with_critic_norm_whitens_critic():
+    """has_privileged + critic_norm_state → critic_obs/critic_next_obs normalized."""
+    pipe = ObsPipeline(dict_obs=True, has_privileged=True, use_obs_norm=True)
+    ns = norm_init(4)
+    cns = pipe.init_critic_norm_state(critic_obs_dim=8)
+    key = jax.random.PRNGKey(1)
+    for _ in range(50):
+        key, sk = jax.random.split(key)
+        cns = pipe.update_critic_stats(
+            jax.random.normal(sk, (32, 8)) * 2.0 + 7.0, cns)
+    batch = {
+        "obs": jnp.ones((16, 4)),
+        "next_obs": jnp.ones((16, 4)) * 2.0,
+        "critic_obs": jnp.ones((16, 8)) * 7.0,   # = mean, should go to ≈0
+        "critic_next_obs": jnp.ones((16, 8)) * 7.0,
+    }
+    out = pipe.normalize_batch(batch, ns, critic_norm_state=cns)
+    assert jnp.allclose(out["critic_obs"], 0.0, atol=0.3)
+    assert jnp.allclose(out["critic_next_obs"], 0.0, atol=0.3)
+
+
+def test_normalize_batch_without_critic_norm_passes_critic_through():
+    """has_privileged but no critic_norm_state → critic_obs unchanged."""
+    pipe = ObsPipeline(dict_obs=True, has_privileged=True, use_obs_norm=True)
+    ns = norm_init(4)
+    critic_data = jnp.ones((16, 8)) * 99.0
+    batch = {
+        "obs": jnp.ones((16, 4)),
+        "next_obs": jnp.ones((16, 4)) * 2.0,
+        "critic_obs": critic_data,
+        "critic_next_obs": critic_data,
+    }
+    out = pipe.normalize_batch(batch, ns, critic_norm_state=None)
+    assert jnp.allclose(out["critic_obs"], critic_data)
+    assert jnp.allclose(out["critic_next_obs"], critic_data)
+
+
+def test_make_critic_norm_fn_whitens_eval_input():
+    """make_critic_norm_fn closure normalizes single eval-time critic obs."""
+    pipe = ObsPipeline(dict_obs=True, has_privileged=True, use_obs_norm=True)
+    cns = pipe.init_critic_norm_state(critic_obs_dim=8)
+    key = jax.random.PRNGKey(2)
+    for _ in range(50):
+        key, sk = jax.random.split(key)
+        cns = pipe.update_critic_stats(
+            jax.random.normal(sk, (32, 8)) * 2.0 + 4.0, cns)
+    fn = pipe.make_critic_norm_fn(cns)
+    obs = jnp.ones((4, 8)) * 4.0
+    assert jnp.allclose(fn(obs), 0.0, atol=0.3)
+
+
+def test_make_critic_norm_fn_none_when_no_privileged():
+    """has_privileged=False → no critic-norm fn needed."""
+    pipe = ObsPipeline(dict_obs=True, has_privileged=False, use_obs_norm=True)
+    cns = pipe.init_critic_norm_state(critic_obs_dim=8)
+    fn = pipe.make_critic_norm_fn(cns)
+    assert fn is None
