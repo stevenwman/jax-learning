@@ -93,6 +93,24 @@ First implementation: inverted pyramid = pyramid with height negated. Looks iden
 
 Tilted tiles have random yaw + tilt angle. Without a solid base geom, there are visible gaps between tiles at the seams. Fixed by adding a flat base box under each tilted tile.
 
+### pyramid_up L1 failure mode (2026-04-24, root-caused)
+
+v14/v16 20M both show pyramid_up stuck at mean_level 0.27–0.35. Trajectory analysis (videos/v16/pyramid_up_L1_traj.npz):
+
+- Spawn is correct: on outer-x edge, yaw=π facing goal at tile center.
+- Robot tracks `cmd_vx=+0.6` body-frame correctly, walks ~0.76m world-forward in 1.4s.
+- Reaches edge of ring 1 (tile-local x≈3.84). Ring 1 at L1 has step_h = difficulty × max_step_height = 0.2 × 0.4 = **8 cm**.
+- Robot has no climbing gait — walks straight into step face. Torso pitch spikes (qvel_ang_y negative), then roll/yaw tumble. `base_contact` fires → termination at t=70.
+
+Why it stalls: L0 has step_h=0 (fully flat). L0→L1 is a 0→8cm discontinuity. No intermediate shaping teaches foot-lift. Demote-on-fall sends env back to L0, which has nothing to climb → oscillation.
+
+**Fix ranking** (see TODO for code pointers):
+1. Quadratic difficulty `step_h = difficulty² × max_step_height` → L1 becomes 16 mm, much gentler. One-line change in `primitives.py:233`. Preserves L5 ceiling (0.4 m).
+2. Stance-relative `feet_clearance` reward — reward foot height above `median(feet_z)` across the stance, not world-frame foot z. Dropping world-frame variant in v13 was correct; stance-relative doesn't punish elevated terrain.
+3. Structural fix (approach-spawn on ring 1) — higher effort, defer unless #1+#2 don't resolve.
+
+---
+
 ### Contact-based termination (2026-04-20)
 
 Parent `WarpJoystick._get_termination` uses `flipped | base_z < 0.18m` (world frame). The world-frame base_z check **fails on terrain**: standing in a pyramid pit has negative world-z (base_z ≈ -0.7m at L5), triggering auto-termination on every episode regardless of policy; standing on elevated rings has high world-z, missing actual falls where the torso collapses but stays above 0.18m in absolute frame.
