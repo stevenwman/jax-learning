@@ -1,24 +1,20 @@
 # TODO
 
-## 🔥 High priority — Privileged-obs normalization
+## Completed (2026-04-24) — Privileged-obs normalization
 
-Bandaid applied 2026-04-22 in `train_ppo_fast.py` and `jax_rl/training/onpolicy_collect.py`: critic (privileged) obs now uses plain `norm_normalize` not `normalize_stacked`. Fixes silent bug where privileged_state was treated as 3 stacked frames of `critic_obs_dim // 3` when FrameStackWrapper only stacks policy obs. Broadcast crashed loudly once privileged dim became non-divisible by frame-stack (96→98 dims).
+Unified + persisted critic normalization for both on-policy and off-policy paths.
 
-**What's still wrong / missing:**
-- Off-policy (`jax_rl/training/obs_pipeline.py:87-107`): when `has_privileged=True`, critic_obs never normalized at all — passes raw. Subtle divergence from the (now-fixed) on-policy path that DOES normalize privileged single-frame.
-- "Match off-policy behavior" would be: skip critic normalization entirely. "Match on-policy (bandaid)" means use plain running stats. Different design choices — pick one and apply consistently.
+- `obs_pipeline.py`: added `init_critic_norm_state`, `update_critic_stats`, `normalize_critic`, `make_critic_norm_fn`. `normalize_batch()` accepts optional `critic_norm_state`.
+- `offpolicy_loop.py`: threads `critic_norm_state` — init, update each step, pass to normalize_batch + save/load + q_fn eval lambdas. Fixes silent bug where off-policy critic obs passed raw (mixed-unit privileged obs destabilized value loss).
+- `train_ppo_fast.py`, `train_ppo_contraction.py`, `onpolicy_collect.py`: persist `critic_norm_state` via ckpt. Removed BANDAID comments. Resume now restores critic stats.
+- `checkpointing.py`: backwards-compat fallback — load_checkpoint retries without critic_norm_state key on orbax schema mismatch for pre-fix ckpts (3-tuple return + warning).
+- Tests: 11 new in `test_obs_pipeline.py`, 2 in `test_checkpoint.py`. All green.
+- Smoke (Go2WarpJoystickFlat, 256 envs, 2M):
+  - FastSAC: eval 273.2 ± 3.7, Q stable ~8.8.
+  - PPO: return 1.4 → 165, VLoss stable.
+- Commit: 4562307.
 
-**Proper fix (feature, not bug):**
-- Decide: should privileged critic obs be normalized? Mixed-unit heterogeneous obs (positions, velocities, forces, contacts) argue yes. Running-stats normalization applies cleanly since privileged is never stacked.
-- Implement `obs_pipeline.update_critic_stats()` + `normalize_critic()` for off-policy, symmetric to policy obs.
-- Wire into `offpolicy_loop` (add `critic_norm_state` alongside `norm_state`).
-- On-policy: ensure same semantics (currently bandaid normalizes critic).
-- Tests: verify normalized critic yields stable value loss vs raw on a representative env (e.g. Go2WarpJoystickFlat with privileged).
-- Doc: add config flag `algo_cfg.privileged_normalization: bool = True` with default aligned to whatever proves best in A/B.
-
-**Why urgent:**
-- PPO4 (2026-04-03, eval 46.9 on bongo) ran with buggy privileged-as-stacked normalization. Results may have been suboptimal or subtly miscalibrated.
-- Any new asymmetric critic training using train_ppo_fast.py needs the bandaid active — a regression would silently break.
+**Follow-up:** re-run PPO4 bongo baseline (eval 46.9, pre-fix) with corrected critic normalization to validate contraction-PPO comparisons.
 
 ## Completed (2026-04-21) — ContractionPPO port
 - [x] Read Zinage et al. ContractionPPO paper/repo, extract algorithm
