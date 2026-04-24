@@ -848,11 +848,14 @@ def make_plan_batched(
     q_ensemble_net: "QEnsemble",
     policy_net: "PolicyPrior",
 ):
-    """Return a vmap'd `plan` over num_envs.
+    """Return a jit+vmap'd `plan` over num_envs.
 
     Module instances are closed over (cannot be vmapped). Returned callable has signature:
         plan_fn(plan_params, z_0_b, prev_mean_b, t0_b, cfg, keys, eval_mode) → (actions, new_prev_means)
     where _b suffix = per-env leading dim.
+
+    JIT is essential: without it, every env-step re-traces the full MPPI scan (measured
+    ~800ms/call CPU, ~10-30s/call under GPU contention). With jit, 2nd+ calls drop to <10ms.
     """
     def single_plan(plan_params, z_0, prev_mean, t0, cfg, key, eval_mode):
         return plan(
@@ -861,7 +864,10 @@ def make_plan_batched(
             q_ensemble_net=q_ensemble_net, policy_net=policy_net,
         )
     # vmap over (z_0, prev_mean, t0, key); plan_params/cfg/eval_mode shared
-    return jax.vmap(single_plan, in_axes=(None, 0, 0, 0, None, 0, None))
+    vmapped = jax.vmap(single_plan, in_axes=(None, 0, 0, 0, None, 0, None))
+    # JIT with cfg (idx 4) and eval_mode (idx 6) as static. Positional-call compatible.
+    # (cfg is frozen/hashable; eval_mode is bool; both required to be static for jit cache.)
+    return jax.jit(vmapped, static_argnums=(4, 6))
 
 
 # ------------------ Training state ------------------
