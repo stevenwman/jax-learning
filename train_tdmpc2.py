@@ -11,7 +11,11 @@ os.environ.setdefault("XLA_FLAGS", "--xla_gpu_enable_command_buffer=")
 sys.stdout.reconfigure(line_buffering=True)
 
 import argparse
+import csv
 import dataclasses
+import json
+import shutil
+from dataclasses import asdict
 
 import numpy as np
 import jax
@@ -329,6 +333,10 @@ def run_main_loop(
     episode_ids: jax.Array,
     prev_done_or_trunc: jax.Array,
     total_timesteps: int,
+    env_name: str = "",
+    ckpt_dir: str | None = None,
+    use_wandb: bool = False,
+    wandb_project: str = "jax-rl-tdmpc2",
 ) -> "TDMPC2State":
     """Main TD-MPC2 training loop: MPPI/prior collect + UTD=1 updates.
 
@@ -352,6 +360,14 @@ def run_main_loop(
 
     step_counter = start_env_step  # counts total env steps consumed so far
     outer_idx = 0
+    metrics = {}  # last update_step metrics (needed even if no update ran yet)
+
+    # Checkpointing + metrics tracking
+    best_eval_tracker = [-float("inf")]  # list for mutability across iterations
+    metrics_csv_path = None
+    if ckpt_dir:
+        os.makedirs(ckpt_dir, exist_ok=True)
+        metrics_csv_path = _init_metrics_csv(ckpt_dir, METRICS_HEADER)
 
     print(
         f"[tdmpc2] main loop: {start_env_step:_} → {total_timesteps:_} env steps, "
@@ -438,17 +454,45 @@ def run_main_loop(
         if step_counter % cfg.eval_every == 0 or step_counter >= total_timesteps:
             key, eval_key = jax.random.split(key)
             eval_metrics = run_eval(state, env_bundle, plan_fn, modules, cfg, eval_key)
+
+            combined_metrics = {
+                "step": step_counter,
+                **eval_metrics,
+                "L_world_total": float(metrics.get("L_world_total", 0.0)),
+                "L_policy": float(metrics.get("L_policy", 0.0)),
+                "L_consistency_raw": float(metrics.get("L_consistency_raw", 0.0)),
+                "L_reward_raw": float(metrics.get("L_reward_raw", 0.0)),
+                "L_value_raw": float(metrics.get("L_value_raw", 0.0)),
+                "q_scale_range_ema": float(metrics.get("q_scale_range_ema", 1.0)),
+            }
+
+            is_best = eval_metrics["mppi_return"] > best_eval_tracker[0]
+            if is_best:
+                best_eval_tracker[0] = eval_metrics["mppi_return"]
+
+            if ckpt_dir:
+                _append_metrics_row(metrics_csv_path, combined_metrics, METRICS_HEADER)
+                _save_checkpoint(
+                    ckpt_dir, state, cfg, env_name, step_counter,
+                    best_eval_tracker[0], is_best=is_best,
+                )
+
+            if use_wandb:
+                import wandb
+                wandb.log(combined_metrics, step=step_counter)
+
             print(
                 f"[tdmpc2] step={step_counter:_} EVAL "
                 f"mppi={eval_metrics['mppi_return']:.2f} "
                 f"prior={eval_metrics['prior_return']:.2f} "
                 f"gap={eval_metrics['mppi_prior_gap']:+.2f}"
+                + (" [best]" if is_best else "")
             )
 
         # ------------------------------------------------------------------ #
         # 7. Periodic logging
         # ------------------------------------------------------------------ #
-        if outer_idx % log_every == 0:
+        if outer_idx % log_every == 0 and metrics:
             print(
                 f"[tdmpc2] step={step_counter:_} "
                 f"L_world={float(metrics['L_world_total']):.4f} "
@@ -457,6 +501,87 @@ def run_main_loop(
 
     print(f"[tdmpc2] main loop complete; total_env_steps={step_counter:_}")
     return state
+
+
+METRICS_HEADER = [
+    "step", "mppi_return", "prior_return", "mppi_prior_gap",
+    "L_world_total", "L_policy", "L_consistency_raw",
+    "L_reward_raw", "L_value_raw", "q_scale_range_ema",
+]
+
+
+def _flatten_params_for_save(params):
+    """Convert Flax params tree to a dict of numpy arrays keyed by dotted path."""
+    out = {}
+    for path, leaf in jax.tree_util.tree_leaves_with_path(params):
+        key = ".".join(
+            str(p.key) if hasattr(p, "key") else str(p)
+            for p in path
+        )
+        out[key] = np.asarray(leaf)
+    return out
+
+
+def _save_checkpoint(
+    ckpt_dir: str,
+    state: "TDMPC2State",
+    cfg: "TDMPC2Config",
+    env_name: str,
+    step: int,
+    best_eval: float,
+    is_best: bool = False,
+):
+    """Save actor_params.npz + world_model_params.npz + meta.json to ckpt_dir.
+    If is_best, also mirror into ckpt_dir/best/.
+    """
+    os.makedirs(ckpt_dir, exist_ok=True)
+
+    # Actor (policy) — deployable
+    actor_flat = _flatten_params_for_save(state.policy_params)
+    np.savez(os.path.join(ckpt_dir, "actor_params.npz"), **actor_flat)
+
+    # World model — for MPPI at inference
+    wm_params = {
+        "encoder": state.encoder_params,
+        "dynamics": state.dynamics_params,
+        "reward": state.reward_params,
+        "q_ensemble": state.q_ensemble_params,
+    }
+    wm_flat = _flatten_params_for_save(wm_params)
+    np.savez(os.path.join(ckpt_dir, "world_model_params.npz"), **wm_flat)
+
+    # Meta
+    meta = {
+        "env_name": env_name,
+        "step": int(step),
+        "best_eval": float(best_eval),
+        "cfg": asdict(cfg),
+    }
+    with open(os.path.join(ckpt_dir, "meta.json"), "w") as f:
+        json.dump(meta, f, indent=2, default=str)
+
+    if is_best:
+        best_dir = os.path.join(ckpt_dir, "best")
+        os.makedirs(best_dir, exist_ok=True)
+        for fname in ("actor_params.npz", "world_model_params.npz", "meta.json"):
+            shutil.copy(
+                os.path.join(ckpt_dir, fname),
+                os.path.join(best_dir, fname),
+            )
+
+
+def _init_metrics_csv(ckpt_dir: str, header_cols: list[str]) -> str:
+    """Create metrics.csv with header if it doesn't exist. Returns file path."""
+    path = os.path.join(ckpt_dir, "metrics.csv")
+    if not os.path.exists(path):
+        with open(path, "w", newline="") as f:
+            csv.writer(f).writerow(header_cols)
+    return path
+
+
+def _append_metrics_row(path: str, row: dict, header_cols: list[str]):
+    with open(path, "a", newline="") as f:
+        csv.writer(f).writerow([row.get(k, "") for k in header_cols])
 
 
 def train(
@@ -472,6 +597,14 @@ def train(
     print(f"[tdmpc2] cfg: latent_dim={cfg.latent_dim} horizon={cfg.horizon} "
           f"num_envs={cfg.num_envs} batch_size={cfg.batch_size} "
           f"discount={cfg.discount:.4f} action_dim={cfg.action_dim}")
+
+    if use_wandb:
+        import wandb
+        wandb.init(
+            project=wandb_project,
+            name=f"tdmpc2-{env_name}-s{seed}",
+            config={**asdict(cfg), "env_name": env_name, "seed": seed},
+        )
 
     # Build TrainConfig adapter for env bundle
     train_cfg = build_train_config_from_tdmpc2(cfg, env_name, total_timesteps, seed)
@@ -526,6 +659,10 @@ def train(
         key, start_env_step=cfg.seed_steps,
         episode_ids=episode_ids, prev_done_or_trunc=prev_done_or_trunc,
         total_timesteps=total_timesteps,
+        env_name=env_name,
+        ckpt_dir=ckpt_dir,
+        use_wandb=use_wandb,
+        wandb_project=wandb_project,
     )
     return state
 
