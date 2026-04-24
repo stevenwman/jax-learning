@@ -456,7 +456,7 @@ if __name__ == "__main__":
     parser.add_argument("--terrain-level", type=int, default=None,
                         help="Curriculum env only: force spawn at this level (0-9)")
     parser.add_argument("--terrain-type", type=str, default=None,
-                        choices=[None, "rough", "pyramid_up", "pyramid_down", "tilted"],
+                        choices=[None, "rough", "pyramid_up", "pyramid_down", "tilted", "flat"],
                         help="Curriculum env only: force spawn at this terrain type")
     args = parser.parse_args()
     record(

@@ -285,7 +285,8 @@ def log_terrain_image(info: dict, terrain_type_names: list[str] = None,
     reached = np.asarray(info.get("episode_reached_goal", np.zeros_like(levels, dtype=bool)))
     fallen = np.asarray(info.get("episode_fallen", np.zeros_like(levels, dtype=bool)))
 
-    fig, axes = plt.subplots(1, 4, figsize=(14, 3.0), sharey=True)
+    n_types = len(terrain_type_names)
+    fig, axes = plt.subplots(1, n_types, figsize=(3.0 * n_types, 3.0), sharey=True)
     for i, name in enumerate(terrain_type_names):
         mask = types == i
         if not mask.any():

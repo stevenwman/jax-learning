@@ -189,6 +189,16 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **Regularization penalties can suppress necessary corrections** — torque/velocity penalties regressed bongo eval from 24 → 11. Only safe to add after the policy can solve the base task (or with frame stacking for efficient corrections).
 - **PPO entropy collapse = dead exploration** — entropy -0.89, all 512 envs identical returns. First surviving strategy gets locked in. Monitor entropy + return variance together.
 
+## [Terrain Curriculum](lessons/terrain_curriculum.md) — design + gotchas
+
+- **Unified goal-directed design beats dual-class A/B** — all 4 types spawn on rim, cmd points to tile center; rotating body frame = free omnidirectional linvel DR. Single promote (reach & ~fall), single demote (fall | no_progress).
+- **Contact-based termination, not `base_z < 0.18`** — world-frame z check false-positives at pit bottom of pyramid_down L5. `base_contact` sensor fires only on real torso-ground contact.
+- **`reset_mode="per_step"` required** — preset default was silently wrong; TC wrapper effectively not applied at episode boundaries.
+- **Flat as 5th col (2026-04-23)** — curriculum's goal-directed rotating cmd distribution ≠ `Go2WarpJoystickFlat`'s Bernoulli cmd. Without flat col in training, curriculum policy collapses in <30 steps on flat env. Adding flat as non-goal-directed 5th col (`_IS_GOAL_DIRECTED[-1]=False`, stays L0, Bernoulli cmd) fixes the distribution mismatch at cost of 1/5 hard-terrain training. v16 20M: 3/4 seeds survive full flat episode vs v14's uniform collapse.
+- **Reward-weight ablation beat formula rewrite** — reward_orientation was 190× penalty spike on tilted terrain. User called out unverified claims; cloned legged_gym and confirmed our `sum(torso_zaxis[:2]²)` IS their `projected_gravity[:2]²`. Not a formula bug — weight dropped -5 → -1 fixed it.
+- **pyramid_up is persistently hardest** — stuck ~L0–L1 after 20M, 4-col and 5-col. Probably needs face-stair spawn tuning or start-of-episode cmd shaping.
+- **Warp non-determinism across runs with same seed** — single-seed lifetime tests misleading; flat env survival varies 607/871/1000/1000 across consecutive seed=0-3 runs on same checkpoint.
+
 ## [Go2 Locomotion](lessons/go2.md) — 7 lessons
 
 - **Reward rebalancing when porting robots** — 10x tracking weights needed (Go1→Go2), pose dominated at 1x

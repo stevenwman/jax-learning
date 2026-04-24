@@ -1,6 +1,6 @@
 # Terrain Curriculum — Design + Gotchas
 
-**Status:** Phases 1-4 + design iterations complete (2026-04-20). Env registered, tests pass, presets wired, v5 pilot running.
+**Status:** Phases 1-4 + design iterations complete (2026-04-20). Env registered, tests pass, presets wired. 20M validation 2026-04-23/24 (v14 4-col, v16 5-col incl flat).
 
 ---
 
@@ -9,12 +9,14 @@
 One big MJCF scene. 10 difficulty rows × 4 terrain type columns = 40 tiles, each 9.6×9.6m. The entire grid is compiled into a single Warp scene at env construction time and written to a PID-suffixed XML file to avoid multiprocess race conditions.
 
 ```
-_terrain_origins: (10, 4, 3)   — world-frame XYZ origin of each tile
-terrain_level[i]: int32         — current difficulty row for env i
-terrain_type[i]: int32          — fixed column for env i (env_id % 4)
+_terrain_origins: (num_rows, num_cols, 3)   — world-frame XYZ origin of each tile
+terrain_level[i]: int32                      — current difficulty row for env i
+terrain_type[i]: int32                       — fixed column for env i (env_id % num_cols)
 ```
 
-Env `i` is **permanently assigned** to terrain type `i % 4` (legged_gym pattern — specialization means each type's difficulty gradient is learned independently, not blurred together). At episode reset, the robot spawns on tile `(terrain_level[i], terrain_type[i])`.
+Current shape after 2026-04-23 reshape: `(6, 5, 3)` = 6 rows × 5 cols (rough / pyramid_up / pyramid_down / tilted / flat). Flat added as 5th col for distribution coverage with flat env eval (see §2 "Flat as 5th col").
+
+Env `i` is **permanently assigned** to terrain type `i % num_cols` (legged_gym pattern — specialization means each type's difficulty gradient is learned independently, not blurred together). At episode reset, the robot spawns on tile `(terrain_level[i], terrain_type[i])`.
 
 **Class hierarchy:**
 - `Go2WarpJoystickCurriculum` — subclasses `WarpJoystick` (inherits full reward spec, DR, flat env logic), extends `__init__` to build terrain MJCF, overrides `reset()` and `step()` for goal-directed commands.
@@ -24,13 +26,23 @@ Env `i` is **permanently assigned** to terrain type `i % 4` (legged_gym pattern 
 
 ## 2. Key Design Decisions
 
-### 4 terrain types (not 8)
+### 4 terrain types (then 5 with flat)
 
-Dropped Flat (redundant with `Go2WarpJoystickFlat`), Slope (alternating hills created flat-spot artifacts at row boundaries), Obstacles (curriculum signal hard to define cleanly), SteppingStones (stepping-stone spacing tuning across 10 levels is its own project).
+Dropped Slope (alternating hills created flat-spot artifacts at row boundaries), Obstacles (curriculum signal hard to define cleanly), SteppingStones (stepping-stone spacing tuning across 10 levels is its own project).
 
-Kept 4 that cover the space efficiently: height variation (rough), stair negotiation (pyramid up/down), tilt stability (tilted grid).
+Kept 4 that cover the space efficiently: height variation (rough), stair negotiation (pyramid up/down), tilt stability (tilted grid). Later added flat as 5th col — see below.
 
-### 10 rows × 4 cols, 9.6m tiles
+### Flat as 5th col (2026-04-23, commit 0676e47)
+
+**Problem:** v14 curriculum policy (4-col, 20M eval 294.4) died within 30 steps on `Go2WarpJoystickFlat`. Root cause: curriculum trains goal-directed rotating body-frame cmd; flat env uses Bernoulli random cmd. Distribution mismatch → OOD stance.
+
+**Fix:** add flat as non-goal-directed 5th col with Bernoulli cmd. `_IS_GOAL_DIRECTED = (True, True, True, True, False)`. Flat col stays at L0 by design (no advancement); `step` override masks reach/goal logic. Env `i % 5 == 4` trains on flat with the same Bernoulli scheme as `Go2WarpJoystickFlat`.
+
+**Result (v16, 20M, 5-col):** eval 290.3 ± 6.8 (best 294.7). Mean_level excl flat 0.73. Flat transfer from this policy: seed 0 died 607 / seed 1 died 871 / seeds 2,3 survived full 1000. Not bulletproof but markedly better than v14's 23–34 step collapse.
+
+**Tradeoff:** 1/5 of training time goes to flat instead of hard terrain. pyramid_up still stuck ~L0–L1.
+
+### 6 rows × 5 cols, 9.6m tiles (reduced from 10×4)
 
 9.6m (not 8m) to reduce boundary crossing. Robot walks 0.5-1.5 m/s, episode 1000 steps = 20s. At 1m/s that's 20m; 9.6m half-tile = 4.8m margin from center. Goal-directed commands (see below) further reduce boundary risk by pulling the robot toward tile center rather than wandering.
 

@@ -197,10 +197,10 @@ Every checkpoint contains: `meta.json` (full config), `metrics.csv` (training cu
 |----------|---------|----------|-------|
 | `Go2WarpJoystickFlat` | Flat | Ideal PD | Primary benchmark env |
 | `Go2WarpJoystickFlatTorqueSpeed` | Flat | Linear torque-speed | A/B vs Flat |
-| `Go2WarpJoystickCurriculum` | 10 levels × 4 types grid | Ideal PD | Goal-directed commands, binary reach/fall curriculum |
+| `Go2WarpJoystickCurriculum` | 6 rows × 5 cols (rough / pyramid_up / pyramid_down / tilted / flat) | Ideal PD | 4 types goal-directed + flat col (Bernoulli cmd) for flat-env coverage; binary reach/fall advancement |
 | `Go2WarpJoystickCurriculumTorqueSpeed` | Same | Linear torque-speed | Curriculum + actuator model |
 
-Curriculum env: 64 envs @ 16GB GPU (not 1024 — ~1500 geoms vs ~100). Use `--num-envs 64`. Eval OOM known issue (two Warp graphs). See `.context/lessons/terrain_curriculum.md`.
+Curriculum env: 128 envs @ 16GB GPU (6 rows × 5 cols = 30 tiles vs 40 previously). Use `--num-envs 128`. v16 20M eval 290.3 ± 6.8 (best 294.7), mean_level 0.73 excl flat. See `.context/lessons/terrain_curriculum.md`.
 
 ### Go2 env key facts
 - **Dict obs**: `{"state": (48,), "privileged_state": (122,)}`

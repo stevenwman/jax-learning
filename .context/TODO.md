@@ -91,7 +91,13 @@ Bandaid applied 2026-04-22 in `train_ppo_fast.py` and `jax_rl/training/onpolicy_
   6. Class-A tracking-error promote (obsoleted by #7)
   7. Unified goal-directed (all 4 types spawn rim, goal center; single promote/demote rule; rotating body frame = free omnidirectional linvel DR)
   8. Zero linvel after reach (stand/spin at goal for rest of episode)
-- [ ] **Validate terrain curriculum in full 20M run** — pilot v5 (5M) climbing steadily; need 20M to see mean_level plateau / ceiling.
+- [x] **Validate terrain curriculum in full 20M run** (2026-04-23/24) — multiple 20M pilots:
+  - v14 (4-col): eval **294.4**, mean_level 0.71
+  - v16 (5-col incl flat, commit 0676e47): eval **290.3 ± 6.8** (best 294.7), mean_level 0.73 excl flat (rough 0.62, pyramid_up 0.27, pyramid_down 1.00, tilted 1.04), fall=0.00 everywhere
+  - flat column stays at L0 by design (not goal-directed, no advancement) — trains on it via Bernoulli cmd for distribution coverage
+  - pyramid_up remains hard case (stuck L0–L1). See journal 2026-04-24.
+- [ ] **pyramid_up stall** — type consistently <0.4 mean_level at 20M. Needs targeted fix (cmd alignment, reward, or face-stair spawn refinement). Open.
+- [ ] **Flat env robustness non-deterministic** — v16 on Go2WarpJoystickCurriculum flat col: seed 0 died 607, seed 1 died 871, seeds 2/3 full 1000. Warp seed behavior or residual policy fragility. Investigate.
 - [x] **Investigate eval OOM on curriculum env** (2026-04-20) — **non-issue**. Probed directly: Warp compiles kernels per-env-class, not per-instance. Both `WarpJoystickCurriculum` instances share the cache. Total curriculum VRAM at num_envs=32: ~500 MiB (train+eval combined). Historic eval OOMs were from num_envs=64 + training buffer pressure, not eval-env-specific. See journal 2026-04-20.
 - [ ] **Reduce num_rows 10→5** — halves geom count (~1500→750), potentially enables num_envs=64 on 16GB. Coarser curriculum steps but 2× throughput. Try after 20M baseline.
 - [ ] **Push-force curriculum** — follow-up plan, combine with torque-speed variant.
