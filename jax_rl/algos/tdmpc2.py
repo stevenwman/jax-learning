@@ -684,3 +684,43 @@ def mppi_iteration(
     new_std = jnp.clip(jnp.sqrt(var), cfg.mppi_min_std, cfg.mppi_max_std)
 
     return new_mean, new_std, elite_actions, weights
+
+
+def sample_pi_trajectories(
+    plan_params,
+    z_0: jax.Array,          # (latent_dim,) — single env
+    cfg,
+    key: jax.Array,
+    *,
+    dynamics: "Dynamics",
+    policy_net: "PolicyPrior",
+) -> jax.Array:
+    """Seed MPPI population with num_pi_trajs trajectories from the policy prior.
+
+    Source: /tmp/tdmpc2/tdmpc2/tdmpc2.py:155-165.
+
+    Loop structure — CRITICAL:
+      For h = 0..horizon-1: sample a_h = π(z_h)
+      For h = 0..horizon-2: advance z_{h+1} = dynamics(z_h, a_h)
+      Net: `horizon` policy samples, `horizon - 1` dynamics advances.
+      A naive range(horizon) both-loop over-advances latent one step and produces OOD
+      final samples.
+
+    Returns: (horizon, num_pi_trajs, action_dim) — pi-seeded action sequences.
+    """
+    N = cfg.num_pi_trajs
+    # Broadcast z_0 to (N, latent_dim)
+    z = jnp.broadcast_to(z_0, (N,) + z_0.shape)
+
+    def step(carry, h_idx):
+        z, key = carry
+        key, sk = jax.random.split(key)
+        a, _ = policy_net.apply(plan_params["policy"], z, sk)  # (N, action_dim)
+        # Advance dynamics ONLY when h < horizon - 1 (last step: sample a but don't advance).
+        z_advanced = dynamics.apply(plan_params["dynamics"], z, a)
+        z_next = jnp.where(h_idx < cfg.horizon - 1, z_advanced, z)
+        return (z_next, key), a
+
+    _, actions = jax.lax.scan(step, (z, key), jnp.arange(cfg.horizon))
+    # actions: (horizon, N, action_dim)
+    return actions
