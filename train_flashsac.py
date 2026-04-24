@@ -40,7 +40,7 @@ from jax_rl.training.train_context import TrainContext
 from jax_rl.training.checkpointing import CheckpointManager
 from jax_rl.training.metrics_logger import wandb_init, wandb_setup_metrics, wandb_log, wandb_finish, log_terrain_metrics, log_terrain_image, print_curriculum_dump
 from jax_rl.configs.env_presets import get_flash_sac_preset
-from jax_rl.utils.reward_scaling import init_reward_norm, update_reward_stats, scale_reward
+from jax_rl.utils.reward_scaling import update_reward_stats, scale_reward
 
 
 # ── Zeta noise repetition ──────────────────────────────────────────────────
@@ -154,8 +154,7 @@ def train(cfg: TrainConfig, algo_cfg: FlashSACConfig, seed: int = 0,
         extra_obs_dims=extra_obs_dims,
     )
 
-    # ── Reward norm state (lives OUTSIDE TrainingState) ────────────────────
-    reward_norm_state = init_reward_norm(cfg.num_envs)
+    # reward_norm_state is now a field of TrainingState (persisted via orbax).
 
     # ── Zeta CDF (precomputed once) ────────────────────────────────────────
     zeta_cdf = _make_zeta_cdf(algo_cfg.noise_zeta_mu, algo_cfg.noise_zeta_max)
@@ -263,12 +262,14 @@ def train(cfg: TrainConfig, algo_cfg: FlashSACConfig, seed: int = 0,
 
         # ── Reward normalization (outside JIT) ─────────────────────────
         if algo_cfg.normalize_reward:
-            reward_norm_state = update_reward_stats(
-                reward_norm_state,
-                env_state.reward,
-                terminated=env_state.done,
-                truncated=truncation,
-                gamma=cfg.gamma,
+            training_state = training_state.replace(
+                reward_norm_state=update_reward_stats(
+                    training_state.reward_norm_state,
+                    env_state.reward,
+                    terminated=env_state.done,
+                    truncated=truncation,
+                    gamma=cfg.gamma,
+                )
             )
 
         # ── Buffer ─────────────────────────────────────────────────────
@@ -298,7 +299,8 @@ def train(cfg: TrainConfig, algo_cfg: FlashSACConfig, seed: int = 0,
 
                 if algo_cfg.normalize_reward:
                     jax_batch["reward"] = scale_reward(
-                        reward_norm_state, jax_batch["reward"], G_max=algo_cfg.G_max
+                        training_state.reward_norm_state, jax_batch["reward"],
+                        G_max=algo_cfg.G_max,
                     )
 
                 # Non-privileged envs: critic sees actor obs
@@ -311,8 +313,8 @@ def train(cfg: TrainConfig, algo_cfg: FlashSACConfig, seed: int = 0,
 
                 # Inject reward scaling diagnostics
                 if algo_cfg.normalize_reward:
-                    G_var = float(reward_norm_state.G_var)
-                    G_r_max = float(reward_norm_state.G_r_max)
+                    G_var = float(training_state.reward_norm_state.G_var)
+                    G_r_max = float(training_state.reward_norm_state.G_r_max)
                     denom = max(G_var ** 0.5, G_r_max / algo_cfg.G_max)
                     step_metrics = {
                         **step_metrics,

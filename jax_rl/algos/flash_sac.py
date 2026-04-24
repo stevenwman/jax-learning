@@ -53,6 +53,10 @@ class TrainingState:
     target_q2_batch_stats: Any
     # Exploration noise state
     noise_state: Any
+    # Adaptive reward-scaling state (G_r, G_r_max, G_mean, G_var, G_count).
+    # Held here so orbax persists it across resume — matches reference
+    # FlashSAC which saves reward_normalizer.pt as a first-class artifact.
+    reward_norm_state: Any
 
 
 class FlashSAC:
@@ -550,6 +554,11 @@ class FlashSAC:
             repeat_n=jnp.ones((self.num_envs,), dtype=jnp.int32),
         )
 
+        # Adaptive reward-scaling state. Persists across ckpt resume via
+        # TrainingState. Matches reference FlashSAC's reward_normalizer.pt.
+        from jax_rl.utils.reward_scaling import init_reward_norm
+        reward_norm_state = init_reward_norm(self.num_envs)
+
         # Store default batch_stats for select_action
         self._default_actor_bs = actor_batch_stats
 
@@ -571,4 +580,5 @@ class FlashSAC:
             target_q1_batch_stats=q1_batch_stats,
             target_q2_batch_stats=q2_batch_stats,
             noise_state=noise_state,
+            reward_norm_state=reward_norm_state,
         )

@@ -97,3 +97,57 @@ def test_get_q_value():
     action = jnp.zeros((1, ACTION_DIM))
     q_val = algo.get_q_value(state, obs, action)
     assert q_val.shape == (1,)
+
+
+# ── reward_norm_state persistence ─────────────────────────────────────────
+
+
+def test_init_sets_reward_norm_state():
+    """TrainingState should ship with fresh RewardNormState matching num_envs."""
+    from jax_rl.utils.reward_scaling import RewardNormState
+    algo = _make_flash_sac()
+    state = algo.init(KEY)
+    assert isinstance(state.reward_norm_state, RewardNormState)
+    # Default num_envs=1 in _make_flash_sac. G_r shape = (num_envs,).
+    assert state.reward_norm_state.G_r.shape == (1,)
+    assert float(state.reward_norm_state.G_r_max) == 0.0
+    assert float(state.reward_norm_state.G_count) == 0.0
+
+
+def test_reward_norm_state_roundtrips_via_orbax(tmp_path):
+    """Save a TrainingState with updated reward_norm_state; orbax restore preserves it."""
+    import orbax.checkpoint as ocp
+    from jax_rl.utils.reward_scaling import update_reward_stats
+    algo = _make_flash_sac()
+    state = algo.init(KEY)
+
+    # Mutate reward_norm_state via the update function.
+    dummy_reward = jnp.array([1.5])
+    dummy_done = jnp.array([False])
+    dummy_trunc = jnp.array([False])
+    new_rns = update_reward_stats(
+        state.reward_norm_state, dummy_reward, dummy_done, dummy_trunc, gamma=0.99,
+    )
+    state = state.replace(reward_norm_state=new_rns)
+    assert float(state.reward_norm_state.G_r[0]) != 0.0  # sanity
+
+    # Save via orbax (simulates ckpt save_checkpoint path)
+    ckpt_dir = str(tmp_path / "orbax")
+    import os
+    os.makedirs(ckpt_dir, exist_ok=True)
+    ckpt = {"training_state": state}
+    checkpointer = ocp.StandardCheckpointer()
+    checkpointer.save(os.path.abspath(ckpt_dir), ckpt, force=True)
+    checkpointer.wait_until_finished()
+
+    # Restore against a fresh init target
+    fresh = algo.init(jax.random.PRNGKey(0))
+    target = {"training_state": fresh}
+    restored = ocp.StandardCheckpointer().restore(os.path.abspath(ckpt_dir), target=target)
+    restored_rns = restored["training_state"].reward_norm_state
+
+    # Must match what we saved, not the fresh target.
+    assert jnp.allclose(restored_rns.G_r, state.reward_norm_state.G_r)
+    assert jnp.allclose(restored_rns.G_r_max, state.reward_norm_state.G_r_max)
+    assert jnp.allclose(restored_rns.G_var, state.reward_norm_state.G_var)
+    assert float(restored_rns.G_count) == float(state.reward_norm_state.G_count)
