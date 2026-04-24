@@ -20,6 +20,45 @@ PRESETS: dict[str, TrainConfig] = {
         reward_scaling=1.0,
         ppo=PPOConfig(num_steps=64, max_grad_norm=0.5, entropy_coef=0.01, num_epochs=4),
     ),
+    # NOTE: CartpoleSwingup / -Sparse presets below are *smoke-test* configs —
+    # HPs picked for fast cheap runs during ContractionPPO A/B (2026-04-24), NOT
+    # tuned for peak return. ~30s per 3M-step run at 256 envs. Use for algo
+    # smoke tests or quick sanity checks, not as published benchmarks.
+    "CartpoleSwingup": TrainConfig(
+        env_name="CartpoleSwingup",
+        total_timesteps=3_000_000,
+        num_envs=256,
+        gamma=0.99,
+        lr=3e-4,
+        reward_scaling=1.0,
+        episode_length=1000,
+        eval_every_n_episodes=500,
+        ppo=PPOConfig(
+            num_steps=64, num_minibatches=32, num_updates_per_batch=1,
+            num_epochs=4, entropy_coef=0.01, clip_eps=0.2,
+            max_grad_norm=0.5, anneal_lr=True,
+            policy_hidden_dim=(64, 64), value_hidden_dim=(64, 64),
+            activation="tanh", squash=False,
+        ),
+    ),
+    # Sparse variant: reward=1 only when pole near-upright. Much harder, 2/3
+    # seeds fail at 5M. Kept for future sparse-reward algo probes.
+    "CartpoleSwingupSparse": TrainConfig(
+        env_name="CartpoleSwingupSparse",
+        total_timesteps=5_000_000,
+        num_envs=256,
+        gamma=0.99,
+        lr=3e-4,
+        reward_scaling=1.0,
+        episode_length=1000,
+        ppo=PPOConfig(
+            num_steps=64, num_minibatches=32, num_updates_per_batch=1,
+            num_epochs=4, entropy_coef=0.01, clip_eps=0.2,
+            max_grad_norm=0.5, anneal_lr=True,
+            policy_hidden_dim=(64, 64), value_hidden_dim=(64, 64),
+            activation="tanh", squash=False,
+        ),
+    ),
     "CheetahRun": TrainConfig(
         env_name="CheetahRun",
         total_timesteps=20_000_000,
@@ -88,26 +127,31 @@ PRESETS["Go2WarpJoystickCurriculumTorqueSpeed"] = dataclasses.replace(
     reset_mode="per_step",
 )
 
-# Bongo handstand (balance task). Episode 250 steps.
-# PPO baseline preset — tuned only for reproducible ContractionPPO comparisons,
-# not optimized for peak return. Use as-is for A/B.
+# Bongo handstand — matches PPO4 config from 2026-04-03 (eval 46.9 @ 80M, FS=3).
+# Source: checkpoints/20260403_094124_ppo_go2bongohandstand_seed0/meta.json.
 PRESETS["Go2BongoHandstand"] = TrainConfig(
     env_name="Go2BongoHandstand",
-    total_timesteps=20_000_000,
-    num_envs=1024,
+    total_timesteps=100_000_000,
+    num_envs=256,
     gamma=0.99,
     lr=3e-4,
     reward_scaling=1.0,
     episode_length=250,
+    n_frame_stack=3,
     ppo=PPOConfig(
-        num_steps=32,
-        num_minibatches=32,
-        num_updates_per_batch=4,
+        clip_eps=0.3,
+        entropy_coef=0.01,
+        gae_lambda=0.95,
         num_epochs=4,
-        entropy_coef=1e-2,
-        max_grad_norm=1.0,
-        policy_hidden_dim=(256, 256, 128),
-        value_hidden_dim=(256, 256, 128),
+        num_minibatches=32,
+        num_steps=64,
+        num_updates_per_batch=1,
+        policy_hidden_dim=(32, 32, 32, 32),
+        value_hidden_dim=(256, 256, 256, 256, 256),
+        activation="swish",
+        squash=True,
+        anneal_lr=True,
+        max_grad_norm=None,
     ),
 )
 # Contraction variant — same hyperparams, observe_contraction=True via env registry.
