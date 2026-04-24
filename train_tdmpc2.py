@@ -230,6 +230,143 @@ def run_warmup(
     return state, env_state, key, episode_ids_per_env, prev_done_or_trunc
 
 
+def run_main_loop(
+    state: "TDMPC2State",
+    env_bundle,
+    env_state,  # post-warmup env state (not env_bundle.env_state, which is stale)
+    buffer,
+    update_step,
+    plan_fn,
+    modules: tuple,
+    cfg: "TDMPC2Config",
+    key: jax.Array,
+    start_env_step: int,
+    episode_ids: jax.Array,
+    prev_done_or_trunc: jax.Array,
+    total_timesteps: int,
+) -> "TDMPC2State":
+    """Main TD-MPC2 training loop: MPPI/prior collect + UTD=1 updates.
+
+    Source: /tmp/tdmpc2/tdmpc2/trainer/online_trainer.py:113-135.
+
+    Args:
+        start_env_step: env steps already consumed (i.e. seed_steps). Main loop
+                        starts here and increments by num_envs per outer iteration.
+    Returns:
+        final TDMPC2State after all training steps.
+    """
+    encoder, dynamics, reward_net, q_ensemble, policy = modules
+    env_step = env_bundle.env_step
+    dict_obs = env_bundle.dict_obs
+    num_envs = cfg.num_envs
+    action_dim = cfg.action_dim
+
+    # How often to print: ~100 lines total across the full run
+    outer_steps_total = max(1, (total_timesteps - start_env_step) // num_envs)
+    log_every = max(1, outer_steps_total // 100)
+
+    step_counter = start_env_step  # counts total env steps consumed so far
+    outer_idx = 0
+
+    print(
+        f"[tdmpc2] main loop: {start_env_step:_} → {total_timesteps:_} env steps, "
+        f"collect_mode={cfg.collect_mode}, utd={cfg.utd}"
+    )
+
+    while step_counter < total_timesteps:
+        # ------------------------------------------------------------------ #
+        # 1. Action selection
+        # ------------------------------------------------------------------ #
+        obs = _pipe_obs(env_state.obs, dict_obs)  # (num_envs, obs_dim)
+        z_0 = encoder.apply(state.encoder_params, obs)  # (num_envs, latent_dim)
+
+        if cfg.collect_mode == "mppi":
+            plan_params = {
+                "encoder": state.encoder_params,
+                "dynamics": state.dynamics_params,
+                "reward": state.reward_params,
+                "q_ensemble": state.q_ensemble_params,
+                "policy": state.policy_params,
+            }
+            t0_b = prev_done_or_trunc  # (num_envs,) bool
+            key, plan_key = jax.random.split(key)
+            plan_keys = jax.random.split(plan_key, num_envs)
+            action, new_prev_mean = plan_fn(
+                plan_params, z_0, state.prev_mean, t0_b, cfg, plan_keys, False
+            )
+            state = state.replace(prev_mean=new_prev_mean)
+        else:  # "prior"
+            key, pi_key = jax.random.split(key)
+            pi_keys = jax.random.split(pi_key, num_envs)
+
+            def _sample_prior(z, k):
+                a, _ = policy.apply(state.policy_params, z[None, :], k)
+                return a[0]
+
+            action = jax.vmap(_sample_prior, in_axes=(0, 0))(z_0, pi_keys)
+
+        # ------------------------------------------------------------------ #
+        # 2. Env step
+        # ------------------------------------------------------------------ #
+        env_state = env_step(env_state, action)
+        next_obs = _pipe_obs(env_state.obs, dict_obs)
+        reward = env_state.reward
+        done = env_state.done
+        if hasattr(env_state, "info") and isinstance(env_state.info, dict):
+            truncation = env_state.info.get("truncation", jnp.zeros_like(done))
+        else:
+            truncation = jnp.zeros_like(done)
+
+        # ------------------------------------------------------------------ #
+        # 3. Buffer add
+        # ------------------------------------------------------------------ #
+        episode_ids_now = episode_ids + prev_done_or_trunc.astype(jnp.int32)
+        buffer.add_batch(
+            obs=np.asarray(obs),
+            action=np.asarray(action),
+            reward=np.asarray(reward),
+            next_obs=np.asarray(next_obs),
+            done=np.asarray(done),
+            truncation=np.asarray(truncation),
+            episode_ids=np.asarray(episode_ids_now),
+        )
+
+        # ------------------------------------------------------------------ #
+        # 4. UTD=1 gradient update(s)
+        # ------------------------------------------------------------------ #
+        for _ in range(cfg.utd):
+            key, batch_key = jax.random.split(key)
+            batch = buffer.sample_sequence(cfg.batch_size, cfg.horizon, batch_key)
+            state, metrics = update_step(state, batch)
+
+        # ------------------------------------------------------------------ #
+        # 5. Update trackers for next iteration
+        # ------------------------------------------------------------------ #
+        prev_done_or_trunc = done.astype(jnp.bool_) | truncation.astype(jnp.bool_)
+        episode_ids = episode_ids_now
+        step_counter += num_envs
+        outer_idx += 1
+
+        # ------------------------------------------------------------------ #
+        # 6. Periodic eval placeholder (H4 will flesh this out)
+        # ------------------------------------------------------------------ #
+        if step_counter % cfg.eval_every == 0 or step_counter >= total_timesteps:
+            print(f"[tdmpc2] step={step_counter:_}: (eval placeholder — H4)")
+
+        # ------------------------------------------------------------------ #
+        # 7. Periodic logging
+        # ------------------------------------------------------------------ #
+        if outer_idx % log_every == 0:
+            print(
+                f"[tdmpc2] step={step_counter:_} "
+                f"L_world={float(metrics['L_world_total']):.4f} "
+                f"L_policy={float(metrics['L_policy']):.4f}"
+            )
+
+    print(f"[tdmpc2] main loop complete; total_env_steps={step_counter:_}")
+    return state
+
+
 def train(
     cfg: TDMPC2Config,
     env_name: str,
@@ -290,8 +427,15 @@ def train(
         state, env_bundle, buffer, update_step, cfg, key,
     )
 
-    # H3-H5 will continue from here
-    raise NotImplementedError("Main loop comes in Task H3")
+    # H3: main loop
+    modules = (encoder, dynamics, reward_net, q_ensemble, policy)
+    state = run_main_loop(
+        state, env_bundle, env_state, buffer, update_step, plan_fn, modules, cfg,
+        key, start_env_step=cfg.seed_steps,
+        episode_ids=episode_ids, prev_done_or_trunc=prev_done_or_trunc,
+        total_timesteps=total_timesteps,
+    )
+    return state
 
 
 def main():
