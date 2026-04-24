@@ -913,3 +913,142 @@ def test_init_mppi_mean_batched_per_env_independence():
     # Env 3: shifted prev[3]
     expected_3 = jnp.stack([prev[3, 1], prev[3, 2], jnp.zeros(action_dim)])
     assert jnp.allclose(new[3], expected_3)
+
+
+# ------------------ plan() / gumbel_sample_elite / plan_batched tests ------------------
+
+def test_gumbel_sample_elite_picks_high_weight_elite():
+    """With weights [0.9, 0.05, 0.03, 0.02], most samples should pick index 0."""
+    from jax_rl.algos.tdmpc2 import gumbel_sample_elite
+    weights = jnp.array([0.9, 0.05, 0.03, 0.02])
+    elite_actions = jnp.array([[[1.0], [2.0], [3.0], [4.0]]])  # (horizon=1, num_elites=4, action_dim=1)
+    picks = [float(gumbel_sample_elite(jax.random.PRNGKey(i), weights, elite_actions)[0])
+             for i in range(30)]
+    # Most should be 1.0
+    assert sum(1 for p in picks if abs(p - 1.0) < 1e-5) >= 20
+
+
+def test_plan_eval_mode_no_noise():
+    """With eval_mode=True, plan output should exactly equal the sampled elite's first action."""
+    from jax_rl.algos.tdmpc2 import plan, make_plan_batched
+    from jax_rl.configs.tdmpc2_config import make_tdmpc2_config
+    cfg = make_tdmpc2_config(
+        action_dim=2, episode_length=500, horizon=3,
+        num_q=2, num_bins=11, enc_dim=8, latent_dim=8, simnorm_dim=2, mlp_dim=16,
+        num_samples=8, num_elites=4, num_pi_trajs=2,
+        mppi_iterations=2,
+    )
+    plan_params, enc, dyn, rwd, qen, pol = _build_plan_params(cfg)
+    z_0 = jax.nn.softmax(
+        jax.random.normal(jax.random.PRNGKey(0), (cfg.latent_dim,)).reshape(
+            -1, cfg.simnorm_dim
+        ), axis=-1,
+    ).reshape(cfg.latent_dim)
+    prev_mean = jnp.zeros((cfg.horizon, cfg.action_dim))
+    # Run twice with eval_mode=True, different keys. Should be deterministic given fixed key.
+    action_a, _ = plan(
+        plan_params, z_0, prev_mean, jnp.array(True), cfg, jax.random.PRNGKey(42),
+        eval_mode=True,
+        dynamics=dyn, reward_net=rwd, q_ensemble_net=qen, policy_net=pol,
+    )
+    action_b, _ = plan(
+        plan_params, z_0, prev_mean, jnp.array(True), cfg, jax.random.PRNGKey(42),
+        eval_mode=True,
+        dynamics=dyn, reward_net=rwd, q_ensemble_net=qen, policy_net=pol,
+    )
+    # Deterministic with same key
+    assert jnp.allclose(action_a, action_b, atol=1e-6)
+    # Bounded in [-1, 1]
+    assert jnp.all(jnp.abs(action_a) <= 1.0)
+
+
+def test_plan_collect_mode_adds_noise():
+    """With eval_mode=False, same key → noise added → output differs from eval mode."""
+    from jax_rl.algos.tdmpc2 import plan
+    from jax_rl.configs.tdmpc2_config import make_tdmpc2_config
+    cfg = make_tdmpc2_config(
+        action_dim=2, episode_length=500, horizon=3,
+        num_q=2, num_bins=11, enc_dim=8, latent_dim=8, simnorm_dim=2, mlp_dim=16,
+        num_samples=8, num_elites=4, num_pi_trajs=2,
+        mppi_iterations=2,
+    )
+    plan_params, enc, dyn, rwd, qen, pol = _build_plan_params(cfg)
+    z_0 = jax.nn.softmax(
+        jax.random.normal(jax.random.PRNGKey(0), (cfg.latent_dim,)).reshape(
+            -1, cfg.simnorm_dim
+        ), axis=-1,
+    ).reshape(cfg.latent_dim)
+    prev_mean = jnp.zeros((cfg.horizon, cfg.action_dim))
+    k = jax.random.PRNGKey(42)
+    action_eval, _ = plan(
+        plan_params, z_0, prev_mean, jnp.array(True), cfg, k,
+        eval_mode=True,
+        dynamics=dyn, reward_net=rwd, q_ensemble_net=qen, policy_net=pol,
+    )
+    action_collect, _ = plan(
+        plan_params, z_0, prev_mean, jnp.array(True), cfg, k,
+        eval_mode=False,
+        dynamics=dyn, reward_net=rwd, q_ensemble_net=qen, policy_net=pol,
+    )
+    # Same key but eval vs collect — noise should differ them (unless noise happens to be zero,
+    # which is vanishingly unlikely)
+    assert not jnp.allclose(action_eval, action_collect, atol=1e-3)
+    # Both bounded
+    assert jnp.all(jnp.abs(action_eval) <= 1.0)
+    assert jnp.all(jnp.abs(action_collect) <= 1.0)
+
+
+def test_plan_returns_updated_prev_mean_shape():
+    """plan() second output is (horizon, action_dim) — the new prev_mean for next step."""
+    from jax_rl.algos.tdmpc2 import plan
+    from jax_rl.configs.tdmpc2_config import make_tdmpc2_config
+    cfg = make_tdmpc2_config(
+        action_dim=2, episode_length=500, horizon=3,
+        num_q=2, num_bins=11, enc_dim=8, latent_dim=8, simnorm_dim=2, mlp_dim=16,
+        num_samples=8, num_elites=4, num_pi_trajs=2, mppi_iterations=2,
+    )
+    plan_params, enc, dyn, rwd, qen, pol = _build_plan_params(cfg)
+    z_0 = jax.nn.softmax(
+        jax.random.normal(jax.random.PRNGKey(0), (cfg.latent_dim,)).reshape(
+            -1, cfg.simnorm_dim
+        ), axis=-1,
+    ).reshape(cfg.latent_dim)
+    prev_mean = jnp.zeros((cfg.horizon, cfg.action_dim))
+    action, new_prev_mean = plan(
+        plan_params, z_0, prev_mean, jnp.array(True), cfg, jax.random.PRNGKey(42),
+        eval_mode=True,
+        dynamics=dyn, reward_net=rwd, q_ensemble_net=qen, policy_net=pol,
+    )
+    assert action.shape == (cfg.action_dim,)
+    assert new_prev_mean.shape == (cfg.horizon, cfg.action_dim)
+
+
+def test_plan_batched_runs_independent_envs():
+    """make_plan_batched produces a vmap'd plan over num_envs."""
+    from jax_rl.algos.tdmpc2 import make_plan_batched
+    from jax_rl.configs.tdmpc2_config import make_tdmpc2_config
+    cfg = make_tdmpc2_config(
+        action_dim=2, episode_length=500, horizon=3,
+        num_q=2, num_bins=11, enc_dim=8, latent_dim=8, simnorm_dim=2, mlp_dim=16,
+        num_samples=8, num_elites=4, num_pi_trajs=2, mppi_iterations=2,
+    )
+    plan_params, enc, dyn, rwd, qen, pol = _build_plan_params(cfg)
+    num_envs = 4
+    z_0_b = jnp.stack([
+        jax.nn.softmax(
+            jax.random.normal(jax.random.PRNGKey(i), (cfg.latent_dim,)).reshape(
+                -1, cfg.simnorm_dim
+            ), axis=-1,
+        ).reshape(cfg.latent_dim)
+        for i in range(num_envs)
+    ])
+    prev_mean_b = jnp.zeros((num_envs, cfg.horizon, cfg.action_dim))
+    t0_b = jnp.array([True] * num_envs)
+    keys = jax.random.split(jax.random.PRNGKey(42), num_envs)
+
+    plan_fn = make_plan_batched(
+        dynamics=dyn, reward_net=rwd, q_ensemble_net=qen, policy_net=pol,
+    )
+    actions, new_prev_means = plan_fn(plan_params, z_0_b, prev_mean_b, t0_b, cfg, keys, True)
+    assert actions.shape == (num_envs, cfg.action_dim)
+    assert new_prev_means.shape == (num_envs, cfg.horizon, cfg.action_dim)

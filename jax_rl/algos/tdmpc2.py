@@ -754,3 +754,110 @@ def init_mppi_mean_batched(prev_mean: jax.Array, t0: jax.Array,
     return jax.vmap(
         lambda p, t: init_mppi_mean(p, t, horizon, action_dim)
     )(prev_mean, t0)
+
+
+# ------------------ F4: plan() + gumbel_sample_elite + plan_batched ------------------
+
+
+def gumbel_sample_elite(
+    key: jax.Array,
+    weights: jax.Array,        # (num_elites,)
+    elite_actions: jax.Array,  # (horizon, num_elites, action_dim)
+) -> jax.Array:
+    """Sample a single elite trajectory via Gumbel-softmax argmax, return its t=0 action.
+
+    Source: /tmp/tdmpc2/tdmpc2/tdmpc2.py:201-205.
+    NOT elite-weighted mean — a SINGLE elite is sampled, its t=0 action is returned.
+
+    Returns: (action_dim,)
+    """
+    logits = jnp.log(weights + 1e-9)
+    gumbels = -jnp.log(-jnp.log(jax.random.uniform(key, logits.shape) + 1e-9) + 1e-9)
+    idx = jnp.argmax(logits + gumbels)
+    return elite_actions[0, idx]
+
+
+def plan(
+    plan_params,
+    z_0: jax.Array,          # (latent_dim,)
+    prev_mean: jax.Array,    # (horizon, action_dim)
+    t0: jax.Array,           # scalar bool
+    cfg,
+    key: jax.Array,
+    eval_mode: bool = False,
+    *,
+    dynamics: "Dynamics",
+    reward_net: "Reward",
+    q_ensemble_net: "QEnsemble",
+    policy_net: "PolicyPrior",
+) -> tuple[jax.Array, jax.Array]:
+    """Full MPPI planner for a single env. Source: /tmp/tdmpc2/tdmpc2/tdmpc2.py:plan().
+
+    Returns (action, new_prev_mean):
+      action: (action_dim,) — action to execute this step.
+      new_prev_mean: (horizon, action_dim) — stored for next step's warm-start.
+    """
+    key_pi_seed, key_iter, key_elite, key_noise = jax.random.split(key, 4)
+
+    # 1. Warm-start mean + init std
+    mean = init_mppi_mean(prev_mean, t0, cfg.horizon, cfg.action_dim)
+    std = jnp.full((cfg.horizon, cfg.action_dim), cfg.mppi_max_std)
+
+    # 2. Sample pi-seed trajectories once at start (source samples once, reuses)
+    pi_trajs = sample_pi_trajectories(
+        plan_params, z_0, cfg, key_pi_seed,
+        dynamics=dynamics, policy_net=policy_net,
+    )
+
+    # 3. MPPI iteration loop. iterations = base + 2 if action_dim >= 20 (source line 35).
+    iterations = cfg.mppi_iterations + (2 if cfg.action_dim >= 20 else 0)
+    iter_keys = jax.random.split(key_iter, iterations)
+
+    def iter_body(carry, k_i):
+        mean_c, std_c = carry
+        new_mean, new_std, elite_actions, weights = mppi_iteration(
+            mean_c, std_c, plan_params, z_0, pi_trajs, cfg, k_i,
+            dynamics=dynamics, reward_net=reward_net,
+            q_ensemble_net=q_ensemble_net, policy_net=policy_net,
+        )
+        return (new_mean, new_std), (elite_actions, weights)
+
+    (final_mean, final_std), (all_elites, all_weights) = jax.lax.scan(
+        iter_body, (mean, std), iter_keys
+    )
+    # Use final iteration's elites + weights
+    elite_actions = all_elites[-1]  # (horizon, num_elites, action_dim)
+    weights = all_weights[-1]       # (num_elites,)
+
+    # 4. Gumbel-sample single elite, take t=0 action
+    action = gumbel_sample_elite(key_elite, weights, elite_actions)  # (action_dim,)
+
+    # 5. Exploration noise (skip in eval_mode): std[0] * ε
+    noise = jax.random.normal(key_noise, (cfg.action_dim,)) * final_std[0]
+    action = jnp.where(eval_mode, action, action + noise)
+    action = jnp.clip(action, -1.0, 1.0)
+
+    return action, final_mean
+
+
+def make_plan_batched(
+    *,
+    dynamics: "Dynamics",
+    reward_net: "Reward",
+    q_ensemble_net: "QEnsemble",
+    policy_net: "PolicyPrior",
+):
+    """Return a vmap'd `plan` over num_envs.
+
+    Module instances are closed over (cannot be vmapped). Returned callable has signature:
+        plan_fn(plan_params, z_0_b, prev_mean_b, t0_b, cfg, keys, eval_mode) → (actions, new_prev_means)
+    where _b suffix = per-env leading dim.
+    """
+    def single_plan(plan_params, z_0, prev_mean, t0, cfg, key, eval_mode):
+        return plan(
+            plan_params, z_0, prev_mean, t0, cfg, key, eval_mode=eval_mode,
+            dynamics=dynamics, reward_net=reward_net,
+            q_ensemble_net=q_ensemble_net, policy_net=policy_net,
+        )
+    # vmap over (z_0, prev_mean, t0, key); plan_params/cfg/eval_mode shared
+    return jax.vmap(single_plan, in_axes=(None, 0, 0, 0, None, 0, None))
