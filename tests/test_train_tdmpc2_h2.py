@@ -16,6 +16,8 @@ def test_h2_smoke_warmup():
     env = {**os.environ}
     env.pop("CUDA_VISIBLE_DEVICES", None)
 
+    # total_timesteps == seed_steps → main loop range(8, 8, 2) is empty, skipped.
+    # Validates warmup + gradient burst in isolation without running main loop.
     script = """
 import sys
 sys.path.insert(0, '/home/stevenman/Desktop/Work/Research/jax-learning/.worktrees/tdmpc2-impl')
@@ -24,13 +26,8 @@ from jax_rl.configs.env_presets import get_tdmpc2_preset
 from train_tdmpc2 import train
 cfg = get_tdmpc2_preset('CheetahRun')
 cfg = dataclasses.replace(cfg, num_envs=2, seed_steps=8, batch_size=4)
-try:
-    train(cfg, 'CheetahRun', total_timesteps=10, seed=0)
-except NotImplementedError as e:
-    if 'Main loop comes in Task H3' in str(e):
-        print('H2_OK')
-    else:
-        raise
+train(cfg, 'CheetahRun', total_timesteps=8, seed=0)
+print('H2_OK')
 """
     result = subprocess.run(
         ["uv", "run", "python", "-c", script],
