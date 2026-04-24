@@ -861,3 +861,30 @@ def make_plan_batched(
         )
     # vmap over (z_0, prev_mean, t0, key); plan_params/cfg/eval_mode shared
     return jax.vmap(single_plan, in_axes=(None, 0, 0, 0, None, 0, None))
+
+
+# ------------------ Training state ------------------
+
+@flax.struct.dataclass
+class TDMPC2State:
+    """TD-MPC2 training state.
+
+    Holds online params, target params (encoder/dynamics/reward/Q — NO target policy),
+    optimizer states, Q-scale tracker, per-env MPPI prev_mean, RNG key, step counter.
+    Immutable pytree — use `state.replace(...)` to update.
+    """
+    encoder_params: Any
+    dynamics_params: Any
+    reward_params: Any
+    q_ensemble_params: Any
+    policy_params: Any
+    encoder_target_params: Any
+    dynamics_target_params: Any
+    reward_target_params: Any
+    q_ensemble_target_params: Any
+    world_model_opt_state: Any
+    policy_opt_state: Any
+    qscale: QScaleState
+    prev_mean: jax.Array         # (num_envs, horizon, action_dim)
+    key: jax.Array
+    step: jax.Array              # scalar int32

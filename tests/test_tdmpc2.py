@@ -1052,3 +1052,60 @@ def test_plan_batched_runs_independent_envs():
     actions, new_prev_means = plan_fn(plan_params, z_0_b, prev_mean_b, t0_b, cfg, keys, True)
     assert actions.shape == (num_envs, cfg.action_dim)
     assert new_prev_means.shape == (num_envs, cfg.horizon, cfg.action_dim)
+
+
+# ------------------ TDMPC2State tests ------------------
+
+def test_tdmpc2_state_construction():
+    """TDMPC2State is a flax.struct.dataclass — immutable, pytree, can be passed through jit."""
+    from jax_rl.algos.tdmpc2 import TDMPC2State
+    from jax_rl.utils.qscale import qscale_init
+    state = TDMPC2State(
+        encoder_params={},
+        dynamics_params={},
+        reward_params={},
+        q_ensemble_params={},
+        policy_params={},
+        encoder_target_params={},
+        dynamics_target_params={},
+        reward_target_params={},
+        q_ensemble_target_params={},
+        world_model_opt_state=None,
+        policy_opt_state=None,
+        qscale=qscale_init(),
+        prev_mean=jnp.zeros((4, 3, 2)),  # (num_envs=4, horizon=3, action_dim=2)
+        key=jax.random.PRNGKey(0),
+        step=jnp.array(0, dtype=jnp.int32),
+    )
+    # replace() works (frozen dataclass)
+    state2 = state.replace(step=jnp.array(1))
+    assert int(state2.step) == 1
+    assert int(state.step) == 0  # original unchanged (immutable)
+
+
+def test_tdmpc2_state_is_pytree():
+    """flax.struct.dataclass → is a pytree, jax.tree_util works."""
+    from jax_rl.algos.tdmpc2 import TDMPC2State
+    from jax_rl.utils.qscale import qscale_init
+    state = TDMPC2State(
+        encoder_params={"w": jnp.ones((2, 2))},
+        dynamics_params={},
+        reward_params={},
+        q_ensemble_params={},
+        policy_params={},
+        encoder_target_params={"w": jnp.zeros((2, 2))},
+        dynamics_target_params={},
+        reward_target_params={},
+        q_ensemble_target_params={},
+        world_model_opt_state=None,
+        policy_opt_state=None,
+        qscale=qscale_init(),
+        prev_mean=jnp.zeros((2, 3, 2)),
+        key=jax.random.PRNGKey(0),
+        step=jnp.array(0, dtype=jnp.int32),
+    )
+    # tree_map should descend into all array-bearing fields
+    doubled = jax.tree_util.tree_map(lambda x: x * 2 if isinstance(x, jax.Array) else x, state)
+    assert jnp.allclose(doubled.encoder_params["w"], 2.0)
+    assert jnp.allclose(doubled.prev_mean, 0.0)  # still zeros
+    assert int(doubled.step) == 0
