@@ -452,6 +452,7 @@ TDMPC2_PRESETS: dict[str, TDMPC2Config] = {
     "CheetahRun": make_tdmpc2_config(action_dim=6, episode_length=1000, task_name="CheetahRun"),
     "HumanoidRun": make_tdmpc2_config(action_dim=21, episode_length=1000, task_name="HumanoidRun"),
     "AcrobotSwingup": make_tdmpc2_config(action_dim=1, episode_length=1000, task_name="AcrobotSwingup"),
+    "CartpoleSwingup": make_tdmpc2_config(action_dim=1, episode_length=1000, task_name="CartpoleSwingup"),
 }
 
 
