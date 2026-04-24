@@ -550,3 +550,22 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
         w_k = jax.random.bernoulli(w_rng, 0.5, shape=(3,))
         x_kp1 = x_k - w_k * (x_k - y_k * z_k)
         return x_kp1
+
+
+class WarpJoystickNoAccel(WarpJoystick):
+    """Ablation: drop accelerometer from actor obs.
+
+    Critic still sees `accelerometer_clean` (privileged-only term), so this
+    isolates the question of whether the actor needs accel signal at all,
+    not whether accel info is useful at the critic.
+
+    Effective dims: state 48d → 45d, privileged_state 122d → 119d
+    (privileged shrinks because it does IncludeGroup("state") which now
+    pulls the smaller 45d state).
+    """
+    def _post_init(self) -> None:
+        super()._post_init()
+        self._obs_groups["state"] = [
+            t for t in self._obs_groups["state"]
+            if not (hasattr(t, "name") and t.name == "accelerometer")
+        ]

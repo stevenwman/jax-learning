@@ -101,7 +101,7 @@ def save_checkpoint(
     except Exception:
         pass
 
-    # DR specs (if env declares them)
+    # DR specs + obs schema (if env declares them). Single env load for both.
     try:
         from mujoco_playground import registry as pg_registry
         env = pg_registry.load(cfg.env_name)
@@ -111,6 +111,9 @@ def save_checkpoint(
                 {k: v for k, v in dataclasses.asdict(s).items() if v is not None}
                 for s in specs
             ]
+        if hasattr(env, '_obs_groups'):
+            from jax_rl.envs.obs_spec import schema_from_obs_groups
+            meta["obs_schema"] = schema_from_obs_groups(env._obs_groups)
     except Exception:
         pass
 

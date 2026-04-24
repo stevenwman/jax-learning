@@ -69,24 +69,24 @@ def build_obs_from_mj(
     quat = np.array(data.sensordata[offset:offset+4], dtype=np.float32)      # [w,x,y,z]
     gyro = np.array(data.sensordata[offset+4:offset+7], dtype=np.float32)    # [wx,wy,wz]
 
-    # Local linear velocity from frame_vel (global) rotated to body frame.
-    # unitree model has frame_vel (global framelinvel at IMU site) at adr=49.
-    # Training uses a velocimeter (local_linvel) which gives body-frame velocity.
-    frame_vel_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SENSOR, 'frame_vel')
-    if frame_vel_id >= 0:
-        fv_adr = model.sensor_adr[frame_vel_id]
-        global_linvel = np.array(data.sensordata[fv_adr:fv_adr+3], dtype=np.float32)
-        local_linvel = _quat_rotate_inverse(quat, global_linvel)
+    # Accelerometer (specific force, body frame). unitree mujoco scene exposes
+    # this via the standard `accelerometer` sensor on the IMU site.
+    accel_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SENSOR, 'accelerometer')
+    if accel_id >= 0:
+        acc_adr = model.sensor_adr[accel_id]
+        accel = np.array(data.sensordata[acc_adr:acc_adr+3], dtype=np.float32)
     else:
-        local_linvel = None
+        # Fallback: zero accel. Sim2sim parity will degrade — fix the scene to
+        # include the accelerometer sensor.
+        accel = np.zeros(3, dtype=np.float32)
 
     return obs_builder.build(
         joint_pos_sdk=joint_pos_sdk,
         joint_vel_sdk=joint_vel_sdk,
         gyroscope=gyro,
+        accelerometer=accel,
         quaternion=quat,
         command=command,
-        linvel=local_linvel,
     )
 
 
@@ -104,13 +104,9 @@ def run_sim2sim(
     print(f"  hidden={runner.hidden_dim}, activation={runner.activation}")
     print(f"  obs_norm={'yes' if runner.use_obs_norm else 'no'} (n={runner.norm_count})")
 
-    # Infer frame stacking from checkpoint obs_dim.
-    raw_state_dim = 48  # Go2 raw state dim
-    n_frame_stack = runner.obs_dim // raw_state_dim
-    if runner.obs_dim % raw_state_dim != 0:
-        print(f"WARNING: obs_dim={runner.obs_dim} not divisible by {raw_state_dim}, assuming no frame stack")
-        n_frame_stack = 1
-    obs_builder = ObsBuilder(n_frame_stack=n_frame_stack)
+    # Schema-driven obs builder: reads obs term layout from meta.json.
+    obs_builder = ObsBuilder.from_checkpoint(checkpoint, n_frame_stack=runner.n_frame_stack)
+    print(f"  obs_schema={obs_builder.state_schema} (raw_dim={obs_builder.raw_dim})")
 
     # Load unitree_mujoco Go2 model
     scene_path = os.path.join(UNITREE_MUJOCO, "unitree_robots", "go2", "scene.xml")

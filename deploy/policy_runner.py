@@ -37,6 +37,7 @@ class PolicyRunner:
         self.obs_dim = self.meta["obs_dim"]
         self.action_dim = self.meta["action_dim"]
         self.algo = self.meta.get("algo", "unknown")
+        self.n_frame_stack = int(self.meta.get("train_config", {}).get("n_frame_stack", 1))
 
         # Extract normalization state
         self.norm_mean = np.array(saved.get("norm_mean", np.zeros(self.obs_dim)), dtype=np.float32)

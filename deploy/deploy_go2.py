@@ -28,29 +28,6 @@ from deploy.robot_interface import Go2Interface
 from deploy.go2_constants import POLICY_DT, DEFAULT_POSE_SDK, NUM_JOINTS
 
 
-class VelocityEstimator:
-    """Estimate local linear velocity from IMU accelerometer + leaky integration.
-
-    Integrates body-frame acceleration (minus gravity) at policy rate.
-    Leaky factor prevents drift: v = alpha * (v + a*dt).
-    """
-    def __init__(self, dt: float = 0.02, alpha: float = 0.95):
-        self.dt = dt
-        self.alpha = alpha
-        self.velocity = np.zeros(3, dtype=np.float32)
-        self.gravity_world = np.array([0.0, 0.0, 9.81], dtype=np.float32)
-
-    def update(self, accelerometer: np.ndarray) -> np.ndarray:
-        """Update velocity estimate. Returns local (body-frame) linear velocity."""
-        # MuJoCo's accelerometer sensor reads specific force (accel - gravity)
-        # in body frame, so raw accel is body-frame linear acceleration.
-        self.velocity = self.alpha * (self.velocity + accelerometer * self.dt)
-        return self.velocity.copy()
-
-    def reset(self):
-        self.velocity = np.zeros(3, dtype=np.float32)
-
-
 def interpolate_to_stand(iface: Go2Interface, duration: float = 2.0, dt: float = 0.002):
     """Smoothly interpolate from current pose to default standing pose."""
     print(f"  Interpolating to stand ({duration}s)...")
@@ -74,7 +51,6 @@ def run_policy_loop(
     runner: PolicyRunner,
     obs_builder: ObsBuilder,
     iface: Go2Interface,
-    vel_estimator: 'VelocityEstimator',
     command: np.ndarray,
     save_traj: str | None = None,
     max_steps: int = 0,
@@ -104,16 +80,13 @@ def run_policy_loop(
                 time.sleep(POLICY_DT)
                 continue
 
-            # Estimate local velocity from IMU accelerometer
-            local_linvel = vel_estimator.update(state["accelerometer"])
-
             obs = obs_builder.build(
                 joint_pos_sdk=state["joint_pos_sdk"],
                 joint_vel_sdk=state["joint_vel_sdk"],
                 gyroscope=state["gyroscope"],
+                accelerometer=state["accelerometer"],
                 quaternion=state["quaternion"],
                 command=command,
-                linvel=local_linvel,
             )
 
             action = runner.get_action(obs)
@@ -185,8 +158,9 @@ def main():
     print(f"  hidden={runner.hidden_dim}, activation={runner.activation}")
     print(f"  obs_norm={'yes' if runner.use_obs_norm else 'no'} (n={runner.norm_count})")
 
-    obs_builder = ObsBuilder()
-    vel_estimator = VelocityEstimator(dt=POLICY_DT)
+    # Construct ObsBuilder with the schema saved in the checkpoint's meta.json.
+    # Old ckpts (pre-2026-04-24) without obs_schema fall back to DEFAULT_STATE_SCHEMA.
+    obs_builder = ObsBuilder.from_checkpoint(args.checkpoint, n_frame_stack=runner.n_frame_stack)
     command = np.array([args.vx, args.vy, args.yaw], dtype=np.float32)
 
     # Connect
@@ -220,7 +194,7 @@ def main():
         time.sleep(0.002)
 
     print(f"\n[4/4] Running policy")
-    run_policy_loop(runner, obs_builder, iface, vel_estimator, command,
+    run_policy_loop(runner, obs_builder, iface, command,
                     save_traj=args.save_traj, max_steps=args.max_steps)
 
     # Cleanup

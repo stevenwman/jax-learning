@@ -39,6 +39,14 @@ def _register_custom_envs():
             functools.partial(WarpJoystick, task="flat_terrain"),
             _warp_default_config_torque_speed,
         )
+    # Ablation: actor obs without accelerometer (state 45d, priv 119d).
+    from jax_rl.envs.locomotion.go2_warp_joystick import WarpJoystickNoAccel
+    if "Go2WarpJoystickFlatNoAccel" not in pg_locomotion._envs:
+        pg_locomotion.register_environment(
+            "Go2WarpJoystickFlatNoAccel",
+            functools.partial(WarpJoystickNoAccel, task="flat_terrain"),
+            warp_default_config,
+        )
     from jax_rl.envs.locomotion.go2_warp_curriculum import WarpJoystickCurriculum
     from jax_rl.envs.locomotion.go2_warp_curriculum import default_config as curriculum_default_config
     if "Go2WarpJoystickCurriculum" not in pg_locomotion._envs:

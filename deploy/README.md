@@ -178,10 +178,29 @@ The env handles remapping internally via `act_to_joint`. The deploy code handles
 
 ## Observation Space
 
-The policy expects 48d input. Dims 0:3 (local linear velocity) are zeroed during deployment since they're not directly available on hardware. If this degrades performance, options:
-1. Retrain without linvel (recommended)
-2. Use Unitree's built-in velocity estimate from `rt/sportmodestate`
-3. Estimate from IMU integration (drift-prone)
+**Schema-driven, no hardcoded layout.** Each checkpoint stores its own obs schema in `meta.json["obs_schema"]["state"]` — an ordered list of term names. `ObsBuilder.from_checkpoint(ckpt_dir)` reads the schema and composes obs in the saved order. Adding/removing/reordering obs terms in sim auto-syncs to deploy with no manual patching.
+
+**Term registry** (`deploy/obs_builder.py:_signals`):
+
+| Term name | Dim | Source on hardware |
+|-----------|-----|--------------------|
+| `gyro` | 3 | `imu_state.gyroscope` (rad/s, body frame) |
+| `accelerometer` | 3 | `imu_state.accelerometer` (m/s², specific force, body frame) |
+| `gravity` | 3 | `quat_rotate_inverse(imu_state.quaternion, [0,0,-1])` |
+| `joint_pos_offset` | 12 | `motor_state[i].q`, remapped SDK→policy, minus default pose |
+| `joint_vel` | 12 | `motor_state[i].dq`, remapped |
+| `last_act` | 12 | previous policy output |
+| `command` | 3 | `[vx, vy, yaw_rate]` (external) |
+
+To add a new term to the registry: edit `_signals()` and `_TERM_DIMS` in `deploy/obs_builder.py`. New checkpoints with that term will deploy automatically; old ckpts ignore it.
+
+**Default schema** (fallback for pre-2026-04-24 ckpts without `obs_schema`): `[gyro, accelerometer, gravity, joint_pos_offset, joint_vel, last_act, command]` = 48d.
+
+**Ablation envs** (e.g. `Go2WarpJoystickFlatNoAccel`): the env's `_obs_groups["state"]` simply drops `accelerometer`; the saved schema reflects this; `from_checkpoint` constructs a 45d builder. No CLI flag, no special case.
+
+Frame stacking (`n_frame_stack > 1`, read from `meta.json["train_config"]`): newest frame at front, oldest at back; total dim = `n * raw_dim`.
+
+**Drift history (resolved by schema-from-ckpt 2026-04-24):** prior to schema, deploy hardcoded `[linvel(zeroed), gyro, gravity, ...]` (set 2026-03-26). Sim env removed `linvel` (2026-04-10) and added `accelerometer` (later) without touching deploy. Same total dim 48, different positional meaning → silent sim2real failure on every Go2 ckpt trained between 2026-04-10 and 2026-04-24. Schema-from-ckpt prevents the next such drift by construction.
 
 ## Troubleshooting
 
@@ -192,4 +211,6 @@ The policy expects 48d input. Dims 0:3 (local linear velocity) are zeroed during
 | No state received | Simulator not running, or wrong domain ID | Start unitree_mujoco first; use `--sim` flag |
 | Robot falls immediately | Joint remapping wrong, or default pose mismatch | Check `go2_constants.py` values against your env |
 | Robot vibrates | Kp too high for real hardware | Use `--kp 20` (Unitree official for Go2) |
-| Policy does nothing | Obs normalization mismatch, or linvel dependency | Check if checkpoint used `--obs-norm`; try providing linvel |
+| Policy does nothing | Obs normalization mismatch | Check if checkpoint used `--obs-norm` |
+| Policy outputs garbage on hardware but works in sim | Pre-2026-04-24 ckpt loaded with hardcoded fallback schema that doesn't match its training layout | Retrain (new ckpts include `obs_schema` in meta.json and auto-handle layout) |
+| `ValueError: unknown term(s) in state_schema` | Checkpoint references an obs term the deploy registry doesn't know how to compute from hardware sensors | Add a fetcher for that term to `_signals()` and a width to `_TERM_DIMS` in `deploy/obs_builder.py` |
