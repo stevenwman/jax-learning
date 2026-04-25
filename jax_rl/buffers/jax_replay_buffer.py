@@ -372,16 +372,23 @@ class JaxReplayBuffer:
             return batch, idx
         return _sample
 
-    def sample_sequence(self, batch: int, H: int, key: jax.Array) -> dict:
+    def sample_sequence(self, batch: int, H: int, key: jax.Array, stride: int = 1) -> dict:
         """Sample `batch` contiguous H+1 sequence windows, all within a single episode.
 
         Uses rejection sampling: oversample candidate start indices 4x and filter by
         constant-episode-id-across-window. Rejection rate expected <1% in normal training.
 
+        `stride` handles multi-env round-robin storage. add_batch writes a (num_envs,)
+        batch into consecutive buffer indices, so env e's transitions are at indices
+        ptr+e, ptr+e+num_envs, ptr+e+2*num_envs, ... Set stride=num_envs so a window
+        of H+1 indices stays within a single env's trajectory; default stride=1 matches
+        single-env source behavior.
+
         Args:
             batch: number of sequences to return.
             H: horizon (actions/rewards per window; obs has H+1 steps).
             key: JAX PRNGKey.
+            stride: index stride between consecutive timesteps (=num_envs for multi-env).
 
         Returns:
             Dict with:
@@ -395,14 +402,15 @@ class JaxReplayBuffer:
             ValueError: if buffer has fewer than H+1 transitions, or if oversample
                 cannot find `batch` valid windows.
         """
-        if self.size < H + 1:
-            raise ValueError(f"Buffer has {self.size} transitions; need >= {H + 1}")
+        span = stride * H  # last offset = stride*H; need start + span < size
+        if self.size < span + 1:
+            raise ValueError(f"Buffer has {self.size} transitions; need >= {span + 1}")
 
-        max_start = self.size - (H + 1)
+        max_start = self.size - span - 1
         n_candidates = 4 * batch
 
         candidates = jax.random.randint(key, (n_candidates,), 0, max_start + 1)
-        offsets = jnp.arange(H + 1)
+        offsets = jnp.arange(H + 1) * stride
         eids = self.episode_ids[candidates[:, None] + offsets[None, :]]
         valid = jnp.all(eids == eids[:, :1], axis=1)
 
@@ -416,8 +424,8 @@ class JaxReplayBuffer:
         order = jnp.argsort(-valid.astype(jnp.int32))
         starts = candidates[order][:batch]
 
-        obs_idx = starts[:, None] + jnp.arange(H + 1)[None, :]
-        trans_idx = starts[:, None] + jnp.arange(H)[None, :]
+        obs_idx = starts[:, None] + jnp.arange(H + 1)[None, :] * stride
+        trans_idx = starts[:, None] + jnp.arange(H)[None, :] * stride
 
         obs = self.obs[obs_idx].transpose(1, 0, 2)
         actions = self.actions[trans_idx].transpose(1, 0, 2)

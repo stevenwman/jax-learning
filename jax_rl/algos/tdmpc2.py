@@ -402,6 +402,12 @@ def world_model_loss(
     rewards = batch["rewards"]      # (H, B, 1)
     B = obs_seq.shape[1]
 
+    # Split key: TD-target sampling (pi/Q heads) + dropout for online Q ensemble.
+    # Source world_model.py:30 passes dropout=cfg.dropout to _Qs; world_model.py:74-79
+    # leaves _Qs in train mode during _update so dropout is ACTIVE in value-loss path.
+    key_td, key_drop = jax.random.split(key, 2)
+    drop_keys = jax.random.split(key_drop, H)                  # (H, 2) — one per scan step
+
     # 1. Encode all observed steps with online encoder, stop-grad → consistency targets.
     obs_flat = obs_seq.reshape((H + 1) * B, -1)
     z_targets_flat = encoder.apply(params["encoder"], obs_flat)
@@ -411,16 +417,19 @@ def world_model_loss(
     # 2. Forward-roll dynamics from z_0 (gradient-carrying).
     z_0 = encoder.apply(params["encoder"], obs_seq[0])         # (B, latent_dim), grad
 
-    def scan_body(z, a):
+    def scan_body(z, scan_inputs):
+        a, dk = scan_inputs
         z_next = dynamics.apply(params["dynamics"], z, a)
         r_logits = reward_net.apply(params["reward"], z, a)
         q_logits = q_ensemble_net.apply(
-            params["q_ensemble"], z, a, deterministic=True,
+            params["q_ensemble"], z, a,
+            deterministic=False,
+            rngs={"dropout": dk},
         )
         return z_next, (z_next, r_logits, q_logits)
 
     _, (z_pred_seq, r_logits_seq, q_logits_seq) = jax.lax.scan(
-        scan_body, z_0, actions
+        scan_body, z_0, (actions, drop_keys)
     )
     # z_pred_seq: (H, B, latent_dim) — predicted ẑ_{1..H}
     # r_logits_seq: (H, B, num_bins)
@@ -447,7 +456,7 @@ def world_model_loss(
         target_params=target_params,
         online_wm_params=params,
         policy_params=jax.lax.stop_gradient(policy_params),
-        batch=batch, cfg=cfg, key=key,
+        batch=batch, cfg=cfg, key=key_td,
         encoder=encoder, policy_net=policy_net, q_ensemble_net=q_ensemble_net,
     )  # (H, B, 1)
 
@@ -689,8 +698,11 @@ def mppi_iteration(
     elite_actions = actions[:, elite_idx, :]  # (horizon, num_elites, action_dim)
 
     # Elite weights: softmax with temperature (numerically stable)
+    # Source: tdmpc2.py:191 — exp(temperature * delta), NOT exp(delta / temperature).
+    # With cfg.mppi_temperature=0.5, the multiply form is softer (coef 0.5);
+    # the divide form would be 4× sharper (coef 2.0) and over-concentrates on top elite.
     max_score = elite_scores.max()
-    exp_scores = jnp.exp((elite_scores - max_score) / cfg.mppi_temperature)
+    exp_scores = jnp.exp(cfg.mppi_temperature * (elite_scores - max_score))
     weights = exp_scores / (exp_scores.sum() + 1e-9)  # (num_elites,)
 
     # Update mean/std (elite-weighted)
