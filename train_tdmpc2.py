@@ -455,6 +455,14 @@ def run_main_loop(
             key, eval_key = jax.random.split(key)
             eval_metrics = run_eval(state, env_bundle, plan_fn, modules, cfg, eval_key)
 
+            # Pull per-h consistency tensor (length H) and unpack first 3 indices into named cols
+            consistency_per_h = metrics.get("consistency_per_h", None)
+            latent_err = {}
+            if consistency_per_h is not None:
+                arr = np.asarray(consistency_per_h)
+                for h in range(min(3, arr.shape[0])):
+                    latent_err[f"latent_err_h{h}"] = float(arr[h])
+
             combined_metrics = {
                 "step": step_counter,
                 **eval_metrics,
@@ -464,6 +472,15 @@ def run_main_loop(
                 "L_reward_raw": float(metrics.get("L_reward_raw", 0.0)),
                 "L_value_raw": float(metrics.get("L_value_raw", 0.0)),
                 "q_scale_range_ema": float(metrics.get("q_scale_range_ema", 1.0)),
+                # Tier B
+                "wm_grad_norm": float(metrics.get("wm_grad_norm", 0.0)),
+                "pi_grad_norm": float(metrics.get("pi_grad_norm", 0.0)),
+                "pi_entropy": float(metrics.get("pi_entropy", 0.0)),
+                "scaled_entropy_mean": float(metrics.get("scaled_entropy_mean", 0.0)),
+                "max_reward_observed": float(metrics.get("max_reward_observed", 0.0)),
+                "q_p5_batch": float(metrics.get("q_p5_batch", 0.0)),
+                "q_p95_batch": float(metrics.get("q_p95_batch", 0.0)),
+                **latent_err,
             }
 
             is_best = eval_metrics["mppi_return"] > best_eval_tracker[0]
@@ -504,9 +521,20 @@ def run_main_loop(
 
 
 METRICS_HEADER = [
-    "step", "mppi_return", "prior_return", "mppi_prior_gap",
-    "L_world_total", "L_policy", "L_consistency_raw",
-    "L_reward_raw", "L_value_raw", "q_scale_range_ema",
+    # Step
+    "step",
+    # Eval (paper-comparable + diagnostic)
+    "mppi_return", "prior_return", "mppi_prior_gap",
+    # Loss components (raw, pre-coefficient)
+    "L_world_total", "L_policy", "L_consistency_raw", "L_reward_raw", "L_value_raw",
+    # Q scale
+    "q_scale_range_ema", "q_p5_batch", "q_p95_batch",
+    # Tier B: gradient norms (pre-clip)
+    "wm_grad_norm", "pi_grad_norm",
+    # Tier B: policy entropy + saturation watch
+    "pi_entropy", "scaled_entropy_mean", "max_reward_observed",
+    # Tier B: per-h consistency (cfg.horizon=3 → 3 cols; H=H reads first 3 of consistency_per_h)
+    "latent_err_h0", "latent_err_h1", "latent_err_h2",
 ]
 
 

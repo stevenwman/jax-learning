@@ -469,11 +469,20 @@ def world_model_loss(
         + cfg.reward_coef * L_reward
         + cfg.value_coef * L_value
     )
+    # Tier B diagnostics
+    # Per-h consistency MSE (mean over batch) — pinpoints world-model drift along horizon
+    consistency_per_h_batch = consistency_per_h.mean(axis=-1)  # (H,)
+    # Max abs reward observed in this batch — saturation watch (vs cfg.vmax)
+    max_reward_observed = jnp.max(jnp.abs(rewards))
+
     metrics = {
         "L_consistency_raw": L_consistency,
         "L_reward_raw": L_reward,
         "L_value_raw": L_value,
         "L_world_total": L_total,
+        # Per-h consistency: index h is MSE between predicted ẑ_{h+1} and target z_{h+1}
+        "consistency_per_h": consistency_per_h_batch,  # (H,) — caller picks indices
+        "max_reward_observed": max_reward_observed,
     }
     return L_total, metrics
 
@@ -555,9 +564,14 @@ def policy_loss(
     weighted = rho_powers * per_step_mean_over_batch  # (H+1,)
     L_policy = -weighted.mean()  # outer negative, single .mean() → 1/(H+1)
 
+    # Tier B diagnostic: full entropy = mean(-log_prob_post). Use to detect collapse.
+    # log_prob_post is post-tanh-squash log-prob; -mean is the entropy estimate.
+    pi_entropy = -log_prob_pre_all.mean()  # pre-squash entropy proxy
+
     metrics = {
         "L_policy": L_policy,
         "scaled_entropy_mean": scaled_entropy.mean(),
+        "pi_entropy": pi_entropy,           # Tier B: collapse detector
         "q_avg_mean": q_avg.mean(),
         "a_t0": jax.lax.stop_gradient(a_all[0]),  # (B, action_dim)
     }
@@ -990,6 +1004,8 @@ def make_update_step(
         (wm_loss_val, wm_metrics), wm_grads = jax.value_and_grad(
             wm_loss_fn, has_aux=True,
         )(wm_params)
+        # Tier B: world model grad norm (pre-clip; optimizer chain clips at cfg.grad_clip_norm)
+        wm_grad_norm = optax.global_norm(wm_grads)
         wm_updates, new_wm_opt_state = wm_optimizer.update(
             wm_grads, state.world_model_opt_state, wm_params,
         )
@@ -1018,6 +1034,8 @@ def make_update_step(
         (pol_loss_val, pol_metrics), pol_grads = jax.value_and_grad(
             pol_loss_fn, has_aux=True,
         )(pol_params_in)
+        # Tier B: policy grad norm (pre-clip)
+        pi_grad_norm = optax.global_norm(pol_grads["policy"])
 
         # Zero the q_ensemble grads — stop_gradient inside policy_loss means they're zero
         # already, but we zero explicitly to be safe and avoid any no-op optimizer state churn.
@@ -1046,6 +1064,10 @@ def make_update_step(
         ).squeeze(-1)                                         # (2, B)
         q_avg_t0 = q_dec.mean(axis=0)                        # (B,)
         new_qscale = qscale_update(state.qscale, q_avg_t0, tau=cfg.tau)
+        # Tier B: raw percentiles for diagnostic (already computed inside qscale_update internally
+        # but not exposed; recompute here cheaply). Differs from EMA'd range — instantaneous.
+        q_p5_now = jnp.percentile(q_avg_t0, 5.0)
+        q_p95_now = jnp.percentile(q_avg_t0, 95.0)
 
         # 5. Target EMA (encoder, dynamics, reward, q_ensemble only — no policy target)
         def ema_tree(target, online, tau):
@@ -1074,7 +1096,16 @@ def make_update_step(
             step=state.step + 1,
         )
 
-        metrics = {**wm_metrics, **pol_metrics, "q_scale_range_ema": new_qscale.range_ema}
+        metrics = {
+            **wm_metrics,
+            **pol_metrics,
+            "q_scale_range_ema": new_qscale.range_ema,
+            # Tier B additions
+            "wm_grad_norm": wm_grad_norm,
+            "pi_grad_norm": pi_grad_norm,
+            "q_p5_batch": q_p5_now,
+            "q_p95_batch": q_p95_now,
+        }
         return new_state, metrics
 
     return update_step
