@@ -69,6 +69,12 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **lax.scan carry cost** — 4M-entry buffer in carry = 30% slower than Python loop
 - **Faster component ≠ faster training** — 4.8x buffer speedup = 1.5% end-to-end improvement
 
+## [Determinism (JAX/XLA + GPU Physics)](lessons/determinism.md) — bit-ID limits
+
+- **JAX/XLA algo bit-ID** with `XLA_FLAGS=--xla_gpu_deterministic_ops=true` (verified via `scripts/check_tdmpc2_determinism.py`)
+- **mujoco_warp env NOT bit-ID** across processes — `wp.atomic_add` in narrowphase, fix in flight (Warp 1.14, ~Jun 2026)
+- **Cross-process training trajectories cannot be byte-identical on GPU** today; report seed-averaged results, not single-run
+
 ## [Infrastructure](lessons/infrastructure.md) — 16 lessons
 
 - **Complete your migrations** — don't "archive" the old path. Archive ≠ delete. Validated new path? Same-day deletion, same PR. Otherwise you end up with 2 entry points for 1 feature.
