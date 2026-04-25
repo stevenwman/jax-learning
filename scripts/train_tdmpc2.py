@@ -138,6 +138,7 @@ def run_main_loop(
     episode_ids: jax.Array,
     prev_done_or_trunc: jax.Array,
     total_timesteps: int,
+    seed: int,                              # for eval RNG isolation (see eval branch)
     env_name: str = "",
     ckpt_dir: str | None = None,
     use_wandb: bool = False,
@@ -162,6 +163,11 @@ def run_main_loop(
     # How often to print: ~100 lines total across the full run
     outer_steps_total = max(1, (total_timesteps - start_env_step) // num_envs)
     log_every = max(1, outer_steps_total // 100)
+
+    # Dedicated eval RNG (NOT consumed from training key). Each eval folds in its
+    # eval_index so the eval cadence (cfg.eval_every) cannot perturb the training
+    # PRNG stream — runs with different eval_every become byte-identical in training.
+    eval_base_key = jax.random.PRNGKey(seed + 9000)
 
     step_counter = start_env_step  # counts total env steps consumed so far
     outer_idx = 0
@@ -266,7 +272,8 @@ def run_main_loop(
         prev_step = step_counter - num_envs
         crossed_eval = (prev_step // cfg.eval_every) < (step_counter // cfg.eval_every)
         if crossed_eval or step_counter >= total_timesteps:
-            key, eval_key = jax.random.split(key)
+            eval_index = (step_counter - 1) // cfg.eval_every
+            eval_key = jax.random.fold_in(eval_base_key, eval_index)
             eval_metrics = run_eval(state, env_bundle, plan_fn, modules, cfg, eval_key)
 
             # Pull per-h consistency tensor (length H) and unpack first 3 indices into named cols
@@ -501,6 +508,7 @@ def train(
         key, start_env_step=cfg.seed_steps,
         episode_ids=episode_ids, prev_done_or_trunc=prev_done_or_trunc,
         total_timesteps=total_timesteps,
+        seed=seed,
         env_name=env_name,
         ckpt_dir=ckpt_dir,
         use_wandb=use_wandb,
