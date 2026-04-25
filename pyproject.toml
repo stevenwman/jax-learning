@@ -1,11 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "jax-learning"
 version = "0.1.0"
-description = "Add your description here"
+description = "JAX-native reinforcement learning framework for robot learning research — Go2 locomotion, planar manipulation, and sim-to-real on MuJoCo Playground."
 readme = "README.md"
 requires-python = ">=3.13"
+license = { file = "LICENSE" }
+authors = [
+    { name = "Steven Man" },
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
-    "cma>=4.4.4",
     "distrax>=0.1.7",
     "flax",
     "imageio[ffmpeg]>=2.37.3",
@@ -14,11 +30,34 @@ dependencies = [
     "warp-lang>=1.12.0",
 ]
 
+[project.urls]
+Homepage = "https://stevenwman.github.io/jax-learning/"
+Documentation = "https://stevenwman.github.io/jax-learning/"
+Repository = "https://github.com/stevenwman/jax-learning"
+
+[project.optional-dependencies]
+pusht = [
+    "gymnasium>=1.0",
+    "pymunk>=6.0",
+    "pygame>=2.6",
+    "opencv-python>=4.0",
+    "shapely>=2.0",
+]
+pusht-demos = [
+    "gym-pusht>=0.1",
+    "datasets>=4.0",
+    "pillow>=10.0",
+]
+
 [tool.uv.sources]
-flax = { git = "https://github.com/google/flax.git" }
+flax = { git = "https://github.com/google/flax.git", rev = "707a569cc24fec6dfe6ddd8e34777d4d64508955" }
+
+[tool.hatch.build.targets.wheel]
+packages = ["jax_rl"]
 
 [dependency-groups]
 dev = [
+    "cma>=4.4.4",
     "gdown>=5.2.1",
     "pytest>=9.0.2",
     "wandb>=0.25.1",
@@ -36,17 +75,3 @@ markers = [
     "slow: marks tests as slow / GPU-bound (deselected by default; run with -m slow)",
 ]
 addopts = "-m 'not slow'"
-
-[project.optional-dependencies]
-pusht = [
-    "gymnasium>=1.0",
-    "pymunk>=6.0",
-    "pygame>=2.6",
-    "opencv-python>=4.0",
-    "shapely>=2.0",
-]
-pusht-demos = [
-    "gym-pusht>=0.1",
-    "datasets>=4.0",
-    "pillow>=10.0",
-]

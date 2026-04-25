@@ -13,3 +13,4 @@ site/
 .temp/
 .claude/scheduled_tasks.lock
 .worktrees/
+dist/

@@ -647,7 +647,7 @@ wheels = [
 [[package]]
 name = "flax"
 version = "0.12.2"
-source = { git = "https://github.com/google/flax.git#707a569cc24fec6dfe6ddd8e34777d4d64508955" }
+source = { git = "https://github.com/google/flax.git?rev=707a569cc24fec6dfe6ddd8e34777d4d64508955#707a569cc24fec6dfe6ddd8e34777d4d64508955" }
 dependencies = [
     { name = "jax" },
     { name = "msgpack" },
@@ -1184,9 +1184,8 @@ with-cuda = [
 [[package]]
 name = "jax-learning"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
-    { name = "cma" },
     { name = "distrax" },
     { name = "flax" },
     { name = "imageio", extra = ["ffmpeg"] },
@@ -1211,6 +1210,7 @@ pusht-demos = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "cma" },
     { name = "gdown" },
     { name = "pytest" },
     { name = "wandb" },
@@ -1223,10 +1223,9 @@ docs = [
 
 [package.metadata]
 requires-dist = [
-    { name = "cma", specifier = ">=4.4.4" },
     { name = "datasets", marker = "extra == 'pusht-demos'", specifier = ">=4.0" },
     { name = "distrax", specifier = ">=0.1.7" },
-    { name = "flax", git = "https://github.com/google/flax.git" },
+    { name = "flax", git = "https://github.com/google/flax.git?rev=707a569cc24fec6dfe6ddd8e34777d4d64508955" },
     { name = "gym-pusht", marker = "extra == 'pusht-demos'", specifier = ">=0.1" },
     { name = "gymnasium", marker = "extra == 'pusht'", specifier = ">=1.0" },
     { name = "imageio", extras = ["ffmpeg"], specifier = ">=2.37.3" },
@@ -1243,6 +1242,7 @@ provides-extras = ["pusht", "pusht-demos"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "cma", specifier = ">=4.4.4" },
     { name = "gdown", specifier = ">=5.2.1" },
     { name = "pytest", specifier = ">=9.0.2" },
     { name = "wandb", specifier = ">=0.25.1" },
