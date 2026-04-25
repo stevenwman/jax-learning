@@ -75,7 +75,9 @@ def train(cfg: TrainConfig, algo_cfg, seed: int = 0, resume: str | None = None,
 
 # ── CLI ────────────────────────────────────────────────────────────────────
 
-if __name__ == "__main__":
+
+def build_parser() -> argparse.ArgumentParser:
+    """Construct the argparse parser. Importable for docs/tooling without parse_args()."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--env", type=str, default="WalkerWalk",
                         help="Environment name (e.g., CheetahRun, HumanoidRun, Go2WarpJoystickFlat)")
@@ -118,7 +120,11 @@ if __name__ == "__main__":
                         help="Gradient updates per env step (default: from algo config)")
     parser.add_argument("--buffer-size", type=int, default=None,
                         help="Replay buffer capacity (default: from algo config)")
-    args = parser.parse_args()
+    return parser
+
+
+if __name__ == "__main__":
+    args = build_parser().parse_args()
 
     # Load preset
     cfg, algo_cfg = get_fast_td3_preset(args.env)

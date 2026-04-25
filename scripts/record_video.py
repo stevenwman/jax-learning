@@ -449,7 +449,8 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
     print(f"Trajectory saved: {npz_path} ({len(traj_data)} arrays)")
 
 
-if __name__ == "__main__":
+def build_parser() -> argparse.ArgumentParser:
+    """Construct the argparse parser. Importable for docs/tooling without parse_args()."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--env", type=str, default=None)
     parser.add_argument("--checkpoint", type=str, default=None)
@@ -468,7 +469,11 @@ if __name__ == "__main__":
     parser.add_argument("--terrain-type", type=str, default=None,
                         choices=[None, "rough", "pyramid_up", "pyramid_down", "tilted", "flat"],
                         help="Curriculum env only: force spawn at this terrain type")
-    args = parser.parse_args()
+    return parser
+
+
+if __name__ == "__main__":
+    args = build_parser().parse_args()
     record(
         env_name=args.env, checkpoint=args.checkpoint, out=args.out,
         max_steps=args.max_steps,

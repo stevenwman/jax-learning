@@ -449,7 +449,8 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
     wandb_finish()
 
 
-if __name__ == "__main__":
+def build_parser() -> argparse.ArgumentParser:
+    """Construct the argparse parser. Importable for docs/tooling without parse_args()."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--env", type=str, default="CartpoleBalance",
                         help="Environment name (e.g., CartpoleBalance, CheetahRun, Go2WarpJoystickFlat)")
@@ -491,7 +492,11 @@ if __name__ == "__main__":
     parser.add_argument("--action-delay-range-ms", type=int, nargs=2, default=None,
                         metavar=("MIN", "MAX"),
                         help="Randomized action delay range in ms (e.g., 40 120)")
-    args = parser.parse_args()
+    return parser
+
+
+if __name__ == "__main__":
+    args = build_parser().parse_args()
 
     cfg = get_preset(args.env)
     cfg_overrides = {}

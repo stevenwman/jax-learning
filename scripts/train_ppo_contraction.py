@@ -344,7 +344,8 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
     wandb_finish()
 
 
-if __name__ == "__main__":
+def build_parser() -> argparse.ArgumentParser:
+    """Construct the argparse parser. Importable for docs/tooling without parse_args()."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--env", type=str, default="Go2BongoHandstand")
     parser.add_argument("--seed", type=int, default=0)
@@ -365,7 +366,11 @@ if __name__ == "__main__":
     parser.add_argument("--metric-lr", type=float, default=1e-3)
     parser.add_argument("--constraint-coef", type=float, default=1.0)
     parser.add_argument("--metric-hidden", type=int, nargs="+", default=[128, 128])
-    args = parser.parse_args()
+    return parser
+
+
+if __name__ == "__main__":
+    args = build_parser().parse_args()
 
     cfg = get_preset(args.env)
     cfg_overrides = {}

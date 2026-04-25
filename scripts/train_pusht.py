@@ -422,7 +422,8 @@ def train(
         wandb_run.finish()
 
 
-if __name__ == "__main__":
+def build_parser() -> argparse.ArgumentParser:
+    """Construct the argparse parser. Importable for docs/tooling without parse_args()."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--reward-mode", type=str, default="dense",
                     choices=["coverage", "sparse", "shaped", "approach", "dense", "contact_gated"])
@@ -465,7 +466,11 @@ if __name__ == "__main__":
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--eval-every-n-steps", type=int, default=50_000)
     ap.add_argument("--wandb", action="store_true")
-    args = ap.parse_args()
+    return ap
+
+
+if __name__ == "__main__":
+    args = build_parser().parse_args()
     train(
         reward_mode=args.reward_mode,
         total_timesteps=args.total_timesteps,

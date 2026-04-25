@@ -404,7 +404,9 @@ def train(cfg: TrainConfig, algo_cfg: FlashSACConfig, seed: int = 0,
 
 # ── CLI ────────────────────────────────────────────────────────────────────
 
-if __name__ == "__main__":
+
+def build_parser() -> argparse.ArgumentParser:
+    """Construct the argparse parser. Importable for docs/tooling without parse_args()."""
     parser = argparse.ArgumentParser(description="Train FlashSAC on any supported environment.")
     parser.add_argument("--env", type=str, default="CartpoleBalance",
                         help="Environment name (e.g., CartpoleBalance, CheetahRun, Go2WarpJoystickFlat)")
@@ -444,7 +446,11 @@ if __name__ == "__main__":
                         help="Enable W&B experiment tracking")
     parser.add_argument("--wandb-project", type=str, default="jax-rl",
                         help="W&B project name")
-    args = parser.parse_args()
+    return parser
+
+
+if __name__ == "__main__":
+    args = build_parser().parse_args()
 
     # ── Base configs (from presets, with env-specific defaults) ─────────────
     cfg, algo_cfg = get_flash_sac_preset(args.env)
