@@ -297,15 +297,20 @@ def run_warmup(
     # Gradient burst: only if buffer has enough for a valid sequence window
     min_needed = cfg.horizon + 1
     if buffer.size >= min_needed:
-        print(f"[tdmpc2] warmup: {cfg.seed_steps} gradient updates")
-        burst_log_every = max(1, cfg.seed_steps // 20)
-        for step in range(cfg.seed_steps):
+        # Source-faithful: gradient burst count = number of env transitions collected
+        # = cfg.seed_steps * num_envs (1:1 grad-to-env-step ratio matching source's
+        # warmup of seed_steps env-steps + seed_steps grad updates).
+        burst_count = cfg.seed_steps * cfg.num_envs
+        print(f"[tdmpc2] warmup: {burst_count} gradient updates "
+              f"({cfg.seed_steps} seed_steps × {cfg.num_envs} num_envs)")
+        burst_log_every = max(1, burst_count // 20)
+        for step in range(burst_count):
             key, batch_key = jax.random.split(key)
             batch = buffer.sample_sequence(cfg.batch_size, cfg.horizon, batch_key)
             state, metrics = update_step(state, batch)
             if step % burst_log_every == 0:
                 print(
-                    f"[tdmpc2]   burst step {step}/{cfg.seed_steps} "
+                    f"[tdmpc2]   burst step {step}/{burst_count} "
                     f"L_world={float(metrics['L_world_total']):.4f} "
                     f"L_policy={float(metrics['L_policy']):.4f}"
                 )
@@ -433,9 +438,12 @@ def run_main_loop(
         )
 
         # ------------------------------------------------------------------ #
-        # 4. UTD=1 gradient update(s)
+        # 4. Gradient updates: cfg.utd is per ENV-STEP (source semantics).
+        # With num_envs > 1, we run cfg.utd * num_envs updates per outer step
+        # to maintain source's 1 update/env-step ratio. Otherwise effective
+        # UTD scales as 1/num_envs and training starves (8× deficit at num_envs=8).
         # ------------------------------------------------------------------ #
-        for _ in range(cfg.utd):
+        for _ in range(cfg.utd * num_envs):
             key, batch_key = jax.random.split(key)
             batch = buffer.sample_sequence(cfg.batch_size, cfg.horizon, batch_key)
             state, metrics = update_step(state, batch)
