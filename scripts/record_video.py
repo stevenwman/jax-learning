@@ -233,7 +233,7 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
     # Force spawn at a specific (terrain_level, terrain_type) tile. Useful for
     # isolating failure modes: e.g., "does policy handle pyramid_down L7?".
     if terrain_level is not None or terrain_type is not None:
-        _TERRAIN_TYPE_NAMES = ["rough", "pyramid_up", "pyramid_down", "tilted", "flat"]
+        from jax_rl.envs.locomotion.curriculum_logging import TERRAIN_TYPE_NAMES as _TERRAIN_TYPE_NAMES
         base_env = env
         while hasattr(base_env, "env"):
             base_env = base_env.env
