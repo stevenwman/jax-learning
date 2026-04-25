@@ -11,7 +11,7 @@ Make sure you've completed the [Installation](installation.md) steps and verifie
 Run PPO on CartpoleBalance with 64 parallel environments:
 
 ```bash
-uv run python train_ppo_fast.py \
+uv run python scripts/train_ppo_fast.py \
     --env CartpoleBalance \
     --num-envs 64 \
     --total-timesteps 500000
@@ -39,7 +39,7 @@ A checkpoint is saved automatically to the `checkpoints/` directory.
 Render a video of your trained policy:
 
 ```bash
-MUJOCO_GL=egl uv run python record_video.py \
+MUJOCO_GL=egl uv run python scripts/record_video.py \
     --checkpoint checkpoints/<latest>
 ```
 

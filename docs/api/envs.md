@@ -80,7 +80,7 @@ Peak torque decreases linearly with joint velocity, reaching zero at the velocit
 Enable via the registered variant env:
 
 ```bash
-uv run python train_fast_sac.py --env Go2WarpJoystickFlatTorqueSpeed \
+uv run python scripts/train_fast_sac.py --env Go2WarpJoystickFlatTorqueSpeed \
     --reset-mode per_step --total-timesteps 20000000 --wandb
 ```
 
@@ -129,7 +129,7 @@ Level clamped to `[0, num_rows-1]`.
 
 **Usage:**
 ```bash
-uv run python train_fast_sac.py --env Go2WarpJoystickCurriculum --reset-mode per_step --num-envs 64 --wandb
+uv run python scripts/train_fast_sac.py --env Go2WarpJoystickCurriculum --reset-mode per_step --num-envs 64 --wandb
 ```
 
 !!! note "VRAM budget"

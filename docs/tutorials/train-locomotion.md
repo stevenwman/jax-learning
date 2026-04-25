@@ -49,7 +49,7 @@ The preset configures everything:
 ## Step 3: Train
 
 ```bash
-uv run python train_fast_sac.py \
+uv run python scripts/train_fast_sac.py \
     --env Go2WarpJoystickFlat \
     --num-envs 1024 \
     --total-timesteps 20000000
@@ -92,7 +92,7 @@ EVAL | steps=18000000 | mean=272.1 | std=4.8
 Once training finishes (or you want to check a checkpoint mid-training):
 
 ```bash
-MUJOCO_GL=egl uv run python record_video.py \
+MUJOCO_GL=egl uv run python scripts/record_video.py \
     --checkpoint checkpoints/<run-dir>
 ```
 
@@ -103,7 +103,7 @@ The video is saved to the checkpoint directory. It shows the Go2 following rando
 
 ## Step 6: What's Next
 
-- **Try FlashSAC:** `uv run python train_flashsac.py --env Go2WarpJoystickFlat --seed 100` — uses inverted residual blocks, BatchNorm, and adaptive reward scaling. Eval 284.5 on Go2 at 10M steps (single seed, post-truncation-fix — variance across seeds not yet characterized).
+- **Try FlashSAC:** `uv run python scripts/train_flashsac.py --env Go2WarpJoystickFlat --seed 100` — uses inverted residual blocks, BatchNorm, and adaptive reward scaling. Eval 284.5 on Go2 at 10M steps (single seed, post-truncation-fix — variance across seeds not yet characterized).
 - **Deploy to real hardware:** See the [Sim-to-Real](sim2real.md) tutorial
 - **Add domain randomization:** Append `--reset-mode per_step` to the `train_fast_sac.py` command (Step 3) — `DomainRandWrapper` applies the env's declared DR specs per episode, which transfers better to real robots. (Note: `train_flashsac.py` does not support `--reset-mode` or `--frame-stack`.)
 - **Try a custom task:** See [Custom Environment](custom-env.md) to build your own Go2 task

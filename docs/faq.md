@@ -107,7 +107,7 @@ export MUJOCO_GL=egl
 Or prefix your command:
 
 ```bash
-MUJOCO_GL=egl uv run python train_sac.py ...
+MUJOCO_GL=egl uv run python scripts/train_sac.py ...
 ```
 
 ---
@@ -119,7 +119,7 @@ MUJOCO_GL=egl uv run python train_sac.py ...
 The renderer cannot create an OpenGL context. Set `MUJOCO_GL=egl` before recording:
 
 ```bash
-MUJOCO_GL=egl uv run python record_video.py ...
+MUJOCO_GL=egl uv run python scripts/record_video.py ...
 ```
 
 ### Recorded behavior does not match training

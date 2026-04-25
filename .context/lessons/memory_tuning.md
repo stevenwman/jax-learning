@@ -41,7 +41,7 @@ RuntimeError: ... no memory available to allocate ...
 **Action:** Increase MEM_FRACTION. Default to 0.7; try 0.75 or 0.8 if you have room.
 
 ```bash
-XLA_CLIENT_MEM_FRACTION=0.75 uv run python train_fast_sac.py --env Go2WarpJoystickFlat
+XLA_CLIENT_MEM_FRACTION=0.75 uv run python scripts/train_fast_sac.py --env Go2WarpJoystickFlat
 ```
 
 ### Warp OOM (environment physics, graph capture):
@@ -54,10 +54,10 @@ CUDA out of memory. ... try setting XLA_PYTHON_CLIENT_PREALLOCATE=false ...
 
 ```bash
 # Option A: reduce JAX's slab
-XLA_CLIENT_MEM_FRACTION=0.55 uv run python train_fast_sac.py --env Go2WarpJoystickFlat
+XLA_CLIENT_MEM_FRACTION=0.55 uv run python scripts/train_fast_sac.py --env Go2WarpJoystickFlat
 
 # Option B: let JAX allocate on-demand (loses fragmentation protection)
-XLA_PYTHON_CLIENT_PREALLOCATE=false uv run python train_fast_sac.py --env Go2WarpJoystickFlat
+XLA_PYTHON_CLIENT_PREALLOCATE=false uv run python scripts/train_fast_sac.py --env Go2WarpJoystickFlat
 ```
 
 ### `record_video.py` OOM:
@@ -78,10 +78,10 @@ If you're running training + recording simultaneously:
 
 ```bash
 # Terminal 1: training, grabs 0.7 of VRAM
-XLA_CLIENT_MEM_FRACTION=0.65 uv run python train_fast_sac.py --env Go2WarpJoystickFlat
+XLA_CLIENT_MEM_FRACTION=0.65 uv run python scripts/train_fast_sac.py --env Go2WarpJoystickFlat
 
 # Terminal 2: video, uses 0.3 of VRAM  (preallocate=false by default in record_video.py)
-MUJOCO_GL=egl uv run python record_video.py --checkpoint checkpoints/<run>/best
+MUJOCO_GL=egl uv run python scripts/record_video.py --checkpoint checkpoints/<run>/best
 ```
 
 Both fit if fractions don't exceed 1.0 and neither is pinned.

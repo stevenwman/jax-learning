@@ -108,17 +108,17 @@ deploy/.venv/bin/python deploy/deploy_go2.py \
 **Recommended: FastSAC on Warp backend** (trains on unitree's exact MJCF — no sim2sim gap):
 ```bash
 # FastSAC on Go2 Warp (unitree MJCF, full collision geometry)
-uv run python train_fast_sac.py --env Go2WarpJoystickFlat \
+uv run python scripts/train_fast_sac.py --env Go2WarpJoystickFlat \
     --num-envs 1024 --total-timesteps 20000000 --seed 42 --wandb
 
 # With per-step domain randomization (recommended for robustness):
-uv run python train_fast_sac.py --env Go2WarpJoystickFlat \
+uv run python scripts/train_fast_sac.py --env Go2WarpJoystickFlat \
     --num-envs 1024 --total-timesteps 50000000 --seed 42 --wandb --reset-mode per_step
 ```
 
 **Alternative: PPO** (faster wall-clock, but on-policy so less sample-efficient):
 ```bash
-uv run python train_ppo_fast.py --env Go2WarpJoystickFlat --num-envs 1024 \
+uv run python scripts/train_ppo_fast.py --env Go2WarpJoystickFlat --num-envs 1024 \
     --total-timesteps 50000000 --seed 42 --wandb --reset-mode per_step
 ```
 
@@ -129,7 +129,7 @@ grep "EVAL" /tmp/claude-*/tasks/*.output | tail -5
 
 ### 2. Record a video of the trained policy
 ```bash
-MUJOCO_GL=egl uv run python record_video.py \
+MUJOCO_GL=egl uv run python scripts/record_video.py \
     --checkpoint checkpoints/<your_run>/best
 ```
 

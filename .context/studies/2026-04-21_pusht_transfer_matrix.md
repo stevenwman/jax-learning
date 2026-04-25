@@ -22,7 +22,7 @@ Four pymunk block shapes live in `jax_rl/envs/manipulation/pusht/shapes.py`:
 Identical across all 5 runs — minimal shape-agnostic config:
 
 ```bash
-uv run python train_pusht.py \
+uv run python scripts/train_pusht.py \
     --reward-mode contact_gated \
     --obs-type state --frame-stack 1 --action-repeat 2 \
     --coverage-shape log_barrier --coverage-eps 0.01 \
@@ -152,7 +152,7 @@ Det matrix shows the 1/5 success event on tee (96.4%) came from DR_fs3, suggesti
 ```bash
 # Train 5 policies (~35 min each, serial = 3 hr)
 for SHAPE in tee ellipse triangle s dr; do
-    XLA_PYTHON_CLIENT_MEM_FRACTION=0.3 uv run python train_pusht.py \
+    XLA_PYTHON_CLIENT_MEM_FRACTION=0.3 uv run python scripts/train_pusht.py \
         --reward-mode contact_gated --obs-type state --frame-stack 1 --action-repeat 2 \
         --coverage-shape log_barrier --coverage-eps 0.01 \
         --block-shape $SHAPE \

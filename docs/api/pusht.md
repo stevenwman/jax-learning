@@ -139,7 +139,7 @@ Pure-RL SAC trained from scratch with no demos reaches **~93% mean coverage stoc
 
 ```bash
 # Full-stack config (0.933 sto)
-uv run python train_pusht.py --reward-mode contact_gated \
+uv run python scripts/train_pusht.py --reward-mode contact_gated \
     --obs-type environment_state_agent_pos --frame-stack 3 --action-repeat 2 \
     --coverage-shape log_barrier --coverage-eps 0.01 \
     --total-timesteps 2000000 --num-envs 8 --buffer-size 500000 \
@@ -150,7 +150,7 @@ uv run python train_pusht.py --reward-mode contact_gated \
 
 # Minimal shape-agnostic config (0.939 sto) — better than full stack and
 # uses 5d state obs that generalizes across shapes.
-uv run python train_pusht.py --reward-mode contact_gated \
+uv run python scripts/train_pusht.py --reward-mode contact_gated \
     --obs-type state --frame-stack 1 --action-repeat 2 \
     --coverage-shape log_barrier --coverage-eps 0.01 \
     --total-timesteps 2000000 --num-envs 8 --buffer-size 500000 \

@@ -39,7 +39,7 @@ Domain randomization is critical for real-world robustness. It randomizes physic
 - **PD gain scaling:** Kp x0.8-1.3, Kd x0.5-1.5
 
 ```bash
-uv run python train_fast_sac.py \
+uv run python scripts/train_fast_sac.py \
     --env Go2WarpJoystickFlat \
     --num-envs 1024 \
     --total-timesteps 20000000 \

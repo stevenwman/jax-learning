@@ -242,12 +242,12 @@ def _dotted_ref_resolves(ref: str) -> bool:
 # ---------------------------------------------------------------------------
 
 TRAIN_SCRIPTS = [
-    "train_sac.py",
-    "train_td3.py",
-    "train_fast_sac.py",
-    "train_fast_td3.py",
-    "train_flashsac.py",
-    "train_ppo_fast.py",
+    "scripts/train_sac.py",
+    "scripts/train_td3.py",
+    "scripts/train_fast_sac.py",
+    "scripts/train_fast_td3.py",
+    "scripts/train_flashsac.py",
+    "scripts/train_ppo_fast.py",
 ]
 
 

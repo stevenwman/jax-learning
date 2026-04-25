@@ -1,6 +1,6 @@
 # Agent Handoff — JAX RL Framework
 
-**Last updated:** 2026-04-20
+**Last updated:** 2026-04-24 (see latest journal for state newer than this doc)
 **Branch:** `new_slate_linen`
 **Status:** Active — Go2 Warp stack (sim2sim gap closed via unitree MJCF). Current focus: terrain curriculum validation, PushT manipulation training. See latest journal for day-to-day state.
 
@@ -159,17 +159,20 @@ The algo **never** knows about the env. The training script decides how to colle
 ### Key entry points
 ```
 jax-learning/
-├── train_ppo.py              # PPO (Python loop, ~32k sps, all envs)
-├── train_ppo_fast.py         # PPO (lax.scan, ~110k sps, JIT-able envs only)
-├── train_sac.py              # SAC (vanilla)
-├── train_td3.py              # TD3 (vanilla)
-├── train_fast_sac.py         # FastSAC (C51 + SAC)
-├── train_fast_td3.py         # FastTD3 (C51 + TD3)
-├── train_flashsac.py         # FlashSAC (inverted residual + BatchNorm + Zeta noise)
-├── train_pusht.py            # PushT manipulation (SAC + keypoint obs + TimeLimit)
-├── record_video.py           # Loads any checkpoint, renders rollout + _traj.npz
+├── scripts/                  # Entry-point scripts (training + recording)
+│   ├── train_ppo.py          #   PPO (Python loop, ~32k sps, all envs)
+│   ├── train_ppo_fast.py     #   PPO (lax.scan, ~110k sps, JIT-able envs only)
+│   ├── train_ppo_contraction.py  # PPO + contraction metric (research)
+│   ├── train_sac.py          #   SAC (vanilla)
+│   ├── train_td3.py          #   TD3 (vanilla)
+│   ├── train_fast_sac.py     #   FastSAC (C51 + SAC)
+│   ├── train_fast_td3.py     #   FastTD3 (C51 + TD3)
+│   ├── train_flashsac.py     #   FlashSAC (inverted residual + BatchNorm + Zeta noise)
+│   ├── train_pusht.py        #   PushT manipulation (SAC + keypoint obs + TimeLimit)
+│   ├── train_tdmpc2.py       #   TD-MPC2 (model-based world model + MPPI)
+│   └── record_video.py       #   Loads any checkpoint, renders rollout + _traj.npz
 ├── archive/train_offpolicy.py # LEGACY: unified dispatcher, kept as reference only
-├── jax_rl/algos/             # ppo.py, sac.py, td3.py, fast_td3.py, fast_sac.py, flash_sac.py
+├── jax_rl/algos/             # ppo.py, sac.py, td3.py, fast_td3.py, fast_sac.py, flash_sac.py, ppo_contraction.py, tdmpc2.py
 ├── jax_rl/envs/locomotion/   # go2_warp_base.py, go2_warp_joystick.py, go2_warp_curriculum.py, go2_bongo_handstand.py, go2_constants.py, go2_rendering.py, go2_sensors.py (MJX locomotion files deleted 2026-04-09)
 ├── jax_rl/configs/           # train_config.py, *_config.py, env_presets.py, flash_sac_config.py
 ├── jax_rl/networks/          # builders.py (Actor/DeterministicActor/VCritic), flash_blocks.py, activations.py, distributions.py, encoders/, heads/
@@ -249,16 +252,16 @@ See `TODO.md` for full prioritized list. Summary:
 ### Commands
 ```bash
 # Training
-uv run python train_ppo_fast.py --env Go2WarpJoystickFlat --num-envs 1024 --total-timesteps 50000000  # Warp backend (unitree MJCF)
-uv run python train_fast_sac.py --env Go2WarpJoystickFlat --num-envs 1024 --total-timesteps 20000000 --reset-mode per_step  # FastSAC + per-episode DR on Warp
-uv run python train_flashsac.py --env Go2WarpJoystickFlat --seed 100  # FlashSAC Go2 (uses preset: 1024 envs, UTD=8, gamma=0.97)
+uv run python scripts/train_ppo_fast.py --env Go2WarpJoystickFlat --num-envs 1024 --total-timesteps 50000000  # Warp backend (unitree MJCF)
+uv run python scripts/train_fast_sac.py --env Go2WarpJoystickFlat --num-envs 1024 --total-timesteps 20000000 --reset-mode per_step  # FastSAC + per-episode DR on Warp
+uv run python scripts/train_flashsac.py --env Go2WarpJoystickFlat --seed 100  # FlashSAC Go2 (uses preset: 1024 envs, UTD=8, gamma=0.97)
 
 # Monitoring
 nvidia-smi | grep python                    # Is it running?
 grep "EVAL" /tmp/claude-*/tasks/*.output     # Eval scores
 
 # Recording
-MUJOCO_GL=egl uv run python record_video.py --checkpoint checkpoints/<dir>
+MUJOCO_GL=egl uv run python scripts/record_video.py --checkpoint checkpoints/<dir>
 
 # Sim2sim validation (CPU MuJoCo, same unitree MJCF as Warp training)
 MUJOCO_GL=egl uv run python deploy/sim2sim_direct.py --checkpoint checkpoints/<dir> --vx 0.5 --record /tmp/sim2sim.mp4
