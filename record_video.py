@@ -68,8 +68,7 @@ def _build_select_action(meta, obs_dim, action_dim):
     ppo_tc = tc.get("ppo", {}) if tc.get("ppo") else {}
     dummy_opt = optax.adam(1e-3)
 
-    if algo == "ppo":
-        from jax_rl.algos.ppo import PPO
+    if algo in ("ppo", "ppocontr"):
         from jax_rl.configs import PPOConfig, EncoderConfig, PolicyHeadConfig
         policy_dim = tuple(ppo_tc.get("policy_hidden_dim", None) or tc.get("policy_hidden_dim", None) or (32, 32, 32, 32))
         value_dim = tuple(ppo_tc.get("value_hidden_dim", None) or tc.get("value_hidden_dim", None) or (256, 256, 256, 256, 256))
@@ -88,7 +87,14 @@ def _build_select_action(meta, obs_dim, action_dim):
                                          state_dependent_std=state_dep_std),
             num_envs=1,
         )
-        ppo = PPO(config, obs_dim, action_dim, dummy_opt, dummy_opt)
+        # PPOContraction uses the same Actor/VCritic as PPO for the action-selection
+        # path; metric network is not needed for rollout recording.
+        if algo == "ppocontr":
+            from jax_rl.algos import PPOContraction
+            ppo = PPOContraction(config, obs_dim, action_dim, dummy_opt, dummy_opt)
+        else:
+            from jax_rl.algos.ppo import PPO
+            ppo = PPO(config, obs_dim, action_dim, dummy_opt, dummy_opt)
         return ppo, "ppo"
 
     elif algo in ("sac", "fast_sac"):
@@ -304,15 +310,19 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
     # ── Build rollout step function ───────────────────────────────────────
     kicks_fn = apply_kicks if kicks else None
 
+    # Frame-stack depth from saved training config (defaults to 1 for non-stacked envs).
+    tc = meta.get("train_config", {}) if isinstance(meta, dict) else {}
+    n_fs = int(tc.get("n_frame_stack", 1))
+
     if algo_type == "ppo":
         rollout_step, _ = build_ppo_rollout_step(
-            algo, training_state, norm_state, env_step, kicks_fn=kicks_fn)
-        init_carry = (env_state, norm_state, key)
+            algo, training_state, norm_state, env_step,
+            kicks_fn=kicks_fn, n_frame_stack=n_fs)
     else:
         rollout_step, _ = build_offpolicy_rollout_step(
             algo, training_state.actor_params, norm_state, env_step,
-            use_obs_norm, kicks_fn=kicks_fn)
-        init_carry = (env_state, key)
+            use_obs_norm, kicks_fn=kicks_fn, n_frame_stack=n_fs)
+    init_carry = (env_state, key)
 
     # ── Phase 1: Python-loop rollout (low peak HBM) ───────────────────────
     # A jit'd scan would preallocate full-State × max_steps on device (~1 GB
