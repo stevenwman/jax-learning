@@ -22,7 +22,12 @@ import optax
 from jax_rl.configs.flash_sac_config import FlashSACConfig
 from jax_rl.networks.flash_blocks import FlashSACActor, FlashSACCritic, normalize_weights
 from jax_rl.networks.distributions import sample_gaussian
-from jax_rl.utils.distributional import make_support, logits_to_q
+from jax_rl.utils.distributional import (
+    make_support,
+    logits_to_q,
+    safe_log_softmax,
+    cross_entropy_categorical,
+)
 from jax_rl.utils.polyak import soft_update as polyak_update
 
 
@@ -294,12 +299,8 @@ class FlashSAC:
             tq2_val = logits_to_q(tq2_logits_next, support)
             use_q1 = (tq1_val < tq2_val)[:, None]  # (B, 1)
 
-            tq1_log_probs = jnp.maximum(
-                jax.nn.log_softmax(tq1_logits_next, axis=-1), -30.0
-            )
-            tq2_log_probs = jnp.maximum(
-                jax.nn.log_softmax(tq2_logits_next, axis=-1), -30.0
-            )
+            tq1_log_probs = safe_log_softmax(tq1_logits_next)
+            tq2_log_probs = safe_log_softmax(tq2_logits_next)
             target_log_probs = jnp.where(use_q1, tq1_log_probs, tq2_log_probs)
 
             # FlashSAC C51 projection
@@ -323,19 +324,13 @@ class FlashSAC:
             q1_logits = q1_logits_2b[:b]
             q2_logits = q2_logits_2b[:b]
 
-            q1_log_probs = jnp.maximum(
-                jax.nn.log_softmax(q1_logits, axis=-1), -30.0
-            )
-            q2_log_probs = jnp.maximum(
-                jax.nn.log_softmax(q2_logits, axis=-1), -30.0
-            )
             # Truncation mask: drop pure-timeout rows (matches SAC/TD3 Brax
             # convention). target used done = term|trunc to zero bootstrap on
             # both; the mask here prevents the r-only target from teaching
             # Q=r at timeout.
             mask = 1.0 - truncation
-            q1_per_sample = -jnp.sum(projected * q1_log_probs, axis=-1)
-            q2_per_sample = -jnp.sum(projected * q2_log_probs, axis=-1)
+            q1_per_sample = cross_entropy_categorical(projected, q1_logits)
+            q2_per_sample = cross_entropy_categorical(projected, q2_logits)
             q1_loss = jnp.mean(q1_per_sample * mask)
             q2_loss = jnp.mean(q2_per_sample * mask)
 

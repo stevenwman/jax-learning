@@ -37,6 +37,8 @@
 
 **Lesson:** Any cross-entropy loss using `log_softmax` needs a floor clamp. The `-inf * 0 = NaN` trap is silent.
 
+**Codified (2026-04-25, B5.7 commit):** the clamp + sum pattern was duplicated 8 times across `fast_td3.py`, `fast_sac.py`, `flash_sac.py`. Now centralized in `jax_rl/utils/distributional.py` as `safe_log_softmax(logits, min_log=-30.0)` and `cross_entropy_categorical(target_probs, logits)`. Use the helpers; don't re-inline the clamp.
+
 ---
 
 ## SAC Variants Can't Match FastTD3 on Low-Dim Tasks — But That's OK

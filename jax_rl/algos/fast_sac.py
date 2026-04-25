@@ -26,6 +26,7 @@ from jax_rl.utils.distributional import (
     make_support,
     logits_to_q,
     project_distribution,
+    cross_entropy_categorical,
 )
 from jax_rl.utils.polyak import soft_update as polyak_update
 
@@ -159,13 +160,11 @@ class FastSAC:
             q2_logits = q2.apply(q2_params_, critic_obs, action)
 
             # Cross-entropy loss with truncation mask.
-            # Clamp log_probs to prevent -inf * 0 = NaN in cross-entropy
-            # (see fast_td3.py for why this clamp is critical).
-            q1_log_probs = jnp.maximum(jax.nn.log_softmax(q1_logits, axis=-1), -30.0)
-            q2_log_probs = jnp.maximum(jax.nn.log_softmax(q2_logits, axis=-1), -30.0)
+            # cross_entropy_categorical clamps log_softmax to avoid 0 * -inf
+            # = NaN (see safe_log_softmax docstring).
             mask = 1.0 - truncation
-            q1_per_sample = -jnp.sum(projected * q1_log_probs, axis=-1)
-            q2_per_sample = -jnp.sum(projected * q2_log_probs, axis=-1)
+            q1_per_sample = cross_entropy_categorical(projected, q1_logits)
+            q2_per_sample = cross_entropy_categorical(projected, q2_logits)
             q1_loss = jnp.mean(q1_per_sample * mask)
             q2_loss = jnp.mean(q2_per_sample * mask)
 

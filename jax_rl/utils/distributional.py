@@ -90,3 +90,39 @@ def project_distribution(
                 jnp.einsum('bs,bsd->bd', hi_contrib, hi_onehot)
 
     return projected
+
+
+def safe_log_softmax(logits: jax.Array, axis: int = -1, min_log: float = -30.0) -> jax.Array:
+    """log_softmax clamped to a minimum to prevent NaN in cross-entropy.
+
+    Why the clamp: ``log_softmax`` produces ``-inf`` for zero-probability atoms.
+    In cross-entropy, ``target_prob * log_pred`` becomes ``0 * (-inf) = NaN``.
+    Clamping log_probs to ``min_log`` (default -30 ≈ prob 1e-13) prevents NaN
+    while preserving valid gradients on non-zero atoms. See LESSONS.md
+    "C51 log_prob NaN" for the original debugging trail.
+    """
+    return jnp.maximum(jax.nn.log_softmax(logits, axis=axis), min_log)
+
+
+def cross_entropy_categorical(
+    target_probs: jax.Array,
+    logits: jax.Array,
+    axis: int = -1,
+    min_log: float = -30.0,
+) -> jax.Array:
+    """Per-sample categorical cross-entropy with safe-log-softmax.
+
+    Computes ``-sum(target_probs * log_softmax(logits))`` along ``axis``,
+    with the log clamped at ``min_log`` to avoid 0 * -inf = NaN.
+
+    Args:
+        target_probs: (..., num_atoms) target distribution.
+        logits: (..., num_atoms) unnormalized log-probs of the prediction.
+        axis: reduction axis (default last).
+        min_log: clamp floor on log_softmax output.
+
+    Returns:
+        (...) per-sample cross-entropy (same shape as inputs minus ``axis``).
+    """
+    log_probs = safe_log_softmax(logits, axis=axis, min_log=min_log)
+    return -jnp.sum(target_probs * log_probs, axis=axis)
