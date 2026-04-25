@@ -12,5 +12,6 @@ MUJOCO_LOG.TXT
 site/
 .temp/
 logs/
+logs
 .claude/scheduled_tasks.lock
 .worktrees/
