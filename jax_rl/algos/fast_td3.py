@@ -27,6 +27,7 @@ from jax_rl.utils.distributional import (
     logits_to_q,
     project_distribution,
 )
+from jax_rl.utils.polyak import soft_update as polyak_update
 
 
 @flax.struct.dataclass
@@ -191,10 +192,6 @@ class FastTD3:
             loss = -jnp.mean(q_val)
             return loss, {"actor_loss": loss}
 
-        # ── Polyak ───────────────────────────────────────────────────────
-        def _soft_update(online, target):
-            return jax.tree.map(lambda o, t: tau * o + (1.0 - tau) * t, online, target)
-
         # ── Full update step ─────────────────────────────────────────────
         @jax.jit
         def update(state: TrainingState, batch: dict) -> tuple[TrainingState, dict]:
@@ -226,9 +223,9 @@ class FastTD3:
                     actor_grads, actor_opt_state, params=actor_params
                 )
                 new_actor_params = optax.apply_updates(actor_params, actor_updates)
-                new_ta = _soft_update(new_actor_params, ta)
-                new_tq1 = _soft_update(nq1, tq1)
-                new_tq2 = _soft_update(nq2, tq2)
+                new_ta = polyak_update(new_actor_params, ta, tau)
+                new_tq1 = polyak_update(nq1, tq1, tau)
+                new_tq2 = polyak_update(nq2, tq2, tau)
                 return (new_actor_params, new_actor_opt_state,
                         new_ta, new_tq1, new_tq2, actor_metrics)
 

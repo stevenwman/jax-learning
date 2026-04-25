@@ -23,6 +23,7 @@ from jax_rl.configs.flash_sac_config import FlashSACConfig
 from jax_rl.networks.flash_blocks import FlashSACActor, FlashSACCritic, normalize_weights
 from jax_rl.networks.distributions import sample_gaussian
 from jax_rl.utils.distributional import make_support, logits_to_q
+from jax_rl.utils.polyak import soft_update as polyak_update
 
 
 @flax.struct.dataclass
@@ -192,12 +193,6 @@ class FlashSAC:
                 + jnp.einsum('bs,bsd->bd', m_hi, hi_oh)
             )
             return projected
-
-        # ── Polyak (params only, NOT batch_stats) ───────────────────────
-        def _soft_update(online, target):
-            return jax.tree.map(
-                lambda o, t: tau * o + (1.0 - tau) * t, online, target
-            )
 
         # ── Maybe normalize weights ─────────────────────────────────────
         def _maybe_normalize(params):
@@ -444,8 +439,8 @@ class FlashSAC:
 
             # ── Target EMA (every step, NOT gated by policy_delay) ──────
             # Reference: update_target_network is called unconditionally
-            new_tq1_params = _soft_update(new_q1_params, state.target_q1_params)
-            new_tq2_params = _soft_update(new_q2_params, state.target_q2_params)
+            new_tq1_params = polyak_update(new_q1_params, state.target_q1_params, tau)
+            new_tq2_params = polyak_update(new_q2_params, state.target_q2_params, tau)
 
             new_state = state.replace(
                 actor_params=new_actor_params,

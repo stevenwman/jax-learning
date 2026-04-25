@@ -27,6 +27,7 @@ from jax_rl.utils.distributional import (
     logits_to_q,
     project_distribution,
 )
+from jax_rl.utils.polyak import soft_update as polyak_update
 
 
 @flax.struct.dataclass
@@ -213,10 +214,6 @@ class FastSAC:
             ).mean()
             return loss, {"alpha_loss": loss, "alpha": jnp.exp(log_alpha)}
 
-        # ── Polyak ───────────────────────────────────────────────────────
-        def _soft_update(online, target):
-            return jax.tree.map(lambda o, t: tau * o + (1.0 - tau) * t, online, target)
-
         # ── Full update step ─────────────────────────────────────────────
         policy_delay = config.policy_delay
 
@@ -260,8 +257,8 @@ class FastSAC:
                 new_log_alpha = optax.apply_updates(log_alpha, alpha_updates)
 
                 # Polyak-average target Q networks
-                new_target_q1 = _soft_update(new_q1, target_q1)
-                new_target_q2 = _soft_update(new_q2, target_q2)
+                new_target_q1 = polyak_update(new_q1, target_q1, tau)
+                new_target_q2 = polyak_update(new_q2, target_q2, tau)
 
                 return (new_actor_params, new_actor_opt, new_log_alpha,
                         new_alpha_opt, new_target_q1, new_target_q2,

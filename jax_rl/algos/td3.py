@@ -21,6 +21,7 @@ from jax_rl.configs.td3_config import TD3Config
 from jax_rl.configs.networks_config import EncoderConfig
 from jax_rl.networks.builders import DeterministicActor
 from jax_rl.networks.heads.q_head import QHead
+from jax_rl.utils.polyak import soft_update as polyak_update
 
 
 @flax.struct.dataclass
@@ -131,10 +132,6 @@ class TD3:
             }
             return q1_loss + q2_loss, metrics
 
-        # ── Polyak soft update ───────────────────────────────────────────
-        def _soft_update(online, target):
-            return jax.tree.map(lambda o, t: tau * o + (1.0 - tau) * t, online, target)
-
         # ── Full update step ─────────────────────────────────────────────
         # We use a closure-free approach: actor_loss_fn takes obs explicitly
         def _actor_loss_fn(actor_params, q1_params_, obs, critic_obs):
@@ -174,9 +171,9 @@ class TD3:
                 )
                 new_actor_params = optax.apply_updates(actor_params, actor_updates)
                 # Polyak update targets (only when actor updates)
-                new_ta = _soft_update(new_actor_params, ta)
-                new_tq1 = _soft_update(nq1, tq1)
-                new_tq2 = _soft_update(nq2, tq2)
+                new_ta = polyak_update(new_actor_params, ta, tau)
+                new_tq1 = polyak_update(nq1, tq1, tau)
+                new_tq2 = polyak_update(nq2, tq2, tau)
                 return (new_actor_params, new_actor_opt_state,
                         new_ta, new_tq1, new_tq2, actor_metrics)
 

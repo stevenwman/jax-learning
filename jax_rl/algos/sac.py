@@ -20,6 +20,7 @@ from jax_rl.configs.networks_config import EncoderConfig, PolicyHeadConfig
 from jax_rl.networks.builders import Actor
 from jax_rl.networks.heads.q_head import QHead
 from jax_rl.networks.distributions import sample_gaussian
+from jax_rl.utils.polyak import soft_update as polyak_update
 
 
 @flax.struct.dataclass
@@ -172,10 +173,6 @@ class SAC:
             ).mean()
             return loss, {"alpha_loss": loss, "alpha": jnp.exp(log_alpha)}
 
-        # ── Polyak soft update ────────────────────────────────────────────
-        def _soft_update(online, target):
-            return jax.tree.map(lambda o, t: tau * o + (1.0 - tau) * t, online, target)
-
         # ── Full update step ──────────────────────────────────────────────
         @jax.jit
         def update(state: TrainingState, batch: dict) -> tuple[TrainingState, dict]:
@@ -214,8 +211,8 @@ class SAC:
             new_log_alpha = optax.apply_updates(state.log_alpha, alpha_updates)
 
             # Polyak target update
-            new_tq1 = _soft_update(new_q1_params, state.target_q1_params)
-            new_tq2 = _soft_update(new_q2_params, state.target_q2_params)
+            new_tq1 = polyak_update(new_q1_params, state.target_q1_params, tau)
+            new_tq2 = polyak_update(new_q2_params, state.target_q2_params, tau)
 
             new_state = state.replace(
                 actor_params=new_actor_params,
