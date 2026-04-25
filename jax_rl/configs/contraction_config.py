@@ -17,7 +17,6 @@ class ContractionConfig:
     hidden_dims: tuple[int, ...] = (128, 128)
     activation: str = "elu"
     min_diagonal_value: float = 0.1
-    spectral_norm_bound: float = 3.0
 
     def validate(self) -> None:
         if self.constraint_dim <= 0:

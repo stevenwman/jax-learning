@@ -255,9 +255,8 @@ Configuration for MLP encoders.
 | `hidden_dim` | `tuple` | `(256, 256)` | Hidden layer dimensions |
 | `activation` | `str` | `"relu"` | Activation function |
 | `norm` | `str \| None` | `None` | `"layer"` or `"spectral"` |
-| `norm_placement` | `str` | `"pre"` | `"pre"` or `"post"` activation |
-| `context_dim` | `int \| None` | `None` | For goal-conditioned policies |
-| `context_fusion` | `str` | `"concat"` | `"concat"`, `"film"`, or `"cross_attn"` |
+| `context_dim` | `int \| None` | `None` | RESERVED for Phase 6 skill discovery (DIAYN/USD); not consumed today |
+| `context_fusion` | `str` | `"concat"` | RESERVED — `"concat"`, `"film"`, or `"cross_attn"`; not consumed today |
 
 ---
 
@@ -277,4 +276,4 @@ Configuration for Gaussian policy heads.
 | `init_noise_std` | `float` | `1.0` | Initial std (state-independent) |
 | `min_std` | `float` | `0.001` | Floor std (state-dependent) |
 | `squash` | `bool` | `True` | Tanh output squashing |
-| `dem` | `bool` | `False` | Dimension-wise entropy modulation (FastDSAC) |
+| `dem` | `bool` | `False` | RESERVED — head emits 3-tuple when True but algos unpack 2-tuple, so setting True crashes. Originally for an abandoned FastDSAC port. |

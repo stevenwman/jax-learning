@@ -2,15 +2,32 @@
 
 Extends WarpJoystick with a procedurally generated terrain grid.  The terrain
 MJCF is injected into a scene template at init time; the composed XML is
-written to a PID-scoped temp file under xmls/ to avoid multiprocess races.
+written to a system-temp file (auto-cleaned at process exit) to avoid
+multiprocess races and source-tree pollution.
 
 Terrain layout (GO2_DEFAULT_CFG): 10 rows × 4 cols, tile size 9.6×9.6 m.
 Row 0 = flat/easy, row 9 = hardest.
 """
 
+import atexit
 import os
+import tempfile
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
+
+# Track all generated scene XMLs so they're cleaned up at process exit.
+_TEMP_SCENE_PATHS: list[Path] = []
+
+
+def _cleanup_temp_scenes() -> None:
+    for path in _TEMP_SCENE_PATHS:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+atexit.register(_cleanup_temp_scenes)
 
 import jax
 import jax.numpy as jp
@@ -92,9 +109,16 @@ class WarpJoystickCurriculum(WarpJoystick):
         scene = _TEMPLATE_PATH.read_text()
         scene = scene.replace("<!-- TERRAIN_INJECT_POINT -->", terrain_xml)
 
-        # Write to PID-scoped file to avoid multiprocess collisions.
-        scene_path = _TEMPLATE_PATH.parent / f"_generated_curriculum_scene_{os.getpid()}.xml"
+        # Write to system temp dir (auto-cleaned at process exit). Source tree
+        # used to be the target — that accumulated 100+ stale files over time.
+        fd, scene_path_str = tempfile.mkstemp(
+            prefix=f"go2_curriculum_scene_{os.getpid()}_",
+            suffix=".xml",
+        )
+        os.close(fd)
+        scene_path = Path(scene_path_str)
         scene_path.write_text(scene)
+        _TEMP_SCENE_PATHS.append(scene_path)
 
         # Call grandparent directly — WarpJoystick.__init__ hardcodes the flat
         # scene path, so we skip it and go straight to Go2WarpEnv.__init__.

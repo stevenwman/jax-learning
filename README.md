@@ -30,6 +30,7 @@ Each off-policy algo has its own entry script. The four below share a single loo
 | Algorithm | Type | Script | Notes |
 |-----------|------|--------|-------|
 | **PPO** | On-policy | `train_ppo_fast.py` | `lax.scan` rollout. `train_ppo.py` is the Python-loop variant (slower, easier to read). |
+| **PPOContraction** | On-policy | `train_ppo_contraction.py` | PPO + Lipschitz contraction-metric regularizer (research; closed-neutral A/B on bongo handstand). |
 | **SAC** | Off-policy | `train_sac.py` | General continuous control baseline. |
 | **TD3** | Off-policy | `train_td3.py` | Deterministic-policy twin-critic baseline. |
 | **FastSAC** | Off-policy | `train_fast_sac.py` | SAC + C51 distributional critic + `policy_delay=4`. Large batches (8192), UTD 8. |
@@ -171,6 +172,8 @@ All numbers are **single-seed, post-truncation-fix (2026-04-12)**. Pre-fix numbe
 | Go2WarpJoystickFlat (10–20M) | 132 | — | **283.8** (per_step DR) | 273.1 (per_step DR) | **284.5** |
 
 FastTD3 CheetahRun 515.9 is at 5M steps (shorter than the ~880 number under 86M-step paper regime). Go2 scores within seed variance of each other — FlashSAC slightly ahead but A/B not yet characterized across seeds. See [AGENT_HANDOFF](.context/AGENT_HANDOFF.md) for full benchmark table.
+
+**PPOContraction A/B (Go2BongoHandstand, 100M, 5-seed mean):** baseline PPO 38.5 vs PPOContraction 37.8. Closed neutral — different failure-mode seeds suggest a distinct strategy, not a superior one. Reference paper's wind-perturbation robustness claim has not been re-tested in this codebase.
 
 ## Key Design Decisions
 

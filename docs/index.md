@@ -2,7 +2,7 @@
 
 **A modular, JAX-native reinforcement learning framework for robot learning research.**
 
-jax-learning is a learning vehicle and lab tool — every algorithm is implemented from fundamentals with clear mappings to the papers. It provides GPU-accelerated simulation environments via MuJoCo Playground, 6 RL algorithms, composable reward/observation specs, and a sim-to-real deployment pipeline (training in simulation, then running the policy on real hardware). Current focus: [Unitree Go2](https://www.unitree.com/go2/) quadruped locomotion and planar-pushing manipulation (see [PushT](api/pusht.md)). If a term below is unfamiliar, the [Glossary](glossary.md) has one-liner definitions.
+jax-learning is a learning vehicle and lab tool — every algorithm is implemented from fundamentals with clear mappings to the papers. It provides GPU-accelerated simulation environments via MuJoCo Playground, 7 RL algorithms, composable reward/observation specs, and a sim-to-real deployment pipeline (training in simulation, then running the policy on real hardware). Current focus: [Unitree Go2](https://www.unitree.com/go2/) quadruped locomotion and planar-pushing manipulation (see [PushT](api/pusht.md)). If a term below is unfamiliar, the [Glossary](glossary.md) has one-liner definitions.
 
 <div class="video-grid" markdown>
 <div markdown>

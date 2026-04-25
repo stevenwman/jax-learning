@@ -11,11 +11,11 @@ class EncoderConfig:
     hidden_dim: tuple[int, ...] = (256, 256)
     activation: str = "relu"
 
-    # Normalization (for future FastTD3/SAC)
+    # Normalization
     norm: str | None = None  # None, "layer", "spectral"
-    norm_placement: str = "pre"  # "pre" or "post" activation
 
-    # Context handling (for future goal-conditioned, USD)
+    # RESERVED — Phase 6 skill discovery (DIAYN/USD) scaffolding. Not currently
+    # consumed by any encoder; setting these has no effect. See TODO.md Phase 6.
     context_dim: int | None = None
     context_fusion: str = "concat"  # "concat", "film", "cross_attn"
 
@@ -35,7 +35,11 @@ class PolicyHeadConfig:
     min_std: float = 0.001  # Minimum std for state-dependent mode (softplus floor)
     # For squashing (tanh transform)
     squash: bool = True  # Output in [-1, 1] for bounded action spaces
-    # DEM (dimension-wise entropy modulation) for FastDSAC
-    dem: bool = False  # When True, output includes dem_logits
+    # RESERVED — DEM (dimension-wise entropy modulation), originally planned
+    # for an abandoned FastDSAC port. When True the head emits a 3-tuple
+    # (mean, log_std, dem_logits) but every actor unpacker in algos/ assumes
+    # 2-tuple, so setting True crashes at runtime. Re-enable only if
+    # rewiring algo unpackers to handle the 3-tuple.
+    dem: bool = False
 
 
