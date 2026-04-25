@@ -29,8 +29,8 @@ class TestWarpGo2Loads:
         assert "privileged_state" in state.obs
 
     def test_obs_dims(self, state):
-        assert state.obs["state"].shape == (51,)
-        assert state.obs["privileged_state"].shape == (125,)
+        assert state.obs["state"].shape == (48,)
+        assert state.obs["privileged_state"].shape == (122,)
 
     def test_reset_shapes(self, state):
         assert state.reward.shape == ()
@@ -51,7 +51,7 @@ class TestWarpGo2Steps:
         action = jnp.zeros(12)
         next_state = env.step(state, action)
         assert isinstance(next_state.obs, dict)
-        assert next_state.obs["state"].shape == (51,)
+        assert next_state.obs["state"].shape == (48,)
         assert not jnp.any(jnp.isnan(next_state.obs["state"]))
         assert not jnp.any(jnp.isnan(next_state.reward))
 
@@ -59,7 +59,7 @@ class TestWarpGo2Steps:
         key = jax.random.PRNGKey(42)
         action = jax.random.uniform(key, (12,), minval=-1.0, maxval=1.0)
         next_state = env.step(state, action)
-        assert next_state.obs["state"].shape == (51,)
+        assert next_state.obs["state"].shape == (48,)
 
     def test_reward_nonzero_after_steps(self, env, state):
         action = jnp.zeros(12)
@@ -108,10 +108,10 @@ class TestWarpBatched:
         env, env_step, env_state, eval_env, obs_dim, action_dim, key = make_envs(
             cfg, seed=0
         )
-        assert obs_dim == 45
+        assert obs_dim == 48
         assert action_dim == 12
         assert isinstance(env_state.obs, dict)
-        assert env_state.obs["state"].shape == (4, 45)
+        assert env_state.obs["state"].shape == (4, 48)
 
         # Test batched step
         action = jnp.zeros((4, 12))
@@ -120,13 +120,13 @@ class TestWarpBatched:
         assert not jnp.any(jnp.isnan(next_state.obs["state"]))
 
     def test_existing_envs_still_work(self):
-        """Regression: MJX Go2 still loads after registry change."""
+        """Regression: Go2WarpJoystickFlat still loads after registry change."""
         from jax_rl.training.env_setup import make_envs
         from jax_rl.configs.train_config import TrainConfig
 
         cfg = TrainConfig(env_name="Go2WarpJoystickFlat", num_envs=2, total_timesteps=1000)
         _, _, env_state, _, obs_dim, _, _ = make_envs(cfg, seed=0)
-        assert obs_dim == 45
+        assert obs_dim == 48
 
 
 class TestTorqueSpeedModel:

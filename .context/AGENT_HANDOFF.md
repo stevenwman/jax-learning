@@ -171,7 +171,7 @@ jax-learning/
 │   ├── train_pusht.py        #   PushT manipulation (SAC + keypoint obs + TimeLimit)
 │   ├── train_tdmpc2.py       #   TD-MPC2 (model-based world model + MPPI)
 │   └── record_video.py       #   Loads any checkpoint, renders rollout + _traj.npz
-├── archive/train_offpolicy.py # LEGACY: unified dispatcher, kept as reference only
+├── scripts/archive/train_offpolicy.py # LEGACY: unified dispatcher, kept as reference only (alongside live_viewer.py, record_video_cpu.py)
 ├── jax_rl/algos/             # ppo.py, sac.py, td3.py, fast_td3.py, fast_sac.py, flash_sac.py, ppo_contraction.py, tdmpc2.py
 ├── jax_rl/envs/locomotion/   # go2_warp_base.py, go2_warp_joystick.py, go2_warp_curriculum.py, go2_bongo_handstand.py, go2_constants.py, go2_rendering.py, go2_sensors.py (MJX locomotion files deleted 2026-04-09)
 ├── jax_rl/configs/           # train_config.py, *_config.py, env_presets.py, flash_sac_config.py
@@ -181,7 +181,7 @@ jax-learning/
 ├── jax_rl/buffers/           # jax_replay_buffer.py, rollout.py
 ├── jax_rl/envs/wrappers/     # FrameStackWrapper, vendored training wrappers (Vmap, Episode, AutoReset, DR), DomainRandWrapper (domain_rand.py, formerly DRv2), action_delay.py, terrain_curriculum_dr.py, pipeline.py
 ├── tests/                    # run `uv run python -m pytest tests/ --collect-only -q` for current count
-└── tools/brax_baselines/     # Brax PPO A/B test scripts
+└── tools/archive/brax_baselines/  # Brax PPO A/B test scripts (archived)
 ```
 
 **Off-policy training delegation:** The 4 non-FlashSAC off-policy scripts (`train_sac.py`, `train_td3.py`, `train_fast_sac.py`, `train_fast_td3.py`) delegate to `jax_rl/training/offpolicy_loop.py::run_offpolicy_loop` for the shared training loop and only contain algo-specific optimizer/explore decisions (~110–130 lines each). FlashSAC stays standalone (it has algo-specific BatchNorm state, Zeta noise, and adaptive reward scaling that don't fit the shared shape).

@@ -31,7 +31,7 @@ AGENT_HANDOFF.md          ← START HERE (project overview, codebase map)
 - No Co-Authored-By in commits
 - Go2 dict obs: `{"state": (48,), "privileged_state": (122,)}` nominal; actual privileged dim recomputed at init (currently ~119). See `go2_warp_joystick.py:6` docstring + `:562` comment.
 - PPO: asymmetric (critic sees privileged_state). SAC/TD3: both see state. FastSAC uses asymmetric automatically when dict obs detected.
-- Root train scripts: `train_ppo_fast.py`, `train_ppo.py`, `train_ppo_contraction.py`, `train_sac.py`, `train_td3.py`, `train_fast_sac.py`, `train_fast_td3.py`, `train_flashsac.py`, `train_pusht.py`, `train_tdmpc2.py`. The 4 non-FlashSAC off-policy scripts (`train_sac/td3/fast_sac/fast_td3.py`) are thin wrappers (~110–130 lines) delegating to `jax_rl/training/offpolicy_loop.py::run_offpolicy_loop`. PPO uses `jax_rl/training/onpolicy_collect.py::make_collect`. FlashSAC, PushT, TDMPC2, ContractionPPO are standalone. Also `record_video.py`. `archive/` holds legacy scripts (`train_offpolicy.py`, `live_viewer.py`, `record_video_cpu.py`).
+- Train scripts (in `scripts/`): `train_ppo_fast.py`, `train_ppo.py`, `train_ppo_contraction.py`, `train_sac.py`, `train_td3.py`, `train_fast_sac.py`, `train_fast_td3.py`, `train_flashsac.py`, `train_pusht.py`, `train_tdmpc2.py`. Invoke via `uv run python scripts/train_X.py`. The 4 non-FlashSAC off-policy scripts (`train_sac/td3/fast_sac/fast_td3.py`) are thin wrappers (~110–130 lines) delegating to `jax_rl/training/offpolicy_loop.py::run_offpolicy_loop`. PPO uses `jax_rl/training/onpolicy_collect.py::make_collect`. FlashSAC, PushT, TDMPC2, ContractionPPO are standalone. Also `scripts/record_video.py`. `scripts/archive/` holds legacy scripts (`train_offpolicy.py`, `live_viewer.py`, `record_video_cpu.py`).
 - **Go2 envs:** `Go2WarpJoystickFlat` (Warp backend, unitree MJCF, Kp=20/Kd=0.5) is the primary benchmark env — eliminates sim2sim gap. Variants: `Go2WarpJoystickFlatTorqueSpeed`, `Go2WarpJoystickCurriculum`, `Go2WarpJoystickCurriculumTorqueSpeed`. Also `Go2BongoHandstand` (bongo board). Best reproducible eval: see `AGENT_HANDOFF.md` benchmark tables (post-truncation-fix 2026-04-13). **MJX Go2 env deleted 2026-04-09** — no longer in repo.
 - **CRITICAL:** Warp env has joint→actuator ordering mismatch. `_act_to_joint` remap is essential. See `lessons/warp.md`.
 
@@ -44,7 +44,7 @@ Say "Ready" and wait for instructions.
 Test the new agent's understanding before giving real tasks. Questions span technical recall, debugging reasoning, strategic alignment, and push-back ability. Some are intentionally misleading.
 
 ## Technical (codebase knowledge)
-1. What are the 5 root-level Python scripts and what does each do?
+1. What's in `scripts/` and what does each entry-point do?
 2. How do you run SAC on Go2? Give the exact command.
 3. What obs does the Go2 env return? What does the actor see vs the critic?
 4. Where is the best checkpoint saved and how does it get there?

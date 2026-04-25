@@ -76,19 +76,26 @@ def test_no_reverted_obs_dims():
     """Catch the 51d / 125d obs-dim ghost from the 2026-04-10 experiment.
 
     The reverted values were 51d (state) and 125d (privileged_state). Real
-    shapes are 48d / 122d. If these strings show up in docs/ or .context/
-    (excluding archives and journals), docs have re-drifted.
+    shapes are 48d / 122d. If these strings show up in docs/, .context/,
+    or tests/ (excluding archives and journals), docs/tests have re-drifted.
     """
     pattern = r"\b(?:51d|125d|51-dim|125-dim)\b|\(51,\)|\(125,\)"
     # Historical / discussion subtrees where mentioning the reverted dims is
     # legitimate (lessons document the drift pattern, plans reference
     # proposed future dims, references capture cross-project notes).
-    files = list(_iter_md_files(
+    md_files = list(_iter_md_files(
         DOCS_ROOT, CONTEXT_ROOT,
         exclude_names=("archive", "tmp", "journals", "lessons", "plans",
                        "references", "go2", "tutorials-dev"),
     ))
-    hits = _grep_files(pattern, files)
+    # Also scan .py test files — drift in test asserts is the same class of bug
+    # (test_go2_warp_env hardcoded 51/125 long after env settled at 48/122).
+    # Exclude this file itself, which contains the patterns by definition.
+    test_py_files = [
+        p for p in (REPO_ROOT / "tests").rglob("*.py")
+        if p.name != "test_docs_drift.py"
+    ]
+    hits = _grep_files(pattern, md_files + test_py_files)
     if hits:
         msg = "\n".join(
             f"  {p.relative_to(REPO_ROOT)}:{ln} — {line.strip()}"

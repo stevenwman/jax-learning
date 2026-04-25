@@ -232,7 +232,7 @@ Our 5-episode deterministic eval diagnostic (`tools/pusht_eval_diag.py`):
 
 !!! tip "Tunable `success_threshold` kwarg"
     The DP default 0.95 termination threshold is too strict for sparse-reward RL — it would give zero learning signal because no policy ever crosses it from scratch. Use a lower threshold for tractable sparse training:
-    ```python
+    ```python {.no-test}
     env = PushTEnv(reward_mode="sparse", success_threshold=0.85)
     ```
     Default `0.95` preserves DP/literature parity for evaluation runs. Reporting convention in published push-T work is **max coverage achieved per episode**, not binary success rate — compare against ~0.91 (DP) / ~0.55-0.74 (BC LSTM) numbers, not the 0.95 termination flag.

@@ -5,6 +5,8 @@ import os
 import tempfile
 import sys
 
+import pytest
+
 
 def test_policy_runner_loads_and_infers():
     """PolicyRunner should accept obs and produce action in [-1, 1]."""
@@ -19,8 +21,7 @@ def test_policy_runner_loads_and_infers():
                 break
 
     if ckpt_dir is None:
-        print("SKIP: No checkpoint found in checkpoints/")
-        return
+        pytest.skip("No checkpoint found in checkpoints/")
 
     runner = PolicyRunner(ckpt_dir)
     print(f"Loaded: algo={runner.algo}, obs_dim={runner.obs_dim}, action_dim={runner.action_dim}")

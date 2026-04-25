@@ -133,6 +133,7 @@ def _ckpt_row(run_dir: Path) -> dict:
     has_best = (run_dir / "best").exists()
     has_orbax = (run_dir / "orbax").exists()
     orbax_size = _dir_size(run_dir / "orbax") if has_orbax else 0
+    has_video = any(run_dir.rglob("*.mp4"))
 
     return {
         "run": run_dir.name,
@@ -146,6 +147,7 @@ def _ckpt_row(run_dir: Path) -> dict:
         "best": best_str,
         "has_best": has_best,
         "has_orbax": has_orbax,
+        "has_video": has_video,
     }
 
 
@@ -174,16 +176,22 @@ def survey_checkpoints(top: int, group_by: str | None) -> list[dict]:
     rows_sorted = sorted(rows, key=lambda r: -r["size"])
     print(f"### Top {min(top, len(rows))} by size")
     print()
-    print("| size | orbax | age | algo | env | seed | best | best/ | orbax/ | run |")
-    print("|------|-------|-----|------|-----|------|------|-------|--------|-----|")
+    print("| size | orbax | age | algo | env | seed | best | best/ | orbax/ | 🎬 | run |")
+    print("|------|-------|-----|------|-----|------|------|-------|--------|----|-----|")
     for r in rows_sorted[:top]:
         print(
             f"| {_human_bytes(r['size'])} | {_human_bytes(r['orbax_size'])} | "
             f"{r['age']:.0f}d | {r['algo']} | {r['env']} | {r['seed']} | "
             f"{r['best']} | {'✓' if r['has_best'] else '·'} | "
-            f"{'✓' if r['has_orbax'] else '·'} | `{r['run']}` |"
+            f"{'✓' if r['has_orbax'] else '·'} | "
+            f"{'🎬' if r['has_video'] else '·'} | `{r['run']}` |"
         )
     print()
+
+    n_with_video = sum(1 for r in rows if r["has_video"])
+    if n_with_video:
+        print(f"_{n_with_video} of {len(rows)} runs contain rendered videos (🎬) — typically keep these._")
+        print()
 
     # Group rollups
     if group_by in ("env", "algo"):
