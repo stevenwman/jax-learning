@@ -10,8 +10,6 @@ Key modifications over vanilla TD3:
 
 The actor is unchanged — deterministic policy with target smoothing.
 Only the critic representation and loss change.
-
-Loss reference: .context/fast_td3_plan.md
 """
 
 from typing import Any

@@ -1,6 +1,6 @@
 # Algorithms
 
-Six RL algorithms, each self-contained with no shared base class.
+Seven RL algorithms, each self-contained with no shared base class.
 
 ??? note "Why closures instead of methods?"
     JAX's JIT compiler traces Python functions and captures the values they close over. If we used regular methods (`self.update`), JAX would try to trace `self`, which is a mutable Python object — this breaks JIT.
@@ -12,6 +12,7 @@ Six RL algorithms, each self-contained with no shared base class.
 | Algorithm | Type | Key difference |
 |-----------|------|----------------|
 | [PPO](#ppo) | On-policy | Clipped surrogate + GAE |
+| [PPOContraction](#ppocontraction) | On-policy | PPO + Lipschitz contraction-metric regularizer (research) |
 | [SAC](#sac) | Off-policy | Auto-tuned entropy, Gaussian policy |
 | [TD3](#td3) | Off-policy | Deterministic policy, twin critics, delayed actor |
 | [FastSAC](#fastsac) | Off-policy | C51 distributional critics, UTD 8, TD3-style delayed actor (`policy_delay=4`) |
@@ -54,6 +55,35 @@ PPO(
 
 `update(state, batch, key, next_obs=None, critic_obs=None, ...) → (TrainingState, metrics)`
 : Run one PPO update epoch over the collected rollout batch.
+
+---
+
+## PPOContraction
+
+```python
+from jax_rl.algos.ppo_contraction import PPOContraction
+```
+
+PPO + Lipschitz contraction-metric regularizer (Zinage et al.). Adds a learned SPD metric `M(x)` over a chosen state coordinate `c(x)` and a reward augmentation that penalizes `c̈ + αċ` violating contraction. The metric is learned alongside the policy via constraint loss; reward augmentation feeds back into PPO's advantage signal.
+
+**Status: research.** Closed-neutral A/B on `Go2BongoHandstand` (100M, 5-seed: baseline 38.5 vs contraction 37.8). Different failure-mode seeds suggest a distinct strategy, not a superior one. Code is faithful to the reference; nominal-return parity is the floor — the paper's wind-perturbation robustness claim has not been re-tested in this codebase. See [`lessons-learned.md`](../reference/lessons-learned.md) and the closed `.superpowers/plans/archive/2026-04-21-contraction-ppo.md`.
+
+**Constructor**
+
+```python
+PPOContraction(
+    config: PPOConfig,
+    obs_dim: int,
+    action_dim: int,
+    actor_optimizer: optax.GradientTransformation,
+    critic_optimizer: optax.GradientTransformation,
+    critic_obs_dim: int | None = None,
+)
+```
+
+The metric optimizer is built internally from `config.contraction.metric_lr` rather than passed in. `PPOConfig.contraction` (`ContractionConfig`) carries the algorithm-specific knobs: `alpha` (contraction rate), `epsilon` (strict-inequality slack), `penalty_coef`, `constraint_coef`, `metric_hidden`, `metric_lr`. When `config.contraction is None`, falls back to baseline PPO behavior — bit-identical to `PPO` for the same inputs.
+
+**Training entry point:** `scripts/train_ppo_contraction.py`. Bonus contraction-only flags: `--alpha`, `--epsilon`, `--penalty-coef`, `--metric-lr`, `--constraint-coef`, `--metric-hidden`.
 
 ---
 

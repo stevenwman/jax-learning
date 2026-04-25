@@ -23,7 +23,7 @@ jax-learning is a learning vehicle and lab tool — every algorithm is implement
 
 ## Key Features
 
-- **6 RL algorithms** — PPO, SAC, TD3, FastSAC, FastTD3, and FlashSAC (a recent SAC variant with learned feature extractors; see [algorithms reference](api/algos.md) for architectural details)
+- **7 RL algorithms** — PPO, PPOContraction (Lipschitz contraction-metric regularizer), SAC, TD3, FastSAC, FastTD3, and FlashSAC (SAC variant with learned feature extractors; see [algorithms reference](api/algos.md) for architectural details)
 - **GPU-accelerated environments** — MuJoCo Warp backend (primary — supports cylinder collisions and the exact Unitree MJCF). MJX (JAX-native) available for DM Control benchmarks.
 - **Manipulation benchmark** — Vendored [PushT](api/pusht.md) planar-pushing env (RL-from-scratch recipe + expert demos, shape-agnostic obs for cross-shape transfer)
 - **Sim-to-real pipeline** — Train in simulation, deploy on the real Go2 over UDP

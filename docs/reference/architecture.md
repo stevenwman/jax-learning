@@ -8,7 +8,7 @@ The codebase follows a strict three-layer separation:
 flowchart TD
     ENV["<b>Environment Layer</b><br/>MuJoCo Playground<br/>Warp backend (primary, locomotion), MJX for DM Control benchmarks<br/>PushT (pymunk 2D) for manipulation<br/>Produces: obs, reward, done, info"]
     TRAIN["<b>Training Scripts</b><br/>train_ppo_fast.py (on-policy)<br/>train_{sac,td3,fast_sac,fast_td3}.py → run_offpolicy_loop<br/>train_flashsac.py (standalone)<br/>train_pusht.py (standalone, manipulation)<br/>Shared helpers: make_env_bundle, ObsPipeline<br/>Handles: env creation, normalization,<br/>logging, checkpointing, W&B, eval"]
-    ALGO["<b>Algorithm Layer</b><br/>jax_rl/algos/*.py<br/>Pure math — no env knowledge<br/>PPO, SAC, TD3, FastSAC, FastTD3, FlashSAC<br/>Computes: gradients, loss, updated params"]
+    ALGO["<b>Algorithm Layer</b><br/>jax_rl/algos/*.py<br/>Pure math — no env knowledge<br/>PPO, PPOContraction, SAC, TD3, FastSAC, FastTD3, FlashSAC<br/>Computes: gradients, loss, updated params"]
 
     ENV -->|"obs, reward, done"| TRAIN
     TRAIN -->|"batch of transitions"| ALGO

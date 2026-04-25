@@ -35,6 +35,31 @@ uv run python docs/scripts/gen_cli_reference.py
 
 ---
 
+## `train_ppo_contraction.py`
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--env` | str | `Go2BongoHandstand` | Environment name (defaults to bongo handstand) |
+| `--seed` | int | `0` | Random seed |
+| `--resume` | str | - | Resume from checkpoint directory path |
+| `--num-envs` | int | from preset | Number of parallel environments (default: from preset) |
+| `--total-timesteps` | int | from preset | Total environment steps to train (default: from preset) |
+| `--lr` | float | from preset | Peak learning rate (default: from preset) |
+| `--reward-scaling` | float | from preset | Multiply rewards by this factor (default: from preset) |
+| `--episode-length` | int | from preset | Max steps per episode (default: from preset) |
+| `--log-interval` | int | - | Print stats every N iterations |
+| `--frame-stack` | int | - | Number of stacked observation frames |
+| `--wandb` | flag | off | Enable W&B experiment tracking |
+| `--wandb-project` | str | `jax-rl` | W&B project name |
+| `--alpha` | float | `0.1` | Contraction rate α |
+| `--epsilon` | float | `0.001` | Strict-inequality slack ε |
+| `--penalty-coef` | float | `1.0` | Reward-augment scale |
+| `--metric-lr` | float | `0.001` | Learning rate for the contraction metric network |
+| `--constraint-coef` | float | `1.0` | Constraint loss coefficient |
+| `--metric-hidden` | int+ | `[128, 128]` | Hidden layer sizes for the metric MLP (e.g. 128 128) |
+
+---
+
 ## `train_sac.py`
 
 | Flag | Type | Default | Description |

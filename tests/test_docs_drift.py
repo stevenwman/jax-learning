@@ -154,6 +154,7 @@ ALGO_MODULES = {
     "FastTD3": "jax_rl.algos.fast_td3",
     "FlashSAC": "jax_rl.algos.flash_sac",
     "PPO": "jax_rl.algos.ppo",
+    "PPOContraction": "jax_rl.algos.ppo_contraction",
 }
 
 

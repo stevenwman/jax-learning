@@ -321,6 +321,48 @@ def build_flashsac_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def build_ppo_contraction_parser() -> argparse.ArgumentParser:
+    """Mirror of train_ppo_contraction.py's argparse setup."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--env", type=str, default="Go2BongoHandstand",
+                        help="Environment name (defaults to bongo handstand)")
+    parser.add_argument("--seed", type=int, default=0, help="Random seed")
+    parser.add_argument("--resume", type=str, default=None,
+                        help="Resume from checkpoint directory path")
+    parser.add_argument("--num-envs", type=int, default=None,
+                        help="Number of parallel environments (default: from preset)")
+    parser.add_argument("--total-timesteps", type=int, default=None,
+                        help="Total environment steps to train (default: from preset)")
+    parser.add_argument("--lr", type=float, default=None,
+                        help="Peak learning rate (default: from preset)")
+    parser.add_argument("--reward-scaling", type=float, default=None,
+                        help="Multiply rewards by this factor (default: from preset)")
+    parser.add_argument("--episode-length", type=int, default=None,
+                        help="Max steps per episode (default: from preset)")
+    parser.add_argument("--log-interval", type=int, default=None,
+                        help="Print stats every N iterations")
+    parser.add_argument("--frame-stack", type=int, default=None,
+                        help="Number of stacked observation frames")
+    parser.add_argument("--wandb", action="store_true",
+                        help="Enable W&B experiment tracking")
+    parser.add_argument("--wandb-project", type=str, default="jax-rl",
+                        help="W&B project name")
+    # Contraction-specific knobs
+    parser.add_argument("--alpha", type=float, default=0.1,
+                        help="Contraction rate α")
+    parser.add_argument("--epsilon", type=float, default=1e-3,
+                        help="Strict-inequality slack ε")
+    parser.add_argument("--penalty-coef", type=float, default=1.0,
+                        help="Reward-augment scale")
+    parser.add_argument("--metric-lr", type=float, default=1e-3,
+                        help="Learning rate for the contraction metric network")
+    parser.add_argument("--constraint-coef", type=float, default=1.0,
+                        help="Constraint loss coefficient")
+    parser.add_argument("--metric-hidden", type=int, nargs="+", default=[128, 128],
+                        help="Hidden layer sizes for the metric MLP (e.g. 128 128)")
+    return parser
+
+
 def build_pusht_parser() -> argparse.ArgumentParser:
     """Mirror of train_pusht.py's argparse setup."""
     parser = argparse.ArgumentParser()
@@ -408,6 +450,7 @@ uv run python docs/scripts/gen_cli_reference.py
 """
     sections = [
         render_parser("train_ppo_fast.py", build_ppo_parser()),
+        render_parser("train_ppo_contraction.py", build_ppo_contraction_parser()),
         render_parser("train_sac.py", build_sac_parser()),
         render_parser("train_td3.py", build_td3_parser()),
         render_parser("train_fast_sac.py", build_fast_sac_parser()),

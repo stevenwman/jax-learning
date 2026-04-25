@@ -7,8 +7,6 @@ Matches MuJoCo Playground reference config:
   - stop_grad on entropy in alpha loss (prevents gradient bleed into policy)
   - Truncation masking in Q-loss (for auto-reset envs like Playground)
   - Layer norm in Q-networks (q_layer_norm=True)
-
-Loss reference: .context/sac_plan.md
 """
 
 from typing import Any

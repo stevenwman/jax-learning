@@ -5,7 +5,7 @@ Usage:
   uv run python record_video.py --checkpoint ckpt  # trained policy
   MUJOCO_GL=osmesa uv run python record_video.py   # force osmesa if EGL unavailable
 
-Works with ALL algos (PPO, SAC, TD3, FastTD3, FastSAC, FastDSAC) — reads meta.json
+Works with ALL algos (PPO, PPOContraction, SAC, TD3, FastSAC, FastTD3, FlashSAC, TDMPC2) — reads meta.json
 to determine algo type and reconstruct the actor network automatically.
 
 Two-phase approach:

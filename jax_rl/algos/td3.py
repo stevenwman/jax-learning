@@ -9,8 +9,6 @@ Three key tricks over DDPG:
   3. Target policy smoothing — add clipped noise to target actions
 
 Simpler than SAC: no entropy, no alpha, deterministic policy.
-
-Loss reference: .context/td3_plan.md
 """
 
 from typing import Any

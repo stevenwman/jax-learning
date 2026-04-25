@@ -43,7 +43,7 @@ Privileged observations include extra information the real robot can't measure (
 
 ## Algorithms
 
-Six algorithms, each a self-contained class with no inheritance hierarchy.
+Seven algorithms, each a self-contained class with no inheritance hierarchy.
 
 !!! tip "Which should I use?"
     - **New to RL?** Start with **PPO** on `CartpoleBalance` — it's the most forgiving and trains in under a minute.
