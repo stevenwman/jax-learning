@@ -1,7 +1,6 @@
 """Environment creation — replaces the 6-line block duplicated across all train scripts."""
 
 import functools
-from dataclasses import dataclass
 from typing import Any, Callable
 
 import jax
@@ -12,6 +11,7 @@ from mujoco_playground._src import locomotion as pg_locomotion
 from jax_rl.envs.wrappers import wrap_for_training
 
 from jax_rl.configs.train_config import TrainConfig
+from jax_rl.training.env_bundle import EnvBundle
 from jax_rl.utils.normalization import NormalizationState
 
 
@@ -199,25 +199,6 @@ def make_envs(cfg: TrainConfig, seed: int):
     return env, env_step, env_state, eval_env, obs_dim, action_dim, key
 
 
-@dataclass
-class EnvBundle:
-    """Env setup bundle for off-policy training scripts.
-
-    Wraps make_envs output with dict-obs detection so training scripts don't
-    need to re-detect asymmetric critic structure.
-    """
-    env: Any
-    env_step: Callable
-    env_state: Any
-    eval_env: Any
-    obs_dim: int
-    action_dim: int
-    critic_obs_dim: int | None  # None if symmetric
-    has_privileged: bool
-    dict_obs: bool
-    key: Any  # jax.Array
-
-
 def make_env_bundle(cfg: TrainConfig, seed: int) -> EnvBundle:
     """Wrap make_envs + dict obs detection. For off-policy training scripts.
 
@@ -252,6 +233,9 @@ def make_env_bundle(cfg: TrainConfig, seed: int) -> EnvBundle:
         has_privileged=has_privileged,
         dict_obs=dict_obs,
         key=key,
+        backend_kind="mjx",
+        num_envs=cfg.num_envs,
+        render_fn=None,   # MJX render path lives in record_video.py for now (Phase 5).
     )
 
 
