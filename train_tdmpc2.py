@@ -451,7 +451,11 @@ def run_main_loop(
         # ------------------------------------------------------------------ #
         # 6. Periodic eval (MPPI + prior modes)
         # ------------------------------------------------------------------ #
-        if step_counter % cfg.eval_every == 0 or step_counter >= total_timesteps:
+        # Window check (not exact %): step_counter increments by num_envs, so it
+        # rarely lands exactly on cfg.eval_every. Fire once per eval_every window.
+        prev_step = step_counter - num_envs
+        crossed_eval = (prev_step // cfg.eval_every) < (step_counter // cfg.eval_every)
+        if crossed_eval or step_counter >= total_timesteps:
             key, eval_key = jax.random.split(key)
             eval_metrics = run_eval(state, env_bundle, plan_fn, modules, cfg, eval_key)
 
