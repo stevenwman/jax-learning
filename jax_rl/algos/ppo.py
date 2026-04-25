@@ -8,6 +8,7 @@ critic sees privileged obs (e.g. 116d ground truth). If critic_obs is not
 provided, critic uses the same obs as actor (symmetric mode).
 """
 
+import dataclasses
 from typing import Any
 import flax
 import jax
@@ -45,12 +46,23 @@ class PPO:
         self.obs_dim = obs_dim
         self.critic_obs_dim = critic_obs_dim or obs_dim
 
-        encoder_config = config.encoder
-        critic_encoder_config = config.critic_encoder or encoder_config
-        policy_config = config.policy_head
-        encoder_config.obs_dim = obs_dim
-        critic_encoder_config.obs_dim = self.critic_obs_dim
-        policy_config.action_dim = action_dim
+        # Build per-instance configs without mutating user-supplied dataclasses.
+        # The previous pattern wrote `.obs_dim` in place on the caller's
+        # EncoderConfig, which (a) silently corrupted the caller's instance
+        # for any later reuse and (b) had a latent aliasing bug when
+        # `critic_encoder is None` — both writes targeted the same instance,
+        # the first overwritten by the second. dataclasses.replace gives
+        # each PPO instance its own copies.
+        encoder_config = dataclasses.replace(config.encoder, obs_dim=obs_dim)
+        if config.critic_encoder is not None:
+            critic_encoder_config = dataclasses.replace(
+                config.critic_encoder, obs_dim=self.critic_obs_dim
+            )
+        else:
+            critic_encoder_config = dataclasses.replace(
+                config.encoder, obs_dim=self.critic_obs_dim
+            )
+        policy_config = dataclasses.replace(config.policy_head, action_dim=action_dim)
 
         self.num_envs = config.num_envs
 

@@ -12,6 +12,7 @@ Algorithmic core (ref: /tmp/cppo/contraction_ppo.py):
 - Metric loss is 2nd-order: outer grad differentiates through jax.grad(V).
 """
 
+import dataclasses
 from typing import Any
 
 import flax
@@ -57,12 +58,18 @@ class PPOContraction:
         self.obs_dim = obs_dim
         self.critic_obs_dim = critic_obs_dim or obs_dim
 
-        encoder_config = config.encoder
-        critic_encoder_config = config.critic_encoder or encoder_config
-        policy_config = config.policy_head
-        encoder_config.obs_dim = obs_dim
-        critic_encoder_config.obs_dim = self.critic_obs_dim
-        policy_config.action_dim = action_dim
+        # Build per-instance configs without mutating user-supplied dataclasses
+        # (see PPO.__init__ comment for the latent aliasing bug fixed here).
+        encoder_config = dataclasses.replace(config.encoder, obs_dim=obs_dim)
+        if config.critic_encoder is not None:
+            critic_encoder_config = dataclasses.replace(
+                config.critic_encoder, obs_dim=self.critic_obs_dim
+            )
+        else:
+            critic_encoder_config = dataclasses.replace(
+                config.encoder, obs_dim=self.critic_obs_dim
+            )
+        policy_config = dataclasses.replace(config.policy_head, action_dim=action_dim)
 
         self.num_envs = config.num_envs
 

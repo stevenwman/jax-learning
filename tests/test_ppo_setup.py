@@ -169,3 +169,47 @@ def test_asymmetric_ppo():
     eval_action = ppo.select_action_eval(state.actor_params, obs)
     assert eval_action.shape == (NUM_ENVS, ACTION_DIM)
     assert not jnp.any(jnp.isnan(eval_action))
+
+
+def test_ppo_does_not_mutate_caller_config():
+    """Regression for B5.2: PPO.__init__ used to write .obs_dim in place on
+    the caller's EncoderConfig + .action_dim on PolicyHeadConfig. Verify the
+    fix (dataclasses.replace) keeps caller's instances untouched.
+    """
+    encoder = EncoderConfig(obs_dim=999)  # sentinel value
+    critic_encoder = EncoderConfig(obs_dim=888)  # sentinel value
+    policy = PolicyHeadConfig(action_dim=999)  # sentinel value
+    cfg = PPOConfig(encoder=encoder, critic_encoder=critic_encoder,
+                    policy_head=policy)
+
+    ppo = PPO(cfg, obs_dim=OBS_DIM, action_dim=ACTION_DIM,
+              actor_optimizer=optax.adam(3e-4),
+              critic_optimizer=optax.adam(3e-4),
+              critic_obs_dim=42)
+
+    assert encoder.obs_dim == 999, "caller encoder obs_dim was mutated"
+    assert critic_encoder.obs_dim == 888, "caller critic encoder obs_dim was mutated"
+    assert policy.action_dim == 999, "caller policy action_dim was mutated"
+
+
+def test_ppo_symmetric_critic_no_aliasing():
+    """When critic_encoder is None, PPO used to alias both writes to the same
+    instance, overwriting obs_dim. Verify symmetric mode produces correctly
+    sized actor + critic networks.
+    """
+    encoder = EncoderConfig(obs_dim=999)
+    policy = PolicyHeadConfig(action_dim=999)
+    cfg = PPOConfig(encoder=encoder, critic_encoder=None, policy_head=policy)
+
+    ppo = PPO(cfg, obs_dim=OBS_DIM, action_dim=ACTION_DIM,
+              actor_optimizer=optax.adam(3e-4),
+              critic_optimizer=optax.adam(3e-4),
+              critic_obs_dim=None)  # symmetric → both use OBS_DIM
+
+    state = ppo.init(jax.random.PRNGKey(0))
+    obs = jax.random.normal(jax.random.PRNGKey(1), (NUM_ENVS, OBS_DIM))
+    # Both actor + critic should accept OBS_DIM-shaped obs without size error.
+    action, log_prob, value = ppo.select_action(state, obs, jax.random.PRNGKey(2),
+                                                 critic_obs=obs)
+    assert action.shape == (NUM_ENVS, ACTION_DIM)
+    assert value.shape == (NUM_ENVS,)

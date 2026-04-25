@@ -290,3 +290,48 @@ See `.context/journals/2026-04-24.md` for full A/B tables + video paths.
 Historical notes:
 1. Per-minibatch GAE recomputation — didn't matter once loss scaling was fixed.
 2. State-dependent std — didn't matter for final performance.
+
+---
+
+## Don't Mutate Caller-Supplied Config Dataclasses (B5.2, 2026-04-25)
+
+**Problem:** `PPO.__init__` and `PPOContraction.__init__` used to write
+attributes in place on the user-passed `EncoderConfig` / `PolicyHeadConfig`:
+
+```python
+encoder_config = config.encoder
+critic_encoder_config = config.critic_encoder or encoder_config  # ← aliasing
+encoder_config.obs_dim = obs_dim
+critic_encoder_config.obs_dim = self.critic_obs_dim
+policy_config.action_dim = action_dim
+```
+
+Two distinct bugs:
+
+1. **Caller-state corruption.** Reusing the same `PPOConfig` instance across
+   two PPO instances (e.g. one per env) silently inherited the prior env's
+   dims. Anyone caching configs hit this.
+2. **Latent aliasing.** When `config.critic_encoder is None`, line 2 makes
+   `critic_encoder_config IS encoder_config`. Line 3 sets `obs_dim = obs_dim`,
+   line 4 immediately overwrites it with `critic_obs_dim`. The actor encoder
+   ended up with the *critic* obs dim. Harmless today only because
+   `MlpEncoder` ignores `obs_dim`; will silently break when a future encoder
+   reads it (or when `EncoderConfig` becomes `frozen=True` to match the
+   TDMPC2 trend, at which point both writes raise `FrozenInstanceError`).
+
+**Fix:** `dataclasses.replace` for each field that needs runtime population.
+Per-instance copies, no caller mutation.
+
+```python
+encoder_config = dataclasses.replace(config.encoder, obs_dim=obs_dim)
+if config.critic_encoder is not None:
+    critic_encoder_config = dataclasses.replace(config.critic_encoder, obs_dim=self.critic_obs_dim)
+else:
+    critic_encoder_config = dataclasses.replace(config.encoder, obs_dim=self.critic_obs_dim)
+policy_config = dataclasses.replace(config.policy_head, action_dim=action_dim)
+```
+
+**Lesson:** Algo `__init__` should never mutate the caller's config. If
+runtime fields need population, copy (`dataclasses.replace`) — never
+in-place. Asserted by `tests/test_ppo_setup.py::test_ppo_does_not_mutate_caller_config`
++ `test_ppo_symmetric_critic_no_aliasing` (regression gates).
