@@ -450,3 +450,48 @@ Zero matches = clean. Any matches = an HTML wrapper is missing `markdown`.
 **Cost:** ~150 LOC across `obs_spec.py:schema_from_obs_groups`, `checkpointing.py` (5-line addition piggybacking on existing env-load for dr_specs), `deploy/obs_builder.py` (sensor registry + factory). Plus 9 unit tests. Backward-compat: schema-less ckpts fall back to a printed default.
 
 **Generalizes to:** any environment with composable obs (privileged_state, contraction obs groups, vision tokens). Same `_obs_groups` mechanism, same `schema_from_obs_groups` flatten. Bongo and pusht envs would benefit immediately if/when they get deployed.
+
+---
+
+## Hand-Mirrored Argparse Becomes a Drift Bomb (B5.9, 2026-04-25)
+
+**Pattern that rotted:** `docs/scripts/gen_cli_reference.py` was 471 lines
+of hand-mirrored argparse. Each train script's flags were redeclared in
+the gen script. Two sources of truth → drift fertilizer:
+
+- New flags in `record_video.py` (terrain spawn overrides, force-zero
+  cmd flags) never made it into the docs.
+- `train_flashsac.py:--reset-mode` missing from docs because the mirror
+  was written before that flag landed.
+- Help strings in docs paraphrased the script's help (or were richer
+  than what the script actually had — text that didn't exist in the
+  real `--help`).
+- Adding a new train script was a two-place edit; one was always
+  forgotten.
+
+**Fix (B5.9):** scripts expose `def build_parser() -> argparse.ArgumentParser`
+at module level. `gen_cli_reference.py` imports each script, calls
+`build_parser()`, reflects on `parser._actions` to render markdown.
+471 lines → 115 lines. Single source of truth.
+
+**Generalizable lesson:** if a doc generator copies content rather than
+reflects/imports it, eventual drift is inevitable. Imports beat copies
+when the source is structured (argparse, dataclass, type annotations).
+The cost of `def build_parser()` exposure is a few lines per script;
+the savings are forever.
+
+**Other things this pattern is good for:** dataclass-config field tables
+(reflect on `dataclasses.fields()`), preset registries (iterate the dict),
+envs registry (introspect playground's registry). Whenever the docs claim
+to enumerate something the code defines, **let the code be the truth**.
+
+**Two-phase shape of the refactor — keep separable:**
+1. Phase A: expose the structured object (here: `build_parser`). Pure
+   refactor, zero behavior change. Verified by `--help` byte-equal
+   pre/post.
+2. Phase B: rewrite the doc generator to reflect on the object. Output
+   may differ — not because of regression, but because the hand-mirror
+   was lying. Document the real diff in the commit body.
+
+Phase A has standalone value (importable parsers usable from tests/
+tooling) even if Phase B never lands.
