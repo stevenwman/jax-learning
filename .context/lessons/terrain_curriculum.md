@@ -212,5 +212,29 @@ Key metrics per terrain type:
 
 - **MJLab terrain module** (mujocolab/mjlab `mjlab/envs/terrain/`) — Isaac Lab API + MuJoCo Warp, terrain generator reference. See `.context/references/mjlab_audit.md`.
 - **legged_gym curriculum** (leggedrobotics/legged_gym `legged_gym/envs/base/legged_robot.py`) — original source for terrain grid layout + column-specialization pattern.
-- **Plan:** `.superpowers/plans/2026-04-15-terrain-curriculum.md` — full design doc with implementation phases.
+- **Plan:** `.superpowers/plans/archive/2026-04-15-terrain-curriculum.md` — full design doc with implementation phases (executed).
 - **Journals:** `.context/journals/2026-04-17.md` (implementation), `2026-04-20.md` (fix marathon + unified redesign + pilot comparison).
+
+---
+
+## 6. Where Curriculum Code Lives (B5.6, 2026-04-25)
+
+Logging + scoring helpers used to live in `jax_rl/training/metrics_logger.py`
+(generic logger). Moved to `jax_rl/envs/locomotion/curriculum_logging.py`
+because they're locomotion-specific (`TERRAIN_TYPE_NAMES`, terrain-info-dict
+parsing, curriculum image rendering with matplotlib). Generic logger no
+longer needs to know about Go2 terrain types.
+
+Re-export shim kept in `metrics_logger.py` for backwards compatibility, but
+**new code should import from the locomotion module directly**:
+
+```python
+from jax_rl.envs.locomotion.curriculum_logging import (
+    log_terrain_metrics, log_terrain_image, print_curriculum_dump,
+    TERRAIN_TYPE_NAMES,
+)
+```
+
+Active consumers updated: `jax_rl/training/offpolicy_loop.py`,
+`scripts/train_flashsac.py`, `scripts/record_video.py` (which had a private
+duplicate of `_TERRAIN_TYPE_NAMES`, now imports the canonical one).
