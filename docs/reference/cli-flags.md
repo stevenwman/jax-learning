@@ -12,26 +12,26 @@ uv run python docs/scripts/gen_cli_reference.py
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--env` | str | `CartpoleBalance` | Environment name |
+| `--env` | str | `CartpoleBalance` | Environment name (e.g., CartpoleBalance, CheetahRun, Go2WarpJoystickFlat) |
 | `--seed` | int | `0` | Random seed |
 | `--resume` | str | - | Resume from checkpoint directory path |
 | `--num-envs` | int | from preset | Number of parallel environments (default: from env preset) |
-| `--num-steps` | int | from preset | Rollout steps per environment per collect phase (default: from preset) |
-| `--num-updates-per-batch` | int | from preset | Collect-update cycles per iteration (default: from preset) |
+| `--num-steps` | int | from preset | Rollout steps per env before each update (default: from preset) |
+| `--num-updates-per-batch` | int | from preset | SGD epochs over collected rollout data (default: from preset) |
 | `--total-timesteps` | int | from preset | Total environment steps to train (default: from env preset) |
-| `--lr` | float | from preset | Peak learning rate (default: from env preset) |
-| `--policy-hidden-dim` | int+ | - | Policy network hidden layer sizes (e.g., 256 128) |
-| `--value-hidden-dim` | int+ | - | Value network hidden layer sizes (e.g., 256 256 256) |
-| `--entropy-coef` | float | from preset | Entropy bonus coefficient (default: from env preset) |
-| `--eval-every` | int | - | Evaluate every N episodes (default: every 50000 episodes) |
-| `--reward-scaling` | float | from preset | Multiply rewards by this factor (default: from preset) |
+| `--lr` | float | from preset | Learning rate (default: from preset) |
+| `--policy-hidden-dim` | int+ | - | Actor network hidden layer sizes (e.g., 512 256 128) |
+| `--value-hidden-dim` | int+ | - | Critic network hidden layer sizes (e.g., 512 256 128) |
+| `--entropy-coef` | float | - | Entropy bonus coefficient (higher = more exploration) |
+| `--eval-every` | int | - | Evaluate every N episodes (default: every 512 episodes) |
+| `--reward-scaling` | float | - | Multiply rewards by this factor (default: 1.0) |
 | `--episode-length` | int | from preset | Max steps per episode (default: from env preset) |
-| `--log-interval` | int | `10` | Print training stats every N iterations |
+| `--log-interval` | int | - | Print training stats every N iterations |
 | `--wandb` | flag | off | Enable W&B experiment tracking |
-| `--wandb-project` | str | `jax-rl` | W&B project name |
-| `--frame-stack` | int | - | Number of stacked observation frames |
-| `--action-delay-ms` | int | - | Fixed action delay in ms |
-| `--action-delay-range-ms` | int int | - | Randomized action delay range in ms |
+| `--wandb-project` | str | `jax-rl` | W&B project name (default: jax-rl) |
+| `--frame-stack` | int | - | Number of stacked observation frames (default: 1, use 3 for locomotion) |
+| `--action-delay-ms` | int | - | Fixed action delay in ms (e.g., 120 for Go2 sim2real) |
+| `--action-delay-range-ms` | int int | - | Randomized action delay range in ms (e.g., 40 120) |
 
 ---
 
@@ -39,24 +39,24 @@ uv run python docs/scripts/gen_cli_reference.py
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--env` | str | `Go2BongoHandstand` | Environment name (defaults to bongo handstand) |
-| `--seed` | int | `0` | Random seed |
-| `--resume` | str | - | Resume from checkpoint directory path |
-| `--num-envs` | int | from preset | Number of parallel environments (default: from preset) |
-| `--total-timesteps` | int | from preset | Total environment steps to train (default: from preset) |
-| `--lr` | float | from preset | Peak learning rate (default: from preset) |
-| `--reward-scaling` | float | from preset | Multiply rewards by this factor (default: from preset) |
-| `--episode-length` | int | from preset | Max steps per episode (default: from preset) |
-| `--log-interval` | int | - | Print stats every N iterations |
-| `--frame-stack` | int | - | Number of stacked observation frames |
-| `--wandb` | flag | off | Enable W&B experiment tracking |
-| `--wandb-project` | str | `jax-rl` | W&B project name |
+| `--env` | str | `Go2BongoHandstand` |  |
+| `--seed` | int | `0` |  |
+| `--resume` | str | - |  |
+| `--num-envs` | int | - |  |
+| `--total-timesteps` | int | - |  |
+| `--lr` | float | - |  |
+| `--reward-scaling` | float | - |  |
+| `--episode-length` | int | - |  |
+| `--log-interval` | int | - |  |
+| `--frame-stack` | int | - |  |
+| `--wandb` | flag | off |  |
+| `--wandb-project` | str | `jax-rl` |  |
 | `--alpha` | float | `0.1` | Contraction rate α |
 | `--epsilon` | float | `0.001` | Strict-inequality slack ε |
 | `--penalty-coef` | float | `1.0` | Reward-augment scale |
-| `--metric-lr` | float | `0.001` | Learning rate for the contraction metric network |
-| `--constraint-coef` | float | `1.0` | Constraint loss coefficient |
-| `--metric-hidden` | int+ | `[128, 128]` | Hidden layer sizes for the metric MLP (e.g. 128 128) |
+| `--metric-lr` | float | `0.001` |  |
+| `--constraint-coef` | float | `1.0` |  |
+| `--metric-hidden` | int+ | `[128, 128]` |  |
 
 ---
 
@@ -96,7 +96,7 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--lr` | float | from preset | Learning rate for actor and critic (default: from algo config) |
 | `--reward-scaling` | float | - | Multiply rewards by this factor (default: 1.0) |
 | `--episode-length` | int | from preset | Max steps per episode (default: from env preset) |
-| `--exploration-noise` | float | - | Exploration noise std for TD3-family |
+| `--exploration-noise` | float | from preset | Exploration noise std for TD3 (default: from algo config) |
 | `--eval-every` | int | - | Evaluate every N episodes (default: every 512 episodes) |
 | `--obs-norm` | flag | off | Enable sample-time obs normalization (recommended for humanoid tasks) |
 | `--wandb` | flag | off | Enable W&B experiment tracking (requires wandb installed) |
@@ -118,12 +118,12 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--num-envs` | int | from preset | Number of parallel environments (default: from env preset) |
 | `--total-timesteps` | int | from preset | Total environment steps to train (default: from env preset) |
 | `--lr` | float | from preset | Learning rate for actor and critic (default: from algo config) |
-| `--batch-size` | int | from preset | Batch size for gradient updates (default: from algo config) |
-| `--grad-updates-per-step` | int | from preset | Gradient updates per env step (UTD ratio, default: from config) |
-| `--buffer-size` | int | from preset | Replay buffer capacity (default: from algo config) |
 | `--reward-scaling` | float | - | Multiply rewards by this factor (default: 1.0) |
 | `--episode-length` | int | from preset | Max steps per episode (default: from env preset) |
 | `--target-entropy-scale` | float | from preset | target_entropy = -scale * action_dim (default: from algo config) |
+| `--batch-size` | int | from preset | Batch size for gradient updates (default: from algo config) |
+| `--grad-updates-per-step` | int | from preset | Gradient updates per environment step (default: from algo config) |
+| `--buffer-size` | int | from preset | Replay buffer capacity (default: from algo config) |
 | `--eval-every` | int | - | Evaluate every N episodes (default: every 512 episodes) |
 | `--obs-norm` | flag | off | Enable sample-time obs normalization (recommended for humanoid tasks) |
 | `--wandb` | flag | off | Enable W&B experiment tracking (requires wandb installed) |
@@ -145,12 +145,9 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--num-envs` | int | from preset | Number of parallel environments (default: from env preset) |
 | `--total-timesteps` | int | from preset | Total environment steps to train (default: from env preset) |
 | `--lr` | float | from preset | Learning rate for actor and critic (default: from algo config) |
-| `--batch-size` | int | from preset | Batch size for gradient updates (default: from algo config) |
-| `--grad-updates-per-step` | int | from preset | Gradient updates per env step (UTD ratio, default: from config) |
-| `--buffer-size` | int | from preset | Replay buffer capacity (default: from algo config) |
 | `--reward-scaling` | float | - | Multiply rewards by this factor (default: 1.0) |
 | `--episode-length` | int | from preset | Max steps per episode (default: from env preset) |
-| `--exploration-noise` | float | - | Exploration noise std for TD3-family |
+| `--exploration-noise` | float | from preset | Exploration noise std for TD3 (default: from algo config) |
 | `--eval-every` | int | - | Evaluate every N episodes (default: every 512 episodes) |
 | `--obs-norm` | flag | off | Enable sample-time obs normalization (recommended for humanoid tasks) |
 | `--wandb` | flag | off | Enable W&B experiment tracking (requires wandb installed) |
@@ -159,6 +156,9 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--action-delay-ms` | int | - | Fixed action delay in ms (e.g., 120 for Go2 sim2real) |
 | `--action-delay-range-ms` | int int | - | Randomized action delay range in ms (e.g., 40 120) |
 | `--reset-mode` | str | - | Reset mode: legacy (AutoReset) or per_step (DomainRandWrapper) |
+| `--batch-size` | int | from preset | Batch size for gradient updates (default: from algo config) |
+| `--grad-updates-per-step` | int | from preset | Gradient updates per env step (default: from algo config) |
+| `--buffer-size` | int | from preset | Replay buffer capacity (default: from algo config) |
 
 ---
 
@@ -182,6 +182,7 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--G-max` | float | - | Target max magnitude for discounted returns (reward norm) |
 | `--no-weight-norm` | flag | off | Disable weight normalization after optimizer steps |
 | `--eval-every` | int | - | Evaluate every N episodes |
+| `--reset-mode` | str | - | 'per_step' enables DomainRandWrapper / TerrainCurriculumDRWrapper |
 | `--wandb` | flag | off | Enable W&B experiment tracking |
 | `--wandb-project` | str | `jax-rl` | W&B project name |
 
@@ -191,28 +192,28 @@ uv run python docs/scripts/gen_cli_reference.py
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--reward-mode` | str | `dense` | Reward function. contact_gated is the working RL-from-scratch recipe. |
-| `--total-timesteps` | int | `1000000` | Total environment steps to train |
-| `--num-envs` | int | `8` | Number of parallel environments |
-| `--buffer-size` | int | `500000` | Replay buffer capacity |
-| `--batch-size` | int | `512` | Batch size for gradient updates |
-| `--grad-updates-per-step` | int | `1` | Gradient updates per env step (UTD ratio) |
-| `--lr` | float | `0.0003` | Learning rate for actor and critic |
-| `--gamma` | float | `0.99` | Discount factor |
+| `--reward-mode` | str | `dense` |  |
+| `--total-timesteps` | int | `1000000` |  |
+| `--num-envs` | int | `8` |  |
+| `--buffer-size` | int | `500000` |  |
+| `--batch-size` | int | `512` |  |
+| `--grad-updates-per-step` | int | `1` |  |
+| `--lr` | float | `0.0003` |  |
+| `--gamma` | float | `0.99` |  |
 | `--reward-scale` | float | `1.0` | Multiplier on env reward before replay. Use 0.1 for contact_gated. |
 | `--grad-clip-norm` | float | - | Global grad norm clip (e.g. 1.0). None = off. |
 | `--target-entropy-scale` | float | `1.0` | SAC target entropy = -scale * action_dim. Bigger = more explore. |
-| `--obs-type` | str | `state` | state=5d, environment_state_agent_pos=18d (flattened keypoints + agent) |
+| `--obs-type` | str | `state` | state=5d; keypoints=25d (5d state + 10 dense arc-length KPs per shape); environment_state_agent_pos=18d (T-only keypoints + agent). |
 | `--frame-stack` | int | `1` | Stack N consecutive obs. Implicit velocity; flattened to obs_dim × N. |
-| `--action-repeat` | int | `1` | Repeat each action K env steps (frame skip). Commits policy to direction. |
+| `--action-repeat` | int | `1` | Repeat each action K env steps (frame skip). Commits policy to direction, classic RL trick for multi-contact manipulation (FiGAR / Atari frame skip). |
 | `--coverage-shape` | str | `linear` | r_coverage shape. 'linear' = raw coverage. 'log_barrier' = -log(1 - cov + eps): unbounded near goal, amplifies final-mile precision. |
 | `--coverage-eps` | float | `0.01` | Epsilon for log_barrier (sets max reward ceiling: ε=0.01 → r_max≈4.6). |
-| `--success-threshold` | float | `0.95` | Coverage threshold for terminated=True. DP paper uses 0.95. Lower to 0.85 for tractable success events. |
+| `--success-threshold` | float | `0.95` | Coverage threshold for terminated=True. DP paper uses 0.95 (above human teleop peak 0.9489). Lower to 0.85 for tractable success events. |
 | `--success-bonus` | float | `50.0` | Terminal reward on success (contact_gated mode only). Default 50. |
-| `--block-shape` | str | `tee` | Block shape. 'dr' samples uniformly per episode from {tee, ellipse, triangle, s}. |
-| `--seed` | int | `0` | Random seed |
-| `--eval-every-n-steps` | int | `50000` | Evaluate every N environment steps |
-| `--wandb` | flag | off | Enable W&B experiment tracking |
+| `--block-shape` | str | `tee` | Block shape. 'dr' samples per episode from letter set {tee, l, k, s}. |
+| `--seed` | int | `0` |  |
+| `--eval-every-n-steps` | int | `50000` |  |
+| `--wandb` | flag | off |  |
 
 ---
 
@@ -220,10 +221,14 @@ uv run python docs/scripts/gen_cli_reference.py
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--env` | str | - | Environment name (inferred from checkpoint if omitted) |
-| `--checkpoint` | str | - | Checkpoint directory (random policy if omitted) |
-| `--out` | str | `rollout.mp4` | Output video path |
-| `--max-steps` | int | `1000` | Maximum rollout steps |
-| `--camera` | str | - | Camera name override |
-| `--seed` | int | - | Environment reset seed |
+| `--env` | str | - |  |
+| `--checkpoint` | str | - |  |
+| `--out` | str | `rollout.mp4` |  |
+| `--max-steps` | int | `1000` |  |
+| `--camera` | str | - |  |
+| `--seed` | int | `0` | Random seed for env reset |
 | `--kicks` | flag | off | Zero velocity command + random velocity kicks every 1.5s |
+| `--force-zero-linvel` | flag | off | Curriculum Class A only: force cmd_vx=cmd_vy=0 for the whole episode (DR sanity check) |
+| `--force-zero-yaw` | flag | off | Curriculum: force cmd_yaw_rate=0 for the whole episode (DR sanity check) |
+| `--terrain-level` | int | - | Curriculum env only: force spawn at this level (0-9) |
+| `--terrain-type` | str | - | Curriculum env only: force spawn at this terrain type |
