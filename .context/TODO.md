@@ -1,5 +1,35 @@
 # TODO
 
+## 🔥 High priority — TD-MPC2 end-of-run collapse investigation
+
+J3 1M (2026-04-25) achieved best mppi=837.51 ± 1.35 (paper-match) at step 500k, but **final ckpt at step 1M dropped to 439 (-47% from peak)**. Same pattern observed at 100k smoke (peak 523 → final 316, -40%). Same shape at different scales → systematic, not noise. Both confirmed via `scripts/eval_tdmpc2.py` re-eval on saved ckpts (40 episodes each, std < 2).
+
+**Hypotheses for diagnosis:**
+- Q overestimation accumulating that the regularizers (dropout + target-Q EMA + qscale EMA) eventually can't keep up with
+- Adam moment blow-up at end (no LR annealing in our setup; source uses constant LR too)
+- Buffer wrap effects (1M buffer / ~1M steps means we just barely start reusing slots near the end of run)
+- Final eval hitting a bad mode in the policy (less likely — re-eval on the saved final ckpt confirmed the drop)
+
+**Diagnostic plan:**
+- Re-eval intermediate ckpts (e.g. via `--load-ckpt` on every saved ckpt) to plot the full collapse curve
+- Inspect Tier B logs around the collapse window: q_p5/q_p95 EMA, scaled_entropy_mean, wm_grad_norm, pi_grad_norm
+- If Q-overestimation suspected: log min/mean/max of q_avg_t0 over training and look for blow-up in last 10%
+- Compare to source — does TD-MPC2 paper show this collapse shape? Probably not in published figures (they report best, not final). Worth checking original repo's training curves.
+
+Best-ckpt-save (already implemented) ensures we never deploy the collapsed policy, so this is a quality-of-life issue not a correctness one. Still worth understanding.
+
+## 🔥 High priority — Verify polyak refactor on Go2 FastSAC training run
+
+Commit `45ad979` (2026-04-25) extracted `_soft_update` from sac/td3/fast_sac/fast_td3/flash_sac into `jax_rl/utils/polyak.py`. Within-run equivalence proven by `tests/test_polyak.py::test_arbitrary_tau_matches_inline_lambda` (bit-equal to old inline lambda for tau ∈ {0, 0.005, 0.125, 0.5, 0.9, 1.0}). All 322 unit tests pass across 7 files. **Behavioral seal-of-approval still pending** — needs a real training run.
+
+**Plan:**
+- `uv run python scripts/train_fast_sac.py --env Go2WarpJoystickFlat --reset-mode per_step --num-envs 1024 --total-timesteps 5000000 --seed 42 --wandb`
+- Run pre-refactor (`git checkout 45ad979^`) and post-refactor (current HEAD) under same seed.
+- Cross-run won't be bit-identical on GPU (memory: feedback_gpu_nondeterminism). Confirm eval curves converge to within seed variance. Pre-fix Go2 FastSAC seed=100 hit 283.8 (best in-loop, post-truncation-fix benchmark in AGENT_HANDOFF.md). Acceptable: post-refactor lands within ±5 of that.
+- ~30-60 min GPU time. Background it.
+
+If eval diverges by more than seed variance: bug in the polyak signature switch (tau capture, arg order, closure) — revert to `45ad979^` and re-investigate.
+
 ## 🔥 High priority — FlashSAC resume eval regression
 
 After landing `reward_norm_state` persistence (commit 6a17f9b, 2026-04-24), verified the reward-norm fix works via direct ckpt inspection (G_count=499968, G_r_max=33.28, RewScale=8.4318 matches pre-resume log's 8.435 to 3 decimals). But: resume still shows a large eval drop — CartpoleBalance hit 996 pre-resume then 747 at first eval after resume.
@@ -104,6 +134,17 @@ Prior HP sweep at `penalty_coef ∈ {0.01, 0.1, 1.0}, constraint_coef=1` — mos
 ## Completed (2026-03-30)
 - [x] PandaPickCube SAC — **reward 1386, cube lifted 22cm** @ 10M steps. Preset added to env_presets.py.
 - [x] Manipulation benchmark survey — MuJoCo Playground already has 10 tasks (PandaPickCube, LeapCubeReorient, AlohaSinglePegInsertion, etc.)
+
+## Completed (2026-04-25) — TD-MPC2 J3 paper match + supporting infra
+
+- [x] **3 correctness bugs fixed** (commit 1e56a7f, see `.context/journals/2026-04-25.md` afternoon):
+  1. MPPI temperature inverted (was 4× sharper than source)
+  2. Q dropout disabled in world-model value loss (regularizer was off)
+  3. Replay buffer cross-env contamination (sample_sequence stride for multi-env)
+- [x] **Runtime extraction + eval-only ckpt scoring** (commit 007e992): `jax_rl/algos/tdmpc2_runtime.py` (252 LOC shared init/eval), `scripts/eval_tdmpc2.py` (load ckpt + N-round eval).
+- [x] **Eval-key isolation** (commit b5a8c70): training PRNG no longer perturbed by eval cadence; verified within-process via key_before/after match.
+- [x] **Determinism diagnostics + lesson** (commit 391e718): `scripts/check_tdmpc2_determinism.py` (3 subchecks), `.context/lessons/determinism.md` documents JAX/XLA bit-ID limits + mujoco_warp non-det (officially ack'd, fix in flight Warp 1.14 ~Jun 2026).
+- [x] **J3 CheetahRun 1M benchmark**: best mppi=**837.51 ± 1.35 over 40 episodes** at step 500k. Within 1.5% of paper ≈850.
 
 ## Completed (2026-04-24)
 - [x] **TD-MPC2 port (Phases A-I)** — branch `tdmpc2-impl`. Full model-based RL pipeline: SimNorm/two-hot/qscale utilities, per-episode sequence buffer, networks (Encoder/Dynamics/Reward/QEnsemble/PolicyPrior), losses (world model + policy with iter-4 sign fix + iter-3 no-mask fix), MPPI planner (Gumbel single-elite + `_prev_mean` warm-start + horizon/horizon-1 loop asymmetry), TDMPC2State + multi_transform optimizer + update_step factory, standalone `train_tdmpc2.py` with warmup/collect/UTD/eval/checkpoint. ~80 unit tests passing; 5 spec + 3 plan review iterations caught 14+ silent-failure bugs before coding. See `.context/journals/2026-04-24.md`. Benchmarks (J2-J4) deferred to user-initiated multi-hour runs.

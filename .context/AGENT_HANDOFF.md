@@ -225,7 +225,7 @@ Curriculum env: 128 envs @ 16GB GPU (6 rows × 5 cols = 30 tiles vs 40 previousl
 | FastTD3 | `train_fast_td3.py` | C51 distributional + TD3 |
 | FastSAC | `train_fast_sac.py` | C51 distributional + SAC + asymmetric critic (Go2) |
 | FlashSAC | `train_flashsac.py` | Inverted residual blocks + BatchNorm + weight norm + adaptive reward scaling + Zeta noise |
-| TD-MPC2 | `train_tdmpc2.py` | Model-based: learned world model (encoder/dynamics/reward/Q) + MPPI planner in latent space + SAC-style policy prior. Single-task B (C-seams). DMC P1; Go2 P2 pending. See `.context/journals/2026-04-24.md`. |
+| TD-MPC2 | `train_tdmpc2.py` | Model-based: learned world model (encoder/dynamics/reward/Q) + MPPI planner in latent space + SAC-style policy prior. Single-task B (C-seams). **DMC J3 CheetahRun: 837 ± 1.5 vs paper ≈850 (2026-04-25)**. Shared init/eval helpers in `jax_rl/algos/tdmpc2_runtime.py`. Eval-only ckpt scoring via `scripts/eval_tdmpc2.py`. See `.context/journals/2026-04-25.md` (afternoon). |
 
 Full API reference (params, defaults, docstrings): `docs/api/algos.md` (autogen from source).
 
@@ -234,7 +234,7 @@ Full API reference (params, defaults, docstrings): `docs/api/algos.md` (autogen 
 ## Part 5: Current State
 
 ### Current best results (one-line summary)
-Go2 Warp (48d state, post-truncation-fix 2026-04-13): FastSAC+torque-speed **286** / FlashSAC **284.5** / FastSAC **283.8** / FastTD3 **273.1**. DM Control: FastTD3 880 (CheetahRun), FastSAC 892 (HumanoidRun).
+Go2 Warp (48d state, post-truncation-fix 2026-04-13): FastSAC+torque-speed **286** / FlashSAC **284.5** / FastSAC **283.8** / FastTD3 **273.1**. DM Control: FastTD3 880 (CheetahRun), FastSAC 892 (HumanoidRun), **TD-MPC2 837 ± 1.5 (CheetahRun, J3 1M, 2026-04-25, paper-match)**.
 
 Full benchmark history (tables, seeds, wandb IDs, pre/post-fix breakdown) moved to per-run journal entries — grep `.context/journals/` by date. Truncation-fix story in `lessons/offpolicy.md §Truncation Handling`.
 
