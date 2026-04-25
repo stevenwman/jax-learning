@@ -5,7 +5,7 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 
 ---
 
-## [PPO](lessons/ppo.md) — 17 lessons
+## [PPO](lessons/ppo.md) — 19 lessons
 
 - **Match reference EXACTLY before investigating** — diff the code first (found 2x gap in 5 min of reading)
 - **Entropy coefficient is env-dependent** — CheetahRun needs 0.0; CartpoleBalance needs 0.01
@@ -20,6 +20,8 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **Truncation handling in auto-reset envs** — zero out TD error at truncation, don't try to correct bootstrap
 - **Tanh squashing requires matched entropy** — must include Jacobian correction `log(1 - tanh²)`
 - **Batch volume controls safe epochs** — more epochs need proportionally more data
+- **ContractionPPO on dense-reward stabilization is ~neutral** — port is algorithmically faithful; no return gains on Go2BongoHandstand at ref HPs (paper's claim is wind-robustness, which we didn't test)
+- **Recording rollouts must freeze norm + handle frame stack** — inference path must mirror training's preprocessing exactly; bongo FS=3 exposed the bug
 - **Structural parity, not just HPs** — same HP value behaves differently in different structural contexts
 - **Know when PPO is the wrong tool** — HumanoidRun is a known failure case, check literature first
 - **PPO validation summary** — CartpoleBalance PASS, CheetahRun PASS (826), HumanoidRun PASS (matches Brax ~8-10)

@@ -39,7 +39,7 @@ Unified + persisted critic normalization for both on-policy and off-policy paths
   - PPO: return 1.4 → 165, VLoss stable.
 - Commit: 4562307.
 
-**Follow-up:** re-run PPO4 bongo baseline (eval 46.9, pre-fix) with corrected critic normalization to validate contraction-PPO comparisons.
+**Follow-up (resolved 2026-04-24):** re-ran PPO baseline + ContractionPPO at ref HPs on new critic-norm code, 100M each. Result neutral (38.5 vs 37.8 5-seed mean on best ckpt). See `.context/journals/2026-04-24.md` and `.context/lessons/ppo.md`.
 
 ## Completed (2026-04-21) — ContractionPPO port
 - [x] Read Zinage et al. ContractionPPO paper/repo, extract algorithm
@@ -52,12 +52,16 @@ Unified + persisted critic normalization for both on-policy and off-policy paths
 - [x] Smoke run validated end-to-end: CPen 60% drop in 2 iters, no NaN, metric learning confirmed
 - [x] 26 tests green
 
-### Research work remaining (code-complete, needs GPU time)
-- [ ] Pin PPO baseline on `Go2BongoHandstand` — 20M steps with new preset
-- [ ] Matched 20M on `Go2BongoHandstandContraction` (α=0.1, ε=1e-3, penalty_coef=1.0)
-- [ ] Success criteria: return ≥ 80% of baseline, final CPen < 0.5× init, no NaN, ||L||_F < 10× init
-- [ ] If ||L||_F criterion fails → add power-iteration spectral norm (Deviation 1 trigger)
-- [ ] α, ε, penalty_coef sweep if PPO version validates
+### Research work — CLOSED 2026-04-24
+
+Final A/B on `Go2BongoHandstand` (100M, single seed, ref HPs `alpha=0.1, eps=1e-3, penalty_coef=0.005, constraint_coef=100, metric_hidden=[128,64]`): **baseline 38.5 vs contraction 37.8 mean (5-seed re-eval on best ckpt, deterministic)**. Neutral — not worse, not obviously better. Different failure-mode seeds suggest the contraction policy has a distinct strategy but not a superior one. Independent review confirms the port's contraction-specific math is faithful to ref; any residual gap is in the PPO base (KL-adaptive LR, clipped value loss — both intentional deviations in ours, see `lessons/ppo.md`).
+
+Prior HP sweep at `penalty_coef ∈ {0.01, 0.1, 1.0}, constraint_coef=1` — mostly inert (those were 100× weaker than ref's regime). Kept for reference in journal.
+
+**If revisiting:**
+- Test ref's actual claim (wind-perturbation robustness, not nominal return). Paper reports 0.00 vs 0.99 failure ratio on bongo+wind.
+- Try ref's `c = trunk_xy_world_position` coord (we used projected_gravity). Different stability signal.
+- Sparse-reward stabilization (pendulum swingup) where shaping has more room to help — we tried CartpoleSwingupSparse briefly but with high training-noise; inconclusive.
 
 ## Completed (2026-03-22)
 - [x] FastTD3 HumanoidRun — **665 eval** @ 100M steps

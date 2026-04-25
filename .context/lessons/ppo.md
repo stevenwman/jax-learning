@@ -216,6 +216,51 @@ def entropy_gaussian(log_std, mean=None, key=None, squash=False):
 
 ---
 
+## ContractionPPO — Ref-HP Replication on Go2BongoHandstand (2026-04-24)
+
+**What happened:** Ported Zinage et al. ContractionPPO (arXiv:2603.19632, github.com/contractionppo/ContracionPPO) onto our JAX/Flax PPO. Validated on `Go2BongoHandstand` with matched A/B vs baseline PPO, 100M steps @ 1024 envs, single seed, at ref's actual HPs.
+
+**Result:** Neutral. Baseline 38.5 vs Contraction 37.8 (mean over 5 re-eval seeds on best ckpt). Same completion rate (3/5 both). Policies fail on *different* init conditions — contraction learns a different strategy but not a better one on this task.
+
+**What matches ref (post independent-review):**
+- Core math: V=cᵀM(c)c, V̇=∇V·ċ, penalty=ReLU(V̇+αV+ε), metric_loss=mean(penalty), reward_aug=(ε−penalty)·penalty_coef — all faithful.
+- SPD: both use M=LLᵀ with positive diagonal via softplus.
+- `constraint_coef=100` scales both c and ċ — easy to miss; we got it right.
+- Policy coupling is reward-augmentation only; PPO loss unchanged. Ref's `x=[c,e]` augmentation is commented out in their final impl.
+
+**What differs — all in the PPO base, not contraction:**
+- Ref uses adaptive KL-tuned LR; we use fixed LR (ours is deliberate — see "Match Reference Implementation EXACTLY" above).
+- Ref uses PPO2 clipped value loss; we use plain MSE × 0.25 (deliberate, matches Brax — see "Remaining Performance Gap (RESOLVED)" below).
+- Ref has `lyapunov_regularization=1e-4` on metric; we don't. Marginal.
+- Ref uses `c = trunk_xy_world_position` (2D); we used `c = projected_gravity − [1,0,0]` (3D) for bongo. Both valid but different.
+
+**Lesson:** Contraction-theory shaping is ~neutral on a task where base PPO reward already encodes the stability objective densely. Ref's paper claim is **robustness under wind/perturbation**, not nominal return — we didn't test that axis. For stabilization tasks with dense reward, contraction shaping adds machinery (metric net, 2nd-order autodiff, new HPs) without clear return gains. May help where reward is sparse near the equilibrium; bongo wasn't that.
+
+**Ref HPs that work:** `alpha=0.1, epsilon=1e-3, penalty_coef=0.005, constraint_coef=100, metric_lr=1e-3, metric_hidden=[128,64]`. Our initial tests at `penalty_coef=1.0, constraint_coef=1.0` were 100× weaker and mostly inert.
+
+See `.context/journals/2026-04-24.md` for full A/B tables + video paths.
+
+---
+
+## Video-Recording Rollout: Freeze Norm + Frame-Stack Aware (2026-04-24)
+
+**What happened:** Re-evaluating a bongo ckpt via `record_video.py` crashed with `shape mismatch (46,) vs (138,)`. `norm_state.mean` is 46-dim (single-frame), but FrameStackWrapper (FS=3) emits stacked 138-dim obs. Also: PPO rollout_step was calling `norm_update(ns, obs)` mid-rollout, mutating frozen eval stats.
+
+**Root causes:**
+1. `jax_rl/utils/rollout.py:build_ppo_rollout_step` updated norm state during inference. Off-policy path was already correct; PPO diverged.
+2. Neither builder took `n_frame_stack`. Training's `onpolicy_collect` slices to single-frame before `norm_update` and uses `normalize_stacked` for inference; recording didn't mirror this.
+3. `record_video.py:_build_select_action` didn't route `algo="ppocontr"` → crashed at startup for PPOContraction ckpts.
+
+**Fix (commit fb71748):**
+- Both rollout builders take `n_frame_stack` kwarg, route through `normalize_stacked` when >1. PPO path freezes norm (dropped from carry), parallels the existing off-policy pattern.
+- `record_video.py` threads `n_frame_stack` from `meta["train_config"]`.
+- `ppocontr` algo added to `_build_select_action` (reuses PPOContraction with `contraction=None` — metric net unused for inference).
+- `tests/test_rollout_recording.py`: 4 new tests covering FS=1/FS=3 × PPO/off-policy and norm-state-not-mutated.
+
+**Lesson:** Any eval/recording path must mirror training's inference-time preprocessing exactly: (a) `norm_state` is frozen, (b) `normalize_stacked` when FS>1 (per-frame stats, per-frame apply). If training uses `norm_normalize_stacked` in `_select_deterministic`, the recording path must too. Hadn't hit earlier because most logged envs don't frame-stack; bongo (FS=3) was the first.
+
+---
+
 ## PPO Validation Summary
 
 | Environment | Our Result | Target | Status |
