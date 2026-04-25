@@ -322,7 +322,13 @@ def compute_td_target(
     gamma = cfg.discount
     obs_next = batch["obs"][1:]         # (H, B, obs_dim)
     rewards = batch["rewards"]          # (H, B, 1)
-    terminated = batch["dones"]         # (H, B, 1)
+    # True termination only — exclude truncations. Our EpisodeWrapper sets done=1
+    # at episode timeout (training.py:121), so batch["dones"] = terminated | truncated.
+    # Source stores `terminated` separately and uses ONLY it in (1 - terminated)
+    # (tdmpc2/tdmpc2.py:258, common/buffer.py:98-106). For non-episodic DMC tasks
+    # this means bootstrap is preserved across timeouts. We recover the same mask
+    # via dones - truncations (clipped to {0, 1}).
+    terminated = jnp.clip(batch["dones"] - batch["truncations"], 0.0, 1.0)  # (H, B, 1)
     B = obs_next.shape[1]
 
     # 1. Online encoder on real next obs. Flatten (H, B) for batched apply; reshape back.
@@ -533,7 +539,11 @@ def policy_loss(
     rho_powers = cfg.rho ** jnp.arange(H_plus_1)  # (H+1,)
 
     # Sample action at each (h, b) with independent PRNG.
-    key_pi, key_q = jax.random.split(key, 2)
+    # key_qdrop: dropout RNG for online Q forward — source's _detach_Qs is in train
+    # mode during update_pi (world_model.py:74-80, tdmpc2.py:267/314), so dropout
+    # IS active on the policy-loss Q evaluation. We previously hard-set
+    # deterministic=True which silently disabled this regularizer.
+    key_pi, key_q, key_qdrop = jax.random.split(key, 3)
     pi_keys = jax.random.split(key_pi, H_plus_1 * B).reshape(H_plus_1, B, 2)
 
     def _sample(z, k):
@@ -553,7 +563,8 @@ def policy_loss(
     q_logits_flat = q_ensemble_net.apply(
         jax.lax.stop_gradient(online_params["q_ensemble"]),
         z_flat, a_flat,
-        deterministic=True,
+        deterministic=False,
+        rngs={"dropout": key_qdrop},
     )  # (num_q, (H+1)*B, num_bins)
     q_logits = q_logits_flat.reshape(cfg.num_q, H_plus_1, B, cfg.num_bins)
 
@@ -1062,12 +1073,16 @@ def make_update_step(
         policy_params_new = pol_params_new_full["policy"]
 
         # 4. Q-scale update from t=0 avg-of-2 Q values
-        perm_qs = jax.random.permutation(key_qscale, cfg.num_q)[:2]
+        # Same train-mode-dropout semantics as policy_loss above (source uses
+        # _detach_Qs which inherits parent's train mode).
+        key_qscale_perm, key_qscale_drop = jax.random.split(key_qscale, 2)
+        perm_qs = jax.random.permutation(key_qscale_perm, cfg.num_q)[:2]
         q_logits_for_scale = q_ensemble_net.apply(
             jax.lax.stop_gradient(wm_params_new["q_ensemble"]),
             zs_detached[0],                                  # (B, latent_dim)
             jax.lax.stop_gradient(pol_metrics["a_t0"]),      # (B, action_dim)
-            deterministic=True,
+            deterministic=False,
+            rngs={"dropout": key_qscale_drop},
         )  # (num_q, B, num_bins)
         q_sel = q_logits_for_scale[perm_qs]                  # (2, B, num_bins)
         q_dec = two_hot_inv(
