@@ -39,6 +39,7 @@ from mujoco_playground import registry as pg_registry
 from jax_rl.training.checkpointing import load_actor_for_inference
 # Register custom envs (Go2 etc.) with Playground's registry.
 import jax_rl.training.env_setup  # noqa: F401 — side effect: registers custom envs
+from jax_rl.training.env_backends import detect_backend
 from jax_rl.utils.normalization import normalize as norm_normalize
 from jax_rl.utils.rollout import build_ppo_rollout_step, build_offpolicy_rollout_step
 from jax_rl.envs.locomotion.go2_rendering import apply_kicks, render_command_overlays
@@ -206,6 +207,18 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
         print("Using random (untrained) policy")
 
     env_name = env_name or "CartpoleBalance"
+
+    # ── Dispatch by backend ──────────────────────────────────────────────
+    backend = detect_backend(env_name)
+    if backend == "gym":
+        return _record_gym(
+            env_name=env_name, meta=meta,
+            actor_params=actor_params, norm_state=norm_state,
+            actor_batch_stats=actor_batch_stats,
+            checkpoint=checkpoint, out=out,
+            max_steps=max_steps, video_seed=video_seed,
+        )
+
     defaults = ENV_DEFAULTS.get(env_name, ((256, 256), None))
     camera = camera or defaults[1]
 
@@ -447,6 +460,108 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
 
     np.savez_compressed(npz_path, **traj_data)
     print(f"Trajectory saved: {npz_path} ({len(traj_data)} arrays)")
+
+
+def _record_gym(env_name, meta, actor_params, norm_state, actor_batch_stats,
+                checkpoint, out, max_steps, video_seed):
+    """Record a rollout for a gym-backend env (PushT etc.).
+
+    Single-env Python loop; uses env.render(mode='rgb_array') per step
+    to capture frames. Saves mp4 + traj npz like the MJX path, but with
+    obs/actions/rewards instead of qpos/qvel.
+    """
+    # Build the gym env via the backend factory using stored env_kwargs.
+    from jax_rl.configs.train_config import TrainConfig
+    from jax_rl.training.env_backends.gym_backend import GYM_ENV_FACTORIES
+
+    if env_name not in GYM_ENV_FACTORIES:
+        raise ValueError(
+            f"Gym env {env_name!r} has no registered factory. Known: "
+            f"{sorted(GYM_ENV_FACTORIES)}"
+        )
+
+    train_cfg = meta.get("train_config", {})
+    env_kwargs = dict(train_cfg.get("env_kwargs") or {})
+    cfg = TrainConfig(env_name=env_name, num_envs=1, env_kwargs=env_kwargs)
+    make_env_thunk = GYM_ENV_FACTORIES[env_name](cfg)
+    env = make_env_thunk()
+
+    obs, _ = env.reset(seed=int(video_seed))
+    obs_dim = obs.shape[-1] if not isinstance(obs, dict) else obs["state"].shape[-1]
+    action_dim = int(np.asarray(env.action_space.sample()).shape[-1])
+
+    # Build the actor (algo-agnostic — same factory as MJX path).
+    if actor_params is not None:
+        algo, kind = _build_select_action(meta, obs_dim, action_dim)
+        if kind == "ppo":
+            select_action = algo.select_action
+        else:
+            select_action = algo.select_action
+    else:
+        algo, kind = None, "random"
+        select_action = None
+
+    use_obs_norm = False
+    for k in ("sac_config", "fast_sac_config", "td3_config", "fast_td3_config",
+              "ppo", "flash_sac_config", "tdmpc2_config"):
+        if k in meta and meta[k].get("obs_normalization", False):
+            use_obs_norm = True
+            break
+
+    # ── Rollout (Python loop, one env) ───────────────────────────────────
+    print(f"Rollout: {env_name} (gym backend), max {max_steps} steps...")
+    t0 = time.time()
+    obs_hist, act_hist, rew_hist = [obs], [], []
+    frames = [env.render()]
+
+    key = jax.random.PRNGKey(video_seed)
+    for step in range(max_steps):
+        key, ak = jax.random.split(key)
+        if select_action is not None:
+            obs_arr = obs["state"] if isinstance(obs, dict) else obs
+            obs_jax = jnp.asarray(obs_arr)[None]
+            if use_obs_norm and norm_state is not None:
+                obs_jax = norm_normalize(norm_state, obs_jax)
+            action = np.asarray(
+                select_action(actor_params, obs_jax, ak, deterministic=True)
+            )[0]
+        else:
+            action = np.asarray(env.action_space.sample(), dtype=np.float32)
+        obs, r, term, trunc, info = env.step(action.astype(np.float32))
+        obs_hist.append(obs); act_hist.append(action); rew_hist.append(float(r))
+        frames.append(env.render())
+        if term or trunc:
+            print(f"Episode ended at step {step + 1} (term={term}, trunc={trunc})")
+            break
+
+    t_rollout = time.time() - t0
+    print(f"Rollout + render: {len(frames)} frames in {t_rollout:.2f}s "
+          f"({t_rollout / max(len(frames), 1) * 1000:.1f}ms/frame)")
+    print(f"Total reward: {sum(rew_hist):.1f}")
+    if "coverage" in info:
+        print(f"Final coverage: {info['coverage']:.3f}")
+
+    # ── Save video + traj ────────────────────────────────────────────────
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    if out != "rollout.mp4":
+        video_path = out
+    elif checkpoint is not None:
+        video_path = os.path.join(checkpoint, f"{timestamp}_rollout.mp4")
+    else:
+        video_path = f"{timestamp}_rollout.mp4"
+    print(f"Saving to {video_path}...")
+    imageio.mimsave(video_path, frames, fps=int(env.metadata.get("render_fps", 30)))
+    print(f"Done: {video_path}")
+
+    npz_path = video_path.replace(".mp4", "_traj.npz")
+    obs_arr = np.stack([o["state"] if isinstance(o, dict) else o for o in obs_hist])
+    np.savez_compressed(
+        npz_path,
+        obs=obs_arr,
+        actions=np.stack(act_hist) if act_hist else np.zeros((0, action_dim), dtype=np.float32),
+        rewards=np.asarray(rew_hist, dtype=np.float32),
+    )
+    print(f"Trajectory saved: {npz_path}")
 
 
 def build_parser() -> argparse.ArgumentParser:
