@@ -1,22 +1,28 @@
 # TODO
 
-## 🔥 High priority — TD-MPC2 end-of-run collapse investigation
+## Medium priority — TD-MPC2 J3 Cheetah re-run with all fixes
 
-J3 1M (2026-04-25) achieved best mppi=837.51 ± 1.35 (paper-match) at step 500k, but **final ckpt at step 1M dropped to 439 (-47% from peak)**. Same pattern observed at 100k smoke (peak 523 → final 316, -40%). Same shape at different scales → systematic, not noise. Both confirmed via `scripts/eval_tdmpc2.py` re-eval on saved ckpts (40 episodes each, std < 2).
+J3 v1 (2026-04-25) hit mppi=837 with action_repeat=1, episode_length=1000, γ=0.995, AND pre-Bug-A/B. Now we have:
+- Bug A (truncated≠terminated) fixed (c080d32)
+- Bug B (Q dropout in policy/qscale paths) fixed (c080d32)
+- action_repeat=2 + episode_length=500 (43b71ad)
+- eval-key isolation (b5a8c70)
 
-**Hypotheses for diagnosis:**
-- Q overestimation accumulating that the regularizers (dropout + target-Q EMA + qscale EMA) eventually can't keep up with
-- Adam moment blow-up at end (no LR annealing in our setup; source uses constant LR too)
-- Buffer wrap effects (1M buffer / ~1M steps means we just barely start reusing slots near the end of run)
-- Final eval hitting a bad mode in the policy (less likely — re-eval on the saved final ckpt confirmed the drop)
+Re-run J3 with all fixes. Expected: ≥837 (might exceed if previously bottlenecked by Bug A on truncations or by under-coverage from action_repeat=1; or stay 837 if already at task ceiling). Also tests whether end-of-run collapse pattern recurs (J4 v3 didn't show it — eval-key fix likely helped).
 
-**Diagnostic plan:**
-- Re-eval intermediate ckpts (e.g. via `--load-ckpt` on every saved ckpt) to plot the full collapse curve
-- Inspect Tier B logs around the collapse window: q_p5/q_p95 EMA, scaled_entropy_mean, wm_grad_norm, pi_grad_norm
-- If Q-overestimation suspected: log min/mean/max of q_avg_t0 over training and look for blow-up in last 10%
-- Compare to source — does TD-MPC2 paper show this collapse shape? Probably not in published figures (they report best, not final). Worth checking original repo's training curves.
+```bash
+PYTHONPATH=$PWD XLA_PYTHON_CLIENT_MEM_FRACTION=0.4 \
+  uv run python scripts/train_tdmpc2.py --env CheetahRun --total-timesteps 1000000 \
+  --seed 0 --num-envs 8 --eval-every 50000 --ckpt-dir .temp/tdmpc2_j3_v2
+```
 
-Best-ckpt-save (already implemented) ensures we never deploy the collapsed policy, so this is a quality-of-life issue not a correctness one. Still worth understanding.
+Not blocking — paper match already achieved with v1.
+
+## Low priority — TD-MPC2 train-budget extension to paper scale (4-14M)
+
+Paper trains DMControl for 4-14M env steps (Humanoid uses 14M per Fig.15). We've validated 1M trajectories that match paper Fig.15 band at the same env-step budget (Humanoid 559 at 1M). For full asymptotic comparison would need to extend training. Each 1M ≈ 5h on a single GPU; 14M ≈ 70h.
+
+Best-ckpt-save protects deployable artifacts; the only reason to extend is settling per-task asymptotic numbers for publication.
 
 ## 🔥 High priority — Verify polyak refactor on Go2 FastSAC training run
 
@@ -134,6 +140,15 @@ Prior HP sweep at `penalty_coef ∈ {0.01, 0.1, 1.0}, constraint_coef=1` — mos
 ## Completed (2026-03-30)
 - [x] PandaPickCube SAC — **reward 1386, cube lifted 22cm** @ 10M steps. Preset added to env_presets.py.
 - [x] Manipulation benchmark survey — MuJoCo Playground already has 10 tasks (PandaPickCube, LeapCubeReorient, AlohaSinglePegInsertion, etc.)
+
+## Completed (2026-04-26) — TD-MPC2 J4 HumanoidRun paper-band match
+
+- [x] **2 more correctness bugs** (commit c080d32):
+  - Bug A: truncated treated as terminated in TD target — clip(dones - truncations, 0, 1)
+  - Bug B: Q dropout disabled in policy_loss + qscale recompute paths — added rngs={"dropout": key} at both call sites
+- [x] **Env source-parity** (commit 43b71ad): action_repeat=2 (TDMPC2Config new field) + episode_length=500 in DMC presets (was 1000). Discount auto-recomputes 0.995→0.99.
+- [x] **scripts/record_video_tdmpc2.py** (commit fd3e814): MPPI + prior mode video capture via two-phase rollout+render. Camera tracks body_id=1.
+- [x] **J4 HumanoidRun 1M v3 benchmark**: final mppi=559.68 (best at final, no end-of-run collapse). 5-round eval of best ckpt: **mppi 556.99 ± 4.06 over 40 episodes**. Within paper Fig.15 Humanoid Run trajectory band at the same env-step budget.
 
 ## Completed (2026-04-25) — TD-MPC2 J3 paper match + supporting infra
 
