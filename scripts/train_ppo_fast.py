@@ -27,7 +27,7 @@ import optax
 from jax_rl.algos.ppo import PPO
 from jax_rl.buffers import RolloutBatch
 from jax_rl.configs import EncoderConfig, PolicyHeadConfig, TrainConfig, get_preset
-from jax_rl.training import make_envs, EpisodeTracker, load_checkpoint
+from jax_rl.training import make_env_bundle, EpisodeTracker, load_checkpoint
 from jax_rl.training.metrics_logger import wandb_init, wandb_setup_metrics, wandb_log, wandb_finish
 from jax_rl.training.checkpointing import save_checkpoint, CheckpointManager
 from jax_rl.utils.eval import evaluate
@@ -66,14 +66,19 @@ def _make_eval_action(ppo, get_policy_obs, n_frame_stack=1):
 def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
           use_wandb: bool = False, wandb_project: str = "jax-rl"):
     # ── Environment ──────────────────────────────────────────────────────
-    env, env_step, env_state, eval_env, obs_dim, action_dim, key = make_envs(cfg, seed)
-
-    dict_obs = isinstance(env_state.obs, dict)
-    if dict_obs:
-        critic_obs_dim = env_state.obs["privileged_state"].shape[-1]
+    bundle = make_env_bundle(cfg, seed)
+    if bundle.backend_kind != "mjx":
+        raise ValueError(
+            f"train_ppo_fast.py uses lax.scan and only supports MJX envs; got "
+            f"backend_kind={bundle.backend_kind!r} for env {cfg.env_name!r}. "
+            f"Use train_ppo.py (Python-loop variant) for non-MJX backends."
+        )
+    env, env_step, env_state, eval_env = bundle.env, bundle.env_step, bundle.env_state, bundle.eval_env
+    obs_dim, action_dim, key = bundle.obs_dim, bundle.action_dim, bundle.key
+    dict_obs = bundle.dict_obs
+    critic_obs_dim = bundle.critic_obs_dim if bundle.has_privileged else obs_dim
+    if bundle.has_privileged:
         print(f"  Asymmetric actor-critic: policy obs={obs_dim}, critic obs={critic_obs_dim}")
-    else:
-        critic_obs_dim = obs_dim
 
     ppo_cfg = cfg.ppo
     samples_per_update = cfg.num_envs * ppo_cfg.num_steps

@@ -33,7 +33,7 @@ import optax
 from jax_rl.algos.ppo import PPO
 from jax_rl.buffers import RolloutBuffer
 from jax_rl.configs import EncoderConfig, PolicyHeadConfig, TrainConfig, get_preset
-from jax_rl.training import make_envs, EpisodeTracker, load_checkpoint
+from jax_rl.training import make_env_bundle, EpisodeTracker, load_checkpoint
 from jax_rl.training.checkpointing import CheckpointManager
 from jax_rl.training.metrics_logger import wandb_init, wandb_setup_metrics, wandb_log, wandb_finish
 from jax_rl.utils.eval import evaluate
@@ -58,15 +58,13 @@ def _extract_obs(obs):
 def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
           use_wandb: bool = False, wandb_project: str = "jax-rl"):
     # ── Environment ──────────────────────────────────────────────────────
-    env, env_step, env_state, eval_env, obs_dim, action_dim, key = make_envs(cfg, seed)
-
-    # Detect asymmetric obs (dict with privileged_state).
-    dict_obs = isinstance(env_state.obs, dict)
-    if dict_obs:
-        critic_obs_dim = env_state.obs["privileged_state"].shape[-1]
+    bundle = make_env_bundle(cfg, seed)
+    env, env_step, env_state, eval_env = bundle.env, bundle.env_step, bundle.env_state, bundle.eval_env
+    obs_dim, action_dim, key = bundle.obs_dim, bundle.action_dim, bundle.key
+    dict_obs = bundle.dict_obs
+    critic_obs_dim = bundle.critic_obs_dim if bundle.has_privileged else obs_dim
+    if bundle.has_privileged:
         print(f"  Asymmetric actor-critic: policy obs={obs_dim}, critic obs={critic_obs_dim}")
-    else:
-        critic_obs_dim = obs_dim
 
     ppo_cfg = cfg.ppo
     samples_per_update = cfg.num_envs * ppo_cfg.num_steps
