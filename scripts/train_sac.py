@@ -23,6 +23,7 @@ from jax_rl.training import (
 
 
 def train(cfg: TrainConfig, algo_cfg, seed: int = 0, resume: str | None = None,
+          resume_warmup: str = "policy",
           use_wandb: bool = False, wandb_project: str = "jax-rl"):
     env_bundle = make_env_bundle(cfg, seed)
 
@@ -56,7 +57,7 @@ def train(cfg: TrainConfig, algo_cfg, seed: int = 0, resume: str | None = None,
         env_bundle=env_bundle, explore_fn=explore,
         log_extra_fields=[("Ent", "entropy", ".3f"), ("Alpha", "alpha", ".4f")],
         log_extra_keys=["entropy", "alpha", "alpha_loss"],
-        seed=seed, resume=resume,
+        seed=seed, resume=resume, resume_warmup=resume_warmup,
         use_wandb=use_wandb, wandb_project=wandb_project,
     )
 
@@ -72,6 +73,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=0, help="Random seed")
     parser.add_argument("--resume", type=str, default=None,
                         help="Resume from checkpoint directory path")
+    parser.add_argument("--resume-warmup", type=str, default="policy",
+                        choices=["policy", "random"],
+                        help="On resume, refill buffer using loaded policy actions "
+                             "(default, prevents eval drop) or legacy random uniform")
     parser.add_argument("--num-envs", type=int, default=None,
                         help="Number of parallel environments (default: from env preset)")
     parser.add_argument("--total-timesteps", type=int, default=None,
@@ -115,4 +120,5 @@ if __name__ == "__main__":
     cfg, algo_cfg = apply_cli_overrides(args, cfg, algo_cfg)
 
     train(cfg, algo_cfg, seed=args.seed, resume=args.resume,
+          resume_warmup=args.resume_warmup,
           use_wandb=args.wandb, wandb_project=args.wandb_project)

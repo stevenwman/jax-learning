@@ -47,6 +47,7 @@ def run_offpolicy_loop(
     log_extra_keys: list,
     seed: int = 0,
     resume: str | None = None,
+    resume_warmup: str = "policy",
     use_wandb: bool = False,
     wandb_project: str = "jax-rl",
 ) -> None:
@@ -168,7 +169,13 @@ def run_offpolicy_loop(
         obs_for_action = pipe.normalize_for_action(raw_obs, norm_state)
 
         # Action selection
-        if len(buffer) < algo_cfg.min_buffer_size:
+        # Cold-start: random uniform until buffer fills, for exploration.
+        # Resume default ("policy"): use loaded policy from step 0 — random refill
+        # would corrupt the converged policy's data distribution and tank first eval.
+        # Resume "random": legacy behavior, restored via --resume-warmup random.
+        is_warmup = len(buffer) < algo_cfg.min_buffer_size
+        use_random = is_warmup and (start_step == 0 or resume_warmup == "random")
+        if use_random:
             key, ak = jax.random.split(key)
             action = jax.random.uniform(ak, (cfg.num_envs, action_dim), minval=-1.0, maxval=1.0)
         else:

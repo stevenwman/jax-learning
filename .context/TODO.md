@@ -36,26 +36,42 @@ Commit `45ad979` (2026-04-25) extracted `_soft_update` from sac/td3/fast_sac/fas
 
 If eval diverges by more than seed variance: bug in the polyak signature switch (tau capture, arg order, closure) — revert to `45ad979^` and re-investigate.
 
-## 🔥 High priority — FlashSAC resume eval regression
+## Completed (2026-04-26) — Resume eval regression fix (off-policy, partial)
 
-After landing `reward_norm_state` persistence (commit 6a17f9b, 2026-04-24), verified the reward-norm fix works via direct ckpt inspection (G_count=499968, G_r_max=33.28, RewScale=8.4318 matches pre-resume log's 8.435 to 3 decimals). But: resume still shows a large eval drop — CartpoleBalance hit 996 pre-resume then 747 at first eval after resume.
+**Buffer-not-persisted confirmed as ONE root cause of the resume eval drop.** Off-policy loop re-fires the warmup gate on resume and refills the buffer with random-uniform actions for `min_buffer_size` steps, corrupting the buffer with off-distribution data → first gradient batches train on random data → policy drifts.
 
-`reward_norm_state` is persisted correctly, so the regression is from another non-persisted piece of state. Candidates:
-1. **Replay buffer not persisted** — `JaxReplayBuffer` starts empty on resume. First 10k env steps = random-uniform warmup, then gradient updates start from a buffer that has no policy-on-distribution data. The pre-resume policy's behaviour (cartpole-balancing) drifts during this gap. Most likely root cause.
-2. **EpisodeTracker reset** (`train_flashsac.py:215`) — fresh `n_episodes=0` means first eval fires when few episodes have completed post-resume; eval_mean could be noisier.
-3. **BN running stats** — `actor_batch_stats`, `q{1,2}_batch_stats`, `target_q{1,2}_batch_stats` ARE persisted via TrainingState. But critic targets update their BN running stats via `train=True` forwards in-process; after resume these may drift before stabilizing.
-4. **Zeta noise `count`/`repeat_n` fields** — persisted. Unlikely.
+**Fix shipped:** `--resume-warmup {policy,random}` flag (default `policy`). On resume, refill buffer using loaded policy actions instead of random. Zero storage cost.
 
-**Diagnostic plan:**
-- Log `buffer_size` at each eval post-resume — confirm it starts at 0 and grows.
-- Add a pre-resume "micro-eval" (5 eps) immediately on load, before any env steps, to isolate whether the policy itself regressed vs a warmup-gap artifact.
-- Run the same resume experiment on a harder env (Go2WarpJoystickFlat) where cartpole's "easy to recover" dynamics don't mask regressions.
+**Files patched:**
+- `jax_rl/training/offpolicy_loop.py` — receives `resume_warmup` param, gates random branch on `start_step == 0 OR resume_warmup == "random"`.
+- `scripts/train_flashsac.py` — same logic in standalone loop.
+- `scripts/train_sac.py`, `train_td3.py`, `train_fast_sac.py`, `train_fast_td3.py`, `train_flashsac.py` — `--resume-warmup` CLI flag.
 
-**Fix candidates (if root cause is replay buffer):**
-1. Persist replay buffer alongside orbax ckpt. Reference (Holiday-Robot/FlashSAC) has `save_replay_buffer` / `load_replay_buffer`. ~50 LOC + test.
-2. Skip the random-uniform warmup on resume (if buffer loaded) OR retain policy actions during resume warmup (safer than random).
+**Validation:**
+| Algo / Env (baseline) | First eval (random) | First eval (policy) | Long-term (@ 256 eps) |
+|---|---|---|---|
+| FastSAC / Go2WarpJoystickFlat (268.4) | 253.9 (-14) | **270.9** (+2.5) | 268+ |
+| FlashSAC / CartpoleBalance (999.7) | 690.7 (-309) | 661.1 (-339) | random=982, **policy=999.8** |
 
-Not blocking — resume is rare in practice — but should be understood before claiming "checkpoint+resume is correct" for FlashSAC.
+**Verdict:**
+- **FastSAC Go2: fix is total.** Resume seamless.
+- **FlashSAC Cartpole: fix is partial.** First-eval drop persists (~310 pts in both modes); fix only changes the recovery curve. Buffer is *one* cause; there's a second, FlashSAC-specific cause (see follow-up TODO).
+
+## 🔥 Follow-up — FlashSAC Cartpole resume residual drop (post-buffer-fix)
+
+After landing the buffer-warmup fix above, FlashSAC CartpoleBalance still drops ~310 pts at first post-resume eval (999.7 → ~660). The buffer fix improves long-term recovery (random plateaus at 982; policy hits 999.8 by @ 256 eps) but doesn't address the first-eval transient.
+
+**Tested + rejected hypothesis:** freeze `reward_norm_state` during resume warmup window. Result: first eval got *worse* (478 vs 661). EMA decay rate (`gamma=0.99` per step) means loaded RewScale gets fully replaced within ~thousands of post-warmup updates regardless; freezing during the 10k warmup window can't preserve the loaded value but does stall it further from empirical → worse critic mismatch early.
+
+**Open hypotheses to investigate (in priority order):**
+1. **LR schedule reshape.** `total_gradient_steps_est` recomputed from current `--total-timesteps`; saved `opt_state.count` indexes into a different schedule. Save schedule shape in `meta.json` and rebuild from saved values.
+2. **Env-state initial-condition reward distribution.** First post-resume episodes start from fresh resets. Cartpole policy was trained on mix of init-condition + steady-state. Could the early reward distribution be sufficient to wobble the running stats?
+3. **Reward norm + critic re-stabilization protocol.** Maybe a unified resume protocol is needed: load → freeze EMAs → grad-update for K steps with frozen reference → unfreeze + step env. Substantial rework.
+4. **Q dropout / qscale recompute on resume.** TDMPC2 J4 caught similar bugs (dropout state, qscale recompute). FlashSAC may have parallel path-dependent state.
+
+Diagnostic: log `RewScale`, `q1_mean`, `q1_loss`, `actor_loss` for first 5k post-resume gradient updates. Compare against same range from a continuous baseline (no resume) at same step. Identify which metric diverges first.
+
+Not blocking — buffer fix is net-positive and FastSAC Go2 is now seamless. FlashSAC Cartpole is the only known regression case post-buffer-fix.
 
 ## Completed (2026-04-24) — FlashSAC reward_norm_state persistence
 

@@ -56,8 +56,8 @@ def _make_zeta_cdf(mu: float, max_n: int) -> jnp.ndarray:
 # ── Training ───────────────────────────────────────────────────────────────
 
 def train(cfg: TrainConfig, algo_cfg: FlashSACConfig, seed: int = 0,
-          resume: str | None = None, use_wandb: bool = False,
-          wandb_project: str = "jax-rl"):
+          resume: str | None = None, resume_warmup: str = "policy",
+          use_wandb: bool = False, wandb_project: str = "jax-rl"):
 
     # ── Environment ────────────────────────────────────────────────────────
     env, env_step, env_state, eval_env, obs_dim, action_dim, key = make_envs(cfg, seed)
@@ -241,7 +241,13 @@ def train(cfg: TrainConfig, algo_cfg: FlashSACConfig, seed: int = 0,
         critic_raw_obs = _get_critic_obs(env_state.obs) if has_privileged else None
 
         # ── Action selection ───────────────────────────────────────────
-        if len(buffer) < algo_cfg.min_buffer_size:
+        # Cold-start: random uniform until buffer fills, for exploration.
+        # Resume default ("policy"): use loaded policy from step 0 — random refill
+        # would corrupt the converged policy's data distribution and tank first eval.
+        # Resume "random": legacy behavior, restored via --resume-warmup random.
+        is_warmup = len(buffer) < algo_cfg.min_buffer_size
+        use_random = is_warmup and (start_step == 0 or resume_warmup == "random")
+        if use_random:
             key, ak = jax.random.split(key)
             action = jax.random.uniform(ak, (cfg.num_envs, action_dim), minval=-1.0, maxval=1.0)
         else:
@@ -413,6 +419,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=0, help="Random seed")
     parser.add_argument("--resume", type=str, default=None,
                         help="Resume from checkpoint directory path")
+    parser.add_argument("--resume-warmup", type=str, default="policy",
+                        choices=["policy", "random"],
+                        help="On resume, refill buffer using loaded policy actions "
+                             "(default, prevents eval drop) or legacy random uniform")
     parser.add_argument("--num-envs", type=int, default=None,
                         help="Number of parallel environments")
     parser.add_argument("--total-timesteps", type=int, default=None,
@@ -478,4 +488,5 @@ if __name__ == "__main__":
     if algo_overrides: algo_cfg = dataclasses.replace(algo_cfg, **algo_overrides)
 
     train(cfg, algo_cfg, seed=args.seed, resume=args.resume,
+          resume_warmup=args.resume_warmup,
           use_wandb=args.wandb, wandb_project=args.wandb_project)
