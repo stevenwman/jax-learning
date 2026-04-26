@@ -17,6 +17,9 @@ class TrainConfig:
     # Environment
     env_name: str = "CartpoleBalance"
     episode_length: int = 1000
+    # action_repeat: each agent action drives N control steps; rewards summed.
+    # Default 1 (back-compat for PPO/SAC/TD3 etc). TD-MPC2 sets 2 for source parity.
+    action_repeat: int = 1
 
     # Scale
     num_envs: int = 64

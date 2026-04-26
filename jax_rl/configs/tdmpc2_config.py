@@ -68,6 +68,10 @@ class TDMPC2Config:
 
     # Env spec (set by make_tdmpc2_config from env — NOT a true default)
     action_dim: int = 0            # MUST be overridden at preset load
+    # Source dmcontrol.py:54-60 hardcodes range(2) → action_repeat=2 for ALL DMC tasks.
+    # Each agent action drives 2 control steps; rewards summed. With ctrl_dt=0.025 →
+    # 20Hz agent decisions. MPPI horizon=3 covers 0.15s vs 0.075s if repeat=1.
+    action_repeat: int = 2
 
     # Multi-task C-seams (B-mode defaults)
     num_tasks: int = 1

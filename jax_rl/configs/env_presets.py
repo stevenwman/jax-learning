@@ -449,10 +449,13 @@ def get_preset(env_name: str) -> TrainConfig:
 from jax_rl.configs.tdmpc2_config import TDMPC2Config, make_tdmpc2_config
 
 TDMPC2_PRESETS: dict[str, TDMPC2Config] = {
-    "CheetahRun": make_tdmpc2_config(action_dim=6, episode_length=1000, task_name="CheetahRun"),
-    "HumanoidRun": make_tdmpc2_config(action_dim=21, episode_length=1000, task_name="HumanoidRun"),
-    "AcrobotSwingup": make_tdmpc2_config(action_dim=1, episode_length=1000, task_name="AcrobotSwingup"),
-    "CartpoleSwingup": make_tdmpc2_config(action_dim=1, episode_length=1000, task_name="CartpoleSwingup"),
+    # episode_length=500 (wrapper steps) × action_repeat=2 = 1000 control steps,
+    # matches source dmcontrol.py (Timeout(500) + hardcoded range(2)). Discount
+    # auto-recomputes to 0.99 via compute_discount(500, denom=5).
+    "CheetahRun": make_tdmpc2_config(action_dim=6, episode_length=500, task_name="CheetahRun"),
+    "HumanoidRun": make_tdmpc2_config(action_dim=21, episode_length=500, task_name="HumanoidRun"),
+    "AcrobotSwingup": make_tdmpc2_config(action_dim=1, episode_length=500, task_name="AcrobotSwingup"),
+    "CartpoleSwingup": make_tdmpc2_config(action_dim=1, episode_length=500, task_name="CartpoleSwingup"),
 }
 
 
