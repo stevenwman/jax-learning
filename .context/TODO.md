@@ -57,21 +57,19 @@ If eval diverges by more than seed variance: bug in the polyak signature switch 
 - **FastSAC Go2: fix is total.** Resume seamless.
 - **FlashSAC Cartpole: fix is partial.** First-eval drop persists (~310 pts in both modes); fix only changes the recovery curve. Buffer is *one* cause; there's a second, FlashSAC-specific cause (see follow-up TODO).
 
-## 🔥 Follow-up — FlashSAC Cartpole resume residual drop (post-buffer-fix)
+## Accepted (2026-04-26) — FlashSAC Cartpole resume first-eval transient
 
-After landing the buffer-warmup fix above, FlashSAC CartpoleBalance still drops ~310 pts at first post-resume eval (999.7 → ~660). The buffer fix improves long-term recovery (random plateaus at 982; policy hits 999.8 by @ 256 eps) but doesn't address the first-eval transient.
+After landing the buffer-warmup fix, FlashSAC CartpoleBalance still drops ~300-500 pts at first post-resume eval, **but recovers fully by @ 192-256 eps**. Decision: accept as known transient, don't invest further. Resume use is rare; performance picks back up.
 
-**Tested + rejected hypothesis:** freeze `reward_norm_state` during resume warmup window. Result: first eval got *worse* (478 vs 661). EMA decay rate (`gamma=0.99` per step) means loaded RewScale gets fully replaced within ~thousands of post-warmup updates regardless; freezing during the 10k warmup window can't preserve the loaded value but does stall it further from empirical → worse critic mismatch early.
+**What we tried + ruled out:**
+- Freezing `reward_norm_state` during resume warmup → made it worse (478 vs 661). RewScale EMA decay too fast (`gamma=0.99/step`) for a 10k-step freeze to preserve the loaded value.
+- Matching `--total-timesteps` to baseline (no schedule reshape) → same drop magnitude. Schedule reshape isn't dominant.
 
-**Open hypotheses to investigate (in priority order):**
-1. **LR schedule reshape.** `total_gradient_steps_est` recomputed from current `--total-timesteps`; saved `opt_state.count` indexes into a different schedule. Save schedule shape in `meta.json` and rebuild from saved values.
-2. **Env-state initial-condition reward distribution.** First post-resume episodes start from fresh resets. Cartpole policy was trained on mix of init-condition + steady-state. Could the early reward distribution be sufficient to wobble the running stats?
-3. **Reward norm + critic re-stabilization protocol.** Maybe a unified resume protocol is needed: load → freeze EMAs → grad-update for K steps with frozen reference → unfreeze + step env. Substantial rework.
-4. **Q dropout / qscale recompute on resume.** TDMPC2 J4 caught similar bugs (dropout state, qscale recompute). FlashSAC may have parallel path-dependent state.
+**Run-to-run variance:** first eval ranges 478-690 across "identical" policy-mode resume runs (varying total-timesteps and freeze toggles). ~180-pt stochasticity per run. Drop is systematic in MAGNITUDE (~300-500 pts) but variable in EXACT VALUE.
 
-Diagnostic: log `RewScale`, `q1_mean`, `q1_loss`, `actor_loss` for first 5k post-resume gradient updates. Compare against same range from a continuous baseline (no resume) at same step. Identify which metric diverges first.
+**Revised hypothesis (not investigated further):** actor-instability transient during the first ~6750 post-resume gradient updates. With LR at ~70% through cosine decay × 6750 small-batch grads, the saturated cartpole actor drifts stochastically out of optimum. Buffer / reward-norm / schedule shape the recovery curve but not the initial drift magnitude. Cartpole's high precision-sensitivity amplifies a drift that locomotion (FastSAC Go2) tolerates as noise.
 
-Not blocking — buffer fix is net-positive and FastSAC Go2 is now seamless. FlashSAC Cartpole is the only known regression case post-buffer-fix.
+**If you ever DO care:** likely fix is critic-only warmup on resume — skip actor updates for first K~5000 grad steps to let critic re-stabilize before unleashing actor. ~30-50 LOC + a `--resume-actor-warmup-steps N` flag.
 
 ## Completed (2026-04-24) — FlashSAC reward_norm_state persistence
 

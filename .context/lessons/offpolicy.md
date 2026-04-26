@@ -228,15 +228,17 @@ If Q bias is meaningfully negative on a long-horizon task, either (a) the trunca
 
 **FlashSAC residual investigation (2026-04-26):**
 
-Hypothesis tested: `reward_norm_state` keeps updating post-resume via EMA, shifting RewScale away from loaded value (e.g., 7.589 → 8.664 in 100k steps), causing critic predictions to mismatch new targets. Tried freezing `reward_norm_state` during the resume warmup window. **Result: first eval got worse (478.5 vs 661.1).** Counter-intuitive: freezing during a 10k-step warmup window doesn't prevent the EMA decay (`gamma=0.99` per step → loaded value fully replaced within thousands of post-warmup updates regardless), and the freeze itself stalls RewScale further from the empirical distribution → critic sees more-stale targets early in training → worse first eval.
+Multiple hypotheses tested + ruled out as dominant cause:
+1. **Freeze `reward_norm_state` during resume warmup.** First eval got *worse* (478 vs 661). EMA decay (`gamma=0.99`/step) replaces loaded RewScale within thousands of post-warmup updates regardless; the freeze stalls RewScale further from empirical → worse critic mismatch.
+2. **Match `--total-timesteps` to baseline (no schedule reshape).** Same drop (515 vs 661 — within noise).
 
-**Lesson from the failed fix:** rapid-EMA running stats can't be "frozen and resumed" mid-training without engineering a transition. The state is more like a continuously moving reference frame than a snapshot.
+**Run-to-run variance:** across 4 "policy-mode" resume runs (varying total-timesteps, freeze toggles), first eval ranged 478-690. ~180-pt stochasticity per run. Drop magnitude is systematic (~300-500 pts) but exact value is variable.
 
-**Open question — what to investigate next:**
-1. **Env-state initial-condition reward distribution.** First post-resume episodes start from fresh resets. Cartpole's policy was trained on a mix of init-condition and steady-state episodes. Is the early reward distribution from fresh resets sufficiently different from the running stats to cause critic mismatch?
-2. **LR schedule reconstruction.** New `total_gradient_steps_est` (from current `--total-timesteps`) may reshape the schedule that `opt_state.count` indexes into. Could give wrong LR at the resumed count if user changed the total.
-3. **Save schedule shape (`total_gradient_steps_est`, `lr_warmup_frac`) in `meta.json`** and rebuild from saved values, decoupling schedule from current `--total-timesteps`.
-4. **More entangled possibility:** FlashSAC's BN running stats + Zeta noise + reward norm + critic interact in ways that need a unified resume protocol. May require staged resume (load → freeze norms → grad-update with no env-step → unfreeze + step env), but that's a substantial rework.
+**Revised hypothesis (not investigated further):** **actor-instability transient.** With ~6750 small-batch gradient updates between resume and first eval, LR at ~70% through cosine decay, the saturated cartpole actor drifts stochastically out of optimum. Buffer / reward-norm / schedule shape the recovery curve but don't determine the initial drift magnitude. Cartpole's precision-sensitivity amplifies a drift that locomotion (FastSAC Go2) absorbs as noise.
+
+**Lesson from the failed reward-norm freeze:** rapid-EMA running stats can't be "frozen and resumed" mid-training without engineering a transition. The state is more like a continuously-moving reference frame than a snapshot. If you ever need to resume an algorithm with adaptive normalization, plan for the EMA decay rate at the merge point.
+
+**Decision:** accept as known transient. Performance recovers by @ 192-256 eps; resume use is rare. If the residual ever matters, the likely surgical fix is **critic-only warmup on resume** — skip actor updates for first K~5000 grad steps so the critic re-stabilizes against the post-resume reward distribution before the actor follows.
 
 **Rule of thumb when you see a resume drop on a NEW algo:**
 1. **Replay buffer** (covered by `--resume-warmup policy` for SAC/TD3-family; check it's threaded into your loop).
