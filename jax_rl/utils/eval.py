@@ -202,3 +202,61 @@ def evaluate(
                 writer.writerow(row)
 
     return metrics
+
+
+def evaluate_gym(
+    select_action_fn: Callable,
+    actor_params,
+    eval_env,
+    num_episodes: int = 10,
+    episode_length: int = 1000,
+    key: jax.Array | None = None,
+    obs_normalize_fn: Callable | None = None,
+    action_fn_kwargs: dict | None = None,
+    **_unused,
+) -> dict:
+    """Deterministic eval for gym vector envs (Python loop, single-env serial).
+
+    Drop-in replacement for `evaluate()` when bundle.backend_kind == "gym".
+    Skips Q-bias diagnostics (gym is mostly used for low-dim research envs;
+    add later if needed).
+
+    Args:
+        eval_env: gym.vector.SyncVectorEnv (one underlying env).
+        Same signature otherwise. Extra kwargs (q_fn, gamma, eval_log_path,
+        total_steps, num_envs) are accepted-and-ignored for compat with
+        evaluate()'s call sites.
+    """
+    if key is None:
+        key = jax.random.PRNGKey(999)
+    _kwargs = action_fn_kwargs or {}
+
+    returns = []
+    for ep in range(num_episodes):
+        obs, _ = eval_env.reset(seed=int(jax.random.randint(key, (), 0, 2**31 - 1)))
+        key, _ = jax.random.split(key)
+        ep_return = 0.0
+        for _ in range(episode_length):
+            key, ak = jax.random.split(key)
+            obs_jax = jnp.asarray(obs)
+            if obs_normalize_fn is not None:
+                obs_jax = obs_normalize_fn(obs_jax)
+            action = select_action_fn(
+                actor_params, obs_jax, ak, deterministic=True, **_kwargs
+            )
+            action_np = np.asarray(action, dtype=np.float32)
+            obs, r, term, trunc, info = eval_env.step(action_np)
+            # Single-env vec → reduce batch dim of size 1.
+            ep_return += float(np.asarray(r).reshape(-1)[0])
+            done = bool(np.asarray(term).any() or np.asarray(trunc).any())
+            if done:
+                break
+        returns.append(ep_return)
+
+    returns_arr = np.array(returns, dtype=np.float32)
+    return {
+        "eval_mean": float(returns_arr.mean()),
+        "eval_std": float(returns_arr.std()),
+        "eval_min": float(returns_arr.min()),
+        "eval_max": float(returns_arr.max()),
+    }

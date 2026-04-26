@@ -17,3 +17,4 @@ class TrainContext:
     metrics_log: list[dict]
     ckpt_mgr: CheckpointManager
     resume: str | None = None
+    backend_kind: str = "mjx"   # "mjx" | "gym" | "isaaclab" — dispatches eval path

@@ -17,6 +17,10 @@ class TrainConfig:
     # Environment
     env_name: str = "CartpoleBalance"
     episode_length: int = 1000
+    # Optional backend-specific kwargs (gym/isaaclab — ignored by mjx).
+    # Example for PushT: {"obs_type": "keypoints", "block_shape": "dr",
+    # "reward_mode": "contact_gated", "coverage_shape": "log_barrier"}.
+    env_kwargs: dict = field(default_factory=dict)
 
     # Scale
     num_envs: int = 64

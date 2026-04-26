@@ -71,5 +71,6 @@ def build_env_bundle(cfg, seed: int) -> EnvBundle:
     return BACKEND_BUILDERS[backend](cfg, seed)
 
 
-# Trigger MJX backend registration on import.
+# Trigger backend registrations on import.
 from jax_rl.training.env_backends import mjx_backend  # noqa: F401, E402  (side-effect import)
+from jax_rl.training.env_backends import gym_backend  # noqa: F401, E402

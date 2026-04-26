@@ -143,6 +143,7 @@ def run_offpolicy_loop(
         cfg=cfg, algo_cfg=algo_cfg, algo_name=algo_name,
         ckpt_dir=ckpt_dir, obs_dim=obs_dim, action_dim=action_dim,
         metrics_log=metrics_log, ckpt_mgr=ckpt_mgr, resume=resume,
+        backend_kind=env_bundle.backend_kind,
     )
 
     # ── Training loop ──────────────────────────────────────────────────────

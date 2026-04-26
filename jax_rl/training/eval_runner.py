@@ -6,7 +6,14 @@ from jax_rl.training.checkpointing import save_checkpoint, CheckpointManager
 from jax_rl.training.episode_tracker import EpisodeTracker
 from jax_rl.training.metrics_logger import wandb_log
 from jax_rl.training.train_context import TrainContext
-from jax_rl.utils.eval import evaluate
+from jax_rl.utils.eval import evaluate, evaluate_gym
+
+
+def _eval_fn_for(ctx: TrainContext):
+    """Pick the eval function for ctx.backend_kind."""
+    if ctx.backend_kind == "gym":
+        return evaluate_gym
+    return evaluate
 
 
 def maybe_eval_and_checkpoint(
@@ -39,7 +46,7 @@ def maybe_eval_and_checkpoint(
     eval_log = os.path.join(ctx.ckpt_dir, "eval_log.csv")
 
     key, eval_key = jax.random.split(key)
-    eval_metrics = evaluate(
+    eval_metrics = _eval_fn_for(ctx)(
         select_action_fn, actor_params,
         eval_env, num_episodes=cfg.num_eval_episodes,
         episode_length=cfg.episode_length, key=eval_key,
@@ -108,7 +115,7 @@ def final_eval_and_checkpoint(
     metrics_log = ctx.metrics_log
 
     key, eval_key = jax.random.split(key)
-    eval_metrics = evaluate(
+    eval_metrics = _eval_fn_for(ctx)(
         select_action_fn, actor_params,
         eval_env, num_episodes=cfg.num_eval_episodes,
         episode_length=cfg.episode_length, key=eval_key,
