@@ -454,6 +454,7 @@ TDMPC2_PRESETS: dict[str, TDMPC2Config] = {
     # auto-recomputes to 0.99 via compute_discount(500, denom=5).
     "CheetahRun": make_tdmpc2_config(action_dim=6, episode_length=500, task_name="CheetahRun"),
     "HumanoidRun": make_tdmpc2_config(action_dim=21, episode_length=500, task_name="HumanoidRun"),
+    "HopperHop": make_tdmpc2_config(action_dim=4, episode_length=500, task_name="HopperHop"),
     "AcrobotSwingup": make_tdmpc2_config(action_dim=1, episode_length=500, task_name="AcrobotSwingup"),
     "CartpoleSwingup": make_tdmpc2_config(action_dim=1, episode_length=500, task_name="CartpoleSwingup"),
 }
