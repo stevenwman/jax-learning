@@ -168,7 +168,7 @@ jax-learning/
 │   ├── train_fast_sac.py     #   FastSAC (C51 + SAC)
 │   ├── train_fast_td3.py     #   FastTD3 (C51 + TD3)
 │   ├── train_flashsac.py     #   FlashSAC (inverted residual + BatchNorm + Zeta noise)
-│   ├── train_pusht.py        #   PushT manipulation (SAC + keypoint obs + TimeLimit)
+│   ├── train_pusht.py        #   PushT manipulation (SAC + keypoint obs + TimeLimit) — DEPRECATED, use `train_sac.py --env PushT` instead, see TODO §Phase 6
 │   ├── train_tdmpc2.py       #   TD-MPC2 (model-based world model + MPPI)
 │   └── record_video.py       #   Loads any checkpoint, renders rollout + _traj.npz
 ├── scripts/archive/train_offpolicy.py # LEGACY: unified dispatcher, kept as reference only (alongside live_viewer.py, record_video_cpu.py)
@@ -177,7 +177,7 @@ jax-learning/
 ├── jax_rl/configs/           # train_config.py, *_config.py, env_presets.py, flash_sac_config.py
 ├── jax_rl/networks/          # builders.py (Actor/DeterministicActor/VCritic), flash_blocks.py, activations.py, distributions.py, encoders/, heads/
 ├── jax_rl/utils/             # reward_scaling.py, normalization.py, frame_stack.py, distributional.py, eval.py, export.py, rollout.py
-├── jax_rl/training/          # checkpointing, eval_runner, env_setup, metrics_logger, offpolicy_loop, obs_pipeline
+├── jax_rl/training/          # checkpointing, eval_runner, env_setup (thin shim), env_bundle, env_backends/{mjx,gym}, metrics_logger, offpolicy_loop, obs_pipeline
 ├── jax_rl/buffers/           # jax_replay_buffer.py, rollout.py
 ├── jax_rl/envs/wrappers/     # FrameStackWrapper, vendored training wrappers (Vmap, Episode, AutoReset, DR), DomainRandWrapper (domain_rand.py, formerly DRv2), action_delay.py, terrain_curriculum_dr.py, pipeline.py
 ├── tests/                    # run `uv run python -m pytest tests/ --collect-only -q` for current count
@@ -189,7 +189,7 @@ jax-learning/
 ### Env framework coupling
 Training wrappers (Vmap, Episode, AutoReset, DR) are vendored in `jax_rl/envs/wrappers/training.py` — no Brax training wrapper dependency. **`DomainRandWrapper`** (`jax_rl/envs/wrappers/domain_rand.py`, formerly DRv2) replaces the full wrapper stack for Go2 — handles vmap, episode tracking, auto-reset, and per-episode domain randomization in one wrapper. Activated via `--reset-mode per_step` on train scripts. Env declares DR specs via `get_domain_randomization_spec()`. See `.context/lessons/autoreset_and_dr.md` for the full investigation.
 
-`env_setup.py` still uses Playground's registry (`pg_registry.load()`) for env loading and `mjx_env.MjxEnv` as the env type. All other core infra (algos, networks, configs, buffers, utils) is pure JAX/Flax/Optax with zero env framework dependencies. To add ManiSkill/HumanoidBench, extract an env factory interface from env_setup.py — everything downstream works unchanged.
+`env_setup.py` is a thin shim (2026-04-26 refactor). `make_env_bundle(cfg, seed)` dispatches via `jax_rl/training/env_backends/{name}_backend.py` based on `detect_backend(env_name)`. The `mjx_backend` (Playground / Warp) and `gym_backend` (gymnasium + vendored PushT) are wired today; `EnvBundle.backend_kind` discriminates downstream (eval path, recording path, train_ppo_fast guard). Adding a new env backend (IsaacLab, ManiSkill, HumanoidBench) is one file that calls `register_backend(name, builder)` at import. Adding a new env within the gym backend is 5 lines (`register_gym_env(name, factory)`). All other core infra (algos, networks, configs, buffers, utils) is pure JAX/Flax/Optax with zero env framework dependencies.
 
 ### Config system
 Each algo has its own config dataclass. Presets in `env_presets.py` return `(TrainConfig, AlgoConfig)` tuples. PPO-specific fields live in `PPOConfig`, not `TrainConfig`. CLI overrides via `dataclasses.replace(cfg, lr=args.lr)`.
@@ -215,6 +215,23 @@ Curriculum env: 128 envs @ 16GB GPU (6 rows × 5 cols = 30 tiles vs 40 previousl
 - **PD gains (Warp)**: `Kp=20, Kd=0.5` (matches unitree_rl_gym). Validated in training, not just static hold — see `lessons/warp.md`.
 - **Warp env**: `Go2WarpJoystickFlat` uses unitree_mujoco's go2.xml (full cylinder collision geometry) via MuJoCo Warp backend. Eliminates sim2sim gap. `contact_mode` flag: `"training"` (firm contacts) / `"deploy"` (unitree-native physics). Sim2sim to CPU MuJoCo validated.
 - **CRITICAL:** Warp env has joint→actuator remapping (`_act_to_joint`). Unitree XML has different qpos vs ctrl ordering. Without remap, PD applies torques to wrong legs.
+
+### Available gym-backend envs (CPU vector envs, gymnasium)
+
+Wired through `gym_backend` (2026-04-26 refactor). Use any of these via `--env <name>` on `train_sac.py`, `train_ppo.py` (Python loop), `record_video.py`. **`train_ppo_fast.py` is MJX-only** — gym envs hit the explicit guard.
+
+| Env name | Source | obs / action dims | Notes |
+|----------|--------|-------------------|-------|
+| `PushT`   | Vendored pymunk gym-pusht | 25d (5 state + 20 KP) / 2 | Letter-matrix study env; `--env-kwargs '{"obs_type":"keypoints","block_shape":"dr"}'` for cross-shape DR. See `.context/studies/2026-04-22_pusht_letter_matrix.md`. |
+| `HalfCheetah` | gymnasium[mujoco] HalfCheetah-v5 | 17d / 6d | SAC validation: 200k @ num_envs=8 → eval **5697 ± 43**. |
+| `Hopper`     | gymnasium[mujoco] Hopper-v5     | 11d / 3d | Untested. |
+| `Walker2d`   | gymnasium[mujoco] Walker2d-v5   | 17d / 6d | Untested. |
+| `Humanoid`   | gymnasium[mujoco] Humanoid-v5   | 348d / 17d | Untested. |
+| `Ant`        | gymnasium[mujoco] Ant-v5         | 105d / 8d | Untested. |
+| `Pendulum`              | gymnasium classic Pendulum-v1                | 3d / 1d | 60-second smoke. |
+| `LunarLanderContinuous` | gymnasium classic LunarLanderContinuous-v3   | 8d / 2d | — |
+
+`cfg.env_kwargs` (TrainConfig field) is forwarded to env construction (PushT reads `obs_type`/`block_shape`/etc.; gymnasium envs forward to `gym.make()`). See `jax_rl/training/env_backends/gym_backend.py` for the registry.
 
 ### Algorithm quick reference
 | Algo | Training script | Key features |

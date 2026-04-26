@@ -48,7 +48,7 @@
 4. Identified `weak_type=True` on `.data.time` (MuJoCo Issue #2306) — fixing it didn't help
 5. Recompilation is internal to MJX's step — upstream issue
 
-**Mitigation:** `XLA_CLIENT_MEM_FRACTION=0.7` leaves headroom. ~5% overhead. Set in all train scripts via `env_setup.py`.
+**Mitigation:** `XLA_PYTHON_CLIENT_MEM_FRACTION=0.7` leaves headroom. ~5% overhead. Set as an env var on script invocation (e.g. `XLA_PYTHON_CLIENT_MEM_FRACTION=0.4 uv run python scripts/train_sac.py ...`); drop to 0.55 for FlashSAC (Warp graph creation needs the rest).
 
 **Lesson:** When debugging recompilation, isolate components systematically. Don't assume the obvious suspect is the full answer — verify the fix works.
 

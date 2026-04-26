@@ -5,8 +5,8 @@ Reference doc for A/B testing frame stacking. Each item is a concern to verify �
 ## Edge Cases — Resolved
 
 ### 1. record_video.py incompatibility — FIXED
-- **Problem:** record_video.py loads env via `pg_registry.load()`, not `env_setup.py`. No FrameStackWrapper applied. Frame-stacked checkpoint (obs_dim=144) would feed raw 48d obs to 144d network.
-- **Fix:** record_video.py now reads `n_frame_stack` from `meta.json` → `train_config` and applies `FrameStackWrapper` before rollout. Commit `334dec6`.
+- **Problem:** record_video.py originally loaded env via `pg_registry.load()` directly, bypassing the construction pipeline that applies `FrameStackWrapper`. Frame-stacked checkpoint (obs_dim=144) would feed raw 48d obs to 144d network.
+- **Fix:** record_video.py reads `n_frame_stack` from `meta.json` → `train_config` and applies `FrameStackWrapper` before rollout. Commit `334dec6`. Post-2026-04-26 refactor, record_video also dispatches by backend (`detect_backend()`) so the gym path applies its own wrapper chain via the gym backend factory.
 - **Lesson:** Any env transformation applied during training must also be applied in every inference consumer (eval, recording, deploy). Pattern: read wrapper config from checkpoint metadata.
 
 ### 2. Auto-reset frame staleness — FIXED

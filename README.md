@@ -1,6 +1,6 @@
 # jax-learning
 
-JAX-based reinforcement learning framework for robot learning research. Built for MuJoCo Playground environments, with a focus on Unitree Go2 locomotion and sim-to-real transfer.
+JAX-based reinforcement learning framework for robot learning research. Backend-agnostic env layer (MuJoCo Playground / Warp + gymnasium today; IsaacLab planned), with a focus on Unitree Go2 locomotion and sim-to-real transfer.
 
 **[Documentation](https://stevenwman.github.io/jax-learning/)** | **[Quickstart](https://stevenwman.github.io/jax-learning/getting-started/quickstart/)** | **[Annotated Training Loop](https://stevenwman.github.io/jax-learning/reference/training-loop/)** | **[API Reference](https://stevenwman.github.io/jax-learning/api/algos/)**
 
@@ -124,7 +124,7 @@ Full CLI reference: [docs.../reference/cli-flags](https://stevenwman.github.io/j
 │   ├── train_fast_sac.py       # FastSAC       │  run_offpolicy_loop
 │   ├── train_fast_td3.py       # FastTD3      ─┘
 │   ├── train_flashsac.py       # FlashSAC (standalone)
-│   ├── train_pusht.py          # PushT manipulation (SAC + keypoint obs + TimeLimit)
+│   ├── train_pusht.py          # [DEPRECATED 2026-04-26] PushT — use `train_sac.py --env PushT`
 │   ├── train_tdmpc2.py         # TD-MPC2 (model-based world model + MPPI)
 │   └── record_video.py         # Render a rollout from a checkpoint
 │
@@ -140,10 +140,12 @@ Full CLI reference: [docs.../reference/cli-flags](https://stevenwman.github.io/j
 │   │
 │   ├── training/               # Shared training plumbing
 │   │   ├── offpolicy_loop.py   #   run_offpolicy_loop — shared SAC/TD3/FastSAC/FastTD3 loop
-│   │   ├── env_setup.py        #   EnvBundle + make_env_bundle (env + step + obs dims)
+│   │   ├── env_bundle.py       #   EnvBundle protocol (backend_kind, num_envs, render_fn)
+│   │   ├── env_setup.py        #   thin shim: dispatch + legacy re-exports
+│   │   ├── env_backends/       #   {mjx,gym}_backend.py — backend-specific bundle builders, registry
 │   │   ├── obs_pipeline.py     #   ObsPipeline (dict obs, running mean/std, frame stacking)
 │   │   ├── checkpointing.py    #   Checkpoint save/load (orbax + meta.json)
-│   │   └── eval_runner.py      #   Periodic eval + best-checkpoint tracking
+│   │   └── eval_runner.py      #   Periodic eval + best-checkpoint tracking (dispatches by backend_kind)
 │   │
 │   ├── configs/                # Hyperparameter dataclasses + env presets
 │   ├── networks/               # Encoder + head builders (MLP, Gaussian, C51, etc.)

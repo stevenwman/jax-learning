@@ -137,11 +137,11 @@ Spent hours debugging Go2 PPO at eval ~17. Playground paper shows Go1 reaching ~
 
 ## Env Wrappers Must Be Applied In All Consumers (2026-04-01)
 
-**Context:** `FrameStackWrapper` is applied in `env_setup.py` (used by training scripts). But `record_video.py` loads the env directly via `pg_registry.load()` and does NOT go through `env_setup.py`. A frame-stacked checkpoint (obs_dim=144) will fail at inference because record_video feeds raw 48d obs to a 144d network.
+**Context:** `FrameStackWrapper` is applied during env construction (in the MJX backend factory). But `record_video.py` originally loaded the env directly via `pg_registry.load()` and skipped that pipeline. A frame-stacked checkpoint (obs_dim=144) would fail at inference because record_video fed raw 48d obs to a 144d network.
 
 **Pattern:** Any env transformation (wrappers, obs preprocessing) applied during training must also be applied during inference/eval/recording. Every consumer of the env must apply the same wrapping chain, or the checkpoint is incompatible.
 
-**Fixed:** `record_video.py` now reads `n_frame_stack` from `meta.json` and applies `FrameStackWrapper` before rollout.
+**Fixed:** `record_video.py` now reads `n_frame_stack` from `meta.json` and applies `FrameStackWrapper` before rollout. Post-2026-04-26 refactor, `record_video.py` dispatches via `detect_backend()` to either the MJX path or `_record_gym()`; each backend owns its own wrapper application.
 
 ---
 
@@ -200,8 +200,8 @@ Wrapper compositions are a combinatorial test surface. If feature A and feature 
 ```python
 def test_frame_stack_with_dr_and_critic():
     cfg = TrainConfig(env_name=..., n_frame_stack=3, reset_mode="per_step")
-    env, _, env_state, *_, obs_dim, _, _ = make_envs(cfg, seed=0)
-    assert obs_dim == raw_dim * 3  # bug 2 catches this
+    bundle = make_env_bundle(cfg, seed=0)  # post-2026-04-26: registry-dispatched
+    assert bundle.obs_dim == raw_dim * 3  # bug 2 catches this
     # train one step → bug 1 catches the buffer KeyError
 ```
 

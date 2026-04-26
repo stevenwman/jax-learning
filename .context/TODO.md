@@ -1,5 +1,27 @@
 # TODO
 
+## Completed (2026-04-26) — Env-backend refactor
+
+Refactored env-construction layer so non-MJX envs (gym, isaaclab planned) plug into the same training/eval/recording stack as Playground/Warp envs. `EnvBundle` is now a Protocol with a `backend_kind` discriminator under `jax_rl/training/env_backends/`. Adding a new env backend is one file.
+
+- `EnvBundle` relocated to `jax_rl/training/env_bundle.py` with `backend_kind`, `num_envs`, `render_fn` fields.
+- Backend registry under `jax_rl/training/env_backends/` with auto-dispatch via `detect_backend(env_name)`. `mjx_backend.py` (relocated from `env_setup.py`) and `gym_backend.py` registered.
+- `gym_backend.py` exposes `gym.vector.{Sync,Async}VectorEnv` with N capped at `cpu_count`. Registered envs: PushT (vendored pymunk), HalfCheetah-v5, Hopper-v5, Walker2d-v5, Humanoid-v5, Ant-v5, Pendulum-v1, LunarLanderContinuous-v3.
+- `evaluate_gym()` Python-loop eval; `eval_runner.py` dispatches via `TrainContext.backend_kind`.
+- `train_ppo.py` and `train_ppo_fast.py` route through bundle; fast path guards mjx-only.
+- `record_video.py` early-dispatches by backend; `_record_gym()` saves mp4 + npz from env.render() rollout.
+- Validated: `train_sac --env HalfCheetah` 200k @ num_envs=8 → eval **5697 ± 43**, above published SAC baselines for that step count. Zero code outside `gym_backend.py` was needed.
+
+Branch: `env-backend-refactor` (worktree `../jax-learning-envrefactor/`), 6 commits ahead of `new_slate_linen`. Will need rebase against linen's TD-MPC2 / FlashSAC / curriculum work when merging back.
+
+See `.context/journals/2026-04-26.md` for full retrospective and `.superpowers/plans/2026-04-25-env-backend-refactor.md` for the plan.
+
+**Open follow-ups (deferred):**
+- [ ] **Phase 6 — delete `scripts/train_pusht.py`** after a 2M reproduction of 89% sto cov via `train_sac --env PushT`. Needs ~3h GPU + a comparison commit. Don't do before validation — old script is the reference.
+- [ ] **IsaacLab backend** — Protocol exists, builder is one file. Wire when a labmate has a concrete env to point at, or when IsaacLab is installed locally. Plan in `.superpowers/plans/2026-04-25-env-backend-refactor.md` Phase 3.
+- [ ] **`evaluate_gym` Q-bias diagnostics** — currently returns `eval_mean/std/min/max` only. Backfill MC-return Q-bias if a use case shows up (single-env serial, would need rebuilding the lax.scan computation).
+- [ ] **Migrate `train_ppo_contraction.py`, `train_flashsac.py`** to bundle dispatch — currently use legacy `make_envs` re-export, MJX-only. Cheap to migrate (one import + one dataclass unpack); do when there's a reason to run them on gym.
+
 ## 🔥 High priority — TD-MPC2 end-of-run collapse investigation
 
 J3 1M (2026-04-25) achieved best mppi=837.51 ± 1.35 (paper-match) at step 500k, but **final ckpt at step 1M dropped to 439 (-47% from peak)**. Same pattern observed at 100k smoke (peak 523 → final 316, -40%). Same shape at different scales → systematic, not noise. Both confirmed via `scripts/eval_tdmpc2.py` re-eval on saved ckpts (40 episodes each, std < 2).
