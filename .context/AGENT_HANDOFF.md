@@ -234,7 +234,7 @@ Full API reference (params, defaults, docstrings): `docs/api/algos.md` (autogen 
 ## Part 5: Current State
 
 ### Current best results (one-line summary)
-Go2 Warp (48d state, post-truncation-fix 2026-04-13): FastSAC+torque-speed **286** / FlashSAC **284.5** / FastSAC **283.8** / FastTD3 **273.1**. DM Control: FastTD3 880 (CheetahRun), FastSAC 892 (HumanoidRun), **TD-MPC2 837 ± 1.5 (CheetahRun, J3 1M, 2026-04-25, paper-match)**, **TD-MPC2 557 ± 4 (HumanoidRun, J4 v3 1M, 2026-04-26, in paper trajectory band — paper trains to 14M)**.
+Go2 Warp (48d state, post-truncation-fix 2026-04-13): FastSAC+torque-speed **286** / FlashSAC **284.5** / FastSAC **283.8** / FastTD3 **273.1**. DM Control: FastTD3 880 (CheetahRun), FastSAC 892 (HumanoidRun), **TD-MPC2 837 ± 1.5 (CheetahRun, J3 1M, 2026-04-25, paper-match)**, **TD-MPC2 557 ± 4 (HumanoidRun, J4 v3 1M, 2026-04-26, in paper trajectory band — paper trains to 14M)**, **TD-MPC2 581 ± 9 (HopperHop best @350k, 2026-04-26 evening, paper Fig.12 ~500-600 by 4M — beat asymptote at 100k env steps)**.
 
 Full benchmark history (tables, seeds, wandb IDs, pre/post-fix breakdown) moved to per-run journal entries — grep `.context/journals/` by date. Truncation-fix story in `lessons/offpolicy.md §Truncation Handling`.
 

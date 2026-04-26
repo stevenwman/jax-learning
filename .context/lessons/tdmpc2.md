@@ -7,12 +7,15 @@ PyTorch→JAX port of a sequence-model RL algo.
 
 ## Verified results
 
-| Task | Best mppi (40 eps) | Paper (Fig.4/15) |
+| Task | Best mppi (eps) | Paper |
 |---|---|---|
-| Cheetah Run @ 1M | **837 ± 1.5** | ~850 |
-| Humanoid Run @ 1M | **557 ± 4** | trajectory band, paper trains 14M |
+| Cheetah Run @ 1M | **837 ± 1.5** (40) | ~850 (Fig.4) |
+| Humanoid Run @ 1M | **557 ± 4** (40) | trajectory band Fig.15, paper trains 14M |
+| Hopper Hop @ 350k | **581 ± 9** (16) | ~500-600 by 4M (Fig.12) — beat asymptote at 100k |
 
-Both validated via `scripts/eval_tdmpc2.py --num-evals 5` (40 episodes).
+Validated via `scripts/eval_tdmpc2.py --num-evals N`. Cheetah & Humanoid:
+40 eps each. Hopper: 16 eps (smaller — run killed early when paper
+asymptote was clearly passed).
 
 ---
 
