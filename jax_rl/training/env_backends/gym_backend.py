@@ -154,6 +154,43 @@ class _ActionRepeatWrapper(_gym.Wrapper):
 register_gym_env("PushT", _make_pusht_factory)
 
 
+# ── Gymnasium MuJoCo factories (HalfCheetah, Hopper, Walker2d, Humanoid…) ─
+
+def _make_gymnasium_mujoco_factory(gym_id: str):
+    """Return a factory that builds a `gymnasium[mujoco]` env from gym_id.
+
+    These envs already expose continuous action_space in [-1, 1] and 1D
+    state obs — no RescaleAction / NormalizeObs needed. Episode length
+    cap is the env's own (HalfCheetah=1000 etc.), so no extra TimeLimit.
+
+    cfg.env_kwargs (dict) is forwarded to `gym.make()`. Useful for setting
+    `render_mode='rgb_array'`, `forward_reward_weight`, etc.
+    """
+    def factory(cfg: TrainConfig):
+        import gymnasium as gym
+        kwargs = dict(cfg.env_kwargs)
+
+        def make_env():
+            return gym.make(gym_id, **kwargs)
+
+        return make_env
+
+    return factory
+
+
+# Register classics. Add more as needed.
+for _name, _id in [
+    ("HalfCheetah", "HalfCheetah-v5"),
+    ("Hopper",       "Hopper-v5"),
+    ("Walker2d",     "Walker2d-v5"),
+    ("Humanoid",     "Humanoid-v5"),
+    ("Ant",          "Ant-v5"),
+    ("Pendulum",     "Pendulum-v1"),
+    ("LunarLanderContinuous", "LunarLanderContinuous-v3"),
+]:
+    register_gym_env(_name, _make_gymnasium_mujoco_factory(_id))
+
+
 # ── Bundle builder ──────────────────────────────────────────────────────
 
 def make_gym_env_bundle(cfg: TrainConfig, seed: int) -> EnvBundle:
