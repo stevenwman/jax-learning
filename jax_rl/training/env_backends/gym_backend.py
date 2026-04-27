@@ -97,7 +97,12 @@ def _make_pusht_factory(cfg: TrainConfig) -> Callable[[], Any]:
         block_shape=kwargs.pop("block_shape", "tee"),
         render_mode=kwargs.pop("render_mode", "rgb_array"),
     )
-    action_repeat = int(kwargs.pop("action_repeat", 2))
+    # Action_repeat resolution (option C, post-merge with linen 2026-04-26):
+    # cfg.action_repeat is the canonical universal field. PushT historic default
+    # is 2 (matched scripts/train_pusht.py), so when caller leaves cfg at the
+    # back-compat default of 1, fall back to 2. Caller can override via
+    # cfg.action_repeat=K (any K>1) — drops env_kwargs["action_repeat"] path.
+    action_repeat = cfg.action_repeat if cfg.action_repeat > 1 else 2
     max_episode_steps = int(kwargs.pop("max_episode_steps", 300))
     if kwargs:
         raise ValueError(f"Unknown PushT env_kwargs: {sorted(kwargs)}")
@@ -169,9 +174,17 @@ def _make_gymnasium_mujoco_factory(gym_id: str):
     def factory(cfg: TrainConfig):
         import gymnasium as gym
         kwargs = dict(cfg.env_kwargs)
+        # Honor cfg.action_repeat (option C, 2026-04-26 post-merge). For
+        # gymnasium MuJoCo envs the canonical default is 1 (no extra wrap);
+        # caller sets cfg.action_repeat>1 to enable, applied via the same
+        # _ActionRepeatWrapper used by PushT.
+        action_repeat = max(int(cfg.action_repeat), 1)
 
         def make_env():
-            return gym.make(gym_id, **kwargs)
+            env = gym.make(gym_id, **kwargs)
+            if action_repeat > 1:
+                env = _ActionRepeatWrapper(env, k=action_repeat)
+            return env
 
         return make_env
 

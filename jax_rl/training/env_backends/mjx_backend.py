@@ -177,7 +177,7 @@ def make_envs(cfg: TrainConfig, seed: int):
             from jax_rl.envs.wrappers.domain_rand import DomainRandWrapper
             env = DomainRandWrapper(env, episode_length=cfg.episode_length, mode=reset_mode)
     else:
-        env = wrap_for_training(env, episode_length=cfg.episode_length)
+        env = wrap_for_training(env, episode_length=cfg.episode_length, action_repeat=cfg.action_repeat)
     env_step = _make_nan_safe_step(env.step)
 
     key = jax.random.PRNGKey(seed)
@@ -190,7 +190,7 @@ def make_envs(cfg: TrainConfig, seed: int):
     if cfg.action_delay_range_ms is not None:
         eval_cfg = dataclasses.replace(cfg, action_delay_ms=cfg.action_delay_range_ms[1], action_delay_range_ms=None)
     eval_env = apply_wrapper_pipeline(eval_env, eval_cfg)
-    eval_env = wrap_for_training(eval_env, episode_length=cfg.episode_length)
+    eval_env = wrap_for_training(eval_env, episode_length=cfg.episode_length, action_repeat=cfg.action_repeat)
 
     if isinstance(env_state.obs, dict):
         obs_dim = env_state.obs["state"].shape[-1]

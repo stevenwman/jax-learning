@@ -69,6 +69,16 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **lax.scan carry cost** — 4M-entry buffer in carry = 30% slower than Python loop
 - **Faster component ≠ faster training** — 4.8x buffer speedup = 1.5% end-to-end improvement
 
+## [TD-MPC2 (Model-Based RL)](lessons/tdmpc2.md) — 5 port bugs + reusable patterns
+
+- **Replay sequence-sampling needs `stride=num_envs`** for round-robin multi-env storage (kingpin bug, 50× improvement)
+- **action_repeat is part of HP context** — match source's value AND adjust discount via the heuristic
+- **Truncated ≠ terminated in TD bootstrap** — same recurring class as `lessons/offpolicy.md §Truncation Handling`
+- **Q dropout in policy/qscale paths** — PyTorch `.train()`/`.eval()` semantics don't auto-port; thread `deterministic`+`rngs` per call site
+- **Eval RNG isolation** (`fold_in(seed+9000, eval_index)`) — applies to PPO/SAC/TD3 too, currently they all consume from training key
+- **Multi-agent audit pattern** — 3 parallel opus + 1 validator finds bugs that any one misses
+- **Paper Table 2 had a typo** — Humanoid action_dim=21 per Figure 15 caption (not 24); always cross-check Tables vs Figures
+
 ## [Determinism (JAX/XLA + GPU Physics)](lessons/determinism.md) — bit-ID limits
 
 - **JAX/XLA algo bit-ID** with `XLA_FLAGS=--xla_gpu_deterministic_ops=true` (verified via `scripts/check_tdmpc2_determinism.py`)

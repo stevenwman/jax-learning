@@ -196,3 +196,55 @@ Pure terminations still contribute their `r`-only target (it's genuinely correct
 If Q bias is meaningfully negative on a long-horizon task, either (a) the truncation fix isn't applied, or (b) the env wrapper isn't populating `info["truncation"]` (in which case the mask becomes a no-op since `truncation` is zero).
 
 **Add to smoke-test checklist:** when validating any off-policy algo on a long-horizon task, log `eval/q_bias` and check it's not strongly negative. A bias of ±0.5 or so is normal noise; -2 or worse on a 9-magnitude Q signals something structural is broken.
+
+---
+
+## Resume Warmup: Random Actions Corrupt the Buffer (2026-04-26)
+
+**Problem:** Resuming a converged off-policy ckpt drops the first eval — mild on locomotion (FastSAC Go2: 268→254, ~14 pt), severe on high-precision tasks (FlashSAC CartpoleBalance: 996→747, ~250 pt).
+
+**Root cause:** Replay buffer is not persisted across resumes. The training loop's warmup gate fires again — `if len(buffer) < min_buffer_size:` → random uniform actions for ~10k env steps. Those off-distribution transitions enter the buffer; the first gradient batches sample them; critic targets shift; actor follows the corrupted critic.
+
+**State that *is* persisted (verified):** `actor/q/alpha_opt_state`, `log_alpha`, BN stats (`actor_batch_stats`, `q{1,2}_batch_stats`, `target_q{1,2}_batch_stats`), Zeta noise (`count`, `repeat_n`), `reward_norm_state`, obs/critic norm state. All ride inside `training_state` or `norm_state` and orbax saves them at [`checkpointing.py:157`](../../jax_rl/training/checkpointing.py#L157). Buffer is the only missing piece.
+
+**Why magnitude varies by task:**
+- Locomotion (Go2): policy tolerates small perturbations — gait still "works" at 96% perf, drop is borderline noise.
+- Cartpole balance: high-precision control — small policy perturbation = early termination = big eval drop.
+- Distributional critics (FlashSAC C51) may be more sensitive to off-distribution targets than scalar SAC — the categorical projection amplifies bad targets faster.
+
+**Fix shipped:** `--resume-warmup {policy,random}` flag, default `policy`. On resume, refill the buffer using the loaded policy's actions during the same warmup window — same threshold (`min_buffer_size`), same wall time (~8-25 outer iters at 1024 envs), but on-policy data instead of random. Zero storage cost vs persisting the buffer (~30-460 MB per save depending on env size).
+
+**Implementation:** action selection branch now gates `use_random` on `is_warmup AND (start_step == 0 OR resume_warmup == "random")`. Cold-start unchanged (random for exploration). Resume default (`policy`) stops random refill. Random refill stays opt-in for users who explicitly want a buffer-distribution reset.
+
+**Validation:**
+| Algo / Env | First post-resume eval (random warmup) | First post-resume eval (policy warmup) | Long-term (eval @ 256 eps) |
+|---|---|---|---|
+| FastSAC / Go2WarpJoystickFlat (baseline 268.4) | 253.9 (-14) | **270.9 (+2.5)** | 268+ stable |
+| FlashSAC / CartpoleBalance (baseline 999.7) | 690.7 (-309) | 661.1 (-339) | random=982, **policy=999.8** |
+
+**FastSAC Go2: fix is total.** First eval lands within noise band of baseline. Resume seamless.
+
+**FlashSAC Cartpole: fix is partial.** Both modes drop ~310 pts at first eval; the buffer fix only diverges from broken at the second eval onward (policy plateau at 999.8 vs random at 982). First-eval drop has a *separate* cause that the buffer fix doesn't address.
+
+**FlashSAC residual investigation (2026-04-26):**
+
+Multiple hypotheses tested + ruled out as dominant cause:
+1. **Freeze `reward_norm_state` during resume warmup.** First eval got *worse* (478 vs 661). EMA decay (`gamma=0.99`/step) replaces loaded RewScale within thousands of post-warmup updates regardless; the freeze stalls RewScale further from empirical → worse critic mismatch.
+2. **Match `--total-timesteps` to baseline (no schedule reshape).** Same drop (515 vs 661 — within noise).
+
+**Run-to-run variance:** across 4 "policy-mode" resume runs (varying total-timesteps, freeze toggles), first eval ranged 478-690. ~180-pt stochasticity per run. Drop magnitude is systematic (~300-500 pts) but exact value is variable.
+
+**Revised hypothesis (not investigated further):** **actor-instability transient.** With ~6750 small-batch gradient updates between resume and first eval, LR at ~70% through cosine decay, the saturated cartpole actor drifts stochastically out of optimum. Buffer / reward-norm / schedule shape the recovery curve but don't determine the initial drift magnitude. Cartpole's precision-sensitivity amplifies a drift that locomotion (FastSAC Go2) absorbs as noise.
+
+**Lesson from the failed reward-norm freeze:** rapid-EMA running stats can't be "frozen and resumed" mid-training without engineering a transition. The state is more like a continuously-moving reference frame than a snapshot. If you ever need to resume an algorithm with adaptive normalization, plan for the EMA decay rate at the merge point.
+
+**Decision:** accept as known transient. Performance recovers by @ 192-256 eps; resume use is rare. If the residual ever matters, the likely surgical fix is **critic-only warmup on resume** — skip actor updates for first K~5000 grad steps so the critic re-stabilizes against the post-resume reward distribution before the actor follows.
+
+**Rule of thumb when you see a resume drop on a NEW algo:**
+1. **Replay buffer** (covered by `--resume-warmup policy` for SAC/TD3-family; check it's threaded into your loop).
+2. **EMA running stats** (reward norm, obs norm, anything that updates per step). Are they persisted? Do they continue updating after resume in a way that shifts the reference frame?
+3. **Optimizer schedule shape.** Saved `opt_state.count` indexes into the current schedule. If you reshape (changed `--total-timesteps`), LR may be wrong.
+4. **`obs/critic norm_state`** — fixed 2026-04-24 (off-policy loop threading).
+5. **Optimizer Adam moments / BN stats / RNG** — usually persisted, but worth grepping if a custom algo adds new state.
+
+If you see a resume drop, walk through `TrainingState` field-by-field against `checkpointing.py:save_checkpoint`, then check the loop for any per-step EMA updates that might shift reference values.

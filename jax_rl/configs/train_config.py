@@ -17,6 +17,11 @@ class TrainConfig:
     # Environment
     env_name: str = "CartpoleBalance"
     episode_length: int = 1000
+    # action_repeat: each agent action drives N control steps; rewards summed.
+    # Default 1 (back-compat for PPO/SAC/TD3 etc). TD-MPC2 sets 2 for source parity.
+    # Honored by mjx_backend (via wrap_for_training) and by gym_backend
+    # (via _ActionRepeatWrapper applied in factories).
+    action_repeat: int = 1
     # Optional backend-specific kwargs (gym/isaaclab — ignored by mjx).
     # Example for PushT: {"obs_type": "keypoints", "block_shape": "dr",
     # "reward_mode": "contact_gated", "coverage_shape": "log_barrier"}.

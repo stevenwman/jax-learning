@@ -67,6 +67,7 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--env` | str | `WalkerWalk` | Environment name (e.g., CheetahRun, HumanoidRun, Go2WarpJoystickFlat) |
 | `--seed` | int | `0` | Random seed |
 | `--resume` | str | - | Resume from checkpoint directory path |
+| `--resume-warmup` | str | `policy` | On resume, refill buffer using loaded policy actions (default, prevents eval drop) or legacy random uniform |
 | `--num-envs` | int | from preset | Number of parallel environments (default: from env preset) |
 | `--total-timesteps` | int | from preset | Total environment steps to train (default: from env preset) |
 | `--lr` | float | from preset | Learning rate for actor and critic (default: from algo config) |
@@ -91,6 +92,7 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--env` | str | `WalkerWalk` | Environment name (e.g., CheetahRun, HumanoidRun, Go2WarpJoystickFlat) |
 | `--seed` | int | `0` | Random seed |
 | `--resume` | str | - | Resume from checkpoint directory path |
+| `--resume-warmup` | str | `policy` | On resume, refill buffer using loaded policy actions (default, prevents eval drop) or legacy random uniform |
 | `--num-envs` | int | from preset | Number of parallel environments (default: from env preset) |
 | `--total-timesteps` | int | from preset | Total environment steps to train (default: from env preset) |
 | `--lr` | float | from preset | Learning rate for actor and critic (default: from algo config) |
@@ -115,6 +117,7 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--env` | str | `WalkerWalk` | Environment name (e.g., CheetahRun, HumanoidRun, Go2WarpJoystickFlat) |
 | `--seed` | int | `0` | Random seed |
 | `--resume` | str | - | Resume from checkpoint directory path |
+| `--resume-warmup` | str | `policy` | On resume, refill buffer using loaded policy actions (default, prevents eval drop) or legacy random uniform |
 | `--num-envs` | int | from preset | Number of parallel environments (default: from env preset) |
 | `--total-timesteps` | int | from preset | Total environment steps to train (default: from env preset) |
 | `--lr` | float | from preset | Learning rate for actor and critic (default: from algo config) |
@@ -142,6 +145,7 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--env` | str | `WalkerWalk` | Environment name (e.g., CheetahRun, HumanoidRun, Go2WarpJoystickFlat) |
 | `--seed` | int | `0` | Random seed |
 | `--resume` | str | - | Resume from checkpoint directory path |
+| `--resume-warmup` | str | `policy` | On resume, refill buffer using loaded policy actions (default, prevents eval drop) or legacy random uniform |
 | `--num-envs` | int | from preset | Number of parallel environments (default: from env preset) |
 | `--total-timesteps` | int | from preset | Total environment steps to train (default: from env preset) |
 | `--lr` | float | from preset | Learning rate for actor and critic (default: from algo config) |
@@ -169,6 +173,7 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--env` | str | `CartpoleBalance` | Environment name (e.g., CartpoleBalance, CheetahRun, Go2WarpJoystickFlat) |
 | `--seed` | int | `0` | Random seed |
 | `--resume` | str | - | Resume from checkpoint directory path |
+| `--resume-warmup` | str | `policy` | On resume, refill buffer using loaded policy actions (default, prevents eval drop) or legacy random uniform |
 | `--num-envs` | int | - | Number of parallel environments |
 | `--total-timesteps` | int | - | Total environment steps to train |
 | `--episode-length` | int | - | Max steps per episode |

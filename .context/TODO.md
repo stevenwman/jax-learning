@@ -12,9 +12,9 @@ Refactored env-construction layer so non-MJX envs (gym, isaaclab planned) plug i
 - `record_video.py` early-dispatches by backend; `_record_gym()` saves mp4 + npz from env.render() rollout.
 - Validated: `train_sac --env HalfCheetah` 200k @ num_envs=8 → eval **5697 ± 43**, above published SAC baselines for that step count. Zero code outside `gym_backend.py` was needed.
 
-Branch: `env-backend-refactor` (worktree `../jax-learning-envrefactor/`), 6 commits ahead of `new_slate_linen`. Will need rebase against linen's TD-MPC2 / FlashSAC / curriculum work when merging back.
+Branch: `env-backend-refactor` (worktree `../jax-learning-envrefactor/`). Merged into `new_slate_linen` 2026-04-26. See `.context/branches/env-backend-refactor.md` for the merge coordination doc + post-merge action_repeat rationalization recipe.
 
-See `.context/journals/2026-04-26.md` for full retrospective and `.superpowers/plans/2026-04-25-env-backend-refactor.md` for the plan.
+See `.context/journals/2026-04-26.md` (env-backend section) for full retrospective and `.superpowers/plans/2026-04-25-env-backend-refactor.md` for the plan.
 
 **Open follow-ups (deferred):**
 - [ ] **Phase 6 — delete `scripts/train_pusht.py`** after a 2M reproduction of 89% sto cov via `train_sac --env PushT`. Needs ~3h GPU + a comparison commit. Don't do before validation — old script is the reference.
@@ -22,23 +22,29 @@ See `.context/journals/2026-04-26.md` for full retrospective and `.superpowers/p
 - [ ] **`evaluate_gym` Q-bias diagnostics** — currently returns `eval_mean/std/min/max` only. Backfill MC-return Q-bias if a use case shows up (single-env serial, would need rebuilding the lax.scan computation).
 - [ ] **Migrate `train_ppo_contraction.py`, `train_flashsac.py`** to bundle dispatch — currently use legacy `make_envs` re-export, MJX-only. Cheap to migrate (one import + one dataclass unpack); do when there's a reason to run them on gym.
 
-## 🔥 High priority — TD-MPC2 end-of-run collapse investigation
+## Medium priority — TD-MPC2 J3 Cheetah re-run with all fixes
 
-J3 1M (2026-04-25) achieved best mppi=837.51 ± 1.35 (paper-match) at step 500k, but **final ckpt at step 1M dropped to 439 (-47% from peak)**. Same pattern observed at 100k smoke (peak 523 → final 316, -40%). Same shape at different scales → systematic, not noise. Both confirmed via `scripts/eval_tdmpc2.py` re-eval on saved ckpts (40 episodes each, std < 2).
+J3 v1 (2026-04-25) hit mppi=837 with action_repeat=1, episode_length=1000, γ=0.995, AND pre-Bug-A/B. Now we have:
+- Bug A (truncated≠terminated) fixed (c080d32)
+- Bug B (Q dropout in policy/qscale paths) fixed (c080d32)
+- action_repeat=2 + episode_length=500 (43b71ad)
+- eval-key isolation (b5a8c70)
 
-**Hypotheses for diagnosis:**
-- Q overestimation accumulating that the regularizers (dropout + target-Q EMA + qscale EMA) eventually can't keep up with
-- Adam moment blow-up at end (no LR annealing in our setup; source uses constant LR too)
-- Buffer wrap effects (1M buffer / ~1M steps means we just barely start reusing slots near the end of run)
-- Final eval hitting a bad mode in the policy (less likely — re-eval on the saved final ckpt confirmed the drop)
+Re-run J3 with all fixes. Expected: ≥837 (might exceed if previously bottlenecked by Bug A on truncations or by under-coverage from action_repeat=1; or stay 837 if already at task ceiling). Also tests whether end-of-run collapse pattern recurs (J4 v3 didn't show it — eval-key fix likely helped).
 
-**Diagnostic plan:**
-- Re-eval intermediate ckpts (e.g. via `--load-ckpt` on every saved ckpt) to plot the full collapse curve
-- Inspect Tier B logs around the collapse window: q_p5/q_p95 EMA, scaled_entropy_mean, wm_grad_norm, pi_grad_norm
-- If Q-overestimation suspected: log min/mean/max of q_avg_t0 over training and look for blow-up in last 10%
-- Compare to source — does TD-MPC2 paper show this collapse shape? Probably not in published figures (they report best, not final). Worth checking original repo's training curves.
+```bash
+PYTHONPATH=$PWD XLA_PYTHON_CLIENT_MEM_FRACTION=0.4 \
+  uv run python scripts/train_tdmpc2.py --env CheetahRun --total-timesteps 1000000 \
+  --seed 0 --num-envs 8 --eval-every 50000 --ckpt-dir .temp/tdmpc2_j3_v2
+```
 
-Best-ckpt-save (already implemented) ensures we never deploy the collapsed policy, so this is a quality-of-life issue not a correctness one. Still worth understanding.
+Not blocking — paper match already achieved with v1.
+
+## Low priority — TD-MPC2 train-budget extension to paper scale (4-14M)
+
+Paper trains DMControl for 4-14M env steps (Humanoid uses 14M per Fig.15). We've validated 1M trajectories that match paper Fig.15 band at the same env-step budget (Humanoid 559 at 1M). For full asymptotic comparison would need to extend training. Each 1M ≈ 5h on a single GPU; 14M ≈ 70h.
+
+Best-ckpt-save protects deployable artifacts; the only reason to extend is settling per-task asymptotic numbers for publication.
 
 ## 🔥 High priority — Verify polyak refactor on Go2 FastSAC training run
 
@@ -52,26 +58,40 @@ Commit `45ad979` (2026-04-25) extracted `_soft_update` from sac/td3/fast_sac/fas
 
 If eval diverges by more than seed variance: bug in the polyak signature switch (tau capture, arg order, closure) — revert to `45ad979^` and re-investigate.
 
-## 🔥 High priority — FlashSAC resume eval regression
+## Completed (2026-04-26) — Resume eval regression fix (off-policy, partial)
 
-After landing `reward_norm_state` persistence (commit 6a17f9b, 2026-04-24), verified the reward-norm fix works via direct ckpt inspection (G_count=499968, G_r_max=33.28, RewScale=8.4318 matches pre-resume log's 8.435 to 3 decimals). But: resume still shows a large eval drop — CartpoleBalance hit 996 pre-resume then 747 at first eval after resume.
+**Buffer-not-persisted confirmed as ONE root cause of the resume eval drop.** Off-policy loop re-fires the warmup gate on resume and refills the buffer with random-uniform actions for `min_buffer_size` steps, corrupting the buffer with off-distribution data → first gradient batches train on random data → policy drifts.
 
-`reward_norm_state` is persisted correctly, so the regression is from another non-persisted piece of state. Candidates:
-1. **Replay buffer not persisted** — `JaxReplayBuffer` starts empty on resume. First 10k env steps = random-uniform warmup, then gradient updates start from a buffer that has no policy-on-distribution data. The pre-resume policy's behaviour (cartpole-balancing) drifts during this gap. Most likely root cause.
-2. **EpisodeTracker reset** (`train_flashsac.py:215`) — fresh `n_episodes=0` means first eval fires when few episodes have completed post-resume; eval_mean could be noisier.
-3. **BN running stats** — `actor_batch_stats`, `q{1,2}_batch_stats`, `target_q{1,2}_batch_stats` ARE persisted via TrainingState. But critic targets update their BN running stats via `train=True` forwards in-process; after resume these may drift before stabilizing.
-4. **Zeta noise `count`/`repeat_n` fields** — persisted. Unlikely.
+**Fix shipped:** `--resume-warmup {policy,random}` flag (default `policy`). On resume, refill buffer using loaded policy actions instead of random. Zero storage cost.
 
-**Diagnostic plan:**
-- Log `buffer_size` at each eval post-resume — confirm it starts at 0 and grows.
-- Add a pre-resume "micro-eval" (5 eps) immediately on load, before any env steps, to isolate whether the policy itself regressed vs a warmup-gap artifact.
-- Run the same resume experiment on a harder env (Go2WarpJoystickFlat) where cartpole's "easy to recover" dynamics don't mask regressions.
+**Files patched:**
+- `jax_rl/training/offpolicy_loop.py` — receives `resume_warmup` param, gates random branch on `start_step == 0 OR resume_warmup == "random"`.
+- `scripts/train_flashsac.py` — same logic in standalone loop.
+- `scripts/train_sac.py`, `train_td3.py`, `train_fast_sac.py`, `train_fast_td3.py`, `train_flashsac.py` — `--resume-warmup` CLI flag.
 
-**Fix candidates (if root cause is replay buffer):**
-1. Persist replay buffer alongside orbax ckpt. Reference (Holiday-Robot/FlashSAC) has `save_replay_buffer` / `load_replay_buffer`. ~50 LOC + test.
-2. Skip the random-uniform warmup on resume (if buffer loaded) OR retain policy actions during resume warmup (safer than random).
+**Validation:**
+| Algo / Env (baseline) | First eval (random) | First eval (policy) | Long-term (@ 256 eps) |
+|---|---|---|---|
+| FastSAC / Go2WarpJoystickFlat (268.4) | 253.9 (-14) | **270.9** (+2.5) | 268+ |
+| FlashSAC / CartpoleBalance (999.7) | 690.7 (-309) | 661.1 (-339) | random=982, **policy=999.8** |
 
-Not blocking — resume is rare in practice — but should be understood before claiming "checkpoint+resume is correct" for FlashSAC.
+**Verdict:**
+- **FastSAC Go2: fix is total.** Resume seamless.
+- **FlashSAC Cartpole: fix is partial.** First-eval drop persists (~310 pts in both modes); fix only changes the recovery curve. Buffer is *one* cause; there's a second, FlashSAC-specific cause (see follow-up TODO).
+
+## Accepted (2026-04-26) — FlashSAC Cartpole resume first-eval transient
+
+After landing the buffer-warmup fix, FlashSAC CartpoleBalance still drops ~300-500 pts at first post-resume eval, **but recovers fully by @ 192-256 eps**. Decision: accept as known transient, don't invest further. Resume use is rare; performance picks back up.
+
+**What we tried + ruled out:**
+- Freezing `reward_norm_state` during resume warmup → made it worse (478 vs 661). RewScale EMA decay too fast (`gamma=0.99/step`) for a 10k-step freeze to preserve the loaded value.
+- Matching `--total-timesteps` to baseline (no schedule reshape) → same drop magnitude. Schedule reshape isn't dominant.
+
+**Run-to-run variance:** first eval ranges 478-690 across "identical" policy-mode resume runs (varying total-timesteps and freeze toggles). ~180-pt stochasticity per run. Drop is systematic in MAGNITUDE (~300-500 pts) but variable in EXACT VALUE.
+
+**Revised hypothesis (not investigated further):** actor-instability transient during the first ~6750 post-resume gradient updates. With LR at ~70% through cosine decay × 6750 small-batch grads, the saturated cartpole actor drifts stochastically out of optimum. Buffer / reward-norm / schedule shape the recovery curve but not the initial drift magnitude. Cartpole's high precision-sensitivity amplifies a drift that locomotion (FastSAC Go2) tolerates as noise.
+
+**If you ever DO care:** likely fix is critic-only warmup on resume — skip actor updates for first K~5000 grad steps to let critic re-stabilize before unleashing actor. ~30-50 LOC + a `--resume-actor-warmup-steps N` flag.
 
 ## Completed (2026-04-24) — FlashSAC reward_norm_state persistence
 
@@ -156,6 +176,15 @@ Prior HP sweep at `penalty_coef ∈ {0.01, 0.1, 1.0}, constraint_coef=1` — mos
 ## Completed (2026-03-30)
 - [x] PandaPickCube SAC — **reward 1386, cube lifted 22cm** @ 10M steps. Preset added to env_presets.py.
 - [x] Manipulation benchmark survey — MuJoCo Playground already has 10 tasks (PandaPickCube, LeapCubeReorient, AlohaSinglePegInsertion, etc.)
+
+## Completed (2026-04-26) — TD-MPC2 J4 HumanoidRun paper-band match
+
+- [x] **2 more correctness bugs** (commit c080d32):
+  - Bug A: truncated treated as terminated in TD target — clip(dones - truncations, 0, 1)
+  - Bug B: Q dropout disabled in policy_loss + qscale recompute paths — added rngs={"dropout": key} at both call sites
+- [x] **Env source-parity** (commit 43b71ad): action_repeat=2 (TDMPC2Config new field) + episode_length=500 in DMC presets (was 1000). Discount auto-recomputes 0.995→0.99.
+- [x] **scripts/record_video_tdmpc2.py** (commit fd3e814): MPPI + prior mode video capture via two-phase rollout+render. Camera tracks body_id=1.
+- [x] **J4 HumanoidRun 1M v3 benchmark**: final mppi=559.68 (best at final, no end-of-run collapse). 5-round eval of best ckpt: **mppi 556.99 ± 4.06 over 40 episodes**. Within paper Fig.15 Humanoid Run trajectory band at the same env-step budget.
 
 ## Completed (2026-04-25) — TD-MPC2 J3 paper match + supporting infra
 

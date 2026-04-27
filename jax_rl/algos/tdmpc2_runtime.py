@@ -197,6 +197,7 @@ def build_train_config_from_tdmpc2(
         total_timesteps=total_timesteps,
         num_envs=tdmpc2_cfg.num_envs,
         episode_length=ep_len,
+        action_repeat=tdmpc2_cfg.action_repeat,
         gamma=tdmpc2_cfg.discount,
         lr=tdmpc2_cfg.lr,
         reward_scaling=1.0,
