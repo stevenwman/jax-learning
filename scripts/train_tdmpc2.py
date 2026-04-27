@@ -25,7 +25,7 @@ from jax_rl.algos.tdmpc2 import (
     TDMPC2State,
     make_plan_batched, make_update_step,
 )
-from jax_rl.algos.tdmpc2_runtime import (
+from jax_rl.algos.tdmpc2.runtime import (
     build_modules, init_train_state, run_eval,
     build_train_config_from_tdmpc2, _pipe_obs,
 )

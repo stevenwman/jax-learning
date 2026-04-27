@@ -27,7 +27,7 @@ import jax
 import jax.numpy as jnp
 
 from jax_rl.algos.tdmpc2 import make_update_step
-from jax_rl.algos.tdmpc2_runtime import (
+from jax_rl.algos.tdmpc2.runtime import (
     build_modules, init_train_state, build_train_config_from_tdmpc2,
 )
 from jax_rl.configs.env_presets import get_tdmpc2_preset
@@ -113,13 +113,21 @@ def check_env(env: str, seed: int, n_steps: int):
     print(f"[det] env after{n_steps:>4}  reward_sum={float(jnp.sum(env_state.reward)):.6f}")
 
 
-def main():
+def build_parser() -> argparse.ArgumentParser:
+    """Construct the argparse parser. Importable for docs/tooling without parse_args()."""
     p = argparse.ArgumentParser()
-    p.add_argument("--check", choices=["init", "update", "env"], required=True)
-    p.add_argument("--env", default="CheetahRun")
-    p.add_argument("--seed", type=int, default=0)
-    p.add_argument("--n", type=int, default=50)
-    args = p.parse_args()
+    p.add_argument("--check", choices=["init", "update", "env"], required=True,
+                   help="Which determinism check: init / update / env")
+    p.add_argument("--env", default="CheetahRun",
+                   help="Env name (default: CheetahRun)")
+    p.add_argument("--seed", type=int, default=0, help="Seed (default: 0)")
+    p.add_argument("--n", type=int, default=50,
+                   help="Number of update / env steps to compare (default: 50)")
+    return p
+
+
+def main():
+    args = build_parser().parse_args()
 
     if args.check == "init":
         check_init(args.env, args.seed)

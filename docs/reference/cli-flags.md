@@ -253,3 +253,42 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--force-zero-yaw` | flag | off | Curriculum: force cmd_yaw_rate=0 for the whole episode (DR sanity check) |
 | `--terrain-level` | int | - | Curriculum env only: force spawn at this level (0-9) |
 | `--terrain-type` | str | - | Curriculum env only: force spawn at this terrain type |
+
+---
+
+## `eval_tdmpc2.py`
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--env` | str | - | Env name (CheetahRun, HumanoidRun, ...) |
+| `--load-ckpt` | str | - | Path to ckpt dir (containing actor_params.npz + world_model_params.npz). Pass `<dir>/best` to eval the peak ckpt. |
+| `--num-evals` | int | `5` | Number of eval rounds. Each round runs cfg.num_eval_envs episodes. |
+| `--seed` | int | `0` | Base seed; round k uses seed+k for reproducibility. |
+| `--num-envs` | int | from preset | Override TDMPC2Config.num_envs (only affects state shape; eval uses num_eval_envs). |
+
+---
+
+## `check_tdmpc2_determinism.py`
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--check` | str | - | Which determinism check: init / update / env |
+| `--env` | str | `CheetahRun` | Env name (default: CheetahRun) |
+| `--seed` | int | `0` | Seed (default: 0) |
+| `--n` | int | `50` | Number of update / env steps to compare (default: 50) |
+
+---
+
+## `record_video_tdmpc2.py`
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--env` | str | - | Env name (CheetahRun, HumanoidRun, ...) |
+| `--load-ckpt` | str | - | Path to ckpt dir (actor_params.npz + world_model_params.npz) |
+| `--mode` | str | `both` | Rollout mode: mppi planning, prior policy, or both (default) |
+| `--num-steps` | int | `500` | Rollout length (default 500 = DMC episode length) |
+| `--out-dir` | str | - | Defaults to <ckpt>/ |
+| `--seed` | int | `0` | Seed (default 0) |
+| `--width` | int | `480` | Render width (default 480) |
+| `--height` | int | `480` | Render height (default 480) |
+| `--num-envs` | int | from preset | Override TDMPC2Config.num_envs (state-shape only) |

@@ -20,7 +20,7 @@ import numpy as np
 import jax
 
 from jax_rl.algos.tdmpc2 import make_plan_batched
-from jax_rl.algos.tdmpc2_runtime import (
+from jax_rl.algos.tdmpc2.runtime import (
     build_modules, init_train_state, run_eval,
     build_train_config_from_tdmpc2, load_params_into_state,
 )
@@ -28,9 +28,11 @@ from jax_rl.configs.env_presets import get_tdmpc2_preset
 from jax_rl.training.env_setup import make_env_bundle
 
 
-def main():
+def build_parser() -> argparse.ArgumentParser:
+    """Construct the argparse parser. Importable for docs/tooling without parse_args()."""
     parser = argparse.ArgumentParser()
-    parser.add_argument("--env", type=str, required=True)
+    parser.add_argument("--env", type=str, required=True,
+                        help="Env name (CheetahRun, HumanoidRun, ...)")
     parser.add_argument("--load-ckpt", type=str, required=True,
                         help="Path to ckpt dir (containing actor_params.npz + world_model_params.npz). "
                              "Pass `<dir>/best` to eval the peak ckpt.")
@@ -40,7 +42,11 @@ def main():
                         help="Base seed; round k uses seed+k for reproducibility.")
     parser.add_argument("--num-envs", type=int, default=None,
                         help="Override TDMPC2Config.num_envs (only affects state shape; eval uses num_eval_envs).")
-    args = parser.parse_args()
+    return parser
+
+
+def main():
+    args = build_parser().parse_args()
 
     cfg = get_tdmpc2_preset(args.env)
     if args.num_envs is not None:

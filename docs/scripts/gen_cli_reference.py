@@ -34,6 +34,9 @@ SCRIPTS: list[tuple[str, str]] = [
     ("train_tdmpc2.py",          "scripts.train_tdmpc2"),
     ("train_pusht.py",           "scripts.train_pusht"),
     ("record_video.py",          "scripts.record_video"),
+    ("eval_tdmpc2.py",           "scripts.eval_tdmpc2"),
+    ("check_tdmpc2_determinism.py", "scripts.check_tdmpc2_determinism"),
+    ("record_video_tdmpc2.py",   "scripts.record_video_tdmpc2"),
 ]
 
 

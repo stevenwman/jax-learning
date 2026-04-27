@@ -25,7 +25,7 @@ import jax
 import jax.numpy as jnp
 
 from jax_rl.algos.tdmpc2 import make_plan_batched
-from jax_rl.algos.tdmpc2_runtime import (
+from jax_rl.algos.tdmpc2.runtime import (
     build_modules, init_train_state, build_train_config_from_tdmpc2,
     load_params_into_state, _pipe_obs,
 )
@@ -107,18 +107,28 @@ def render_qpos_qvel(mj_model, qpos_seq, qvel_seq, n, label, width, height,
     return frames
 
 
-def main():
+def build_parser() -> argparse.ArgumentParser:
+    """Construct the argparse parser. Importable for docs/tooling without parse_args()."""
     p = argparse.ArgumentParser()
-    p.add_argument("--env", required=True)
-    p.add_argument("--load-ckpt", required=True, help="Path to ckpt dir (actor_params.npz + world_model_params.npz)")
-    p.add_argument("--mode", choices=["mppi", "prior", "both"], default="both")
-    p.add_argument("--num-steps", type=int, default=500, help="Rollout length (= episode_length for DMC default 500)")
+    p.add_argument("--env", required=True,
+                   help="Env name (CheetahRun, HumanoidRun, ...)")
+    p.add_argument("--load-ckpt", required=True,
+                   help="Path to ckpt dir (actor_params.npz + world_model_params.npz)")
+    p.add_argument("--mode", choices=["mppi", "prior", "both"], default="both",
+                   help="Rollout mode: mppi planning, prior policy, or both (default)")
+    p.add_argument("--num-steps", type=int, default=500,
+                   help="Rollout length (default 500 = DMC episode length)")
     p.add_argument("--out-dir", default=None, help="Defaults to <ckpt>/")
-    p.add_argument("--seed", type=int, default=0)
-    p.add_argument("--width", type=int, default=480)
-    p.add_argument("--height", type=int, default=480)
-    p.add_argument("--num-envs", type=int, default=None, help="Override TDMPC2Config.num_envs (state-shape only)")
-    args = p.parse_args()
+    p.add_argument("--seed", type=int, default=0, help="Seed (default 0)")
+    p.add_argument("--width", type=int, default=480, help="Render width (default 480)")
+    p.add_argument("--height", type=int, default=480, help="Render height (default 480)")
+    p.add_argument("--num-envs", type=int, default=None,
+                   help="Override TDMPC2Config.num_envs (state-shape only)")
+    return p
+
+
+def main():
+    args = build_parser().parse_args()
 
     cfg = get_tdmpc2_preset(args.env)
     if args.num_envs is not None:

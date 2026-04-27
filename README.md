@@ -36,8 +36,16 @@ Each off-policy algo has its own entry script. The four below share a single loo
 | **FastSAC** | Off-policy | `train_fast_sac.py` | SAC + C51 distributional critic + `policy_delay=4`. Large batches (8192), UTD 8. |
 | **FastTD3** | Off-policy | `train_fast_td3.py` | TD3 + C51 distributional critic. Same scale as FastSAC. |
 | **FlashSAC** | Off-policy | `train_flashsac.py` | Inverted residual blocks + BatchNorm + adaptive reward scaling. Standalone loop. |
+| **TD-MPC2** | Model-based | `train_tdmpc2.py` | Encoder + dynamics + reward + Q ensemble + MPPI planner. Standalone loop, sequence replay, MJX-only. **Experimental:** separate `.npz` checkpoint contract — use `record_video_tdmpc2.py` (not `record_video.py`) for rollouts. |
 
 Note: for FastSAC/FastTD3 the target-Q Polyak update is gated by `policy_delay`, so effective per-critic-step target decay is `tau / policy_delay`, not `tau`. See [API → configs](https://stevenwman.github.io/jax-learning/api/configs/).
+
+### Maturity
+
+- **Stable core:** SAC, TD3, FastSAC, FastTD3, PPO, PPOContraction, FlashSAC, shared `run_offpolicy_loop`, `EnvBundle` + backend dispatch (`mjx` + `gym`), `CheckpointManager`.
+- **Experimental research:** TD-MPC2 (active development; separate artifact contract), terrain curriculum, PushT letter-shape generalization, ContractionPPO.
+- **Deploy-critical:** Go2 Warp envs + obs schema + `deploy/` runtime. Treat changes conservatively.
+- **Deprecated:** `scripts/train_pusht.py` (use `scripts/train_sac.py --env PushT` instead, pending parity reproduction).
 
 ## Examples
 
