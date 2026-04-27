@@ -61,12 +61,21 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
     bundle = make_env_bundle(cfg, seed)
     if bundle.backend_kind != "mjx":
         raise ValueError(
-            f"train_ppo currently requires an MJX env bundle but got "
-            f"backend_kind={bundle.backend_kind!r} for env {cfg.env_name!r}. "
-            f"The Python collect loop should work on gym in principle but is "
-            f"untested; the eval path may also assume MJX. Remove this guard "
-            f"after a smoke run on a gym env (e.g. HalfCheetah) confirms parity. "
-            f"For PPO on gym envs today, no equivalent script exists yet."
+            f"train_ppo currently requires an MJX env bundle, but env "
+            f"{cfg.env_name!r} routes to backend_kind={bundle.backend_kind!r}.\n"
+            f"\n"
+            f"For gym envs (HalfCheetah, Hopper, Walker2d, Humanoid, Ant, "
+            f"Pendulum, LunarLanderContinuous, PushT), use an off-policy "
+            f"algo via the bundle:\n"
+            f"  uv run python scripts/train_sac.py        --env {cfg.env_name}\n"
+            f"  uv run python scripts/train_td3.py        --env {cfg.env_name}\n"
+            f"  uv run python scripts/train_fast_sac.py   --env {cfg.env_name}\n"
+            f"  uv run python scripts/train_fast_td3.py   --env {cfg.env_name}\n"
+            f"\n"
+            f"On-policy PPO on gym is not wired yet — the Python collect "
+            f"loop should work in principle but eval assumes MJX. Remove this "
+            f"guard after a smoke run on a gym env confirms parity end-to-end "
+            f"(see .context/lessons/env_backends.md §6 #1)."
         )
     env, env_step, env_state, eval_env = bundle.env, bundle.env_step, bundle.env_state, bundle.eval_env
     obs_dim, action_dim, key = bundle.obs_dim, bundle.action_dim, bundle.key
