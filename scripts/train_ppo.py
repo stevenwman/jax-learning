@@ -67,11 +67,15 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
     obs_dim, action_dim, key = bundle.obs_dim, bundle.action_dim, bundle.key
     dict_obs = bundle.dict_obs
     critic_obs_dim = bundle.critic_obs_dim if bundle.has_privileged else obs_dim
+    # Effective num_envs is bundle.num_envs (gym backend may cap to cpu_count).
+    num_envs = bundle.num_envs
+    if num_envs != cfg.num_envs:
+        print(f"  num_envs={num_envs} (cfg requested {cfg.num_envs}, capped by backend)")
     if bundle.has_privileged:
         print(f"  Asymmetric actor-critic: policy obs={obs_dim}, critic obs={critic_obs_dim}")
 
     ppo_cfg = cfg.ppo
-    samples_per_update = cfg.num_envs * ppo_cfg.num_steps
+    samples_per_update = num_envs * ppo_cfg.num_steps
     samples_per_iter = samples_per_update * ppo_cfg.num_updates_per_batch
     num_iterations = cfg.total_timesteps // samples_per_iter
 
@@ -79,7 +83,7 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
     print(f"PPO — {cfg.env_name} (MuJoCo Playground)")
     print("=" * 80)
     print(f"  obs_dim={obs_dim}, critic_obs_dim={critic_obs_dim}, action_dim={action_dim}")
-    print(f"  num_envs={cfg.num_envs}, num_steps={ppo_cfg.num_steps}, "
+    print(f"  num_envs={num_envs}, num_steps={ppo_cfg.num_steps}, "
           f"num_updates_per_batch={ppo_cfg.num_updates_per_batch}, episode_length={cfg.episode_length}")
     print(f"  samples/update={samples_per_update:,}, samples/iter={samples_per_iter:,}, "
           f"iterations={num_iterations}, total_steps={cfg.total_timesteps:,}")
@@ -109,7 +113,7 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
         critic_encoder=EncoderConfig(obs_dim=critic_obs_dim, hidden_dim=ppo_cfg.value_hidden_dim, activation=ppo_cfg.activation),
         policy_head=PolicyHeadConfig(action_dim=action_dim, squash=ppo_cfg.squash,
                                      state_dependent_std=ppo_cfg.state_dependent_std),
-        num_envs=cfg.num_envs,
+        num_envs=num_envs,
         minibatch_size=minibatch_size,
         gamma=cfg.gamma,
     )
@@ -159,7 +163,7 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
         print(f"  Resuming from iteration {start_iteration} (step {start_iteration * samples_per_iter:,})")
 
     # ── Tracking + infra ─────────────────────────────────────────────────
-    tracker = EpisodeTracker(cfg.num_envs)
+    tracker = EpisodeTracker(num_envs)
     metrics_log: list[dict] = []
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     env_short = cfg.env_name.lower().replace(" ", "_")
@@ -186,10 +190,10 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
 
         # ── Inner loop: multiple collect→update cycles per iteration ─────
         for _update_cycle in range(ppo_cfg.num_updates_per_batch):
-            buffer = RolloutBuffer(ppo_cfg.num_steps, cfg.num_envs, obs_dim, action_dim)
+            buffer = RolloutBuffer(ppo_cfg.num_steps, num_envs, obs_dim, action_dim)
             # Separate buffer for critic obs if asymmetric
             if dict_obs:
-                critic_obs_buf = jnp.zeros((ppo_cfg.num_steps, cfg.num_envs, critic_obs_dim))
+                critic_obs_buf = jnp.zeros((ppo_cfg.num_steps, num_envs, critic_obs_dim))
 
             # ── Collect rollout (norm stats frozen, Brax-style) ────────
             raw_policy_obs_list = []
@@ -307,7 +311,7 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
                 _ppo_eval_action, frozen_actor,
                 eval_env, num_episodes=cfg.num_eval_episodes,
                 episode_length=cfg.episode_length, key=eval_key,
-                num_envs=cfg.num_envs,
+                num_envs=num_envs,
                 action_fn_kwargs={"norm_state": frozen_norm},
             )
             print(
@@ -338,7 +342,7 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
         _ppo_eval_action, frozen_actor,
         eval_env, num_episodes=cfg.num_eval_episodes,
         episode_length=cfg.episode_length, key=eval_key,
-        num_envs=cfg.num_envs,
+        num_envs=num_envs,
         action_fn_kwargs={"norm_state": frozen_norm},
     )
     ckpt_mgr.save(training_state, norm_state, cfg, cfg.ppo,
