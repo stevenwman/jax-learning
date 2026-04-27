@@ -352,13 +352,25 @@ Prior HP sweep at `penalty_coef ∈ {0.01, 0.1, 1.0}, constraint_coef=1` — mos
 - [ ] Multi-leg-length ant env
 
 ## Mid-term (Vision RL)
+
+**Scope: cross-algo, not TDMPC2-only.** All existing algos
+(SAC/TD3/FastSAC/FastTD3/FlashSAC/PPO/PPOContraction/TDMPC2) should
+plug into the same vision encoder + augmentation infra. Algo-specific
+adapters live in algo files; encoder + augmentation + renderer are
+shared. Wire via `EncoderConfig.kind="cnn"` discriminator (parallel to
+the MLP encoder path) so any algo that accepts a configurable encoder
+inherits vision support without re-implementation.
+
 - [ ] Verify MJWarp GPU renderer on RTX 5080 (`mjx.create_render_context` + `mjx.render`). Madrona MJX is gone — replaced by built-in Warp ray-tracer in mujoco>=3.6.0.
 - [ ] Add render context to Go2WarpJoystick env (follow Playground CartpoleBalance vision pattern)
-- [ ] CNN encoder (`jax_rl/networks/encoders/cnn.py`) + `CnnEncoderConfig`
-- [ ] DrQ augmentation (`jax_rl/utils/augmentation.py`)
-- [ ] `--vision` flag on train scripts
-- [ ] ManiSkill / HumanoidBench integration — requires env factory abstraction in `env_setup.py` (currently only coupling point to Playground). Gymnasium adapter + DLPack bridge.
-- [ ] Memory budget testing — pixel replay buffer on 16GB
+- [ ] CNN encoder (`jax_rl/networks/encoders/cnn.py`) + `CnnEncoderConfig`. Parametric: `EncoderConfig(kind="cnn", channels=..., kernels=..., output_dim=...)`. Drop-in alongside the existing MLP encoder so off-policy + on-policy actor/critic constructions accept it without algo-side changes.
+- [ ] DrQ augmentation (`jax_rl/utils/augmentation.py`) — random shift / random crop. Apply at sample time inside `pipe.normalize_batch` or as a separate `pipe.augment_batch` step so all off-policy algos benefit. PPO can opt in at collect time.
+- [ ] `--vision` flag on train scripts (all 5+ off-policy + 3 on-policy + tdmpc2). Routes through `EncoderConfig.kind` selection. Gate with explicit error when env lacks render context.
+- [ ] **Cross-algo vision smoke matrix** — run each of SAC/TD3/FastSAC/FastTD3/FlashSAC/PPO/PPOContraction/TDMPC2 on one vision env (CartpoleBalance pixels, ~500k steps) to confirm the encoder swap works end-to-end. Track which algo + encoder combos fail; fix the encoder side, not the algo side.
+- [ ] Frame-stacking semantics for image obs — stacked frames as channels (CHW: `3*FS × H × W`) vs separate batch dim. Reuse existing `FrameStackWrapper` with shape-aware stacking.
+- [ ] ManiSkill / HumanoidBench integration — requires the gym backend already added 2026-04-26; just wire env factories. Gymnasium adapter + DLPack bridge for image tensors.
+- [ ] Memory budget testing — pixel replay buffer on 16GB. Image-obs buffer scales as `H*W*C*FS*float32 × buffer_size`. For 84×84×3×3×4 = ~256 KB per transition; 100k buffer = 25 GB. Budget likely demands `uint8` storage + late-cast at sample time.
+- [ ] Encoder freeze / fine-tune knob — option to freeze CNN encoder after initial pretraining (e.g., from BC demos or world-model rollouts). `EncoderConfig.trainable: bool`.
 
 ## Mid-term (Go2 Deployment)
 - [x] Deploy script (`deploy/deploy_go2.py`) — DDS loop, 50Hz, FSM, works for sim and real
