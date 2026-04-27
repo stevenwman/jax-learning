@@ -15,16 +15,17 @@ from jax_rl.algos.tdmpc2.losses import (
     compute_all_latents, compute_td_target,
     world_model_loss, policy_loss,
 )
-from jax_rl.algos.tdmpc2_old import (
-    TDMPC2State,
+from jax_rl.algos.tdmpc2.mppi import (
     make_plan_batched,
-    make_update_step,
-    build_world_model_optimizer,
-    build_policy_optimizer,
-    # internal symbols still in tdmpc2_old (move out in later tasks):
     mppi_rollout, mppi_iteration, sample_pi_trajectories,
     init_mppi_mean, init_mppi_mean_batched,
     gumbel_sample_elite, plan,
+)
+from jax_rl.algos.tdmpc2_old import (
+    TDMPC2State,
+    make_update_step,
+    build_world_model_optimizer,
+    build_policy_optimizer,
 )
 
 __all__ = [
