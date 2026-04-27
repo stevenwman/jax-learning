@@ -19,8 +19,10 @@ from jax_rl.algos.tdmpc2.losses import (
 class TDMPC2State:
     """TD-MPC2 training state.
 
-    Holds online params, target params (encoder/dynamics/reward/Q — NO target policy),
-    optimizer states, Q-scale tracker, per-env MPPI prev_mean, RNG key, step counter.
+    Holds online params, the q_ensemble target params (NO target encoder/dynamics/
+    reward/policy — TD target reads only target_params["q_ensemble"]; see
+    losses.compute_td_target), optimizer states, Q-scale tracker, per-env MPPI
+    prev_mean, RNG key, step counter.
     Immutable pytree — use `state.replace(...)` to update.
     """
     encoder_params: Any
@@ -28,9 +30,6 @@ class TDMPC2State:
     reward_params: Any
     q_ensemble_params: Any
     policy_params: Any
-    encoder_target_params: Any
-    dynamics_target_params: Any
-    reward_target_params: Any
     q_ensemble_target_params: Any
     world_model_opt_state: Any
     policy_opt_state: Any
@@ -100,7 +99,7 @@ def make_update_step(
       2. Recompute detached latents from updated world model.
       3. Policy forward+backward using detached latents.
       4. Q-scale update from t=0 avg-of-2 Q values.
-      5. Target EMA update on encoder/dynamics/reward/q_ensemble (NOT policy).
+      5. Target EMA update on q_ensemble only (the only target read by compute_td_target).
       6. Pack new state.
     """
     @jax.jit
@@ -114,10 +113,9 @@ def make_update_step(
             "reward": state.reward_params,
             "q_ensemble": state.q_ensemble_params,
         }
+        # Only "q_ensemble" is read by world_model_loss → compute_td_target
+        # (losses.py:116). Other heads' targets are never used.
         target_params = {
-            "encoder": state.encoder_target_params,
-            "dynamics": state.dynamics_target_params,
-            "reward": state.reward_target_params,
             "q_ensemble": state.q_ensemble_target_params,
         }
 
@@ -202,13 +200,10 @@ def make_update_step(
         q_p5_now = jnp.percentile(q_avg_t0, 5.0)
         q_p95_now = jnp.percentile(q_avg_t0, 95.0)
 
-        # 5. Target EMA (encoder, dynamics, reward, q_ensemble only — no policy target)
+        # 5. Target EMA — q_ensemble only (the only target read by compute_td_target).
         def ema_tree(target, online, tau):
             return jax.tree_util.tree_map(lambda t, o: t + tau * (o - t), target, online)
 
-        new_target_encoder = ema_tree(state.encoder_target_params, wm_params_new["encoder"], cfg.tau)
-        new_target_dynamics = ema_tree(state.dynamics_target_params, wm_params_new["dynamics"], cfg.tau)
-        new_target_reward = ema_tree(state.reward_target_params, wm_params_new["reward"], cfg.tau)
         new_target_q = ema_tree(state.q_ensemble_target_params, wm_params_new["q_ensemble"], cfg.tau)
 
         # 6. Pack new state
@@ -218,9 +213,6 @@ def make_update_step(
             reward_params=wm_params_new["reward"],
             q_ensemble_params=wm_params_new["q_ensemble"],
             policy_params=policy_params_new,
-            encoder_target_params=new_target_encoder,
-            dynamics_target_params=new_target_dynamics,
-            reward_target_params=new_target_reward,
             q_ensemble_target_params=new_target_q,
             world_model_opt_state=new_wm_opt_state,
             policy_opt_state=new_pol_opt_state,

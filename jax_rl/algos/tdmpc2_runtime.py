@@ -69,9 +69,6 @@ def init_train_state(
     )
     pol_params = policy.init(ks[4], jnp.zeros((1, cfg.latent_dim)), ks[5])
 
-    target_enc = jax.tree_util.tree_map(lambda x: x, enc_params)
-    target_dyn = jax.tree_util.tree_map(lambda x: x, dyn_params)
-    target_rwd = jax.tree_util.tree_map(lambda x: x, rwd_params)
     target_q = jax.tree_util.tree_map(lambda x: x, q_params)
 
     wm_opt = build_world_model_optimizer(cfg)
@@ -89,9 +86,6 @@ def init_train_state(
         reward_params=rwd_params,
         q_ensemble_params=q_params,
         policy_params=pol_params,
-        encoder_target_params=target_enc,
-        dynamics_target_params=target_dyn,
-        reward_target_params=target_rwd,
         q_ensemble_target_params=target_q,
         world_model_opt_state=wm_opt_state,
         policy_opt_state=pol_opt_state,
@@ -229,9 +223,6 @@ def load_params_into_state(state: TDMPC2State, ckpt_dir: str) -> TDMPC2State:
         dynamics_params=wm_loaded["dynamics"],
         reward_params=wm_loaded["reward"],
         q_ensemble_params=wm_loaded["q_ensemble"],
-        encoder_target_params=wm_loaded["encoder"],
-        dynamics_target_params=wm_loaded["dynamics"],
-        reward_target_params=wm_loaded["reward"],
         q_ensemble_target_params=wm_loaded["q_ensemble"],
     )
 

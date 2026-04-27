@@ -1066,9 +1066,6 @@ def test_tdmpc2_state_construction():
         reward_params={},
         q_ensemble_params={},
         policy_params={},
-        encoder_target_params={},
-        dynamics_target_params={},
-        reward_target_params={},
         q_ensemble_target_params={},
         world_model_opt_state=None,
         policy_opt_state=None,
@@ -1093,10 +1090,7 @@ def test_tdmpc2_state_is_pytree():
         reward_params={},
         q_ensemble_params={},
         policy_params={},
-        encoder_target_params={"w": jnp.zeros((2, 2))},
-        dynamics_target_params={},
-        reward_target_params={},
-        q_ensemble_target_params={},
+        q_ensemble_target_params={"w": jnp.zeros((2, 2))},
         world_model_opt_state=None,
         policy_opt_state=None,
         qscale=qscale_init(),
@@ -1231,9 +1225,6 @@ def test_make_update_step_smoke_integration():
         reward_params=wm_params["reward"],
         q_ensemble_params=wm_params["q_ensemble"],
         policy_params=pol_params,
-        encoder_target_params=target_params["encoder"],
-        dynamics_target_params=target_params["dynamics"],
-        reward_target_params=target_params["reward"],
         q_ensemble_target_params=target_params["q_ensemble"],
         world_model_opt_state=wm_opt_state,
         policy_opt_state=pol_opt_state,
@@ -1272,10 +1263,9 @@ def test_make_update_step_smoke_integration():
     if enc_kernel_before is not None:
         assert not jnp.allclose(enc_kernel_before, enc_kernel_after), "Encoder did not update"
     # Target EMA: target should have moved toward online by ~tau
-    # (All targets started == online, online changed → target moves slightly toward new online)
-    # Just assert target is finite and in a sensible range
-    for target_field_name in ["encoder_target_params", "dynamics_target_params",
-                                "reward_target_params", "q_ensemble_target_params"]:
+    # (Q target started == online, online changed → target moves slightly toward new online)
+    # Just assert target is finite and in a sensible range. Only q_ensemble has a target.
+    for target_field_name in ["q_ensemble_target_params"]:
         target_tree = getattr(new_state, target_field_name)
         for leaf in jax.tree_util.tree_leaves(target_tree):
             assert jnp.all(jnp.isfinite(leaf))
