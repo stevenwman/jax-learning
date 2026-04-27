@@ -42,7 +42,7 @@ class EnvBundle:
     critic_obs_dim: Optional[int]   # None if symmetric (critic obs = actor obs)
     has_privileged: bool
     dict_obs: bool
-    key: Any                         # jax.Array (mjx) or seed int (gym/isaaclab)
+    key: Any                         # Mode A (mjx): env+policy RNG; Mode B (gym/isaaclab): policy RNG only — env seeds via vec_env.reset(seed=...)
 
     backend_kind: BackendKind = "mjx"
     num_envs: int = 1

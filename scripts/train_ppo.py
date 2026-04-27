@@ -59,6 +59,15 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
           use_wandb: bool = False, wandb_project: str = "jax-rl"):
     # ── Environment ──────────────────────────────────────────────────────
     bundle = make_env_bundle(cfg, seed)
+    if bundle.backend_kind != "mjx":
+        raise ValueError(
+            f"train_ppo currently requires an MJX env bundle but got "
+            f"backend_kind={bundle.backend_kind!r} for env {cfg.env_name!r}. "
+            f"The Python collect loop should work on gym in principle but is "
+            f"untested; the eval path may also assume MJX. Remove this guard "
+            f"after a smoke run on a gym env (e.g. HalfCheetah) confirms parity. "
+            f"For PPO on gym envs today, no equivalent script exists yet."
+        )
     env, env_step, env_state, eval_env = bundle.env, bundle.env_step, bundle.env_state, bundle.eval_env
     obs_dim, action_dim, key = bundle.obs_dim, bundle.action_dim, bundle.key
     dict_obs = bundle.dict_obs
