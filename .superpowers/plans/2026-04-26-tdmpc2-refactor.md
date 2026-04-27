@@ -81,7 +81,12 @@ PYTHONPATH=$PWD XLA_FLAGS="--xla_gpu_enable_command_buffer= --xla_gpu_determinis
   --seed 0 --num-envs 8 --eval-every 100000 --ckpt-dir .temp/refactor_smoke
 ```
 
-Then diff `step=N L_world=X L_policy=Y` lines against a baseline captured pre-refactor (Task 0). Tolerance: `atol=1e-5` for L_world / L_policy values.
+**Pass criteria (RELAXED, see Task 1 finding):**
+- Smoke completes (exit 0, no NaN/Traceback).
+- Final `EVAL mppi=N` line is finite and roughly in baseline magnitude band (mppi>20 OK; baseline was 164 but 3 same-code/same-seed reruns produced 164/120/36 — XLA on this GPU is non-deterministic per `~/.claude/.../memory/feedback_gpu_nondeterminism.md`).
+- `tests/test_tdmpc2.py` pass list diff vs `.temp/refactor_baseline/test_pass.txt` is empty.
+
+Byte-ID `diff` of loss_lines.txt against baseline is **unfit** as a gate — same code yields different trajectories run-to-run. Use the test-pass-diff as the strict equivalence check; smoke is a "doesn't blow up" sanity probe.
 
 ---
 
