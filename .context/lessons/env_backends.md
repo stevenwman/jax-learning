@@ -236,6 +236,26 @@ For migrating an existing legacy script (`train_flashsac`,
    implementation when an env target lands. PyTorch GPU obs would need
    dlpack bridging at the env_step boundary.
 
+7. ✅ **Closed (commit `a846501` + `5a70aee`).** `run_offpolicy_loop`
+   and `train_ppo` were using `cfg.num_envs` everywhere instead of
+   `bundle.num_envs`. The gym backend caps `cfg.num_envs` to
+   `os.cpu_count()` and stores the actual count in `bundle.num_envs`
+   — the loop's uncapped value would silently mismatch buffer /
+   tracker / action shapes and AsyncVectorEnv would broadcast wrong
+   actions. Now `num_envs = bundle.num_envs` is bound once and used
+   for all shape-dependent paths. Banner prints both values when
+   they differ. Surfaced by codex's 2026-04-27 audit.
+
+8. ✅ **Closed (commit `826c326`).** `DomainRandWrapper.step()`
+   rebuilt the randomized model every step and used the fresh model
+   in the active env.step path, so non-done episodes saw physics
+   change every step despite the docstring claiming per-episode DR.
+   Fixed by persisting per-env DR field replacements in
+   `state.info[`_dr_dr_fields`]`, sampling fresh fields only for the
+   reset-candidate path, and using `where_done` to swap fresh fields
+   into persisted on envs that just reset. Surfaced by codex's
+   2026-04-27 audit.
+
 ---
 
 ## Pointers
