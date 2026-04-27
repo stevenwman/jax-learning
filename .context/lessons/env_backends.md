@@ -143,7 +143,7 @@ bundle is for setup only.
 | `train_td3` | ✅ | ✅ | `make_env_bundle` → bundle dispatch |
 | `train_fast_sac` | ✅ | ✅ | `make_env_bundle` → bundle dispatch |
 | `train_fast_td3` | ✅ | ✅ | `make_env_bundle` → bundle dispatch |
-| `train_ppo` | ✅ | ❓ untested | bundle, but no explicit gate; Python collect loop *should* work on gym |
+| `train_ppo` | ✅ | ✅ | universal fallback per design; eval dispatches via `evaluate_gym if bundle.backend_kind == "gym" else evaluate`. Smoke-validated on HalfCheetah. |
 | `train_ppo_fast` | ✅ | ❌ explicit guard | full lax.scan collection — Mode-A only |
 | `train_ppo_contraction` | ✅ | ❌ legacy `make_envs` | migration to bundle pending (TODO) |
 | `train_flashsac` | ✅ | ❌ legacy `make_envs` | migration to bundle pending (TODO) |
@@ -198,39 +198,41 @@ For migrating an existing legacy script (`train_flashsac`,
 
 ---
 
-## §6. Open issues from this audit (2026-04-26)
+## §6. Open issues from this audit
 
-1. **`train_ppo` lacks an explicit backend gate.** The Python collect
-   loop *should* work on gym (uses `env_step` via bundle, jit'd inner
-   ops, no `lax.scan` over the rollout), but it's never been tested
-   on a gym env. Action items: either add a smoke run (`train_ppo
-   --env HalfCheetah --total-timesteps 50000`), or add an explicit
-   `if bundle.backend_kind != "mjx": raise` until verified.
+**All resolved 2026-04-27 except #5 + #6 (deferred for no use case).**
 
-2. **`train_ppo` doesn't use `_eval_fn_for(ctx)` dispatch.** It has
-   its own eval call pattern that may assume JAX env_state.
-   Inspection target: lines around eval invocation in `train_ppo.py`.
-   If it's MJX-only, the explicit gate in #1 covers it; otherwise
-   migrate to `_eval_fn_for(ctx)`.
+1. ✅ **Closed (commits `8b5d0c3` → `4e79319`).** `train_ppo` initially
+   got a defensive MJX-only gate, then the gate was REMOVED after
+   migrating both `evaluate(...)` call sites to dispatch via
+   `evaluate_gym if bundle.backend_kind == "gym" else evaluate`. The
+   gate had been backwards — `train_ppo` is the universal fallback per
+   design (see `train_ppo_fast.py` docstring lines 1-9). Smoke-validated:
+   `train_ppo --env HalfCheetah --num-envs 8 --total-timesteps 50000`
+   ran end-to-end, ~2.4k sps on gym CPU, eval return -39.5, no errors.
 
-3. **FlashSAC + PPOContraction migration to bundle.** Both scripts
-   bypass the bundle (legacy `make_envs`). Cheap migration per §5
-   migration recipe. See TODO entry "Migrate `train_ppo_contraction.py`
-   + `train_flashsac.py` to bundle dispatch".
+2. ✅ **Closed (commit `4e79319`).** `train_ppo` no longer hardcodes
+   the MJX `evaluate()` — uses `_eval_fn` inline dispatch. Same pattern
+   as off-policy `_eval_fn_for(ctx)`, just inline since `train_ppo`
+   doesn't carry a `TrainContext`.
 
-4. **`Bundle.key` field semantics ambiguous for gym.** For Mode A, it's
-   the env RNG and is consumed by env_step internally. For Mode B,
-   it's a JAX PRNGKey that's only ever used for *policy* action
-   sampling (gym envs seed via `vec_env.reset(seed=...)`). The field
-   name is misleading. Comment-only fix in `env_bundle.py:45` —
-   clarify "for Mode A: env+policy RNG; for Mode B: policy RNG only".
+3. ✅ **Closed (commit `33cdb2d`).** FlashSAC + PPOContraction migrated
+   to `make_env_bundle`. Both stay MJX-only behind explicit gates with
+   actionable error messages — FlashSAC's BN/Zeta/reward-norm pipeline
+   assumes JAX state.replace(); PPOContraction uses lax.scan rollout
+   collection + a contraction-state obs key that's MJX-specific.
 
-5. **`evaluate_gym` lacks Q-bias diagnostics.** The MC-return Q-bias
-   that `evaluate` computes via `lax.scan` would need a Python-loop
-   port for gym. Not blocking — log it as a future enhancement when a
-   use case shows up. (Already in TODO.)
+4. ✅ **Closed (commit `8b5d0c3`).** `Bundle.key` field doc clarified
+   in `env_bundle.py:45` — explicitly notes Mode A uses it for both
+   env + policy RNG, Mode B uses it for policy RNG only (env seeds via
+   `vec_env.reset(seed=...)`).
 
-6. **No `IsaacLab` backend yet.** Protocol exists; one-file
+5. **`evaluate_gym` lacks Q-bias diagnostics.** Deferred — the
+   MC-return Q-bias that `evaluate` computes via `lax.scan` would
+   need a Python-loop port for gym. Not blocking; log it as a future
+   enhancement when a use case shows up.
+
+6. **No `IsaacLab` backend yet.** Deferred. Protocol exists; one-file
    implementation when an env target lands. PyTorch GPU obs would need
    dlpack bridging at the env_step boundary.
 
