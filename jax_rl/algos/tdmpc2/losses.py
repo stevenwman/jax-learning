@@ -1,6 +1,6 @@
 """TD target + world-model + policy losses for TD-MPC2.
 
-Used by `make_update_step` in tdmpc2/agent.py (still in tdmpc2_old.py)."""
+Used by `make_update_step` in tdmpc2/agent.py."""
 import jax
 import jax.numpy as jnp
 
