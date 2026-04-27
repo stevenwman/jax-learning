@@ -1,13 +1,18 @@
-"""TDMPC2 sub-package. See .superpowers/specs/2026-04-26-tdmpc2-refactor-design.md.
+"""TDMPC2 — model-based RL with learned world model + MPPI planner.
 
-Re-exports the public API. As the refactor progresses, individual symbols move
-from `tdmpc2_old.py` into focused modules (`networks.py`, `losses.py`, `mppi.py`,
-`agent.py`); this `__init__.py` keeps the import path
-`from jax_rl.algos.tdmpc2 import X` stable throughout."""
+Re-exports the public API from focused submodules:
+- networks: Encoder, Dynamics, Reward, QEnsemble, PolicyPrior + helpers
+- losses: compute_all_latents, compute_td_target, world_model_loss, policy_loss
+- mppi: make_plan_batched + planner internals
+- agent: TDMPC2State, make_update_step, build_*_optimizer
+
+Test internals (NormedLinear, mppi_rollout, etc.) are also re-exported here
+because `tests/test_tdmpc2.py` imports them via this package path.
+"""
 
 from jax_rl.algos.tdmpc2.networks import (
     NormedLinear,
-    Encoder, Dynamics, Reward, QHead, QEnsemble, PolicyPrior,
+    Encoder, Dynamics, Reward, QEnsemble, PolicyPrior,
     bound_log_std, squash_log_prob_correction, gaussian_log_prob,
     compute_scaled_entropy,
 )
@@ -21,11 +26,9 @@ from jax_rl.algos.tdmpc2.mppi import (
     init_mppi_mean, init_mppi_mean_batched,
     gumbel_sample_elite, plan,
 )
-from jax_rl.algos.tdmpc2_old import (
-    TDMPC2State,
-    make_update_step,
-    build_world_model_optimizer,
-    build_policy_optimizer,
+from jax_rl.algos.tdmpc2.agent import (
+    TDMPC2State, make_update_step,
+    build_world_model_optimizer, build_policy_optimizer,
 )
 
 __all__ = [
