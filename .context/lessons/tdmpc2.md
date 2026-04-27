@@ -199,6 +199,45 @@ Paper PDF: https://arxiv.org/pdf/2310.16828
 
 ---
 
+## Refactor: monofile → sub-package (2026-04-26..27)
+
+After all 5 bugs were fixed and 3 envs validated, the 1138-LOC
+`tdmpc2.py` monofile was decomposed into a 5-file sub-package
+(`tdmpc2/{networks,losses,mppi,agent}.py` + `__init__.py`) preserving
+every external import via re-export. Done in 7 task-sized commits
+under subagent-driven development; no behavior change.
+
+**Validation gate that worked**: `tests/test_tdmpc2.py 48/48 PASS`
+diff vs a captured baseline (`.temp/refactor_baseline/test_pass.txt`)
+before AND after each smoke run. Strict equivalence. Catches any
+lost re-export or accidental rename.
+
+**Validation gate that didn't**: byte-ID `diff` of training loss
+lines against a baseline. XLA on this GPU is non-deterministic even
+under `--xla_gpu_deterministic_ops=true` — three same-code/same-seed
+runs gave mppi=164/120/36. Cross-run bit-equivalence is unfit for
+gating refactors here. The plan's loss-line diff was relaxed in
+commit 7416b3f to "smoke completes + finite mppi >20" after this
+finding (matches global memory `feedback_gpu_nondeterminism.md`).
+
+**Trim discipline**: when moving a section out of the monofile, the
+section's imports often have unused leftovers in the legacy file's
+back-import block. Plan called for grep-and-trim explicitly; the
+first move (Task 2) skipped the trim and 6 dead back-imports
+landed. Code reviewer caught it; fix was 3 lines. Remember: "move,
+then trim what only the moved code referenced."
+
+**One symbol-source contradiction**: spec's pre-flight notes called
+for a 22-symbol `__all__` but Task 1's example showed 10. Pre-flight
+won (tests need the 12 internals). Always read pre-flight notes
+before applying inline task-step examples — examples can be stale.
+
+(`__all__` count was actually 26 — 22 was a verbal miscount that
+spread through several reviews. Doesn't affect correctness; the
+file matches the spec list.)
+
+---
+
 ## Don't-do summary
 
 - Don't share buffer storage layout between sequence-sampling algos
@@ -211,3 +250,5 @@ Paper PDF: https://arxiv.org/pdf/2310.16828
   with figures
 - Don't run eval at 1M against a paper that reports asymptotic results
   at 14M
+- Don't gate file-split refactors on cross-run loss byte-ID — XLA is
+  non-deterministic. Gate on test-pass-diff + smoke-completes instead.
