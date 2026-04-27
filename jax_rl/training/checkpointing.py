@@ -107,7 +107,8 @@ def save_checkpoint(
     except Exception:
         pass
 
-    # DR specs + obs schema (if env declares them). Single env load for both.
+    # DR specs + obs schema + deploy control metadata (if env declares them).
+    # Single env load for all three.
     try:
         from mujoco_playground import registry as pg_registry
         env = pg_registry.load(cfg.env_name)
@@ -120,6 +121,12 @@ def save_checkpoint(
         if hasattr(env, '_obs_groups'):
             from jax_rl.envs.obs_spec import schema_from_obs_groups
             meta["obs_schema"] = schema_from_obs_groups(env._obs_groups)
+        # Phase D: deploy-critical control metadata (Kp/Kd/action_scale/dts/...).
+        # Go2 Warp envs implement get_control_metadata; other envs don't yet.
+        # deploy/sim2sim_direct.py reads this block before falling back to
+        # constants in deploy/go2_constants.py.
+        if hasattr(env, 'get_control_metadata'):
+            meta["control"] = env.get_control_metadata()
     except Exception:
         pass
 

@@ -22,11 +22,17 @@ DEFAULT_POSE_SDK = DEFAULT_POSE_POLICY[POLICY_TO_SDK]
 ACTION_SCALE = 0.5
 
 # PD gains for deployment
-# WARNING: These must match the training env (Go2WarpJoystickFlat).
-# Using the wrong gains with a checkpoint = policy fights itself.
-# TODO: read gains from checkpoint meta.json instead of hardcoding.
-KP_SIM = 35.0    # ARCHIVED — was MJX training env (Go2JoystickFlat)
-KD_SIM = 0.1     # MJX training env
+#
+# Self-describing checkpoints (Phase D, 2026-04-27): Go2 Warp envs now stamp
+# meta["control"] = {"Kp", "Kd", "action_scale", ...} via
+# Go2WarpEnv.get_control_metadata. deploy/sim2sim_direct.py and friends should
+# read those values and fall back here only for legacy ckpts (with a warning).
+#
+# WARNING when falling back: KP_SIM/KD_SIM are ARCHIVED MJX values that do NOT
+# match current Warp training. Using the wrong gains with a Warp-trained
+# checkpoint = policy fights itself. Re-train to get a self-describing ckpt.
+KP_SIM = 35.0    # ARCHIVED — MJX training era (Go2JoystickFlat). Legacy fallback only.
+KD_SIM = 0.1     # ARCHIVED — MJX training era. Legacy fallback only.
 KP_WARP = 20.0   # Warp training env (unitree RL gains)
 KD_WARP = 0.5    # Warp training env
 KP_REAL = 20.0   # Unitree official for Go2 RL deployment

@@ -108,6 +108,32 @@ class Go2WarpEnv(mjx_env.MjxEnv):
         # Torso body ID (base_link in unitree XML).
         self._torso_body_id = self._mj_model.body(consts.WARP_ROOT_BODY).id
 
+    # ── Deploy / sim2sim parity metadata ───────────────────────────────
+
+    def get_control_metadata(self) -> dict:
+        """Return deploy-critical control parameters as a JSON-serializable dict.
+
+        Picked up by `jax_rl/training/checkpointing.py:save_checkpoint` and
+        written under `meta["control"]`. Read by `deploy/sim2sim_direct.py` and
+        deploy-side tooling so they don't have to import (and stay in sync
+        with) `deploy/go2_constants.py` constants per env. Closes the codex-
+        audit P0 finding where sim2sim_direct used archived MJX gains
+        (`KP_SIM=35.0`, `KD_SIM=0.1`) instead of Warp training's 20.0/0.5.
+        """
+        return {
+            "Kp": float(self._config.Kp),
+            "Kd": float(self._config.Kd),
+            "action_scale": float(self._config.action_scale),
+            "policy_dt": float(self._config.ctrl_dt),
+            "physics_dt": float(self._config.sim_dt),
+            "action_repeat": int(getattr(self._config, "action_repeat", 1)),
+            "contact_mode": str(getattr(self._config, "contact_mode", "training")),
+            "torque_speed_model": bool(getattr(self._config, "torque_speed_model", False)),
+            "impl": str(getattr(self._config, "impl", "warp")),
+            "joint_order": "policy_FL_FR_RL_RR",
+            "action_order": "policy_FL_FR_RL_RR",
+        }
+
     # ── Sensor readings (delegate to shared helpers) ───────────────────
 
     def get_upvector(self, data: mjx.Data) -> jax.Array:

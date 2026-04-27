@@ -104,6 +104,39 @@ def run_sim2sim(
     print(f"  hidden={runner.hidden_dim}, activation={runner.activation}")
     print(f"  obs_norm={'yes' if runner.use_obs_norm else 'no'} (n={runner.norm_count})")
 
+    # Read deploy-critical control metadata from checkpoint (Phase D of artifact
+    # contract). Falls back to deploy/go2_constants.py KP_SIM/KD_SIM (archived
+    # MJX values) for legacy checkpoints, with a loud warning so the operator
+    # knows the values may not match the policy's training-time gains.
+    import json
+    meta_path = os.path.join(checkpoint, "meta.json")
+    control_meta = None
+    if os.path.exists(meta_path):
+        with open(meta_path) as f:
+            _meta = json.load(f)
+        control_meta = _meta.get("control")
+    if control_meta is not None:
+        kp_used = float(control_meta["Kp"])
+        kd_used = float(control_meta["Kd"])
+        action_scale_used = float(control_meta["action_scale"])
+        physics_dt_meta = float(control_meta["physics_dt"])
+        policy_dt_meta = float(control_meta["policy_dt"])
+        print(f"  control: from checkpoint meta — Kp={kp_used}, Kd={kd_used}, "
+              f"action_scale={action_scale_used}, "
+              f"physics_dt={physics_dt_meta}, policy_dt={policy_dt_meta}, "
+              f"contact_mode={control_meta.get('contact_mode', 'training')}")
+    else:
+        kp_used = KP_SIM
+        kd_used = KD_SIM
+        action_scale_used = ACTION_SCALE
+        physics_dt_meta = None
+        policy_dt_meta = None
+        print(f"  control: meta['control'] missing → falling back to "
+              f"deploy/go2_constants.py (Kp={KP_SIM}, Kd={KD_SIM}, "
+              f"action_scale={ACTION_SCALE}). These are ARCHIVED MJX values "
+              f"and may NOT match this policy's training-time gains. Re-train "
+              f"with the current code to get a self-describing checkpoint.")
+
     # Schema-driven obs builder: reads obs term layout from meta.json.
     obs_builder = ObsBuilder.from_checkpoint(checkpoint, n_frame_stack=runner.n_frame_stack)
     print(f"  obs_schema={obs_builder.state_schema} (raw_dim={obs_builder.raw_dim})")
@@ -138,18 +171,19 @@ def run_sim2sim(
         else:
             model.actuator_forcerange[i] = [-23.7, 23.7]
 
-    # Match training env: sim_dt=0.004, 5 substeps per ctrl_dt=0.02.
-    # unitree_mujoco XML default is 0.002 but we override to match training.
-    # Native dt (0.002 × 10) was tested — worse transfer due to amplified contact mismatch.
-    physics_dt = 0.004
+    # Match training env: sim_dt + ctrl_dt come from checkpoint meta when present;
+    # otherwise fall back to the historical defaults (0.004 / 0.02).
+    physics_dt = physics_dt_meta if physics_dt_meta is not None else 0.004
     model.opt.timestep = physics_dt
-    decimation = 5  # 5 * 0.004 = 0.02s = 50Hz policy
-    policy_dt = physics_dt * decimation
+    if policy_dt_meta is not None:
+        decimation = max(1, int(round(policy_dt_meta / physics_dt)))
+    else:
+        decimation = 5  # 5 * 0.004 = 0.02s = 50Hz policy (legacy default)
     policy_dt = physics_dt * decimation
 
     print(f"\nSimulator: {scene_path}")
     print(f"  physics_dt={physics_dt}s, decimation={decimation}, policy_dt={policy_dt}s")
-    print(f"  PD gains: Kp={KP_SIM}, Kd={KD_SIM}")
+    print(f"  PD gains: Kp={kp_used}, Kd={kd_used}")
 
     # Reset to home keyframe
     mujoco.mj_resetDataKeyframe(model, data, 0)
@@ -188,7 +222,7 @@ def run_sim2sim(
 
             # Convert action to joint targets (SDK order)
             action_sdk = action[POLICY_TO_SDK]
-            current_target_sdk = default_pose_sdk + action_sdk * ACTION_SCALE
+            current_target_sdk = default_pose_sdk + action_sdk * action_scale_used
 
             # Log
             traj_obs.append(obs.copy())
@@ -208,7 +242,7 @@ def run_sim2sim(
         # PD control at physics rate (every mj_step)
         q_current = data.sensordata[0:model.nu]
         dq_current = data.sensordata[model.nu:2*model.nu]
-        tau = pd_control(current_target_sdk, q_current, dq_current, KP_SIM, KD_SIM)
+        tau = pd_control(current_target_sdk, q_current, dq_current, kp_used, kd_used)
         data.ctrl[:] = np.clip(tau, model.actuator_ctrlrange[:, 0], model.actuator_ctrlrange[:, 1])
 
         mujoco.mj_step(model, data)
