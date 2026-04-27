@@ -9,18 +9,24 @@ def test_tdmpc2_presets_cheetah_run():
     cfg = get_tdmpc2_preset("CheetahRun")
     assert isinstance(cfg, TDMPC2Config)
     assert cfg.action_dim == 6
-    assert cfg.episode_lengths == (1000,)
-    assert cfg.discount == 0.995
+    # 500 wrapper × action_repeat=2 = 1000 control steps (source DMC parity).
+    # Discount auto-recomputes via compute_discount(500, denom=5) → 0.99.
+    assert cfg.episode_lengths == (500,)
+    assert cfg.action_repeat == 2
+    assert cfg.discount == 0.99
 
 def test_tdmpc2_presets_humanoid_run():
     cfg = get_tdmpc2_preset("HumanoidRun")
     assert cfg.action_dim == 21
-    assert cfg.discount == 0.995
+    assert cfg.episode_lengths == (500,)
+    assert cfg.action_repeat == 2
+    assert cfg.discount == 0.99
 
 def test_tdmpc2_presets_acrobot_swingup():
     cfg = get_tdmpc2_preset("AcrobotSwingup")
     assert cfg.action_dim == 1
-    assert cfg.episode_lengths == (1000,)
+    assert cfg.episode_lengths == (500,)
+    assert cfg.action_repeat == 2
 
 def test_tdmpc2_presets_dict_has_expected_envs():
     assert "CheetahRun" in TDMPC2_PRESETS
