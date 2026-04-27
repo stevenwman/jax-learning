@@ -1,16 +1,22 @@
 """Record a video of any trained policy.
 
 Usage:
-  uv run python record_video.py                    # random policy
-  uv run python record_video.py --checkpoint ckpt  # trained policy
-  MUJOCO_GL=osmesa uv run python record_video.py   # force osmesa if EGL unavailable
+  uv run python scripts/record_video.py                    # random policy
+  uv run python scripts/record_video.py --checkpoint ckpt  # trained policy
+  MUJOCO_GL=osmesa uv run python scripts/record_video.py   # force osmesa if EGL unavailable
 
-Works with ALL algos (PPO, PPOContraction, SAC, TD3, FastSAC, FastTD3, FlashSAC, TDMPC2) — reads meta.json
-to determine algo type and reconstruct the actor network automatically.
+Works with shared-checkpoint algos (PPO, PPOContraction, SAC, TD3, FastSAC,
+FastTD3, FlashSAC) — reads meta.json to determine algo type and reconstructs
+the actor network from `actor_params.npy` automatically.
 
-Two-phase approach:
-  1. JIT-scan the rollout on GPU (fast — collects all states)
-  2. Render frames on CPU from saved states (slow but unavoidable)
+For TD-MPC2 checkpoints (separate `actor_params.npz` + `world_model_params.npz`
+artifact shape), use `scripts/record_video_tdmpc2.py` instead. This script's
+`load_actor_for_inference()` only handles the shared `actor_params.npy` format
+and would fail on a TD-MPC2 ckpt.
+
+For gym-backend envs, dispatch routes to `_record_gym()` (Python-loop
+rollout); MJX-backend envs use the JIT step + Python frame loop path
+(PREALLOCATE=false-friendly).
 """
 
 import argparse

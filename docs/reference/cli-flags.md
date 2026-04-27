@@ -193,6 +193,22 @@ uv run python docs/scripts/gen_cli_reference.py
 
 ---
 
+## `train_tdmpc2.py`
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--env` | str | - | Env name (CheetahRun, HumanoidRun, AcrobotSwingup, ...) |
+| `--total-timesteps` | int | `1000000` | Total environment steps to train (default: 1M) |
+| `--seed` | int | `0` | Random seed (default: 0) |
+| `--num-envs` | int | from preset | Override TDMPC2Config.num_envs (default: 8 from preset). |
+| `--collect-mode` | str | from preset | Override TDMPC2Config.collect_mode (default: mppi). |
+| `--eval-every` | int | from preset | Eval cadence in env steps (default: from preset) |
+| `--ckpt-dir` | str | - | Checkpoint directory (default: no checkpointing) |
+| `--wandb` | flag | off | Enable W&B experiment tracking |
+| `--wandb-project` | str | `jax-rl-tdmpc2` | W&B project name (default: jax-rl-tdmpc2) |
+
+---
+
 ## `train_pusht.py`
 
 | Flag | Type | Default | Description |

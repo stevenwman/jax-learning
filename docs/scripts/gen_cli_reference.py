@@ -31,6 +31,7 @@ SCRIPTS: list[tuple[str, str]] = [
     ("train_fast_sac.py",        "scripts.train_fast_sac"),
     ("train_fast_td3.py",        "scripts.train_fast_td3"),
     ("train_flashsac.py",        "scripts.train_flashsac"),
+    ("train_tdmpc2.py",          "scripts.train_tdmpc2"),
     ("train_pusht.py",           "scripts.train_pusht"),
     ("record_video.py",          "scripts.record_video"),
 ]

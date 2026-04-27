@@ -1,9 +1,9 @@
 """TD-MPC2 training script (standalone, not using offpolicy_loop).
 
 Usage:
-    uv run python train_tdmpc2.py --env CheetahRun
-    uv run python train_tdmpc2.py --env HumanoidRun --seed 42
-    uv run python train_tdmpc2.py --env CheetahRun --total-timesteps 0  # init-only smoke
+    uv run python scripts/train_tdmpc2.py --env CheetahRun
+    uv run python scripts/train_tdmpc2.py --env HumanoidRun --seed 42
+    uv run python scripts/train_tdmpc2.py --env CheetahRun --total-timesteps 0  # init-only smoke
 """
 
 import os, sys
@@ -458,6 +458,18 @@ def train(
     # Build TrainConfig adapter for env bundle
     train_cfg = build_train_config_from_tdmpc2(cfg, env_name, total_timesteps, seed)
     env_bundle = make_env_bundle(train_cfg, seed)
+    if env_bundle.backend_kind != "mjx":
+        raise ValueError(
+            f"train_tdmpc2 requires an MJX env bundle, but env "
+            f"{env_name!r} routes to backend_kind={env_bundle.backend_kind!r}.\n"
+            f"\n"
+            f"TD-MPC2 uses sequence replay (`buffer.sample_sequence`), full-scan "
+            f"MPPI planning, and a world-model rollout that all assume jit-able "
+            f"env_step. Gym envs don't fit this contract.\n"
+            f"\n"
+            f"For TD-MPC2-style world-model RL on gym envs, no equivalent "
+            f"script exists yet."
+        )
     print(f"[tdmpc2] obs_dim={env_bundle.obs_dim} action_dim={env_bundle.action_dim}")
 
     if env_bundle.action_dim != cfg.action_dim:
@@ -465,6 +477,14 @@ def train(
             f"Env action_dim={env_bundle.action_dim} but cfg.action_dim={cfg.action_dim}. "
             f"Update the preset or pass --action-dim."
         )
+
+    # Effective num_envs comes from the bundle. MJX doesn't cap, so this is a
+    # no-op today; mirrors the pattern in offpolicy_loop / train_ppo so the
+    # script stays consistent if the gate above is ever relaxed.
+    if env_bundle.num_envs != cfg.num_envs:
+        print(f"[tdmpc2] num_envs sync: cfg requested {cfg.num_envs}, "
+              f"bundle effective {env_bundle.num_envs}; using bundle value.")
+        cfg = dataclasses.replace(cfg, num_envs=env_bundle.num_envs)
 
     # Replay buffer (episode_ids supported from Phase B)
     buffer = JaxReplayBuffer(
@@ -517,22 +537,32 @@ def train(
     return state
 
 
-def main():
+def build_parser() -> argparse.ArgumentParser:
+    """Construct the argparse parser. Importable for docs/tooling without parse_args()."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--env", type=str, required=True,
                         help="Env name (CheetahRun, HumanoidRun, AcrobotSwingup, ...)")
-    parser.add_argument("--total-timesteps", type=int, default=1_000_000)
-    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--total-timesteps", type=int, default=1_000_000,
+                        help="Total environment steps to train (default: 1M)")
+    parser.add_argument("--seed", type=int, default=0, help="Random seed (default: 0)")
     parser.add_argument("--num-envs", type=int, default=None,
                         help="Override TDMPC2Config.num_envs (default: 8 from preset).")
     parser.add_argument("--collect-mode", type=str, default=None,
                         choices=["mppi", "prior"],
                         help="Override TDMPC2Config.collect_mode (default: mppi).")
-    parser.add_argument("--eval-every", type=int, default=None)
-    parser.add_argument("--ckpt-dir", type=str, default=None)
-    parser.add_argument("--wandb", action="store_true")
-    parser.add_argument("--wandb-project", type=str, default="jax-rl-tdmpc2")
-    args = parser.parse_args()
+    parser.add_argument("--eval-every", type=int, default=None,
+                        help="Eval cadence in env steps (default: from preset)")
+    parser.add_argument("--ckpt-dir", type=str, default=None,
+                        help="Checkpoint directory (default: no checkpointing)")
+    parser.add_argument("--wandb", action="store_true",
+                        help="Enable W&B experiment tracking")
+    parser.add_argument("--wandb-project", type=str, default="jax-rl-tdmpc2",
+                        help="W&B project name (default: jax-rl-tdmpc2)")
+    return parser
+
+
+def main():
+    args = build_parser().parse_args()
 
     cfg = get_tdmpc2_preset(args.env)
     # Apply CLI overrides
