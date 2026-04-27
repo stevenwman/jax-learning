@@ -86,12 +86,12 @@ def mppi_iteration(
 
     Args:
         mean, std: current sampling distribution, shape (horizon, action_dim).
-        pi_trajs: (horizon, num_pi_trajs, action_dim) — policy-seeded samples (from F2).
+        pi_trajs: (horizon, num_pi_trajs, action_dim) — policy-seeded samples from sample_pi_trajectories.
         z_0: single-env starting latent.
 
     Returns (new_mean, new_std, elite_actions, weights):
         new_mean, new_std: (horizon, action_dim)
-        elite_actions: (horizon, num_elites, action_dim) — kept for F4 Gumbel action selection
+        elite_actions: (horizon, num_elites, action_dim) — consumed by gumbel_sample_elite.
         weights: (num_elites,) softmax-over-scores
     """
     key_sample, key_rollout = jax.random.split(key, 2)
