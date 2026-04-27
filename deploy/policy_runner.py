@@ -31,6 +31,27 @@ class PolicyRunner:
         with open(meta_path) as f:
             self.meta = json.load(f)
 
+        # Phase B artifact contract: validate kind before loading. Failing
+        # loudly here beats a confusing FileNotFoundError on actor_params.npy
+        # for a TDMPC2 ckpt that doesn't have one.
+        from jax_rl.training.artifact_contract import (
+            assert_artifact_kind, validate_shared_actor_files,
+            KIND_SHARED_ACTOR, KIND_LEGACY_SHARED_ACTOR,
+        )
+        assert_artifact_kind(
+            self.meta,
+            allowed=[KIND_SHARED_ACTOR, KIND_LEGACY_SHARED_ACTOR],
+            tool_name="deploy.PolicyRunner",
+            ckpt_path=ckpt_dir,
+            redirect=(
+                "PolicyRunner is for shared-actor checkpoints (PPO/SAC/TD3/"
+                "FastSAC/FastTD3/FlashSAC). For TD-MPC2, use the dedicated "
+                "evaluation tools — PolicyRunner doesn't reconstruct "
+                "world-model + dynamics + planner."
+            ),
+        )
+        validate_shared_actor_files(ckpt_dir)
+
         saved = np.load(params_path, allow_pickle=True).item()
         self.actor_params = saved["actor_params"]
 

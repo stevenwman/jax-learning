@@ -217,18 +217,44 @@ def load_checkpoint(
     return ckpt["training_state"], ckpt["norm_state"], start_step
 
 
-def load_actor_for_inference(ckpt_dir: str) -> tuple[dict, dict, NormalizationState]:
-    """Load meta.json + actor_params.npy for recording/eval. Algo-agnostic.
+def load_actor_for_inference(
+    ckpt_dir: str,
+) -> tuple[dict, dict, NormalizationState, dict | None]:
+    """Load meta.json + actor_params.npy for recording/eval.
+
+    Validates `meta["artifact_kind"]` against the shared_actor allowlist
+    (Phase B of the artifact contract); fails loudly with a redirect
+    pointing at TDMPC2-specific tooling for `tdmpc2_v1` ckpts. Pre-Phase-A
+    ckpts (no field) are treated as legacy shared-actor with a warning.
 
     Returns:
-        meta: dict from meta.json (includes algo name, configs, dims)
+        meta: dict from meta.json
         actor_params: dict of actor parameters
         norm_state: NormalizationState for obs normalization
+        actor_batch_stats: optional BN running stats (FlashSAC only); None otherwise
     """
     import jax.numpy as jnp
+    from jax_rl.training.artifact_contract import (
+        assert_artifact_kind, validate_shared_actor_files,
+        KIND_SHARED_ACTOR, KIND_LEGACY_SHARED_ACTOR,
+    )
 
     with open(os.path.join(ckpt_dir, "meta.json")) as f:
         meta = json.load(f)
+
+    assert_artifact_kind(
+        meta,
+        allowed=[KIND_SHARED_ACTOR, KIND_LEGACY_SHARED_ACTOR],
+        tool_name="load_actor_for_inference",
+        ckpt_path=ckpt_dir,
+        redirect=(
+            "For TD-MPC2 checkpoints (artifact_kind='tdmpc2_v1'), use "
+            "scripts/record_video_tdmpc2.py / scripts/eval_tdmpc2.py — "
+            "they handle the actor_params.npz + world_model_params.npz "
+            "shape directly."
+        ),
+    )
+    validate_shared_actor_files(ckpt_dir)
 
     saved = np.load(os.path.join(ckpt_dir, "actor_params.npy"), allow_pickle=True).item()
 
