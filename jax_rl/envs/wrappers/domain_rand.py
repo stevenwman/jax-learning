@@ -12,6 +12,18 @@ Reset mode:
   - "per_step": compute reset for all envs every step, select via where_done.
     Fresh IC + clean state every episode. Pays O(N) reset cost per step.
 
+DR persistence semantics (per-episode, not per-step):
+  - Model DR (mjx.Model fields): sampled per env at reset, persisted in
+    state.info[`_dr_dr_fields`] across steps, used for the active env.step
+    path. step() also samples a fresh set for the reset-candidate path; the
+    where_done merge then keeps persisted fields on active envs and swaps
+    in the fresh sample on envs that just reset. Until 2026-04-27 this was
+    broken: dr_model was rebuilt every step and used in the active step
+    path, so non-done episodes saw physics shift every step.
+  - Runtime DR (state.info entries): sampled per env at reset, kept in
+    state.info between steps; reset_state gets fresh values, where_done
+    merges per env on done.
+
 With no DR spec: behaves as an improved AutoResetWrapper.
 With DR spec: adds per-episode physics randomization.
 """
@@ -112,8 +124,10 @@ class DomainRandWrapper(Wrapper):
         rng_key = jax.vmap(jax.random.split)(rng)
         rng, key = rng_key[:, 0], rng_key[:, 1]
 
+        dr_fields = None
         if self._model_specs:
-            dr_model, in_axes = self._build_dr_model(key)
+            dr_fields = self._sample_dr_fields(key)
+            dr_model, in_axes = self._dr_model_from_fields(dr_fields)
             def _reset_with_model(mjx_model, rng):
                 with self._swap_model(mjx_model) as v_env:
                     return v_env.reset(rng)
@@ -129,6 +143,12 @@ class DomainRandWrapper(Wrapper):
         state.info[f'{self._KEY}_steps'] = jp.zeros(rng.shape[0])
         state.info[f'{self._KEY}_episode_done'] = jp.zeros(rng.shape[0])
         state.info[f'{self._KEY}_done_count'] = jp.zeros(rng.shape[0])
+
+        # Persist sampled per-env model DR fields across steps. step() uses
+        # these for the active env.step path (so non-done episodes see
+        # stable physics) and only resamples for envs that just reset.
+        if dr_fields is not None:
+            state.info[f'{self._KEY}_dr_fields'] = dr_fields
 
         # EpisodeWrapper-compatible keys (training loop reads these)
         state.info['steps'] = jp.zeros(rng.shape[0])
@@ -154,6 +174,8 @@ class DomainRandWrapper(Wrapper):
         drv2_done_count = state.info.pop(f'{self._KEY}_done_count')
         drv2_episode_done = state.info.pop(f'{self._KEY}_episode_done')
         drv2_metrics = state.info.pop(f'{self._KEY}_episode_metrics')
+        # Persisted per-env model DR fields from prior step (or reset).
+        drv2_dr_fields = state.info.pop(f'{self._KEY}_dr_fields', None)
         state.info.pop('steps', None)
         state.info.pop('truncation', None)
 
@@ -161,9 +183,15 @@ class DomainRandWrapper(Wrapper):
         rng_key = jax.vmap(jax.random.split)(drv2_rng)
         reset_rng, next_rng = rng_key[:, 0], rng_key[:, 1]
 
+        reset_dr_fields = None
         if self._model_specs:
-            # Build per-env randomized model, vmap reset/step over it
-            dr_model, in_axes = self._build_dr_model(reset_rng)
+            # Sample fresh DR for the reset-candidate path. Use PERSISTED DR
+            # for the active step path so non-done episodes see stable physics
+            # (per-episode DR, not per-step). Where_done below merges fresh
+            # into persisted for envs that just reset.
+            reset_dr_fields = self._sample_dr_fields(reset_rng)
+            reset_dr_model, in_axes = self._dr_model_from_fields(reset_dr_fields)
+            step_dr_model, _ = self._dr_model_from_fields(drv2_dr_fields)
 
             def _reset_with_model(mjx_model, rng):
                 with self._swap_model(mjx_model) as v_env:
@@ -174,7 +202,7 @@ class DomainRandWrapper(Wrapper):
                     return v_env.step(s, a)
 
             reset_state = jax.vmap(_reset_with_model, in_axes=[in_axes, 0])(
-                dr_model, reset_rng
+                reset_dr_model, reset_rng
             )
         else:
             reset_state = jax.vmap(self.env.reset)(reset_rng)
@@ -187,7 +215,7 @@ class DomainRandWrapper(Wrapper):
         state = state.replace(done=jp.zeros_like(state.done))
         if self._model_specs:
             state = jax.vmap(_step_with_model, in_axes=[in_axes, 0, 0])(
-                dr_model, state, action
+                step_dr_model, state, action
             )
         else:
             state = jax.vmap(self.env.step)(state, action)
@@ -227,6 +255,15 @@ class DomainRandWrapper(Wrapper):
         info[f'{self._KEY}_done_count'] = drv2_done_count + done
         info[f'{self._KEY}_episode_done'] = done
         info[f'{self._KEY}_episode_metrics'] = drv2_metrics
+
+        # Per-episode model DR: keep persisted fields on active envs,
+        # swap in freshly-sampled fields on envs that just reset.
+        if self._model_specs:
+            info[f'{self._KEY}_dr_fields'] = jax.tree.map(
+                lambda r, p: _where_done(done, r, p),
+                reset_dr_fields, drv2_dr_fields,
+            )
+
         info['steps'] = jp.where(done, 0.0, steps)
         info['truncation'] = truncation
 
@@ -251,17 +288,18 @@ class DomainRandWrapper(Wrapper):
         finally:
             base._mjx_model = old
 
-    def _build_dr_model(self, rng: jax.Array):
-        """Sample model DR and return (batched_model, in_axes).
+    def _sample_dr_fields(self, rng: jax.Array):
+        """Sample per-env model-DR field replacements.
 
         Args:
             rng: (num_envs, 2) per-env PRNG keys.
 
         Returns:
-            (mjx.Model, mjx.Model) — batched model + in_axes for vmap.
+            dict[str, jax.Array] with one entry per randomized model field;
+            each value has leading dim == num_envs. None if no model specs.
         """
         if not self._model_specs:
-            return None, None
+            return None
 
         model = self.env.unwrapped.mjx_model
 
@@ -314,15 +352,33 @@ class DomainRandWrapper(Wrapper):
 
             return replacements
 
-        batched_replacements = sample_and_apply(rng)
+        return sample_and_apply(rng)
 
-        # Build in_axes: randomized fields → axis 0, everything else → None
+    def _dr_model_from_fields(self, batched_replacements):
+        """Build a vmap-ready model + in_axes from pre-sampled DR fields.
+
+        Args:
+            batched_replacements: dict from `_sample_dr_fields`. None if no
+                model specs.
+
+        Returns:
+            (mjx.Model, mjx.Model) — batched model + in_axes for vmap, or
+            (None, None) if `batched_replacements` is None.
+        """
+        if batched_replacements is None:
+            return None, None
+
+        model = self.env.unwrapped.mjx_model
         in_axes = jax.tree_util.tree_map(lambda x: None, model)
         axis_replacements = {field: 0 for field in batched_replacements}
         in_axes = in_axes.tree_replace(axis_replacements)
-
         model = model.tree_replace(batched_replacements)
         return model, in_axes
+
+    def _build_dr_model(self, rng: jax.Array):
+        """Legacy combined helper (sample + apply). Kept for backwards compat."""
+        fields = self._sample_dr_fields(rng)
+        return self._dr_model_from_fields(fields)
 
     # ── Runtime DR helpers ──────────────────────────────────────
 
