@@ -400,12 +400,13 @@ def _save_checkpoint(
     np.savez(os.path.join(ckpt_dir, "world_model_params.npz"), **wm_flat)
 
     # Meta
-    meta = {
+    from jax_rl.training.artifact_contract import stamp_meta, KIND_TDMPC2
+    meta = stamp_meta({
         "env_name": env_name,
         "step": int(step),
         "best_eval": float(best_eval),
         "cfg": asdict(cfg),
-    }
+    }, KIND_TDMPC2)
     with open(os.path.join(ckpt_dir, "meta.json"), "w") as f:
         json.dump(meta, f, indent=2, default=str)
 

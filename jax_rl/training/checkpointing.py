@@ -84,6 +84,12 @@ def save_checkpoint(
         "algo": algo_name,
     }
 
+    # Artifact contract (Phase A): declare what kind of checkpoint this is.
+    # Consumers (record_video, deploy/PolicyRunner, ONNX export) check this
+    # before loading to fail loudly on shape mismatches.
+    from jax_rl.training.artifact_contract import stamp_meta, KIND_SHARED_ACTOR
+    stamp_meta(meta, KIND_SHARED_ACTOR)
+
     # Reproducibility: seed, git hash, DR specs
     # Seed: extract from ckpt_dir name (format: timestamp_algo_env_seedN)
     import re
