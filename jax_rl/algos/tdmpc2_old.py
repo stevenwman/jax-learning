@@ -13,9 +13,7 @@ from jax_rl.utils.twohot import two_hot_inv, two_hot_ce_loss
 from jax_rl.utils.qscale import QScaleState, qscale_apply, qscale_update
 
 from jax_rl.algos.tdmpc2.networks import (
-    mish, NormedLinear,
-    Encoder, Dynamics, Reward, QHead, QEnsemble, PolicyPrior,
-    bound_log_std, squash_log_prob_correction, gaussian_log_prob,
+    Encoder, Dynamics, Reward, QEnsemble, PolicyPrior,
     compute_scaled_entropy,
 )
 
