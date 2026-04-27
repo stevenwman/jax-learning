@@ -68,6 +68,12 @@ def run_offpolicy_loop(
     has_privileged = env_bundle.has_privileged
     dict_obs = env_bundle.dict_obs
     key = env_bundle.key
+    # Effective num_envs comes from the bundle, not cfg. Backends (notably
+    # gym) cap to e.g. os.cpu_count() and store the actual count in
+    # bundle.num_envs. Using cfg.num_envs would silently mismatch buffer /
+    # tracker / action shapes against the underlying vec_env on the gym
+    # path → AsyncVectorEnv broadcasts wrong-shape actions.
+    num_envs = env_bundle.num_envs
 
     total_env_steps = cfg.total_timesteps
 
@@ -76,7 +82,11 @@ def run_offpolicy_loop(
     print(f"{algo_name.upper()} — {cfg.env_name} (MuJoCo Playground)")
     print("=" * 80)
     print(f"  obs_dim={obs_dim}, action_dim={action_dim}")
-    print(f"  num_envs={cfg.num_envs}, episode_length={cfg.episode_length}")
+    if num_envs != cfg.num_envs:
+        print(f"  num_envs={num_envs} (cfg requested {cfg.num_envs}, capped by backend), "
+              f"episode_length={cfg.episode_length}")
+    else:
+        print(f"  num_envs={num_envs}, episode_length={cfg.episode_length}")
     print(f"  total_timesteps={total_env_steps:,}")
     print(f"  buffer_size={algo_cfg.buffer_size:,}, min_buffer={algo_cfg.min_buffer_size:,}")
     print(f"  batch_size={algo_cfg.batch_size}, grad_updates_per_step={algo_cfg.grad_updates_per_step}")
@@ -119,7 +129,7 @@ def run_offpolicy_loop(
     pipe = ObsPipeline(dict_obs, has_privileged, use_obs_norm, n_frame_stack, obs_norm_eps)
     buffer = pipe.make_buffer(
         obs_dim, action_dim, algo_cfg.buffer_size,
-        critic_obs_dim=critic_obs_dim, num_envs=cfg.num_envs,
+        critic_obs_dim=critic_obs_dim, num_envs=num_envs,
     )
     norm_state = pipe.init_norm_state(obs_dim)
     critic_norm_state = pipe.init_critic_norm_state(critic_obs_dim) if has_privileged else None
@@ -136,7 +146,7 @@ def run_offpolicy_loop(
         print(f"  Resuming from step {start_step:,}")
 
     # ── Tracker + ctx + checkpoint manager ─────────────────────────────────
-    tracker = EpisodeTracker(cfg.num_envs)
+    tracker = EpisodeTracker(num_envs)
     metrics_log: list[dict] = []
     ckpt_dir = os.path.join("checkpoints", f"{timestamp}_{algo_name}_{env_short}_seed{seed}")
     ckpt_mgr = CheckpointManager(ckpt_dir)
@@ -152,13 +162,13 @@ def run_offpolicy_loop(
     print("-" * 80)
 
     t0 = time.time()
-    log_every = max(1, 10_000 // cfg.num_envs)
+    log_every = max(1, 10_000 // num_envs)
     last_eval_eps = 0
     last_metrics: dict = {}
     total_gradient_steps = 0
 
-    for outer_step in range(start_step // cfg.num_envs, total_env_steps // cfg.num_envs):
-        raw_steps = (outer_step + 1) * cfg.num_envs
+    for outer_step in range(start_step // num_envs, total_env_steps // num_envs):
+        raw_steps = (outer_step + 1) * num_envs
         total_steps = raw_steps
         raw_obs = pipe.get_obs(env_state.obs)
         critic_raw_obs = pipe.get_critic_obs(env_state.obs) if has_privileged else None
@@ -178,7 +188,7 @@ def run_offpolicy_loop(
         use_random = is_warmup and (start_step == 0 or resume_warmup == "random")
         if use_random:
             key, ak = jax.random.split(key)
-            action = jax.random.uniform(ak, (cfg.num_envs, action_dim), minval=-1.0, maxval=1.0)
+            action = jax.random.uniform(ak, (num_envs, action_dim), minval=-1.0, maxval=1.0)
         else:
             key, ak = jax.random.split(key)
             action = explore_fn(training_state.actor_params, obs_for_action, ak)
@@ -248,7 +258,7 @@ def run_offpolicy_loop(
 
                 # Console curriculum dump every ~50k env steps (bug-hunt diagnostic).
                 # Zero-op for non-curriculum envs.
-                if total_steps // 50_000 != (total_steps - log_every * cfg.num_envs) // 50_000:
+                if total_steps // 50_000 != (total_steps - log_every * num_envs) // 50_000:
                     print_curriculum_dump(env_state.info, step=total_steps)
 
         # Eval + checkpoint. q_fn closes over training_state directly: the
