@@ -175,41 +175,7 @@ git mv jax_rl/algos/tdmpc2.py jax_rl/algos/tdmpc2_old.py
 
 - [ ] **Step 2: Create `tdmpc2/__init__.py` with re-exports**
 
-```python
-"""TDMPC2 sub-package. See .superpowers/specs/2026-04-26-tdmpc2-refactor-design.md.
-
-Re-exports the public API from the legacy implementation file. As the refactor
-progresses, individual symbols move from `tdmpc2_old.py` into focused modules
-(`networks.py`, `losses.py`, `mppi.py`, `agent.py`); this `__init__.py` keeps
-the import path `from jax_rl.algos.tdmpc2 import X` stable throughout.
-"""
-
-from jax_rl.algos.tdmpc2_old import (
-    TDMPC2State,
-    make_plan_batched,
-    make_update_step,
-    Encoder,
-    Dynamics,
-    Reward,
-    QEnsemble,
-    PolicyPrior,
-    build_world_model_optimizer,
-    build_policy_optimizer,
-)
-
-__all__ = [
-    "TDMPC2State",
-    "make_plan_batched",
-    "make_update_step",
-    "Encoder",
-    "Dynamics",
-    "Reward",
-    "QEnsemble",
-    "PolicyPrior",
-    "build_world_model_optimizer",
-    "build_policy_optimizer",
-]
-```
+Use the FULL 22-symbol `__all__` from pre-flight notes (lines 33-49), not just production symbols — `tests/test_tdmpc2.py` imports test internals (`NormedLinear`, `mppi_rollout`, etc.) via the `tdmpc2` import path. The actual implementation lives at `jax_rl/algos/tdmpc2/__init__.py` (commit ead0fe8); read it as the canonical example.
 
 - [ ] **Step 3: Run validation smoke + diff**
 
