@@ -36,7 +36,7 @@ from jax_rl.configs import EncoderConfig, PolicyHeadConfig, TrainConfig, get_pre
 from jax_rl.training import make_env_bundle, EpisodeTracker, load_checkpoint
 from jax_rl.training.checkpointing import CheckpointManager
 from jax_rl.training.metrics_logger import wandb_init, wandb_setup_metrics, wandb_log, wandb_finish
-from jax_rl.utils.eval import evaluate
+from jax_rl.utils.eval import evaluate, evaluate_gym
 from jax_rl.utils.normalization import (
     init as norm_init,
     update as norm_update,
@@ -59,24 +59,10 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
           use_wandb: bool = False, wandb_project: str = "jax-rl"):
     # ── Environment ──────────────────────────────────────────────────────
     bundle = make_env_bundle(cfg, seed)
-    if bundle.backend_kind != "mjx":
-        raise ValueError(
-            f"train_ppo currently requires an MJX env bundle, but env "
-            f"{cfg.env_name!r} routes to backend_kind={bundle.backend_kind!r}.\n"
-            f"\n"
-            f"For gym envs (HalfCheetah, Hopper, Walker2d, Humanoid, Ant, "
-            f"Pendulum, LunarLanderContinuous, PushT), use an off-policy "
-            f"algo via the bundle:\n"
-            f"  uv run python scripts/train_sac.py        --env {cfg.env_name}\n"
-            f"  uv run python scripts/train_td3.py        --env {cfg.env_name}\n"
-            f"  uv run python scripts/train_fast_sac.py   --env {cfg.env_name}\n"
-            f"  uv run python scripts/train_fast_td3.py   --env {cfg.env_name}\n"
-            f"\n"
-            f"On-policy PPO on gym is not wired yet — the Python collect "
-            f"loop should work in principle but eval assumes MJX. Remove this "
-            f"guard after a smoke run on a gym env confirms parity end-to-end "
-            f"(see .context/lessons/env_backends.md §6 #1)."
-        )
+    # Per design: train_ppo is the universal fallback (Python collect loop +
+    # jit'd inner ops). train_ppo_fast handles MJX with full lax.scan.
+    # Eval dispatches on backend_kind so the same script works on gym.
+    _eval_fn = evaluate_gym if bundle.backend_kind == "gym" else evaluate
     env, env_step, env_state, eval_env = bundle.env, bundle.env_step, bundle.env_state, bundle.eval_env
     obs_dim, action_dim, key = bundle.obs_dim, bundle.action_dim, bundle.key
     dict_obs = bundle.dict_obs
@@ -317,7 +303,7 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
             frozen_actor = training_state.actor_params
 
             key, eval_key = jax.random.split(key)
-            eval_metrics = evaluate(
+            eval_metrics = _eval_fn(
                 _ppo_eval_action, frozen_actor,
                 eval_env, num_episodes=cfg.num_eval_episodes,
                 episode_length=cfg.episode_length, key=eval_key,
@@ -348,7 +334,7 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
     frozen_actor = training_state.actor_params
 
     key, eval_key = jax.random.split(key)
-    eval_metrics = evaluate(
+    eval_metrics = _eval_fn(
         _ppo_eval_action, frozen_actor,
         eval_env, num_episodes=cfg.num_eval_episodes,
         episode_length=cfg.episode_length, key=eval_key,
