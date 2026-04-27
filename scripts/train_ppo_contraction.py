@@ -38,7 +38,7 @@ from jax_rl.configs import (
     get_preset,
 )
 from jax_rl.training import (
-    make_envs, EpisodeTracker, load_checkpoint,
+    make_env_bundle, EpisodeTracker, load_checkpoint,
     make_collect,
 )
 from jax_rl.training.metrics_logger import (
@@ -74,9 +74,21 @@ def _make_eval_action(ppo, get_policy_obs, n_frame_stack=1):
 def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
           use_wandb: bool = False, wandb_project: str = "jax-rl"):
     # ── Environment ──────────────────────────────────────────────────────
-    env, env_step, env_state, eval_env, obs_dim, action_dim, key = make_envs(cfg, seed)
-
-    dict_obs = isinstance(env_state.obs, dict)
+    bundle = make_env_bundle(cfg, seed)
+    if bundle.backend_kind != "mjx":
+        raise ValueError(
+            f"train_ppo_contraction requires an MJX env bundle, but env "
+            f"{cfg.env_name!r} routes to backend_kind={bundle.backend_kind!r}.\n"
+            f"\n"
+            f"PPOContraction uses lax.scan rollout collection + a "
+            f"contraction-state feature in env obs that's only emitted by "
+            f"MJX envs (Playground/Warp). Gym envs don't have it.\n"
+            f"\n"
+            f"For PPO on gym envs today, no equivalent script exists yet."
+        )
+    env, env_step, env_state, eval_env = bundle.env, bundle.env_step, bundle.env_state, bundle.eval_env
+    obs_dim, action_dim, key = bundle.obs_dim, bundle.action_dim, bundle.key
+    dict_obs = bundle.dict_obs
     if dict_obs:
         critic_obs_dim = env_state.obs["privileged_state"].shape[-1]
         if "contraction_state" not in env_state.obs:

@@ -31,7 +31,7 @@ from jax_rl.buffers.jax_replay_buffer import JaxReplayBuffer
 from jax_rl.configs.flash_sac_config import FlashSACConfig
 from jax_rl.configs.train_config import TrainConfig
 from jax_rl.training import (
-    make_envs, make_identity_norm_state,
+    make_env_bundle, make_identity_norm_state,
     EpisodeTracker, load_checkpoint,
     log_training_step, make_metrics_row,
     maybe_eval_and_checkpoint, final_eval_and_checkpoint,
@@ -60,16 +60,26 @@ def train(cfg: TrainConfig, algo_cfg: FlashSACConfig, seed: int = 0,
           use_wandb: bool = False, wandb_project: str = "jax-rl"):
 
     # ── Environment ────────────────────────────────────────────────────────
-    env, env_step, env_state, eval_env, obs_dim, action_dim, key = make_envs(cfg, seed)
-
-    dict_obs = isinstance(env_state.obs, dict)
-    has_privileged = False
-    critic_obs_dim = None
+    bundle = make_env_bundle(cfg, seed)
+    if bundle.backend_kind != "mjx":
+        raise ValueError(
+            f"train_flashsac requires an MJX env bundle, but env "
+            f"{cfg.env_name!r} routes to backend_kind={bundle.backend_kind!r}.\n"
+            f"\n"
+            f"FlashSAC's standalone loop assumes JAX state.replace() for BN "
+            f"running stats, Zeta noise state, and adaptive reward norm — "
+            f"these don't fit the gym backend's numpy-state pattern.\n"
+            f"\n"
+            f"For gym envs, use SAC/TD3/FastSAC/FastTD3 instead:\n"
+            f"  uv run python scripts/train_fast_sac.py --env {cfg.env_name}\n"
+        )
+    env, env_step, env_state, eval_env = bundle.env, bundle.env_step, bundle.env_state, bundle.eval_env
+    obs_dim, action_dim, key = bundle.obs_dim, bundle.action_dim, bundle.key
+    dict_obs = bundle.dict_obs
+    has_privileged = bundle.has_privileged
+    critic_obs_dim = bundle.critic_obs_dim
     if dict_obs:
-        obs_dim = env_state.obs["state"].shape[-1]
-        has_privileged = "privileged_state" in env_state.obs
         if has_privileged:
-            critic_obs_dim = env_state.obs["privileged_state"].shape[-1]
             print(f"  Dict obs: actor={obs_dim}d, critic={critic_obs_dim}d (asymmetric)")
         else:
             print(f"  Dict obs: using 'state' key ({obs_dim}d)")
@@ -219,6 +229,7 @@ def train(cfg: TrainConfig, algo_cfg: FlashSACConfig, seed: int = 0,
         cfg=cfg, algo_cfg=algo_cfg, algo_name="flash_sac",
         ckpt_dir=ckpt_dir, obs_dim=obs_dim, action_dim=action_dim,
         metrics_log=metrics_log, ckpt_mgr=ckpt_mgr, resume=resume,
+        backend_kind=bundle.backend_kind,
     )
 
     log_extra_fields = [("Ent", "entropy", ".3f"), ("Alpha", "alpha", ".4f"),
