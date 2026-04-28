@@ -9,6 +9,35 @@ import jax.numpy as jnp
 import numpy as np
 
 
+def make_varied_cmd_fn(period_steps: int = 75, cmd_max=(1.5, 0.8, 1.2)):
+    """Build a `kicks_fn` that resamples uniform velocity command every N steps.
+
+    Default 75 steps = 1.5s at 50 Hz. Use to stress-test command-tracking by
+    forcing the policy through a faster command schedule than the default
+    env's ~5s exponential resample.
+
+    Args:
+        period_steps: Steps between command resamples.
+        cmd_max: (vx_max, vy_max, yaw_max) symmetric ranges for uniform sample.
+
+    Returns:
+        kicks_fn(env_state, step_idx, key) -> (env_state, key).
+    """
+    cmd_max_arr = jnp.asarray(cmd_max, dtype=jnp.float32)
+
+    def fn(env_state, step_idx, key):
+        do_resample = (step_idx > 0) & (step_idx % period_steps == 0)
+        sample_key, key = jax.random.split(key)
+        new_cmd = jax.random.uniform(
+            sample_key, (3,), minval=-cmd_max_arr, maxval=cmd_max_arr
+        )
+        cmd = jnp.where(do_resample, new_cmd, env_state.info["command"])
+        info = {**env_state.info, "command": cmd}
+        return env_state.replace(info=info), key
+
+    return fn
+
+
 def apply_kicks(env_state, step_idx, key, kick_interval=75, kick_strength=1.5):
     """Zero command and apply velocity kicks every kick_interval steps.
 

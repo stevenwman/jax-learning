@@ -48,7 +48,7 @@ import jax_rl.training.env_setup  # noqa: F401 — side effect: registers custom
 from jax_rl.training.env_backends import detect_backend
 from jax_rl.utils.normalization import normalize as norm_normalize
 from jax_rl.utils.rollout import build_ppo_rollout_step, build_offpolicy_rollout_step
-from jax_rl.envs.locomotion.go2_rendering import apply_kicks, render_command_overlays
+from jax_rl.envs.locomotion.go2_rendering import apply_kicks, make_varied_cmd_fn, render_command_overlays
 
 
 ENV_DEFAULTS = {
@@ -182,6 +182,9 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
            out: str = "rollout.mp4", max_steps: int = 1000,
            camera: str | None = None, video_seed: int = 0,
            kicks: bool = False,
+           varied_cmds: int = 0,
+           cmd_max: tuple[float, float, float] = (1.5, 0.8, 1.2),
+           cam_distance: float = 6.0,
            terrain_level: int | None = None,
            terrain_type: str | None = None,
            force_zero_linvel: bool = False,
@@ -327,7 +330,14 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
         norm_state = norm_init(obs_dim)
 
     # ── Build rollout step function ───────────────────────────────────────
-    kicks_fn = apply_kicks if kicks else None
+    if kicks and varied_cmds > 0:
+        raise ValueError("--kicks and --varied-cmds are mutually exclusive (both use kicks_fn slot)")
+    if varied_cmds > 0:
+        kicks_fn = make_varied_cmd_fn(period_steps=varied_cmds, cmd_max=cmd_max)
+    elif kicks:
+        kicks_fn = apply_kicks
+    else:
+        kicks_fn = None
 
     # Frame-stack depth from saved training config (defaults to 1 for non-stacked envs).
     tc = meta.get("train_config", {}) if isinstance(meta, dict) else {}
@@ -420,7 +430,7 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
             cam = mujoco.MjvCamera()
             cam.type = mujoco.mjtCamera.mjCAMERA_TRACKING
             cam.trackbodyid = 1  # base/base_link (body ID 1 in both models)
-            cam.distance = 6.0  # close tracking (was 12.0)
+            cam.distance = cam_distance  # tunable via --cam-distance
             cam.azimuth = 135
             cam.elevation = -30
             renderer.update_scene(mj_data, camera=cam)
@@ -579,6 +589,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-steps", type=int, default=1000)
     parser.add_argument("--camera", type=str, default=None)
     parser.add_argument("--seed", type=int, default=0, help="Random seed for env reset")
+    parser.add_argument("--varied-cmds", type=int, default=0,
+                        help="Resample uniform velocity command every N steps "
+                             "(75=1.5s at 50Hz). Mutually exclusive with --kicks.")
+    parser.add_argument("--cmd-max", type=float, nargs=3,
+                        default=[1.5, 0.8, 1.2],
+                        metavar=("VX", "VY", "YAW"),
+                        help="Symmetric ranges for --varied-cmds uniform "
+                             "sampler (default 1.5/0.8/1.2 — env's command_config.a).")
+    parser.add_argument("--cam-distance", type=float, default=6.0,
+                        help="Free-camera tracking distance (default 6.0; "
+                             "use 3.0 for closer view).")
     parser.add_argument("--kicks", action="store_true",
                         help="Zero velocity command + random velocity kicks every 1.5s")
     parser.add_argument("--force-zero-linvel", action="store_true",
@@ -600,6 +621,9 @@ if __name__ == "__main__":
         max_steps=args.max_steps,
         camera=args.camera, video_seed=args.seed,
         kicks=args.kicks,
+        varied_cmds=args.varied_cmds,
+        cmd_max=tuple(args.cmd_max),
+        cam_distance=args.cam_distance,
         terrain_level=args.terrain_level,
         terrain_type=args.terrain_type,
         force_zero_linvel=args.force_zero_linvel,

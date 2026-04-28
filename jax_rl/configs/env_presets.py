@@ -350,6 +350,12 @@ FAST_SAC_PRESETS["Go2WarpJoystickFlatTorqueSpeed"] = (
     dataclasses.replace(_FAST_SAC_BASE_CFG, env_name="Go2WarpJoystickFlatTorqueSpeed"),
     _FAST_SAC_BASE_ALGO,
 )
+# No-accel ablation with default action_scale=0.5 — mirrors historical FastSAC
+# Go2 runs (peak ~280) but with the 45d Unitree-style obs (no accelerometer).
+FAST_SAC_PRESETS["Go2WarpJoystickFlatNoAccel"] = (
+    dataclasses.replace(_FAST_SAC_BASE_CFG, env_name="Go2WarpJoystickFlatNoAccel"),
+    _FAST_SAC_BASE_ALGO,
+)
 # Hardware-conservative preset: 45d state (no accel) + action_scale=0.25.
 # Partially aligned with unitree_rl_lab Go2 deploy contract — see the env
 # registration in mjx_backend.py for the matched/unmatched delta. Reduces
