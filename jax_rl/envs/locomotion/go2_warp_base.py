@@ -127,11 +127,23 @@ class Go2WarpEnv(mjx_env.MjxEnv):
         plus `policy_joint_names` and `sdk_joint_names`. SDK order
         (`FR,FL,RR,RL`) is Unitree-spec for Go2, hardcoded here.
         """
-        # Default pose in policy order, sourced from XML keyframe — same array
-        # the env uses for `joint_pos_offset` obs and `motor_targets` step.
-        default_pose_policy = np.asarray(
-            self._mj_model.keyframe("home").qpos[7:], dtype=np.float32
-        )
+        # Default pose in policy order, sourced from `self._default_pose`
+        # which the subclass sets in _post_init from the appropriate keyframe
+        # (joystick → "home", bongo handstand → "handstand"). Same array the
+        # env uses for `joint_pos_offset` obs and `motor_targets` step.
+        if not hasattr(self, "_default_pose"):
+            raise RuntimeError(
+                f"{type(self).__name__}.get_control_metadata: "
+                f"self._default_pose not set. Subclass must set it in "
+                f"_post_init before save_checkpoint runs."
+            )
+        default_pose_policy = np.asarray(self._default_pose, dtype=np.float32)
+        if default_pose_policy.shape != (self._mj_model.nu,):
+            raise RuntimeError(
+                f"{type(self).__name__}.get_control_metadata: "
+                f"_default_pose shape {default_pose_policy.shape} != "
+                f"({self._mj_model.nu},). Did the subclass set the wrong slice?"
+            )
 
         # Joint names in policy order (FL,FR,RL,RR per leg, hip→thigh→calf).
         # qpos[7:] joints are body-tree-ordered. mj_model.jnt(0) is the freejoint.

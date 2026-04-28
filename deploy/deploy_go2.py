@@ -15,6 +15,7 @@ import argparse
 import os
 import sys
 import time
+import warnings
 import numpy as np
 
 # Ensure project root is on path when running as `deploy/.venv/bin/python deploy/deploy_go2.py`
@@ -25,7 +26,7 @@ if _project_root not in sys.path:
 from deploy.policy_runner import PolicyRunner
 from deploy.obs_builder import ObsBuilder, _quat_rotate_inverse
 from deploy.robot_interface import Go2Interface
-from deploy.go2_constants import POLICY_DT, NUM_JOINTS
+from deploy.go2_constants import POLICY_DT as _POLICY_DT_FALLBACK, NUM_JOINTS
 
 
 def interpolate_to_stand(iface: Go2Interface, duration: float = 2.0, dt: float = 0.002):
@@ -53,13 +54,14 @@ def run_policy_loop(
     obs_builder: ObsBuilder,
     iface: Go2Interface,
     command: np.ndarray,
+    policy_dt: float,
     save_traj: str | None = None,
     max_steps: int = 0,
 ):
-    """Run policy at 50Hz until Ctrl+C or max_steps."""
+    """Run policy at 1/policy_dt Hz until Ctrl+C or max_steps."""
     print(f"  Policy running — cmd: vx={command[0]:.1f} vy={command[1]:.1f} yaw={command[2]:.1f}")
     if max_steps > 0:
-        print(f"  Running {max_steps} steps ({max_steps * POLICY_DT:.1f}s)")
+        print(f"  Running {max_steps} steps ({max_steps * policy_dt:.1f}s)")
     else:
         print("  Press Ctrl+C to stop")
 
@@ -78,7 +80,7 @@ def run_policy_loop(
 
             state = iface.get_state()
             if state is None:
-                time.sleep(POLICY_DT)
+                time.sleep(policy_dt)
                 continue
 
             obs = obs_builder.build(
@@ -110,7 +112,7 @@ def run_policy_loop(
                       f"obs [{obs.min():.2f}, {obs.max():.2f}]")
 
             elapsed = time.monotonic() - t_start
-            sleep_time = POLICY_DT - elapsed
+            sleep_time = policy_dt - elapsed
             if sleep_time > 0:
                 time.sleep(sleep_time)
 
@@ -159,12 +161,27 @@ def main():
     print(f"  hidden={runner.hidden_dim}, activation={runner.activation}")
     print(f"  obs_norm={'yes' if runner.use_obs_norm else 'no'} (n={runner.norm_count})")
 
-    # Load checkpoint metadata once — drives obs schema, default pose, and PD gains.
+    # Load checkpoint metadata once — drives obs schema, default pose, PD gains,
+    # and policy timing.
     import json
     meta_path = os.path.join(args.checkpoint, "meta.json")
     with open(meta_path) as f:
         meta = json.load(f)
     control_meta = meta.get("control")
+
+    # Policy timing: prefer ckpt's stamped policy_dt over the constants fallback,
+    # so a 25Hz or 100Hz policy doesn't run at the constants' 50Hz by accident.
+    if control_meta is not None and "policy_dt" in control_meta:
+        policy_dt = float(control_meta["policy_dt"])
+        print(f"  policy_dt={policy_dt:.4f}s (from meta)")
+    else:
+        policy_dt = float(_POLICY_DT_FALLBACK)
+        if not sim:
+            warnings.warn(
+                f"deploy_go2.py: no policy_dt in meta — using legacy "
+                f"go2_constants.POLICY_DT={policy_dt}s. OK for sim2sim, NOT "
+                f"recommended for real arm.", stacklevel=2,
+            )
 
     # Construct ObsBuilder with strict schema for real arm; legacy fallback only
     # in --sim mode. Real robot refuses to load a ckpt without obs_schema.
@@ -243,7 +260,7 @@ def main():
         time.sleep(0.002)
 
     print(f"\n[4/4] Running policy")
-    run_policy_loop(runner, obs_builder, iface, command,
+    run_policy_loop(runner, obs_builder, iface, command, policy_dt,
                     save_traj=args.save_traj, max_steps=args.max_steps)
 
     # Cleanup

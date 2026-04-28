@@ -187,6 +187,24 @@ class ObsBuilder:
                 )
             if "sdk_to_policy" in control:
                 sdk_to_policy = np.asarray(control["sdk_to_policy"], dtype=np.int64)
+            if strict:
+                # Strict mode demands a complete deploy contract — partial
+                # legacy `control` blocks (Kp/Kd only, no remap/pose) would
+                # otherwise sneak through here and KeyError later in
+                # robot_interface.send_action. Fail early with the missing keys.
+                required = (
+                    "default_pose_policy", "default_pose_sdk",
+                    "policy_to_sdk", "sdk_to_policy", "Kp", "Kd",
+                    "action_scale", "policy_dt",
+                )
+                missing = [k for k in required if k not in control]
+                if missing:
+                    raise RuntimeError(
+                        f"ObsBuilder.from_checkpoint(strict=True): "
+                        f"{ckpt_dir}/meta.json has a partial legacy 'control' "
+                        f"block missing {missing}. Re-train with the current "
+                        f"code or pass strict=False for sim/dry-run only."
+                    )
         elif strict:
             raise RuntimeError(
                 f"ObsBuilder.from_checkpoint(strict=True): "

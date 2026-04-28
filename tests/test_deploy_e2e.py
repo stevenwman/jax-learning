@@ -93,6 +93,34 @@ def _action_to_sdk_targets(action_policy, control):
 
 # ---------- env-side: get_control_metadata stays consistent -----------------
 
+def test_bongo_metadata_uses_handstand_pose_not_home():
+    """Codex review fix 2: get_control_metadata reads self._default_pose
+    (set by subclass _post_init), not a hardcoded keyframe('home'). Bongo
+    uses keyframe('handstand'), so its stamped default_pose must reflect
+    that — not the home keyframe — or deploy will track the wrong target.
+    """
+    pytest.importorskip("mujoco")
+    pytest.importorskip("warp")
+
+    from jax_rl.envs.locomotion.go2_bongo_handstand import BongoHandstand
+
+    env = BongoHandstand()
+    m = env.get_control_metadata()
+
+    handstand_pose = np.asarray(env._mj_model.keyframe("handstand").qpos[7:19])
+    home_pose = np.asarray(env._mj_model.keyframe("home").qpos[7:19])
+
+    np.testing.assert_array_almost_equal(
+        m["default_pose_policy"], handstand_pose,
+        err_msg="Bongo stamped wrong default_pose — should be handstand keyframe",
+    )
+    # Sanity: the two keyframes are actually different (test would be
+    # vacuous otherwise).
+    assert not np.allclose(handstand_pose, home_pose), (
+        "Test setup invalid: home == handstand in this XML."
+    )
+
+
 def test_env_metadata_matches_deploy_constants():
     """Go2WarpEnv.get_control_metadata() must equal deploy/go2_constants.py.
 
@@ -198,6 +226,26 @@ def test_obs_builder_strict_refuses_missing_control():
         with open(os.path.join(td, "meta.json"), "w") as f:
             json.dump(meta, f)
         with pytest.raises(RuntimeError, match="missing 'control'"):
+            ObsBuilder.from_checkpoint(td, strict=True)
+
+
+def test_obs_builder_strict_refuses_partial_control_block():
+    """Codex review fix 1: a `control` block missing default_pose_policy /
+    sdk_to_policy / etc. would otherwise sneak past obs_builder and KeyError
+    later in robot_interface.send_action. Strict mode must catch it early."""
+    from deploy.obs_builder import ObsBuilder
+    schema = {"state": ["gyro", "gravity", "joint_pos_offset",
+                        "joint_vel", "last_act", "command"]}
+    # Legacy partial: only Kp/Kd/action_scale/policy_dt (pre-2026-04-27 stamp).
+    legacy_partial = {
+        "Kp": 20.0, "Kd": 0.5, "action_scale": 0.5,
+        "policy_dt": 0.02, "physics_dt": 0.004,
+    }
+    with tempfile.TemporaryDirectory() as td:
+        meta = _make_meta(obs_schema=schema, control=legacy_partial, obs_dim=45)
+        with open(os.path.join(td, "meta.json"), "w") as f:
+            json.dump(meta, f)
+        with pytest.raises(RuntimeError, match="partial legacy 'control'"):
             ObsBuilder.from_checkpoint(td, strict=True)
 
 

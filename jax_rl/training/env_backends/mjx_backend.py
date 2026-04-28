@@ -54,9 +54,15 @@ def _register_custom_envs():
             functools.partial(WarpJoystickNoAccel, task="flat_terrain"),
             warp_default_config,
         )
-    # Unitree-contract variant: 45d state (no accel) + action_scale=0.25.
-    # Aligned with unitree_rl_lab Go2 deploy contract for minimal sim2real drift.
-    # Use this for first hardware-validation training runs.
+    # Hardware-conservative variant: 45d state (no accel) + action_scale=0.25.
+    # Named "Unitree" for the parts that are partially aligned with
+    # unitree_rl_lab's Go2 deploy contract:
+    #   - matched: action_scale 0.25, no accelerometer in actor obs,
+    #     Kp=20/Kd=0.5 (already shared)
+    #   - NOT matched: explicit per-term obs scales (gyro×0.2, jvel×0.05);
+    #     we rely on running obs_norm for whitening instead. Reward scaling,
+    #     command sampling, and event randomization also differ.
+    # Closer-than-default to the working Unitree stack; not bitwise parity.
     def _warp_default_config_unitree():
         cfg = warp_default_config()
         cfg.action_scale = 0.25
