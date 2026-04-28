@@ -1,5 +1,40 @@
 # TODO
 
+## Completed (2026-04-28) — Go2 deploy contract self-describing + action_scale ablation
+
+Closed codex-audit P0 findings on deploy-contract drift. Single source of
+truth = checkpoint `meta.json`. Real-arm path strict-mode loads obs schema
++ control block (Kp/Kd/action_scale/policy_dt/default_pose/joint remap).
+`deploy_go2.py` reads policy_dt + Kp/Kd from meta, refuses partial legacy
+contracts, prints pre-arm sanity (raw quat/accel/gravity/tilt) before any
+motor command. Bongo-correct (`get_control_metadata` uses
+`self._default_pose` not hardcoded `keyframe("home")`).
+
+Retrain confirmed `action_scale=0.25` was a peak-velocity bottleneck (best
+273 over 100M, eval std ±58). Reverting to `action_scale=0.5` on the new
+45d-no-accel obs hit **eval 288 at 50M, std ±5.9** — matches historical
+FastSAC ceiling on a hardware-aligned obs contract.
+
+Deployable ckpt: `checkpoints/20260428_085344_fast_sac_go2warpjoystickflatnoaccel_seed7002/best`
+
+Commits: `3285c9c` (env stamps + deploy consumes), `ee4f149` (codex review
+fixes — strict-mode tightened, Bongo correctness, policy_dt threaded),
+`ef99ba9` (--varied-cmds + --cmd-max + --cam-distance flags + NoAccel
+preset).
+
+See `.context/journals/2026-04-28.md` for full story; `.context/lessons/go2.md`
+for the action_scale ceiling lesson.
+
+**Open follow-ups:**
+- [ ] **Hardware test** — `deploy/test_time_validate.md` is the playbook.
+  First arm: `--vx 0.0`. Watch pre-arm sanity for `sign(accel_z) ==
+  sign(gravity_z)` warning. If fires → fix `_quat_rotate_inverse` or
+  quat element order in `deploy/obs_builder.py` BEFORE any motor command.
+- [ ] **Promote pre-arm sanity warn → assert** after one clean hardware run.
+- [ ] **deploy_contract.json sidecar** for ONNX (codex audit Phase 1) —
+  currently meta.json carries the contract; standalone JSON next to ONNX
+  would let non-Python deploy stacks consume it.
+
 ## Completed (2026-04-26) — Env-backend refactor
 
 Refactored env-construction layer so non-MJX envs (gym, isaaclab planned) plug into the same training/eval/recording stack as Playground/Warp envs. `EnvBundle` is now a Protocol with a `backend_kind` discriminator under `jax_rl/training/env_backends/`. Adding a new env backend is one file.

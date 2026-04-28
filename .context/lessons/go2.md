@@ -2,6 +2,43 @@
 
 ---
 
+## action_scale Caps Peak Tracking Speed — Don't Assume Smaller Is Safer (2026-04-28)
+
+**Hypothesis (entering):** halving `action_scale` from 0.5 → 0.25 should
+make first-hardware deploys safer (smaller joint deltas per step), at
+worst trading off some tracking performance.
+
+**What actually happened:** the 0.25 policy plateaued at eval **273**
+after 100M steps, with persistent eval std ±58. Same pipeline at
+`action_scale=0.5` plateaued at **288** by 28M with std ±5.9.
+
+| scale | total | best | final | std | eval-points to plateau |
+|---|---|---|---|---|---|
+| 0.25 | 100M | 273.5 | 242.5 | ±58 | never settled |
+| 0.50 |  50M | 288.1 | 283.3 | ±5.9 | ~14M |
+
+**Why:** the env samples `cmd_vx ∈ [-1.5, 1.5]`. At scale=0.25, max joint
+delta per step is half — peak achievable forward velocity is also lower,
+so the policy can't satisfy `cmd_vx > ~1.0` no matter how good its gait.
+The reward function penalizes the gap → wide eval variance. At 0.5 the
+policy can saturate the command space; gait converges; std collapses.
+
+**Diagnostic confirmed:** rendering the 0.25 policy with
+`--varied-cmds 50 --cmd-max 1.0 1.0 1.2` (linvel capped at ±1) showed
+visibly cleaner tracking. Re-running with default cmd range showed the
+robot lagging on high-speed commands.
+
+**Rule of thumb:** `action_scale` is a peak-velocity ceiling, not just a
+"smoothness knob". Set it from your *desired tracking range*, not from
+"how aggressive do I want the policy to look on first hardware run".
+Conservative caps belong in the deploy command profile (clamp `cmd_vx`
+at the start), not in `action_scale`.
+
+**Numbers for reference:** `cmd_vx_max / action_scale` ≈ 3 was the
+breakpoint here (1.5 / 0.5). Below that ratio, tracking saturates.
+
+---
+
 ## When Porting Reward Weights Between Robots, Rebalance — Don't Copy (2026-03-25)
 
 **What happened:** Go2 PPO trained for 100M+ equivalent steps across 20+ seeds without ever walking. The env was structurally correct. Reward WEIGHTS were copied from Go1 (tracking_lin_vel=1.0, tracking_ang_vel=0.5). Go2 never walked.

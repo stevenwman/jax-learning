@@ -1,8 +1,8 @@
 # Agent Handoff — JAX RL Framework
 
-**Last updated:** 2026-04-24 (see latest journal for state newer than this doc)
+**Last updated:** 2026-04-28 (see latest journal for state newer than this doc)
 **Branch:** `new_slate_linen`
-**Status:** Active — Go2 Warp stack (sim2sim gap closed via unitree MJCF). Current focus: terrain curriculum validation, PushT manipulation training. See latest journal for day-to-day state.
+**Status:** Active — Go2 deploy contract self-describing (commits `3285c9c`, `ee4f149`, `ef99ba9`). Deployable ckpt: `checkpoints/20260428_085344_fast_sac_go2warpjoystickflatnoaccel_seed7002/best` (FastSAC, 45d obs, eval 288, full deploy contract). Hardware test pending. See `.context/journals/2026-04-28.md` for the full retrain + contract story.
 
 > **Context budget:** This doc is your overview — skim structure, read details on demand. Other `.context/` docs are reference material. Don't pre-load them. When you hit a topic (Go2 rewards, PPO debugging, vision RL), grep or read the specific file. Treat `.context/` as a wiki, not a textbook.
 
