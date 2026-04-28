@@ -19,6 +19,7 @@ joint_pos_offset, joint_vel, last_act, command.
 """
 import json
 import os
+import warnings
 import numpy as np
 from deploy.go2_constants import SDK_TO_POLICY, DEFAULT_POSE_POLICY, NUM_JOINTS
 
@@ -51,15 +52,21 @@ _GRAVITY_WORLD = np.array([0.0, 0.0, -1.0], dtype=np.float32)
 # Term-name → sensor-fetcher. Each fn takes a `signals` dict from build()
 # and returns a 1D np.float32 array. Add new terms here when sim env adds them.
 def _signals(joint_pos_sdk, joint_vel_sdk, gyroscope, accelerometer, quaternion,
-             command, last_action):
-    """Compute every available signal once; fetchers select from this dict."""
-    joint_pos = joint_pos_sdk[SDK_TO_POLICY]
-    joint_vel = joint_vel_sdk[SDK_TO_POLICY]
+             command, last_action, default_pose_policy=DEFAULT_POSE_POLICY,
+             sdk_to_policy=SDK_TO_POLICY):
+    """Compute every available signal once; fetchers select from this dict.
+
+    `default_pose_policy` and `sdk_to_policy` default to deploy/go2_constants.py
+    constants for legacy callers; `ObsBuilder.from_checkpoint(strict=True)`
+    overrides them with values from `meta["control"]` (single source of truth).
+    """
+    joint_pos = joint_pos_sdk[sdk_to_policy]
+    joint_vel = joint_vel_sdk[sdk_to_policy]
     return {
         "gyro": gyroscope.astype(np.float32),
         "accelerometer": accelerometer.astype(np.float32),
         "gravity": _quat_rotate_inverse(quaternion, _GRAVITY_WORLD),
-        "joint_pos_offset": (joint_pos - DEFAULT_POSE_POLICY).astype(np.float32),
+        "joint_pos_offset": (joint_pos - default_pose_policy).astype(np.float32),
         "joint_vel": joint_vel.astype(np.float32),
         "last_act": last_action,
         "command": command.astype(np.float32),
@@ -92,11 +99,25 @@ class ObsBuilder:
     Newest frame at front, oldest at back.
     """
 
-    def __init__(self, n_frame_stack: int = 1, state_schema: list[str] | None = None):
+    def __init__(
+        self,
+        n_frame_stack: int = 1,
+        state_schema: list[str] | None = None,
+        default_pose_policy: np.ndarray | None = None,
+        sdk_to_policy: np.ndarray | None = None,
+    ):
         self.last_action = np.zeros(NUM_JOINTS, dtype=np.float32)
         self._quat_checked = False
         self._n_frames = n_frame_stack
         self.state_schema = state_schema if state_schema is not None else list(DEFAULT_STATE_SCHEMA)
+        self.default_pose_policy = (
+            np.asarray(default_pose_policy, dtype=np.float32)
+            if default_pose_policy is not None else DEFAULT_POSE_POLICY
+        )
+        self.sdk_to_policy = (
+            np.asarray(sdk_to_policy, dtype=np.int64)
+            if sdk_to_policy is not None else SDK_TO_POLICY
+        )
 
         unknown = [t for t in self.state_schema if t not in _TERM_DIMS]
         if unknown:
@@ -111,25 +132,73 @@ class ObsBuilder:
         self._initialized = False
 
     @classmethod
-    def from_checkpoint(cls, ckpt_dir: str, n_frame_stack: int = 1) -> "ObsBuilder":
-        """Construct an ObsBuilder using the schema saved in meta.json.
+    def from_checkpoint(
+        cls,
+        ckpt_dir: str,
+        n_frame_stack: int = 1,
+        strict: bool = False,
+    ) -> "ObsBuilder":
+        """Construct an ObsBuilder using the schema + default_pose saved in meta.json.
 
-        Falls back to DEFAULT_STATE_SCHEMA if the checkpoint predates obs_schema
-        (saved 2026-04-24+). Print a warning so the user knows.
+        With `strict=True`, raises if `obs_schema` or `meta["control"]` is
+        missing. Use `strict=True` for real-robot arm (`deploy_go2.py` without
+        `--sim`); `strict=False` for sim2sim/dry-run/legacy ckpts.
+
+        Without strict, falls back to DEFAULT_STATE_SCHEMA + go2_constants
+        DEFAULT_POSE_POLICY for ckpts predating self-describing meta
+        (pre-2026-04-24).
         """
         meta_path = os.path.join(ckpt_dir, "meta.json")
         with open(meta_path) as f:
             meta = json.load(f)
+
         schema_dict = meta.get("obs_schema")
+        control = meta.get("control")
+
         if schema_dict is None:
-            print(f"  WARNING: {ckpt_dir}/meta.json has no obs_schema "
-                  f"(pre-2026-04-24). Falling back to DEFAULT_STATE_SCHEMA — "
-                  f"verify it matches what the policy was trained with.")
+            if strict:
+                raise RuntimeError(
+                    f"ObsBuilder.from_checkpoint(strict=True): "
+                    f"{ckpt_dir}/meta.json missing 'obs_schema'. Refuse to "
+                    f"arm a real robot with a legacy ckpt — re-train or pass "
+                    f"strict=False for dry-run only."
+                )
+            warnings.warn(
+                f"{ckpt_dir}/meta.json has no obs_schema (pre-2026-04-24). "
+                f"Falling back to DEFAULT_STATE_SCHEMA — verify it matches "
+                f"what the policy was trained with.",
+                stacklevel=2,
+            )
             return cls(n_frame_stack=n_frame_stack)
+
         state_schema = schema_dict.get("state")
         if state_schema is None:
             raise KeyError("obs_schema in meta.json is missing 'state' key")
-        return cls(n_frame_stack=n_frame_stack, state_schema=state_schema)
+
+        # default_pose: prefer meta["control"]["default_pose_policy"] (single
+        # source of truth), fall back to constants for older ckpts that have
+        # obs_schema but no control block.
+        default_pose_policy = None
+        sdk_to_policy = None
+        if control is not None:
+            if "default_pose_policy" in control:
+                default_pose_policy = np.asarray(
+                    control["default_pose_policy"], dtype=np.float32
+                )
+            if "sdk_to_policy" in control:
+                sdk_to_policy = np.asarray(control["sdk_to_policy"], dtype=np.int64)
+        elif strict:
+            raise RuntimeError(
+                f"ObsBuilder.from_checkpoint(strict=True): "
+                f"{ckpt_dir}/meta.json missing 'control' block."
+            )
+
+        return cls(
+            n_frame_stack=n_frame_stack,
+            state_schema=state_schema,
+            default_pose_policy=default_pose_policy,
+            sdk_to_policy=sdk_to_policy,
+        )
 
     @property
     def raw_dim(self) -> int:
@@ -162,8 +231,12 @@ class ObsBuilder:
                 print("WARNING: quaternion appears to be [x,y,z,w] not [w,x,y,z]")
             self._quat_checked = True
 
-        signals = _signals(joint_pos_sdk, joint_vel_sdk, gyroscope, accelerometer,
-                           quaternion, command, self.last_action)
+        signals = _signals(
+            joint_pos_sdk, joint_vel_sdk, gyroscope, accelerometer,
+            quaternion, command, self.last_action,
+            default_pose_policy=self.default_pose_policy,
+            sdk_to_policy=self.sdk_to_policy,
+        )
         obs = np.concatenate([signals[name] for name in self.state_schema])
 
         if self._n_frames > 1:

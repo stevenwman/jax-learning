@@ -25,11 +25,11 @@ if _project_root not in sys.path:
 from deploy.policy_runner import PolicyRunner
 from deploy.obs_builder import ObsBuilder, _quat_rotate_inverse
 from deploy.robot_interface import Go2Interface
-from deploy.go2_constants import POLICY_DT, DEFAULT_POSE_SDK, NUM_JOINTS
+from deploy.go2_constants import POLICY_DT, NUM_JOINTS
 
 
 def interpolate_to_stand(iface: Go2Interface, duration: float = 2.0, dt: float = 0.002):
-    """Smoothly interpolate from current pose to default standing pose."""
+    """Smoothly interpolate from current pose to checkpoint default pose."""
     print(f"  Interpolating to stand ({duration}s)...")
     state = None
     while state is None:
@@ -37,12 +37,13 @@ def interpolate_to_stand(iface: Go2Interface, duration: float = 2.0, dt: float =
         time.sleep(0.01)
 
     start_pos = state["joint_pos_sdk"]
+    target_pose = iface.default_pose_sdk
     steps = int(duration / dt)
 
     for step in range(steps):
         t = (step + 1) / steps
         alpha = 0.5 * (1 - np.cos(np.pi * t))  # smooth cosine interpolation
-        target = start_pos + alpha * (DEFAULT_POSE_SDK - start_pos)
+        target = start_pos + alpha * (target_pose - start_pos)
         iface.send_joint_targets(target)
         time.sleep(dt)
 
@@ -158,14 +159,31 @@ def main():
     print(f"  hidden={runner.hidden_dim}, activation={runner.activation}")
     print(f"  obs_norm={'yes' if runner.use_obs_norm else 'no'} (n={runner.norm_count})")
 
-    # Construct ObsBuilder with the schema saved in the checkpoint's meta.json.
-    # Old ckpts (pre-2026-04-24) without obs_schema fall back to DEFAULT_STATE_SCHEMA.
-    obs_builder = ObsBuilder.from_checkpoint(args.checkpoint, n_frame_stack=runner.n_frame_stack)
+    # Load checkpoint metadata once — drives obs schema, default pose, and PD gains.
+    import json
+    meta_path = os.path.join(args.checkpoint, "meta.json")
+    with open(meta_path) as f:
+        meta = json.load(f)
+    control_meta = meta.get("control")
+
+    # Construct ObsBuilder with strict schema for real arm; legacy fallback only
+    # in --sim mode. Real robot refuses to load a ckpt without obs_schema.
+    obs_builder = ObsBuilder.from_checkpoint(
+        args.checkpoint,
+        n_frame_stack=runner.n_frame_stack,
+        strict=not sim,
+    )
     command = np.array([args.vx, args.vy, args.yaw], dtype=np.float32)
 
-    # Connect
+    # Connect — pass control_meta when present so robot_interface uses
+    # checkpoint-derived Kp/Kd/action_scale/default_pose.
     print(f"\n[2/4] Connecting to Go2 ({mode}) on '{interface}'")
-    iface = Go2Interface(sim=sim, interface=interface)
+    if control_meta is None and not sim:
+        raise RuntimeError(
+            f"meta['control'] missing from {meta_path} — refuse to arm real "
+            f"robot. Re-train with current code or pass --sim for legacy fallback."
+        )
+    iface = Go2Interface(sim=sim, interface=interface, control_meta=control_meta)
     iface.start()
 
     print("  Waiting for robot state...")
@@ -176,6 +194,37 @@ def main():
             return
         time.sleep(0.1)
     print("  State received")
+
+    # Pre-arm sanity: validate raw IMU + quat against expected stance values.
+    # Catches the .temp/obs_prinout.txt failure mode (gravity_z and accel_z same
+    # sign → IMU/quat frame mismatch). See deploy/test_time_validate.md §3.
+    # WARN-only on first cycle to avoid bricking a deploy on an over-strict
+    # check; promote to assert after one clean run.
+    _state = iface.get_state()
+    _accel = _state["accelerometer"]
+    _gravity = _quat_rotate_inverse(_state["quaternion"], np.array([0.0, 0.0, -1.0], dtype=np.float32))
+    _accel_norm = float(np.linalg.norm(_accel))
+    _grav_norm = float(np.linalg.norm(_gravity))
+    print(f"\n  Pre-arm sanity:")
+    print(f"    quat        = {_state['quaternion']}")
+    print(f"    accel       = {_accel}  (norm={_accel_norm:.2f}, expect ~9.8)")
+    print(f"    gravity     = {_gravity}  (norm={_grav_norm:.3f}, expect ~1.0)")
+    if _accel_norm < 9.0:
+        print(f"    WARN: |accel|={_accel_norm:.2f} < 9.0 — units bug? (g vs m/s²)")
+    if abs(_grav_norm - 1.0) > 0.05:
+        print(f"    WARN: |gravity|={_grav_norm:.3f} ≠ 1.0 — quat not normalized")
+    if np.sign(_accel[2]) == np.sign(_gravity[2]):
+        print(f"    WARN: sign(accel_z)={int(np.sign(_accel[2]))} == sign(gravity_z)={int(np.sign(_gravity[2]))}")
+        print(f"          — at upright stance these should be OPPOSITE.")
+        print(f"          Likely IMU mount frame vs quat convention mismatch.")
+        print(f"          See deploy/test_time_validate.md §3.C.")
+    if _grav_norm > 0.05:
+        _tilt_deg = float(np.degrees(np.arccos(np.clip(-_gravity[2] / _grav_norm, -1.0, 1.0))))
+        print(f"    tilt        = {_tilt_deg:.1f}° (expect <5° at stance)")
+        if _tilt_deg > 15.0:
+            print(f"    WARN: tilt {_tilt_deg:.1f}° > 15° — robot not upright or gravity decode wrong")
+    if not sim:
+        input("  Pre-arm sanity printed. Enter to proceed (or Ctrl+C to abort)... ")
 
     # Safety gate for real robot
     if not sim:

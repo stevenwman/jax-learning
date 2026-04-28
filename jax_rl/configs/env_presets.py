@@ -350,6 +350,12 @@ FAST_SAC_PRESETS["Go2WarpJoystickFlatTorqueSpeed"] = (
     dataclasses.replace(_FAST_SAC_BASE_CFG, env_name="Go2WarpJoystickFlatTorqueSpeed"),
     _FAST_SAC_BASE_ALGO,
 )
+# Unitree-contract preset: 45d state (no accel) + action_scale=0.25 in env config.
+# For sim2real-minimal-drift training runs aligned with unitree_rl_lab Go2 deploy.
+FAST_SAC_PRESETS["Go2WarpJoystickUnitree"] = (
+    dataclasses.replace(_FAST_SAC_BASE_CFG, env_name="Go2WarpJoystickUnitree"),
+    _FAST_SAC_BASE_ALGO,
+)
 FAST_SAC_PRESETS["Go2WarpJoystickCurriculum"] = (
     dataclasses.replace(_FAST_SAC_BASE_CFG, env_name="Go2WarpJoystickCurriculum", reset_mode="per_step"),
     _FAST_SAC_BASE_ALGO,

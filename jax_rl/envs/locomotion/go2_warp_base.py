@@ -114,12 +114,41 @@ class Go2WarpEnv(mjx_env.MjxEnv):
         """Return deploy-critical control parameters as a JSON-serializable dict.
 
         Picked up by `jax_rl/training/checkpointing.py:save_checkpoint` and
-        written under `meta["control"]`. Read by `deploy/sim2sim_direct.py` and
-        deploy-side tooling so they don't have to import (and stay in sync
-        with) `deploy/go2_constants.py` constants per env. Closes the codex-
-        audit P0 finding where sim2sim_direct used archived MJX gains
-        (`KP_SIM=35.0`, `KD_SIM=0.1`) instead of Warp training's 20.0/0.5.
+        written under `meta["control"]`. Read by `deploy/sim2sim_direct.py`,
+        `deploy/robot_interface.py`, and `deploy/obs_builder.py` so they don't
+        have to import (and stay in sync with) `deploy/go2_constants.py`
+        constants per env. Closes the codex-audit P0 finding where sim2sim_direct
+        used archived MJX gains (`KP_SIM=35.0`, `KD_SIM=0.1`) instead of Warp
+        training's 20.0/0.5; also closes the deploy-contract drift where
+        `default_pose` and joint remap lived only in deploy-side constants.
+
+        Phase D2 (2026-04-27): adds `default_pose_policy` (sourced from XML
+        keyframe — single source of truth), `default_pose_sdk` (remapped),
+        plus `policy_joint_names` and `sdk_joint_names`. SDK order
+        (`FR,FL,RR,RL`) is Unitree-spec for Go2, hardcoded here.
         """
+        # Default pose in policy order, sourced from XML keyframe — same array
+        # the env uses for `joint_pos_offset` obs and `motor_targets` step.
+        default_pose_policy = np.asarray(
+            self._mj_model.keyframe("home").qpos[7:], dtype=np.float32
+        )
+
+        # Joint names in policy order (FL,FR,RL,RR per leg, hip→thigh→calf).
+        # qpos[7:] joints are body-tree-ordered. mj_model.jnt(0) is the freejoint.
+        policy_joint_names = [
+            self._mj_model.jnt(i + 1).name for i in range(self._mj_model.nu)
+        ]
+
+        # Unitree SDK joint order for Go2 — fixed by hardware spec.
+        # FR(0..2), FL(3..5), RR(6..8), RL(9..11).
+        # POLICY_TO_SDK[i] = which policy index goes into SDK slot i.
+        # Identical to `deploy/go2_constants.py::POLICY_TO_SDK` (kept in sync
+        # by item 2's equality assertion at deploy load).
+        policy_to_sdk = [3, 4, 5, 0, 1, 2, 9, 10, 11, 6, 7, 8]
+        sdk_to_policy = [3, 4, 5, 0, 1, 2, 9, 10, 11, 6, 7, 8]
+        default_pose_sdk = default_pose_policy[np.array(policy_to_sdk)]
+        sdk_joint_names = [policy_joint_names[i] for i in policy_to_sdk]
+
         return {
             "Kp": float(self._config.Kp),
             "Kd": float(self._config.Kd),
@@ -132,6 +161,12 @@ class Go2WarpEnv(mjx_env.MjxEnv):
             "impl": str(getattr(self._config, "impl", "warp")),
             "joint_order": "policy_FL_FR_RL_RR",
             "action_order": "policy_FL_FR_RL_RR",
+            "default_pose_policy": default_pose_policy.tolist(),
+            "default_pose_sdk": default_pose_sdk.tolist(),
+            "policy_joint_names": policy_joint_names,
+            "sdk_joint_names": sdk_joint_names,
+            "policy_to_sdk": policy_to_sdk,
+            "sdk_to_policy": sdk_to_policy,
         }
 
     # ── Sensor readings (delegate to shared helpers) ───────────────────

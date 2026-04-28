@@ -1,4 +1,5 @@
 """DDS interface to Go2 robot (sim or real) via unitree_sdk2_python."""
+import warnings
 import numpy as np
 from deploy.go2_constants import (
     POLICY_TO_SDK, DEFAULT_POSE_SDK, NUM_JOINTS,
@@ -17,20 +18,82 @@ class Go2Interface:
     """Publish motor commands and subscribe to robot state via CycloneDDS.
 
     Usage:
-        iface = Go2Interface(sim=True)
+        iface = Go2Interface(sim=True)                     # legacy, uses constants
+        iface = Go2Interface(sim=True, control_meta=meta)  # checkpoint-driven
         iface.start()
         while True:
             state = iface.get_state()
             iface.send_action(action_policy_order)
+
+    When `control_meta` is provided (from `meta["control"]` written by
+    `Go2WarpEnv.get_control_metadata()`), Kp/Kd/action_scale/default_pose/
+    policy_to_sdk are read from it. Without it, falls back to
+    `deploy/go2_constants.py` constants with a loud warning. The single-source-
+    of-truth meta path closes the codex-audit P0 finding where real deploy
+    silently drifted from training values.
     """
 
-    def __init__(self, sim: bool = True, interface: str = "lo"):
+    def __init__(
+        self,
+        sim: bool = True,
+        interface: str = "lo",
+        control_meta: dict | None = None,
+    ):
         self.sim = sim
         self.interface = interface
-        self.kp = KP_SIM if sim else KP_REAL
-        self.kd = KD_SIM if sim else KD_REAL
         self._low_state = None
         self._crc = CRC()
+
+        if control_meta is not None:
+            self.kp = float(control_meta["Kp"])
+            self.kd = float(control_meta["Kd"])
+            self.action_scale = float(control_meta["action_scale"])
+            self.default_pose_sdk = np.asarray(
+                control_meta["default_pose_sdk"], dtype=np.float32
+            )
+            self.policy_to_sdk = np.asarray(control_meta["policy_to_sdk"], dtype=np.int64)
+            # Belt-and-suspenders: warn if meta drifts from go2_constants.py.
+            # If meta and constants ever diverge, the meta wins (it came from the
+            # actual training env), but the operator should know the constants
+            # file is stale. Soft assertion — print, don't raise.
+            self._sanity_check_against_constants()
+        else:
+            warnings.warn(
+                "Go2Interface: no control_meta — falling back to "
+                "deploy/go2_constants.py. OK for sim2sim/legacy ckpts, "
+                "NOT recommended for real arm.",
+                stacklevel=2,
+            )
+            self.kp = KP_SIM if sim else KP_REAL
+            self.kd = KD_SIM if sim else KD_REAL
+            self.action_scale = ACTION_SCALE
+            self.default_pose_sdk = DEFAULT_POSE_SDK.astype(np.float32)
+            self.policy_to_sdk = POLICY_TO_SDK
+
+    def _sanity_check_against_constants(self) -> None:
+        """Warn if meta values diverge from `deploy/go2_constants.py`."""
+        mismatches = []
+        if not np.allclose(self.default_pose_sdk, DEFAULT_POSE_SDK, atol=1e-5):
+            mismatches.append(
+                f"default_pose_sdk: meta={self.default_pose_sdk.tolist()} "
+                f"vs constants={DEFAULT_POSE_SDK.tolist()}"
+            )
+        if not np.array_equal(self.policy_to_sdk, POLICY_TO_SDK):
+            mismatches.append(
+                f"policy_to_sdk: meta={self.policy_to_sdk.tolist()} "
+                f"vs constants={POLICY_TO_SDK.tolist()}"
+            )
+        if not np.isclose(self.action_scale, ACTION_SCALE):
+            mismatches.append(
+                f"action_scale: meta={self.action_scale} vs constants={ACTION_SCALE}"
+            )
+        if mismatches:
+            warnings.warn(
+                "Go2Interface: meta diverges from deploy/go2_constants.py "
+                "(meta wins). Consider updating constants:\n  "
+                + "\n  ".join(mismatches),
+                stacklevel=3,
+            )
 
     def start(self):
         """Initialize DDS channels."""
@@ -82,8 +145,8 @@ class Go2Interface:
 
     def send_action(self, action_policy_order: np.ndarray):
         """Send action to robot. action in policy order (FL,FR,RL,RR), range [-1, 1]."""
-        action_sdk = action_policy_order[POLICY_TO_SDK]
-        q_targets = DEFAULT_POSE_SDK + action_sdk * ACTION_SCALE
+        action_sdk = action_policy_order[self.policy_to_sdk]
+        q_targets = self.default_pose_sdk + action_sdk * self.action_scale
         self.send_joint_targets(q_targets)
 
     def send_joint_targets(self, q_targets_sdk: np.ndarray):
@@ -98,8 +161,8 @@ class Go2Interface:
         self._pub.Write(self._cmd)
 
     def send_stand(self):
-        """Send default standing pose."""
-        self.send_joint_targets(DEFAULT_POSE_SDK)
+        """Send default standing pose (from meta when available, else constants)."""
+        self.send_joint_targets(self.default_pose_sdk)
 
     def send_zero_torque(self):
         """Send zero torque (robot goes limp)."""

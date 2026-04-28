@@ -54,6 +54,19 @@ def _register_custom_envs():
             functools.partial(WarpJoystickNoAccel, task="flat_terrain"),
             warp_default_config,
         )
+    # Unitree-contract variant: 45d state (no accel) + action_scale=0.25.
+    # Aligned with unitree_rl_lab Go2 deploy contract for minimal sim2real drift.
+    # Use this for first hardware-validation training runs.
+    def _warp_default_config_unitree():
+        cfg = warp_default_config()
+        cfg.action_scale = 0.25
+        return cfg
+    if "Go2WarpJoystickUnitree" not in pg_locomotion._envs:
+        pg_locomotion.register_environment(
+            "Go2WarpJoystickUnitree",
+            functools.partial(WarpJoystickNoAccel, task="flat_terrain"),
+            _warp_default_config_unitree,
+        )
     from jax_rl.envs.locomotion.go2_warp_curriculum import WarpJoystickCurriculum
     from jax_rl.envs.locomotion.go2_warp_curriculum import default_config as curriculum_default_config
     if "Go2WarpJoystickCurriculum" not in pg_locomotion._envs:

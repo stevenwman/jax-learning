@@ -108,7 +108,10 @@ def save_checkpoint(
         pass
 
     # DR specs + obs schema + deploy control metadata (if env declares them).
-    # Single env load for all three.
+    # Single env load for all three. For deployable Go2 envs, missing
+    # obs_schema or control metadata is a hard failure — silent loss is the
+    # exact bug that produced the 2026-04-10 → 2026-04-24 deploy drift.
+    is_go2 = "go2" in cfg.env_name.lower()
     try:
         from mujoco_playground import registry as pg_registry
         env = pg_registry.load(cfg.env_name)
@@ -121,14 +124,29 @@ def save_checkpoint(
         if hasattr(env, '_obs_groups'):
             from jax_rl.envs.obs_spec import schema_from_obs_groups
             meta["obs_schema"] = schema_from_obs_groups(env._obs_groups)
+        elif is_go2:
+            raise RuntimeError(
+                f"Go2 env '{cfg.env_name}' has no _obs_groups — cannot stamp "
+                f"obs_schema. Deploy will silently drift; refusing to save."
+            )
         # Phase D: deploy-critical control metadata (Kp/Kd/action_scale/dts/...).
         # Go2 Warp envs implement get_control_metadata; other envs don't yet.
-        # deploy/sim2sim_direct.py reads this block before falling back to
-        # constants in deploy/go2_constants.py.
+        # deploy/sim2sim_direct.py + deploy/robot_interface.py read this block
+        # before falling back to constants in deploy/go2_constants.py.
         if hasattr(env, 'get_control_metadata'):
             meta["control"] = env.get_control_metadata()
-    except Exception:
-        pass
+        elif is_go2:
+            raise RuntimeError(
+                f"Go2 env '{cfg.env_name}' has no get_control_metadata — "
+                f"cannot stamp meta['control']. Refusing to save."
+            )
+    except Exception as e:
+        if is_go2:
+            raise RuntimeError(
+                f"save_checkpoint: Go2 env metadata stamp failed for "
+                f"'{cfg.env_name}': {type(e).__name__}: {e}"
+            ) from e
+        # Non-Go2 env: keep silent fallback (some envs lack pg_registry).
 
     with open(os.path.join(ckpt_dir, "meta.json"), "w") as f:
         json.dump(meta, f, indent=2)
