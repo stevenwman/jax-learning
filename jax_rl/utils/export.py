@@ -82,7 +82,7 @@ def export_actor_to_onnx(checkpoint_dir: str, output_path: str) -> dict[str, Any
 
     from jax_rl.training.checkpointing import load_actor_for_inference
 
-    meta, actor_params, _norm_state, actor_batch_stats = load_actor_for_inference(
+    meta, actor_params, norm_state, actor_batch_stats = load_actor_for_inference(
         checkpoint_dir
     )
 
@@ -94,12 +94,7 @@ def export_actor_to_onnx(checkpoint_dir: str, output_path: str) -> dict[str, Any
             f"got algo={algo!r}"
         )
     sc = meta.get("fast_sac_config", {})
-    if sc.get("obs_normalization", False):
-        raise ValueError(
-            "Checkpoint was trained with obs_normalization=True. "
-            "This exporter assumes obs_normalization=False — update it to "
-            "prepend a (obs - mean) / std Sub+Div before the first Gemm."
-        )
+    obs_norm_baked = bool(sc.get("obs_normalization", False)) and int(norm_state.count) > 0
     activation = sc.get("activation", "swish")
     if activation != "swish":
         raise ValueError(
@@ -160,11 +155,36 @@ def export_actor_to_onnx(checkpoint_dir: str, output_path: str) -> dict[str, Any
     initializers.append(numpy_helper.from_array(w_mean, name="W_mean"))
     initializers.append(numpy_helper.from_array(b_mean, name="B_mean"))
 
+    # Bake observation normalization (obs - mean) * inv_std into the graph as
+    # constants if the ckpt trained with --obs-norm. This makes the ONNX a
+    # self-contained artifact: deploy can feed raw obs without a Python-side
+    # normalize step. Mirrors deploy/policy_runner.py:normalize_obs.
+    nodes: list = []
+    x = "obs"
+    if obs_norm_baked:
+        norm_mean = np.asarray(norm_state.mean, dtype=np.float32)
+        norm_mos = np.asarray(norm_state.mean_of_squares, dtype=np.float32)
+        variance = np.maximum(norm_mos - norm_mean ** 2, 0.0)
+        inv_std = (1.0 / (np.sqrt(variance) + 1e-8)).astype(np.float32)
+        if norm_mean.shape != (obs_dim,) or inv_std.shape != (obs_dim,):
+            raise ValueError(
+                f"norm stats shape {norm_mean.shape}/{inv_std.shape} != ({obs_dim},)"
+            )
+        initializers.append(numpy_helper.from_array(norm_mean, name="norm_mean"))
+        initializers.append(numpy_helper.from_array(inv_std, name="norm_inv_std"))
+        nodes.append(
+            helper.make_node("Sub", inputs=["obs", "norm_mean"], outputs=["obs_centered"],
+                             name="norm_sub")
+        )
+        nodes.append(
+            helper.make_node("Mul", inputs=["obs_centered", "norm_inv_std"],
+                             outputs=["obs_norm"], name="norm_mul")
+        )
+        x = "obs_norm"
+
     # ── Build nodes: Gemm → (Sigmoid + Mul for swish) ×3, then Gemm + Tanh ──
     # Gemm(A, B, C) = A @ B + C  with alpha=beta=1, transA=transB=0.
     # Flax kernels are stored [in, out], which matches Gemm's default B layout.
-    nodes = []
-    x = "obs"
     for i in range(len(hidden_dim)):
         pre = f"h{i}_pre"
         sig = f"h{i}_sig"
@@ -287,10 +307,24 @@ def validate_export(
 
     from jax_rl.training.checkpointing import load_actor_for_inference
 
-    meta, actor_params, _, _ = load_actor_for_inference(checkpoint_dir)
+    meta, actor_params, norm_state, _ = load_actor_for_inference(checkpoint_dir)
     obs_dim = int(meta["obs_dim"])
     action_dim = int(meta["action_dim"])
     algo = _build_fast_sac_for_inference(meta, obs_dim, action_dim)
+
+    # If the ONNX has obs-norm baked in, the JAX side must normalize before
+    # select_action so the comparison is apples-to-apples (ONNX feeds raw obs
+    # and applies Sub+Mul internally; JAX receives raw obs and applies the
+    # same formula in numpy before calling the actor).
+    sc = meta.get("fast_sac_config", {})
+    obs_norm_baked = bool(sc.get("obs_normalization", False)) and int(norm_state.count) > 0
+    if obs_norm_baked:
+        nm = np.asarray(norm_state.mean, dtype=np.float32)
+        mos = np.asarray(norm_state.mean_of_squares, dtype=np.float32)
+        inv_std_np = (1.0 / (np.sqrt(np.maximum(mos - nm ** 2, 0.0)) + 1e-8)).astype(np.float32)
+        normalize_for_jax = lambda o: (o - nm) * inv_std_np
+    else:
+        normalize_for_jax = lambda o: o
 
     sess = ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
     input_name = sess.get_inputs()[0].name
@@ -300,7 +334,7 @@ def validate_export(
 
     def jax_action(obs_np: np.ndarray) -> np.ndarray:
         out = algo.select_action(
-            actor_params, jnp.asarray(obs_np), key, deterministic=True
+            actor_params, jnp.asarray(normalize_for_jax(obs_np)), key, deterministic=True
         )
         return np.asarray(out)
 
