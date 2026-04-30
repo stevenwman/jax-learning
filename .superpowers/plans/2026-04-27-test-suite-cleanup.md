@@ -118,7 +118,7 @@ in priority order or whatever the owner asks for next.
     → 10 passed (was 9; +1 new rejection test).
   - Commit: playbook §"Task 5 Commit".
 
-- [ ] **3.2 Fix test_offpolicy_loop stub-env + parameterize across off-policy algos** (1 hr)
+- [x] **3.2 Fix test_offpolicy_loop stub-env + parameterize across off-policy algos** (1 hr)
   - Spec: playbook §"Task 6".
   - Bug fix: `EnvBundle(num_envs=NUM_ENVS, ...)` in the existing
     test (currently defaults `num_envs=1` → broadcast error).
@@ -251,6 +251,13 @@ report.
 - Default-lane test count before/after: `666 passed, 46 skipped, 105 deselected` → `667 passed, 46 skipped, 105 deselected`.
 - Verify deltas: `JAX_PLATFORMS=cpu uv run python -m pytest -q deploy/test_policy_runner.py` went from `9 passed` to `10 passed`; docs canaries held at `224 passed, 46 skipped, 7 deselected`; marker registry still lists `gpu`, `warp`, `go2`, `deploy`, `network`, `slow`.
 - Deviations/gotchas hit: derived the synthetic actor pytree from `deploy/policy_runner.py` (`MlpEncoder_0` dense layers plus `GaussianHead_0/Dense_0`) instead of the playbook placeholder; tightened the rejection assertion to `ValueError` after reading `PolicyRunner.__init__`; updated the file's manual `__main__` block to call the renamed/new tests. Default lane increased by one because deploy tests are still in the default lane.
+
+### 2026-04-30 — 3.2 Fix test_offpolicy_loop stub-env + parameterize across off-policy algos
+
+- Task commit: `3f31dd5188f639e357b63f136c8120547042e362`
+- Default-lane test count before/after: `667 passed, 46 skipped, 105 deselected` → `671 passed, 46 skipped, 104 deselected`.
+- Verify deltas: pre-fix red check reproduced the `EnvBundle.num_envs=1` broadcast failure in `test_run_offpolicy_loop_stub_env_cpu`; `JAX_PLATFORMS=cpu uv run python -m pytest -q tests/test_offpolicy_loop.py` now reports `4 passed, 1 deselected`; docs canaries held at `224 passed, 46 skipped, 7 deselected`; marker registry still lists `gpu`, `warp`, `go2`, `deploy`, `network`, `slow`.
+- Deviations/gotchas hit: extracted `_stub_env_bundle`, `_common_cfg`, and `_patch_eval` into `tests/_loop_helpers.py` for 3.4 reuse; kept four explicit sibling tests instead of parametrization; removed the module-level `gpu` mark and marked only the slow Cheetah smoke with `gpu`; used empty `log_extra_fields`/`log_extra_keys` for TD3/FastTD3; shrank FastSAC/FastTD3 critic dims and atom count for CPU-smoke speed while preserving constructor paths.
 
 ---
 
