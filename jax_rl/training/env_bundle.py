@@ -48,6 +48,21 @@ class EnvBundle:
     num_envs: int = 1
     render_fn: Optional[Callable[[Any, int], Optional[np.ndarray]]] = None
 
+    # Env-supplied training-loop hooks. Backends populate these from optional
+    # methods on the underlying env (e.g. Go2 curriculum exposes terrain
+    # metrics via `log_extra_metrics(state.info)`). Generic loops invoke them
+    # if present; non-curriculum envs return None on each so call sites stay
+    # simple. Lets `offpolicy_loop` stop importing locomotion modules
+    # directly.
+    extra_metrics_fn: Optional[Callable[[Any], dict]] = None
+    """(state.info) -> dict[str, float] of extra scalar metrics for wandb log row."""
+
+    extra_image_fn: Optional[Callable[[Any], dict]] = None
+    """(state.info) -> dict[str, wandb.Image] of extra image panels."""
+
+    debug_dump_fn: Optional[Callable[[Any, int], None]] = None
+    """(state.info, total_steps) -> None. Periodic stdout debug print."""
+
     def render(self, state: Any, env_idx: int = 0) -> Optional[np.ndarray]:
         """Return last-frame RGB array (H, W, 3) for env_idx, or None.
 

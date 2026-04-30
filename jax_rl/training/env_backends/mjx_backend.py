@@ -240,6 +240,13 @@ def make_mjx_env_bundle(cfg: TrainConfig, seed: int) -> EnvBundle:
         else:
             print(f"  Dict obs detected: using 'state' key ({obs_dim}d) for off-policy")
 
+    # Pick up env-supplied training-loop hooks if the env class provides them
+    # (e.g. WarpJoystickCurriculum exposes terrain log helpers). Generic loops
+    # call these via the bundle so they don't have to import locomotion modules.
+    extra_metrics_fn = getattr(env, "log_extra_metrics", None)
+    extra_image_fn = getattr(env, "log_extra_image", None)
+    debug_dump_fn = getattr(env, "print_debug_dump", None)
+
     return EnvBundle(
         env=env, env_step=env_step, env_state=env_state, eval_env=eval_env,
         obs_dim=obs_dim, action_dim=action_dim,
@@ -250,6 +257,9 @@ def make_mjx_env_bundle(cfg: TrainConfig, seed: int) -> EnvBundle:
         backend_kind="mjx",
         num_envs=cfg.num_envs,
         render_fn=None,   # MJX render lives in record_video.py for now (Phase 5).
+        extra_metrics_fn=extra_metrics_fn,
+        extra_image_fn=extra_image_fn,
+        debug_dump_fn=debug_dump_fn,
     )
 
 

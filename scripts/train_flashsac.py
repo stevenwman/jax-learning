@@ -38,7 +38,7 @@ from jax_rl.training import (
 )
 from jax_rl.training.train_context import TrainContext
 from jax_rl.training.checkpointing import CheckpointManager
-from jax_rl.training.metrics_logger import wandb_init, wandb_setup_metrics, wandb_log, wandb_finish, log_terrain_metrics, log_terrain_image, print_curriculum_dump
+from jax_rl.training.metrics_logger import wandb_init, wandb_setup_metrics, wandb_log, wandb_finish
 from jax_rl.configs.env_presets import get_flash_sac_preset
 from jax_rl.utils.reward_scaling import update_reward_stats, scale_reward
 
@@ -370,15 +370,20 @@ def train(cfg: TrainConfig, algo_cfg: FlashSACConfig, seed: int = 0,
                     extra_keys=log_extra_keys,
                 )
                 metrics_log.append(row)
-                terrain_metrics = log_terrain_metrics(env_state.info) if hasattr(env_state, "info") else {}
-                row.update(terrain_metrics)
-                img_dict = log_terrain_image(env_state.info) if hasattr(env_state, "info") else {}
+                # Env-provided extra log hooks via bundle (e.g. Go2 curriculum
+                # terrain metrics). bundle hooks are None on envs that don't
+                # supply them, so call sites no-op.
+                info = getattr(env_state, "info", None)
+                if info is not None and bundle.extra_metrics_fn is not None:
+                    row.update(bundle.extra_metrics_fn(info))
+                img_dict = (bundle.extra_image_fn(info)
+                            if info is not None and bundle.extra_image_fn is not None else {})
                 wandb_log({**row, **img_dict}, step=total_steps)
 
-                # Console curriculum dump every ~50k env steps (bug-hunt diagnostic).
-                # Zero-op for non-curriculum envs.
-                if total_steps // 50_000 != (total_steps - log_every * cfg.num_envs) // 50_000:
-                    print_curriculum_dump(env_state.info, step=total_steps)
+                # Periodic stdout debug dump (~50k env steps), if env supplies one.
+                if (info is not None and bundle.debug_dump_fn is not None
+                        and total_steps // 50_000 != (total_steps - log_every * cfg.num_envs) // 50_000):
+                    bundle.debug_dump_fn(info, total_steps)
 
         # ── Eval + checkpoint ──────────────────────────────────────────
         # Update actor batch_stats so select_action uses current BN running stats

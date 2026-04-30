@@ -29,9 +29,6 @@ from jax_rl.training.metrics_logger import (
     log_training_step, make_metrics_row,
     wandb_init, wandb_setup_metrics, wandb_log, wandb_finish,
 )
-from jax_rl.envs.locomotion.curriculum_logging import (
-    log_terrain_metrics, log_terrain_image, print_curriculum_dump,
-)
 from jax_rl.training.obs_pipeline import ObsPipeline
 from jax_rl.training.train_context import TrainContext
 
@@ -250,16 +247,20 @@ def run_offpolicy_loop(
                     extra_keys=log_extra_keys,
                 )
                 metrics_log.append(row)
-                terrain_metrics = log_terrain_metrics(env_state.info) if hasattr(env_state, "info") else {}
-                row.update(terrain_metrics)
-                # Composite snapshot image (replaces 40+ scalar level_hist lines)
-                img_dict = log_terrain_image(env_state.info) if hasattr(env_state, "info") else {}
+                # Env-provided extra log hooks (e.g. Go2 curriculum terrain
+                # metrics). bundle hooks are None on envs that don't supply
+                # them, so call sites no-op without importing locomotion code.
+                info = getattr(env_state, "info", None)
+                if info is not None and env_bundle.extra_metrics_fn is not None:
+                    row.update(env_bundle.extra_metrics_fn(info))
+                img_dict = (env_bundle.extra_image_fn(info)
+                            if info is not None and env_bundle.extra_image_fn is not None else {})
                 wandb_log({**row, **img_dict}, step=raw_steps)
 
-                # Console curriculum dump every ~50k env steps (bug-hunt diagnostic).
-                # Zero-op for non-curriculum envs.
-                if total_steps // 50_000 != (total_steps - log_every * num_envs) // 50_000:
-                    print_curriculum_dump(env_state.info, step=total_steps)
+                # Periodic stdout debug dump (~50k env steps), if env supplies one.
+                if (info is not None and env_bundle.debug_dump_fn is not None
+                        and total_steps // 50_000 != (total_steps - log_every * num_envs) // 50_000):
+                    env_bundle.debug_dump_fn(info, total_steps)
 
         # Eval + checkpoint. q_fn closes over training_state directly: the
         # lambda is called synchronously inside maybe_eval_and_checkpoint

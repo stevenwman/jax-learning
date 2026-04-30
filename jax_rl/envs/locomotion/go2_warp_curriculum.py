@@ -402,3 +402,21 @@ class WarpJoystickCurriculum(WarpJoystick):
         body_vx = c * world_vx + s * world_vy
         body_vy = -s * world_vx + c * world_vy
         return body_vx, body_vy
+
+    # ── Training-loop hooks (picked up by EnvBundle) ───────────────────
+    # Generic loops (offpolicy_loop, eval_runner) call these via the bundle
+    # without importing `jax_rl.envs.locomotion.curriculum_logging` directly.
+    # Non-curriculum envs don't define them → bundle fields stay None →
+    # call sites no-op.
+
+    def log_extra_metrics(self, info: dict) -> dict:
+        from jax_rl.envs.locomotion.curriculum_logging import log_terrain_metrics
+        return log_terrain_metrics(info)
+
+    def log_extra_image(self, info: dict) -> dict:
+        from jax_rl.envs.locomotion.curriculum_logging import log_terrain_image
+        return log_terrain_image(info)
+
+    def print_debug_dump(self, info: dict, step: int) -> None:
+        from jax_rl.envs.locomotion.curriculum_logging import print_curriculum_dump
+        print_curriculum_dump(info, step=step)
