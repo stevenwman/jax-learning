@@ -1,0 +1,29 @@
+name: Tests (CPU)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  pytest-cpu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Install dependencies
+        run: uv sync --group dev --no-group docs
+
+      - name: Run CPU tests
+        env:
+          JAX_PLATFORMS: cpu
+        run: uv run python -m pytest -q
+        # markers in pyproject.toml addopts already exclude gpu/warp/go2/network/slow
