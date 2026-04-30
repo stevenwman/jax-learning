@@ -2,6 +2,8 @@ import jax
 import jax.numpy as jnp
 import pytest
 
+pytestmark = [pytest.mark.gpu, pytest.mark.warp, pytest.mark.go2]
+
 
 def test_env_loads():
     from jax_rl.envs.locomotion.go2_warp_curriculum import WarpJoystickCurriculum

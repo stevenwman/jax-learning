@@ -315,7 +315,7 @@ def test_cli_flags_in_reference_match_scripts(script):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.slow
+@pytest.mark.network
 def test_arxiv_ids_resolve():
     """Every arXiv ID cited in docs/ must resolve to a real paper (HTTP 200).
 

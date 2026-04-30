@@ -72,6 +72,11 @@ docs = [
 pythonpath = ["."]
 testpaths = ["tests", "deploy"]
 markers = [
-    "slow: marks tests as slow / GPU-bound (deselected by default; run with -m slow)",
+    "gpu: test needs CUDA (MJX physics, JAX device arrays beyond CPU)",
+    "warp: test needs warp-lang library + GPU (implies gpu)",
+    "go2: test needs Go2 Warp env (implies warp + gpu)",
+    "deploy: test exercises deploy/ runtime",
+    "network: test needs internet (e.g. arxiv, HF datasets)",
+    "slow: test takes >30s wall-clock (can be CPU or GPU)",
 ]
-addopts = "-m 'not slow'"
+addopts = "-m 'not (gpu or warp or go2 or network or slow)'"

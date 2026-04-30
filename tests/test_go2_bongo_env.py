@@ -3,6 +3,8 @@ import jax
 import jax.numpy as jnp
 import pytest
 
+pytestmark = [pytest.mark.gpu, pytest.mark.warp, pytest.mark.go2]
+
 from jax_rl.envs.locomotion.go2_bongo_handstand import (
     BongoHandstand,
     default_config,

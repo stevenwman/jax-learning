@@ -3,6 +3,8 @@ import jax
 import jax.numpy as jnp
 import pytest
 
+pytestmark = [pytest.mark.gpu, pytest.mark.warp]
+
 from jax_rl.envs.wrappers.frame_stack import FrameStackWrapper
 
 

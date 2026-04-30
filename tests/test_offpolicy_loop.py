@@ -14,6 +14,8 @@ import sys
 
 import pytest
 
+pytestmark = pytest.mark.gpu
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 

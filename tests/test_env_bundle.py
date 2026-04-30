@@ -4,6 +4,8 @@ import sys
 
 import pytest
 
+pytestmark = pytest.mark.gpu
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from jax_rl.configs.env_presets import get_sac_preset

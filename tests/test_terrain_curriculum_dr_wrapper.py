@@ -4,6 +4,8 @@ import jax
 import jax.numpy as jnp
 import pytest
 
+pytestmark = [pytest.mark.gpu, pytest.mark.warp, pytest.mark.go2]
+
 
 @pytest.fixture
 def make_wrapped_env():

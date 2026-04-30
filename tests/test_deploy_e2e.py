@@ -93,6 +93,9 @@ def _action_to_sdk_targets(action_policy, control):
 
 # ---------- env-side: get_control_metadata stays consistent -----------------
 
+@pytest.mark.gpu
+@pytest.mark.warp
+@pytest.mark.go2
 def test_bongo_metadata_uses_handstand_pose_not_home():
     """Codex review fix 2: get_control_metadata reads self._default_pose
     (set by subclass _post_init), not a hardcoded keyframe('home'). Bongo
@@ -121,6 +124,9 @@ def test_bongo_metadata_uses_handstand_pose_not_home():
     )
 
 
+@pytest.mark.gpu
+@pytest.mark.warp
+@pytest.mark.go2
 def test_env_metadata_matches_deploy_constants():
     """Go2WarpEnv.get_control_metadata() must equal deploy/go2_constants.py.
 

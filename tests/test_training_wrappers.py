@@ -3,6 +3,8 @@ import jax
 import jax.numpy as jnp
 import pytest
 
+pytestmark = pytest.mark.gpu
+
 from jax_rl.envs.wrappers.training import (
     VmapWrapper, EpisodeWrapper, AutoResetWrapper, wrap_for_training,
 )
