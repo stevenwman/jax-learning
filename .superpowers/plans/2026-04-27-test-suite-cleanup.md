@@ -76,7 +76,7 @@ verifying them on CI.
     not 10.
   - Commit: short caveman message — `test: drop dead tdmpc2 eval-isolation subprocess test (broken worktree path)`
 
-- [ ] **1.4 Refresh docs/contributing.md** (15 min)
+- [x] **1.4 Refresh docs/contributing.md** (15 min)
   - Spec: playbook §"Task 10".
   - Replace stale "~299 tests" claim. Add the 5 named pytest
     invocations from playbook §"Task 10 What to add".
@@ -230,6 +230,13 @@ report.
 - Default-lane test count before/after: `666 passed, 46 skipped, 106 deselected` → `666 passed, 46 skipped, 105 deselected`.
 - Verify deltas: `uv run python -m pytest --collect-only -q -m slow` went from `9/818 collected (809 deselected)` to `8/817 collected (809 deselected)`; docs canaries held at `224 passed, 46 skipped, 7 deselected`; marker registry still lists `gpu`, `warp`, `go2`, `deploy`, `network`, `slow`.
 - Deviations/gotchas hit: used Option A delete per plan/user direction. The playbook's old absolute expectation says slow collect should be `9 not 10`; after 1.2's current baseline was already `9`, deleting one additional slow test produced the expected relative delta to `8`.
+
+### 2026-04-30 — 1.4 Refresh docs/contributing.md
+
+- Task commit: `7c4878af7461efc3b1003ebb145201c51af3fc90`
+- Default-lane test count before/after: `666 passed, 46 skipped, 105 deselected` → `666 passed, 46 skipped, 105 deselected`.
+- Verify deltas: `uv run python -m mkdocs build --strict` completed; docs canaries held at `224 passed, 46 skipped, 7 deselected`; marker registry still lists `gpu`, `warp`, `go2`, `deploy`, `network`, `slow`.
+- Deviations/gotchas hit: none. The stale default-suite text was replaced with the marker-based invocations from playbook Task 10.
 
 ---
 
