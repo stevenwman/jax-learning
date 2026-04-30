@@ -256,6 +256,40 @@ For migrating an existing legacy script (`train_flashsac`,
    into persisted on envs that just reset. Surfaced by codex's
    2026-04-27 audit.
 
+9. ✅ **Closed (commits `fc366cb` + `31a1239`).** Generic training
+   infrastructure no longer imports locomotion or playground modules
+   directly. Codex audit flagged two leaks:
+   - `offpolicy_loop.py` and `train_flashsac.py` imported
+     `curriculum_logging.{log_terrain_metrics, log_terrain_image,
+     print_curriculum_dump}` for in-loop logging.
+   - `checkpointing.py:save_checkpoint` imported
+     `mujoco_playground.registry` to re-load the env and read DR
+     specs / obs schema / control metadata.
+
+   Fix uses optional callables on `EnvBundle` + an env handle on
+   `TrainContext`:
+   - `EnvBundle.extra_metrics_fn / extra_image_fn / debug_dump_fn` are
+     optional callables that backends populate from env methods if
+     present (`getattr(env, "log_extra_metrics", None)` etc.). Generic
+     loops invoke them through the bundle; absent hooks no-op without
+     ever touching the locomotion package.
+   - `Go2WarpJoystickCurriculum` exposes the three methods, delegating
+     to the existing free functions in `curriculum_logging.py` (the
+     functions stay where they are; only the import boundary moves).
+   - `TrainContext` gains an `env: Optional[Any]` field;
+     `save_checkpoint` accepts `env=None` and prefers the threaded env
+     when present. The `pg_registry.load` call survives only as a
+     back-compat fallback for synthetic test configs that don't carry
+     a bundle. Production training-time saves never hit the registry
+     import.
+
+10. **`DomainRandWrapper` duplicate-field replacement composition.**
+    ✅ Closed (commit `848269e`). `_sample_dr_fields` now reads
+    `current_field = replacements.get(spec.field, getattr(model,
+    spec.field))` so multiple specs targeting the same field compose
+    instead of overwriting. Hermetic regression tests in
+    `tests/test_domain_rand_compose.py` (4 tests, CPU only).
+
 ---
 
 ## Pointers
