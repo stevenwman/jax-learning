@@ -108,7 +108,7 @@ verifying them on CI.
 These four are independent. Each is its own session and own PR. Pick
 in priority order or whatever the owner asks for next.
 
-- [ ] **3.1 Synthetic policy_runner test + TDMPC2 rejection** (1 hr) ★ recommended first
+- [x] **3.1 Synthetic policy_runner test + TDMPC2 rejection** (1 hr) ★ recommended first
   - Spec: playbook §"Task 5".
   - Replaces the artifact-fixture-driven test with a hermetic synthetic
     ckpt; adds the consumer-side rejection path coverage codex flagged.
@@ -244,6 +244,13 @@ report.
 - Default-lane test count before/after: `666 passed, 46 skipped, 105 deselected` → `666 passed, 46 skipped, 105 deselected`.
 - Verify deltas: docs canaries held at `224 passed, 46 skipped, 7 deselected`; marker registry still lists `gpu`, `warp`, `go2`, `deploy`, `network`, `slow`; workflow uses `uv sync --group dev --no-group docs` and `JAX_PLATFORMS=cpu` as specified.
 - Deviations/gotchas hit: did not push to a PR branch, per plan/user instruction. CI runtime verification remains owner-push follow-up.
+
+### 2026-04-30 — 3.1 Synthetic policy_runner test + TDMPC2 rejection
+
+- Task commit: `94bc8b13fc2e2b67b3af6385d4410f5b280217a2`
+- Default-lane test count before/after: `666 passed, 46 skipped, 105 deselected` → `667 passed, 46 skipped, 105 deselected`.
+- Verify deltas: `JAX_PLATFORMS=cpu uv run python -m pytest -q deploy/test_policy_runner.py` went from `9 passed` to `10 passed`; docs canaries held at `224 passed, 46 skipped, 7 deselected`; marker registry still lists `gpu`, `warp`, `go2`, `deploy`, `network`, `slow`.
+- Deviations/gotchas hit: derived the synthetic actor pytree from `deploy/policy_runner.py` (`MlpEncoder_0` dense layers plus `GaussianHead_0/Dense_0`) instead of the playbook placeholder; tightened the rejection assertion to `ValueError` after reading `PolicyRunner.__init__`; updated the file's manual `__main__` block to call the renamed/new tests. Default lane increased by one because deploy tests are still in the default lane.
 
 ---
 
