@@ -145,7 +145,7 @@ in priority order or whatever the owner asks for next.
     → 2 passed.
   - Commit: `test(domain_rand): add per-episode DR persistence regression`
 
-- [ ] **3.4 Resume warmup behavioral test** (1 hr)
+- [x] **3.4 Resume warmup behavioral test** (1 hr)
   - Spec: playbook §"Task 8".
   - New file: `tests/test_resume_warmup_behavior.py`.
   - Hardest task in the plan. Use the spy-on-`jax.random.uniform`
@@ -266,6 +266,17 @@ report.
 - Default-lane test count before/after: `671 passed, 46 skipped, 104 deselected` → `673 passed, 46 skipped, 104 deselected`.
 - Verify deltas: `JAX_PLATFORMS=cpu uv run python -m pytest -q tests/test_domain_rand_persistence.py` → `2 passed`; docs canaries held at `224 passed, 46 skipped, 7 deselected`; marker registry still lists `gpu`, `warp`, `go2`, `deploy`, `network`, `slow`.
 - Deviations/gotchas hit: codex completed task commit but skipped step 6 of the workflow (tick box + plan-tick commit). Owner verified all numbers and applied the missing plan tick. New `tests/test_domain_rand_persistence.py` (126 LOC) lives at top of `tests/` per existing convention.
+
+### 2026-04-30 — 3.4 Resume warmup behavioral test
+
+- Task commit: `653656c` (owner takeover after agent loss)
+- Default-lane test count before/after: `673 passed, 46 skipped, 104 deselected` → `675 passed, 46 skipped, 104 deselected`.
+- Verify deltas: `JAX_PLATFORMS=cpu uv run python -m pytest -q tests/test_resume_warmup_behavior.py` → `2 passed`; docs canaries held at `224 passed, 46 skipped, 7 deselected`; marker registry still lists `gpu`, `warp`, `go2`, `deploy`, `network`, `slow`.
+- Deviations/gotchas hit:
+  - Plan expected +1 test, landed +2. Added both `policy` (negative assertion: no random-uniform calls with warmup-action shape) AND `random` (positive assertion: random-uniform IS called) to verify the gate works in both directions. Single-test design would not distinguish "policy mode works" from "uniform never called anywhere."
+  - Skipped the playbook's two-phase "real training run produces real ckpt" approach. `_patch_eval` from 3.2 disables both `maybe_eval_and_checkpoint` and `final_eval_and_checkpoint`, so a phase-1 run can't actually save. Synthesized the resume ckpt directly via `save_checkpoint(...)` on `algo.init()` output + a synthetic `metrics.csv` row with `total_steps=20`. This is sufficient because the test's behavioral claim is about the gate at `offpolicy_loop.py:186`, not the ckpt-save / load round-trip.
+  - Playbook import `jax_rl.training.normalization` is wrong — actual module is `jax_rl.utils.normalization`. Fixed in test.
+  - `_install_uniform_spy` filters by shape `(num_envs, action_dim)` to isolate the warmup-action callsite. SAC's `select_action` uses `jax.random.normal` (Gaussian reparam), not uniform — so no false positives from policy sampling. Other shapes show up in the calls list (e.g., from algo init bookkeeping if any) but get filtered out.
 
 ---
 
