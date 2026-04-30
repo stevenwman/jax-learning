@@ -308,16 +308,21 @@ class DomainRandWrapper(Wrapper):
             replacements = {}
             for spec in self._model_specs:
                 rng, key = jax.random.split(rng)
-                field_data = getattr(model, spec.field)
+                # Compose: when two specs target the same model field (e.g.
+                # geom_friction column 0 + column 1), each spec's op must
+                # build on the previous spec's output, not the unmodified
+                # model field. Without this, the second spec's `at[...].set`
+                # silently discards the first's contribution.
+                current_field = replacements.get(spec.field, getattr(model, spec.field))
 
                 # Determine sample shape
                 if spec.indices is not None:
                     start, stop = spec.indices
-                    target = field_data[start:stop] if spec.column is None else field_data[start:stop, spec.column]
+                    target = current_field[start:stop] if spec.column is None else current_field[start:stop, spec.column]
                 elif spec.column is not None:
-                    target = field_data[:, spec.column]
+                    target = current_field[:, spec.column]
                 else:
-                    target = field_data
+                    target = current_field
 
                 # Sample
                 if spec.per_element:
@@ -340,11 +345,11 @@ class DomainRandWrapper(Wrapper):
                 if spec.indices is not None:
                     start, stop = spec.indices
                     if spec.column is not None:
-                        new_field = field_data.at[start:stop, spec.column].set(new_target)
+                        new_field = current_field.at[start:stop, spec.column].set(new_target)
                     else:
-                        new_field = field_data.at[start:stop].set(new_target)
+                        new_field = current_field.at[start:stop].set(new_target)
                 elif spec.column is not None:
-                    new_field = field_data.at[:, spec.column].set(new_target)
+                    new_field = current_field.at[:, spec.column].set(new_target)
                 else:
                     new_field = new_target
 
