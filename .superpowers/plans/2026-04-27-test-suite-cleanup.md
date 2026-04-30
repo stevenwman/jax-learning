@@ -60,7 +60,7 @@ verifying them on CI.
   - Verify: `pytest -m deploy --collect-only` selects ≥9 tests
     (was 0); default lane count unchanged.
 
-- [ ] **1.2 Delete dead TDMPC2 train smoke tests** (5 min)
+- [x] **1.2 Delete dead TDMPC2 train smoke tests** (5 min)
   - Spec: playbook §"Task 3".
   - `git rm tests/test_train_tdmpc2_h{1,2,3,4,5}.py`
   - Verify: `pytest -m slow --collect-only` collects 10 not 15;
@@ -216,6 +216,13 @@ report.
 - `-m deploy --collect-only`: `0/823` → `11/823` (9 in `deploy/test_policy_runner.py` + 2 stamped in `tests/test_deploy_e2e.py`).
 - Closes audit/playbook drift surfaced by 1.1's deviation note. Playbook Diff 3 updated in same commit so future agents stamp 4 marks not 3. Also added the audit + playbook files to the repo (were untracked despite being the spec the plan points to).
 - No deviations.
+
+### 2026-04-30 — 1.2 Delete dead TDMPC2 train smoke tests
+
+- Task commit: `7fdb406a03d535ece5e50b8aef8625e851f03329`
+- Default-lane test count before/after: `666 passed, 46 skipped, 111 deselected` → `666 passed, 46 skipped, 106 deselected`.
+- Verify deltas: `uv run python -m pytest --collect-only -q -m slow` went from `14/823 collected (809 deselected)` to `9/818 collected (809 deselected)`; docs canaries held at `224 passed, 46 skipped, 7 deselected`; marker registry still lists `gpu`, `warp`, `go2`, `deploy`, `network`, `slow`.
+- Deviations/gotchas hit: playbook's old absolute expectation says slow collect should be `10 not 15`, but after Task 1 moved the arXiv check from `slow` to `network`, the current baseline was `14`; deleting exactly five dead files produced the expected relative delta to `9`.
 
 ---
 
