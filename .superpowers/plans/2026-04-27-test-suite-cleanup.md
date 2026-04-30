@@ -46,6 +46,20 @@ verifying them on CI.
   - Commit: playbook §"Task 1 Commit".
   - **Blocks:** 2.1, and is the verification baseline for 3.x.
 
+- [x] **1.1.5 Stamp deploy marker on deploy-intent tests** (5 min)
+  - Follow-on to 1.1, closes audit/playbook drift. Audit §2 said the
+    2 deploy_e2e warp tests get `[gpu, warp, go2, deploy]`; playbook
+    Diff 3 had only `[gpu, warp, go2]`. `deploy` was a registered
+    marker selecting zero tests post-1.1 — dead taxonomy entry.
+  - Spec: updated playbook §"Task 1 Diff 3" + companion stamp on
+    `deploy/test_policy_runner.py`.
+  - Edits: add `@pytest.mark.deploy` to the 2 named tests in
+    `tests/test_deploy_e2e.py`; add module-level
+    `pytestmark = pytest.mark.deploy` to `deploy/test_policy_runner.py`
+    (after `import pytest`).
+  - Verify: `pytest -m deploy --collect-only` selects ≥9 tests
+    (was 0); default lane count unchanged.
+
 - [ ] **1.2 Delete dead TDMPC2 train smoke tests** (5 min)
   - Spec: playbook §"Task 3".
   - `git rm tests/test_train_tdmpc2_h{1,2,3,4,5}.py`
@@ -194,6 +208,14 @@ report.
 - Default-lane test count before/after: collect-only `808/823 collected (15 deselected)` → `712/823 collected (111 deselected)`; full after-run `666 passed, 46 skipped, 111 deselected`.
 - Verify deltas: marker registry lists `gpu`, `warp`, `go2`, `deploy`, `network`, `slow`; `-m gpu` collects `98/823`; `-m "warp or go2"` collects `82/823`; docs canaries held at `224 passed, 46 skipped, 7 deselected`.
 - Deviations/gotchas hit: current-tree collection counts differ from the audit estimate (`~600` default, `~200` gpu), but the target file hunks matched the playbook and the CPU default lane passed. Audit table mentioned a `deploy` mark on the two deploy E2E tests; playbook Diff 3 literally adds only `gpu`/`warp`/`go2`, so this execution followed the playbook.
+
+### 2026-04-30 — 1.1.5 Stamp deploy marker on deploy-intent tests
+
+- Task commit: `11d2d6213d7c2b3dbd9ad353affa1b4a32313884`
+- Default-lane test count: `712/823 collected (111 deselected)` unchanged; full run `666 passed, 46 skipped, 111 deselected, 122s` — no regression.
+- `-m deploy --collect-only`: `0/823` → `11/823` (9 in `deploy/test_policy_runner.py` + 2 stamped in `tests/test_deploy_e2e.py`).
+- Closes audit/playbook drift surfaced by 1.1's deviation note. Playbook Diff 3 updated in same commit so future agents stamp 4 marks not 3. Also added the audit + playbook files to the repo (were untracked despite being the spec the plan points to).
+- No deviations.
 
 ---
 
