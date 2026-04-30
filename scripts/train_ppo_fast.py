@@ -86,7 +86,7 @@ def train(cfg: TrainConfig, seed: int = 0, resume: str | None = None,
     num_iterations = cfg.total_timesteps // samples_per_iter
 
     print("=" * 80)
-    print(f"PPO (fast/scan) — {cfg.env_name} (MuJoCo Playground)")
+    print(f"PPO (fast/scan) — {cfg.env_name} (mjx-only, full lax.scan rollout)")
     print("=" * 80)
     print(f"  obs_dim={obs_dim}, critic_obs_dim={critic_obs_dim}, action_dim={action_dim}")
     print(f"  num_envs={cfg.num_envs}, num_steps={ppo_cfg.num_steps}, "
@@ -461,7 +461,7 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Environment name (e.g., CartpoleBalance, CheetahRun, Go2WarpJoystickFlat)")
     parser.add_argument("--seed", type=int, default=0, help="Random seed")
     parser.add_argument("--resume", type=str, default=None,
-                        help="Resume from checkpoint directory path")
+                        help="Warm-start from checkpoint: restores weights + opt state + norm state. Replay buffer is NOT persisted; refilled with loaded policy actions per --resume-warmup. Not exact training continuation.")
     parser.add_argument("--num-envs", type=int, default=None,
                         help="Number of parallel environments (default: from env preset)")
     parser.add_argument("--num-steps", type=int, default=None,

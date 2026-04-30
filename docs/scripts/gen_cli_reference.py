@@ -24,6 +24,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 # Order matters — this is the rendering order in cli-flags.md.
 SCRIPTS: list[tuple[str, str]] = [
+    ("train_ppo.py",             "scripts.train_ppo"),
     ("train_ppo_fast.py",        "scripts.train_ppo_fast"),
     ("train_ppo_contraction.py", "scripts.train_ppo_contraction"),
     ("train_sac.py",             "scripts.train_sac"),

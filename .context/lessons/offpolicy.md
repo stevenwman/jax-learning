@@ -199,6 +199,38 @@ If Q bias is meaningfully negative on a long-horizon task, either (a) the trunca
 
 ---
 
+## Resume = Warm-Start, Not Exact Continuation (Policy)
+
+**Decision (2026-04-27):** off-policy `--resume` is warm-start, not full
+continuation. Replay buffer is NOT persisted by design.
+
+**What's persisted:** weights, optimizer state, BN running stats, log_alpha,
+Zeta noise state, reward_norm_state, obs/critic norm state. All ride inside
+`training_state` + `norm_state` and orbax saves them at
+[`checkpointing.py:save_checkpoint`](../../jax_rl/training/checkpointing.py).
+
+**What's NOT persisted:** replay buffer, env state, RNG keys, EpisodeTracker
+counters, W&B run id. Buffer would be the biggest add (~30-460 MB per save
+depending on env) and resume use is rare in practice. The cost-benefit
+landed against persistence.
+
+**The mitigation we DID ship:** `--resume-warmup {policy,random}` flag,
+default `policy`. On resume, the warmup gate refills the buffer using the
+loaded policy's actions instead of random uniform — same gate threshold
+(`min_buffer_size`), no extra storage, much smaller first-eval drop.
+
+**CLI naming convention:** `--resume` help text says "Warm-start from
+checkpoint" not "resume training" anywhere outside of code internals. The
+flag name stays `--resume` for backwards compat with existing scripts and
+ckpt dirs, but operator-facing language is "warm-start" because that's
+what it actually does.
+
+**If exact continuation ever becomes a real need:** see Phase 9 of
+`.superpowers/plans/2026-04-25-structural-hardening.md` — owner-gated full
+resume implementation. Not implemented; not on roadmap.
+
+---
+
 ## Resume Warmup: Random Actions Corrupt the Buffer (2026-04-26)
 
 **Problem:** Resuming a converged off-policy ckpt drops the first eval — mild on locomotion (FastSAC Go2: 268→254, ~14 pt), severe on high-precision tasks (FlashSAC CartpoleBalance: 996→747, ~250 pt).

@@ -72,7 +72,7 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Environment name (e.g., CheetahRun, HumanoidRun, Go2WarpJoystickFlat)")
     parser.add_argument("--seed", type=int, default=0, help="Random seed")
     parser.add_argument("--resume", type=str, default=None,
-                        help="Resume from checkpoint directory path")
+                        help="Warm-start from checkpoint: restores weights + opt state + norm state. Replay buffer is NOT persisted; refilled with loaded policy actions per --resume-warmup. Not exact training continuation.")
     parser.add_argument("--resume-warmup", type=str, default="policy",
                         choices=["policy", "random"],
                         help="On resume, refill buffer using loaded policy actions "

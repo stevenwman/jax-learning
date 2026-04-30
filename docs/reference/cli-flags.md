@@ -8,13 +8,40 @@ uv run python docs/scripts/gen_cli_reference.py
 
 ---
 
+## `train_ppo.py`
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--env` | str | `CartpoleBalance` | Environment name (e.g., CartpoleBalance, CheetahRun, Go2WarpJoystickFlat) |
+| `--seed` | int | `0` | Random seed |
+| `--resume` | str | - | Warm-start from checkpoint directory: restores weights + opt state + norm state. Replay buffer is NOT persisted; refilled with loaded policy actions per --resume-warmup. Not exact training continuation. |
+| `--num-envs` | int | from preset | Number of parallel environments (default: from env preset) |
+| `--num-steps` | int | from preset | Rollout steps per env before each update (default: from preset) |
+| `--num-updates-per-batch` | int | from preset | SGD epochs over collected rollout data (default: from preset) |
+| `--total-timesteps` | int | from preset | Total environment steps to train (default: from env preset) |
+| `--lr` | float | from preset | Learning rate (default: from preset) |
+| `--policy-hidden-dim` | int+ | - | Actor network hidden layer sizes (e.g., 256 256) |
+| `--value-hidden-dim` | int+ | - | Critic network hidden layer sizes (e.g., 256 256) |
+| `--entropy-coef` | float | - | Entropy bonus coefficient (higher = more exploration) |
+| `--reward-scaling` | float | - | Multiply rewards by this factor (default: 1.0) |
+| `--episode-length` | int | from preset | Max steps per episode (default: from env preset) |
+| `--log-interval` | int | - | Print training stats every N iterations |
+| `--eval-every` | int | - | Evaluate every N episodes (default: every 512 episodes) |
+| `--wandb` | flag | off | Enable W&B experiment tracking |
+| `--wandb-project` | str | `jax-rl` | W&B project name (default: jax-rl) |
+| `--frame-stack` | int | - | Number of stacked observation frames (default: 1, use 3 for locomotion) |
+| `--action-delay-ms` | int | - | Fixed action delay in ms (e.g., 120 for Go2 sim2real) |
+| `--action-delay-range-ms` | int int | - | Randomized action delay range in ms (e.g., 40 120) |
+
+---
+
 ## `train_ppo_fast.py`
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--env` | str | `CartpoleBalance` | Environment name (e.g., CartpoleBalance, CheetahRun, Go2WarpJoystickFlat) |
 | `--seed` | int | `0` | Random seed |
-| `--resume` | str | - | Resume from checkpoint directory path |
+| `--resume` | str | - | Warm-start from checkpoint: restores weights + opt state + norm state. Replay buffer is NOT persisted; refilled with loaded policy actions per --resume-warmup. Not exact training continuation. |
 | `--num-envs` | int | from preset | Number of parallel environments (default: from env preset) |
 | `--num-steps` | int | from preset | Rollout steps per env before each update (default: from preset) |
 | `--num-updates-per-batch` | int | from preset | SGD epochs over collected rollout data (default: from preset) |
@@ -66,7 +93,7 @@ uv run python docs/scripts/gen_cli_reference.py
 |------|------|---------|-------------|
 | `--env` | str | `WalkerWalk` | Environment name (e.g., CheetahRun, HumanoidRun, Go2WarpJoystickFlat) |
 | `--seed` | int | `0` | Random seed |
-| `--resume` | str | - | Resume from checkpoint directory path |
+| `--resume` | str | - | Warm-start from checkpoint: restores weights + opt state + norm state. Replay buffer is NOT persisted; refilled with loaded policy actions per --resume-warmup. Not exact training continuation. |
 | `--resume-warmup` | str | `policy` | On resume, refill buffer using loaded policy actions (default, prevents eval drop) or legacy random uniform |
 | `--num-envs` | int | from preset | Number of parallel environments (default: from env preset) |
 | `--total-timesteps` | int | from preset | Total environment steps to train (default: from env preset) |
@@ -91,7 +118,7 @@ uv run python docs/scripts/gen_cli_reference.py
 |------|------|---------|-------------|
 | `--env` | str | `WalkerWalk` | Environment name (e.g., CheetahRun, HumanoidRun, Go2WarpJoystickFlat) |
 | `--seed` | int | `0` | Random seed |
-| `--resume` | str | - | Resume from checkpoint directory path |
+| `--resume` | str | - | Warm-start from checkpoint: restores weights + opt state + norm state. Replay buffer is NOT persisted; refilled with loaded policy actions per --resume-warmup. Not exact training continuation. |
 | `--resume-warmup` | str | `policy` | On resume, refill buffer using loaded policy actions (default, prevents eval drop) or legacy random uniform |
 | `--num-envs` | int | from preset | Number of parallel environments (default: from env preset) |
 | `--total-timesteps` | int | from preset | Total environment steps to train (default: from env preset) |
@@ -116,7 +143,7 @@ uv run python docs/scripts/gen_cli_reference.py
 |------|------|---------|-------------|
 | `--env` | str | `WalkerWalk` | Environment name (e.g., CheetahRun, HumanoidRun, Go2WarpJoystickFlat) |
 | `--seed` | int | `0` | Random seed |
-| `--resume` | str | - | Resume from checkpoint directory path |
+| `--resume` | str | - | Warm-start from checkpoint: restores weights + opt state + norm state. Replay buffer is NOT persisted; refilled with loaded policy actions per --resume-warmup. Not exact training continuation. |
 | `--resume-warmup` | str | `policy` | On resume, refill buffer using loaded policy actions (default, prevents eval drop) or legacy random uniform |
 | `--num-envs` | int | from preset | Number of parallel environments (default: from env preset) |
 | `--total-timesteps` | int | from preset | Total environment steps to train (default: from env preset) |
@@ -144,7 +171,7 @@ uv run python docs/scripts/gen_cli_reference.py
 |------|------|---------|-------------|
 | `--env` | str | `WalkerWalk` | Environment name (e.g., CheetahRun, HumanoidRun, Go2WarpJoystickFlat) |
 | `--seed` | int | `0` | Random seed |
-| `--resume` | str | - | Resume from checkpoint directory path |
+| `--resume` | str | - | Warm-start from checkpoint: restores weights + opt state + norm state. Replay buffer is NOT persisted; refilled with loaded policy actions per --resume-warmup. Not exact training continuation. |
 | `--resume-warmup` | str | `policy` | On resume, refill buffer using loaded policy actions (default, prevents eval drop) or legacy random uniform |
 | `--num-envs` | int | from preset | Number of parallel environments (default: from env preset) |
 | `--total-timesteps` | int | from preset | Total environment steps to train (default: from env preset) |
@@ -172,7 +199,7 @@ uv run python docs/scripts/gen_cli_reference.py
 |------|------|---------|-------------|
 | `--env` | str | `CartpoleBalance` | Environment name (e.g., CartpoleBalance, CheetahRun, Go2WarpJoystickFlat) |
 | `--seed` | int | `0` | Random seed |
-| `--resume` | str | - | Resume from checkpoint directory path |
+| `--resume` | str | - | Warm-start from checkpoint: restores weights + opt state + norm state. Replay buffer is NOT persisted; refilled with loaded policy actions per --resume-warmup. Not exact training continuation. |
 | `--resume-warmup` | str | `policy` | On resume, refill buffer using loaded policy actions (default, prevents eval drop) or legacy random uniform |
 | `--num-envs` | int | - | Number of parallel environments |
 | `--total-timesteps` | int | - | Total environment steps to train |
@@ -248,6 +275,9 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--max-steps` | int | `1000` |  |
 | `--camera` | str | - |  |
 | `--seed` | int | `0` | Random seed for env reset |
+| `--varied-cmds` | int | `0` | Resample uniform velocity command every N steps (75=1.5s at 50Hz). Mutually exclusive with --kicks. |
+| `--cmd-max` | float | `[1.5, 0.8, 1.2]` | Symmetric ranges for --varied-cmds uniform sampler (default 1.5/0.8/1.2 — env's command_config.a). |
+| `--cam-distance` | float | `6.0` | Free-camera tracking distance (default 6.0; use 3.0 for closer view). |
 | `--kicks` | flag | off | Zero velocity command + random velocity kicks every 1.5s |
 | `--force-zero-linvel` | flag | off | Curriculum Class A only: force cmd_vx=cmd_vy=0 for the whole episode (DR sanity check) |
 | `--force-zero-yaw` | flag | off | Curriculum: force cmd_yaw_rate=0 for the whole episode (DR sanity check) |

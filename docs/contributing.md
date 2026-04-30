@@ -17,8 +17,14 @@ uv run python -c "import jax; print(jax.devices())"
 ## Running Tests
 
 ```bash
-# Full test suite (~299 tests)
-uv run python -m pytest tests/ -v
+# Default suite (~800 tests, hermetic where possible). Note: some Warp/Go2/MJX
+# tests collected by default still need GPU + may OOM on a constrained card —
+# pytest marker taxonomy split is in flight (see .context/lessons/algo_port_protocol.md §9).
+uv run python -m pytest tests/ -q
+
+# CPU-safe core (works without GPU, fast)
+JAX_PLATFORMS=cpu uv run python -m pytest tests/test_docs_drift.py tests/test_docs_code_blocks.py \
+    tests/test_polyak.py tests/test_replay_buffer.py tests/test_artifact_contract.py -q
 
 # Run a specific test file
 uv run python -m pytest tests/test_replay_buffer.py -v

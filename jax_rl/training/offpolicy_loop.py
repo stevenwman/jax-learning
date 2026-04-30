@@ -79,7 +79,7 @@ def run_offpolicy_loop(
 
     # ── Banner ─────────────────────────────────────────────────────────────
     print("=" * 80)
-    print(f"{algo_name.upper()} — {cfg.env_name} (MuJoCo Playground)")
+    print(f"{algo_name.upper()} — {cfg.env_name} (backend={env_bundle.backend_kind})")
     print("=" * 80)
     print(f"  obs_dim={obs_dim}, action_dim={action_dim}")
     if num_envs != cfg.num_envs:
