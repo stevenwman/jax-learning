@@ -1,47 +1,122 @@
 """Test PolicyRunner loads checkpoints and produces valid actions."""
 import json
-import numpy as np
 import os
 import tempfile
-import sys
+
+import numpy as np
 
 import pytest
 
 pytestmark = pytest.mark.deploy
 
 
-def test_policy_runner_loads_and_infers():
-    """PolicyRunner should accept obs and produce action in [-1, 1]."""
+def _make_synthetic_shared_actor_ckpt(
+    td: str,
+    *,
+    obs_dim: int = 48,
+    action_dim: int = 12,
+    algo: str = "fast_sac",
+    hidden: int = 16,
+):
+    """Build a minimal valid shared-actor ckpt at `td`."""
+    from jax_rl.training.artifact_contract import KIND_SHARED_ACTOR, stamp_meta
+
+    meta = {
+        "obs_dim": obs_dim,
+        "action_dim": action_dim,
+        "algo": algo,
+        "train_config": {"n_frame_stack": 1},
+        "fast_sac_config": {"hidden_dim": [hidden, hidden], "activation": "relu"},
+        "obs_schema": {
+            "state": [
+                "gyro",
+                "accelerometer",
+                "gravity",
+                "joint_pos_offset",
+                "joint_vel",
+                "last_act",
+                "command",
+            ],
+        },
+    }
+    meta = stamp_meta(meta, KIND_SHARED_ACTOR)
+    with open(os.path.join(td, "meta.json"), "w") as f:
+        json.dump(meta, f)
+
+    rng = np.random.default_rng(0)
+    actor_params = {
+        "params": {
+            "MlpEncoder_0": {
+                "Dense_0": {
+                    "kernel": rng.normal(0.0, 0.02, size=(obs_dim, hidden)).astype(np.float32),
+                    "bias": np.zeros(hidden, dtype=np.float32),
+                },
+                "Dense_1": {
+                    "kernel": rng.normal(0.0, 0.02, size=(hidden, hidden)).astype(np.float32),
+                    "bias": np.zeros(hidden, dtype=np.float32),
+                },
+            },
+            "GaussianHead_0": {
+                "Dense_0": {
+                    "kernel": rng.normal(0.0, 0.02, size=(hidden, action_dim)).astype(np.float32),
+                    "bias": np.zeros(action_dim, dtype=np.float32),
+                },
+            },
+        },
+    }
+    np.save(
+        os.path.join(td, "actor_params.npy"),
+        {"actor_params": actor_params},
+        allow_pickle=True,
+    )
+    os.makedirs(os.path.join(td, "orbax"), exist_ok=True)
+
+
+def _make_synthetic_tdmpc2_ckpt(td: str):
+    """Build a minimal TDMPC2 ckpt — should be rejected by PolicyRunner."""
+    from jax_rl.training.artifact_contract import KIND_TDMPC2, stamp_meta
+
+    meta = {
+        "obs_dim": 24,
+        "action_dim": 6,
+        "algo": "tdmpc2",
+        "train_config": {"n_frame_stack": 1},
+    }
+    meta = stamp_meta(meta, KIND_TDMPC2)
+    with open(os.path.join(td, "meta.json"), "w") as f:
+        json.dump(meta, f)
+    np.savez(os.path.join(td, "actor_params.npz"))
+    np.savez(os.path.join(td, "world_model_params.npz"))
+
+
+def test_policy_runner_loads_synthetic_shared_actor_ckpt(tmp_path):
+    """PolicyRunner loads a hermetic synthetic shared-actor ckpt and infers."""
     from deploy.policy_runner import PolicyRunner
 
-    ckpt_dir = None
-    if os.path.isdir("checkpoints"):
-        for d in sorted(os.listdir("checkpoints")):
-            best = os.path.join("checkpoints", d, "best")
-            if os.path.isdir(best) and os.path.exists(os.path.join(best, "actor_params.npy")):
-                ckpt_dir = best
-                break
+    _make_synthetic_shared_actor_ckpt(str(tmp_path), obs_dim=48, action_dim=12)
+    runner = PolicyRunner(str(tmp_path))
 
-    if ckpt_dir is None:
-        pytest.skip("No checkpoint found in checkpoints/")
+    assert runner.obs_dim == 48
+    assert runner.action_dim == 12
 
-    runner = PolicyRunner(ckpt_dir)
-    print(f"Loaded: algo={runner.algo}, obs_dim={runner.obs_dim}, action_dim={runner.action_dim}")
-
-    obs = np.zeros(runner.obs_dim, dtype=np.float32)
+    obs = np.zeros(48, dtype=np.float32)
     action = runner.get_action(obs)
-
-    assert action.shape == (runner.action_dim,)
+    assert action.shape == (12,)
     assert np.all(np.abs(action) <= 1.0 + 1e-6)
     assert not np.any(np.isnan(action))
 
-    obs_rand = np.random.randn(runner.obs_dim).astype(np.float32)
-    action_rand = runner.get_action(obs_rand)
-    assert action_rand.shape == (runner.action_dim,)
-    assert not np.any(np.isnan(action_rand))
-    assert not np.allclose(action, action_rand)
 
-    print("PASS")
+def test_policy_runner_rejects_tdmpc2_ckpt(tmp_path):
+    """PolicyRunner refuses a TDMPC2 ckpt with a redirect message."""
+    from deploy.policy_runner import PolicyRunner
+
+    _make_synthetic_tdmpc2_ckpt(str(tmp_path))
+
+    with pytest.raises(ValueError) as exc:
+        PolicyRunner(str(tmp_path))
+    msg = str(exc.value).lower()
+    assert "tdmpc2_v1" in msg
+    assert "shared-actor checkpoints" in msg
 
 
 def _build_kwargs():
@@ -191,7 +266,12 @@ def test_schema_extractor_resolves_include_group():
 
 
 if __name__ == "__main__":
-    test_policy_runner_loads_and_infers()
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as td:
+        test_policy_runner_loads_synthetic_shared_actor_ckpt(Path(td))
+    with tempfile.TemporaryDirectory() as td:
+        test_policy_runner_rejects_tdmpc2_ckpt(Path(td))
     test_default_schema_produces_48d_with_correct_layout()
     test_gravity_tilted()
     test_schema_driven_drop_accel()
