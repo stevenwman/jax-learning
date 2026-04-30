@@ -230,6 +230,7 @@ def train(cfg: TrainConfig, algo_cfg: FlashSACConfig, seed: int = 0,
         ckpt_dir=ckpt_dir, obs_dim=obs_dim, action_dim=action_dim,
         metrics_log=metrics_log, ckpt_mgr=ckpt_mgr, resume=resume,
         backend_kind=bundle.backend_kind,
+        env=bundle.env,
     )
 
     log_extra_fields = [("Ent", "entropy", ".3f"), ("Alpha", "alpha", ".4f"),

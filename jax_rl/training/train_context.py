@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 
 from jax_rl.configs.train_config import TrainConfig
 from jax_rl.training.checkpointing import CheckpointManager
@@ -18,3 +18,8 @@ class TrainContext:
     ckpt_mgr: CheckpointManager
     resume: str | None = None
     backend_kind: str = "mjx"   # "mjx" | "gym" | "isaaclab" — dispatches eval path
+    # Pre-loaded env handle from EnvBundle. Threaded into save_checkpoint so it
+    # can read env metadata (DR specs / obs schema / control) without
+    # re-importing mujoco_playground.registry. Optional for back-compat —
+    # save_checkpoint falls back to the registry probe when this is None.
+    env: Optional[Any] = None

@@ -30,17 +30,18 @@ class CheckpointManager:
     def save(self, training_state, norm_state, cfg, algo_cfg,
              algo_name, obs_dim, action_dim, metrics_log, resume=None,
              eval_mean: float | None = None,
-             critic_norm_state: NormalizationState | None = None) -> bool:
+             critic_norm_state: NormalizationState | None = None,
+             env=None) -> bool:
         """Save latest checkpoint. Returns True if new best."""
         save_checkpoint(self.ckpt_dir, training_state, norm_state, cfg, algo_cfg,
                         algo_name, obs_dim, action_dim, metrics_log, resume,
-                        critic_norm_state=critic_norm_state)
+                        critic_norm_state=critic_norm_state, env=env)
         is_best = False
         if eval_mean is not None and eval_mean > self.best_eval:
             self.best_eval = eval_mean
             save_checkpoint(self.best_dir, training_state, norm_state, cfg, algo_cfg,
                             algo_name, obs_dim, action_dim, metrics_log, resume,
-                            critic_norm_state=critic_norm_state)
+                            critic_norm_state=critic_norm_state, env=env)
             is_best = True
         return is_best
 
@@ -57,6 +58,7 @@ def save_checkpoint(
     metrics_log: list[dict],
     resume: str | None,
     critic_norm_state: NormalizationState | None = None,
+    env=None,
 ) -> None:
     """Save meta.json + metrics.csv + actor_params.npy + orbax checkpoint.
 
@@ -108,13 +110,20 @@ def save_checkpoint(
         pass
 
     # DR specs + obs schema + deploy control metadata (if env declares them).
-    # Single env load for all three. For deployable Go2 envs, missing
-    # obs_schema or control metadata is a hard failure — silent loss is the
-    # exact bug that produced the 2026-04-10 → 2026-04-24 deploy drift.
+    # Prefer the pre-loaded env passed by the caller (from EnvBundle); fall
+    # back to a fresh `pg_registry.load(cfg.env_name)` only when no env is
+    # threaded through. The fallback is a back-compat path for callers that
+    # don't yet plumb the bundle (and for test harnesses constructing
+    # synthetic configs).
+    #
+    # For deployable Go2 envs, missing obs_schema or control metadata is a
+    # hard failure — silent loss is the bug that produced the 2026-04-10 →
+    # 2026-04-24 deploy drift.
     is_go2 = "go2" in cfg.env_name.lower()
     try:
-        from mujoco_playground import registry as pg_registry
-        env = pg_registry.load(cfg.env_name)
+        if env is None:
+            from mujoco_playground import registry as pg_registry
+            env = pg_registry.load(cfg.env_name)
         if hasattr(env, 'get_domain_randomization_spec'):
             specs = env.get_domain_randomization_spec()
             meta["dr_specs"] = [

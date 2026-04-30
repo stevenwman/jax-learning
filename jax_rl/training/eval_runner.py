@@ -82,6 +82,7 @@ def maybe_eval_and_checkpoint(
             ctx.algo_name, ctx.obs_dim, ctx.action_dim, metrics_log, ctx.resume,
             eval_mean=eval_metrics['eval_mean'],
             critic_norm_state=critic_norm_state,
+            env=ctx.env,
         )
         if is_best:
             print(f"  New best! eval={ctx.ckpt_mgr.best_eval:.1f}")
@@ -90,7 +91,7 @@ def maybe_eval_and_checkpoint(
     else:
         save_checkpoint(ctx.ckpt_dir, training_state, norm_state, cfg, ctx.algo_cfg,
                         ctx.algo_name, ctx.obs_dim, ctx.action_dim, metrics_log, ctx.resume,
-                        critic_norm_state=critic_norm_state)
+                        critic_norm_state=critic_norm_state, env=ctx.env)
         print(f"  Checkpoint saved to {ctx.ckpt_dir}")
 
     return n_eps, key
@@ -131,13 +132,14 @@ def final_eval_and_checkpoint(
             ctx.algo_name, ctx.obs_dim, ctx.action_dim, metrics_log, ctx.resume,
             eval_mean=eval_metrics['eval_mean'],
             critic_norm_state=critic_norm_state,
+            env=ctx.env,
         )
         if is_best:
             print(f"  New best! eval={ctx.ckpt_mgr.best_eval:.1f}")
     else:
         save_checkpoint(ctx.ckpt_dir, training_state, norm_state, cfg, ctx.algo_cfg,
                         ctx.algo_name, ctx.obs_dim, ctx.action_dim, metrics_log, ctx.resume,
-                        critic_norm_state=critic_norm_state)
+                        critic_norm_state=critic_norm_state, env=ctx.env)
 
     print("=" * 80)
     print("Training complete.")
