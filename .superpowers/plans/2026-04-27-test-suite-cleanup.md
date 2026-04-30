@@ -89,7 +89,7 @@ verifying them on CI.
 
 ## Phase 2 — CI gate
 
-- [ ] **2.1 Add CPU-only GitHub Actions pytest workflow** (30 min)
+- [x] **2.1 Add CPU-only GitHub Actions pytest workflow** (30 min)
   - Spec: playbook §"Task 9".
   - New file: `.github/workflows/tests.yml`.
   - Use the YAML in playbook §"Task 9 Diff" verbatim. Watch the
@@ -237,6 +237,13 @@ report.
 - Default-lane test count before/after: `666 passed, 46 skipped, 105 deselected` → `666 passed, 46 skipped, 105 deselected`.
 - Verify deltas: `uv run python -m mkdocs build --strict` completed; docs canaries held at `224 passed, 46 skipped, 7 deselected`; marker registry still lists `gpu`, `warp`, `go2`, `deploy`, `network`, `slow`.
 - Deviations/gotchas hit: none. The stale default-suite text was replaced with the marker-based invocations from playbook Task 10.
+
+### 2026-04-30 — 2.1 Add CPU-only GitHub Actions pytest workflow
+
+- Task commit: `f9258e68a727f683ffd24b2a07a752ed73422612`
+- Default-lane test count before/after: `666 passed, 46 skipped, 105 deselected` → `666 passed, 46 skipped, 105 deselected`.
+- Verify deltas: docs canaries held at `224 passed, 46 skipped, 7 deselected`; marker registry still lists `gpu`, `warp`, `go2`, `deploy`, `network`, `slow`; workflow uses `uv sync --group dev --no-group docs` and `JAX_PLATFORMS=cpu` as specified.
+- Deviations/gotchas hit: did not push to a PR branch, per plan/user instruction. CI runtime verification remains owner-push follow-up.
 
 ---
 
