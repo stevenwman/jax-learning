@@ -133,7 +133,7 @@ in priority order or whatever the owner asks for next.
     → 4 passed, 1 deselected.
   - Commit: `test(offpolicy): fix EnvBundle.num_envs bug; add stub-env loop smoke for sac/td3/fast_sac/fast_td3`
 
-- [ ] **3.3 DomainRand per-episode persistence regression test** (1 hr)
+- [x] **3.3 DomainRand per-episode persistence regression test** (1 hr)
   - Spec: playbook §"Task 7".
   - New file: `tests/test_domain_rand_persistence.py`.
   - Reuses the mock-wrapper pattern from `tests/test_domain_rand_compose.py`
@@ -258,6 +258,14 @@ report.
 - Default-lane test count before/after: `667 passed, 46 skipped, 105 deselected` → `671 passed, 46 skipped, 104 deselected`.
 - Verify deltas: pre-fix red check reproduced the `EnvBundle.num_envs=1` broadcast failure in `test_run_offpolicy_loop_stub_env_cpu`; `JAX_PLATFORMS=cpu uv run python -m pytest -q tests/test_offpolicy_loop.py` now reports `4 passed, 1 deselected`; docs canaries held at `224 passed, 46 skipped, 7 deselected`; marker registry still lists `gpu`, `warp`, `go2`, `deploy`, `network`, `slow`.
 - Deviations/gotchas hit: extracted `_stub_env_bundle`, `_common_cfg`, and `_patch_eval` into `tests/_loop_helpers.py` for 3.4 reuse; kept four explicit sibling tests instead of parametrization; removed the module-level `gpu` mark and marked only the slow Cheetah smoke with `gpu`; used empty `log_extra_fields`/`log_extra_keys` for TD3/FastTD3; shrank FastSAC/FastTD3 critic dims and atom count for CPU-smoke speed while preserving constructor paths.
+
+### 2026-04-30 — 3.3 DomainRand per-episode persistence regression test
+
+- Task commit: `5742f62c4a75a9b65f7f7725bc3b9da6727eee29`
+- Plan tick: filed by owner takeover (codex landed task commit but didn't tick the box or commit plan update).
+- Default-lane test count before/after: `671 passed, 46 skipped, 104 deselected` → `673 passed, 46 skipped, 104 deselected`.
+- Verify deltas: `JAX_PLATFORMS=cpu uv run python -m pytest -q tests/test_domain_rand_persistence.py` → `2 passed`; docs canaries held at `224 passed, 46 skipped, 7 deselected`; marker registry still lists `gpu`, `warp`, `go2`, `deploy`, `network`, `slow`.
+- Deviations/gotchas hit: codex completed task commit but skipped step 6 of the workflow (tick box + plan-tick commit). Owner verified all numbers and applied the missing plan tick. New `tests/test_domain_rand_persistence.py` (126 LOC) lives at top of `tests/` per existing convention.
 
 ---
 
