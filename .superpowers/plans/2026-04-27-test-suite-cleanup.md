@@ -67,7 +67,7 @@ verifying them on CI.
     default lane unchanged.
   - Commit: playbook §"Task 3 Commit".
 
-- [ ] **1.3 Delete or rewrite test_tdmpc2_i3_eval_isolation.py** (5 min delete / 30 min rewrite)
+- [x] **1.3 Delete or rewrite test_tdmpc2_i3_eval_isolation.py** (5 min delete / 30 min rewrite)
   - Spec: playbook §"Task 4". **Default to Option A (delete).**
   - If owner has not explicitly requested Option B (rewrite to use
     in-process import from `scripts.train_tdmpc2`), do Option A and
@@ -223,6 +223,13 @@ report.
 - Default-lane test count before/after: `666 passed, 46 skipped, 111 deselected` → `666 passed, 46 skipped, 106 deselected`.
 - Verify deltas: `uv run python -m pytest --collect-only -q -m slow` went from `14/823 collected (809 deselected)` to `9/818 collected (809 deselected)`; docs canaries held at `224 passed, 46 skipped, 7 deselected`; marker registry still lists `gpu`, `warp`, `go2`, `deploy`, `network`, `slow`.
 - Deviations/gotchas hit: playbook's old absolute expectation says slow collect should be `10 not 15`, but after Task 1 moved the arXiv check from `slow` to `network`, the current baseline was `14`; deleting exactly five dead files produced the expected relative delta to `9`.
+
+### 2026-04-30 — 1.3 Delete or rewrite test_tdmpc2_i3_eval_isolation.py
+
+- Task commit: `1545aa4a9b602a604b226a59cd26fb8d35b66d4e`
+- Default-lane test count before/after: `666 passed, 46 skipped, 106 deselected` → `666 passed, 46 skipped, 105 deselected`.
+- Verify deltas: `uv run python -m pytest --collect-only -q -m slow` went from `9/818 collected (809 deselected)` to `8/817 collected (809 deselected)`; docs canaries held at `224 passed, 46 skipped, 7 deselected`; marker registry still lists `gpu`, `warp`, `go2`, `deploy`, `network`, `slow`.
+- Deviations/gotchas hit: used Option A delete per plan/user direction. The playbook's old absolute expectation says slow collect should be `9 not 10`; after 1.2's current baseline was already `9`, deleting one additional slow test produced the expected relative delta to `8`.
 
 ---
 
