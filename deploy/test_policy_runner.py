@@ -7,6 +7,8 @@ import sys
 
 import pytest
 
+pytestmark = pytest.mark.deploy
+
 
 def test_policy_runner_loads_and_infers():
     """PolicyRunner should accept obs and produce action in [-1, 1]."""
