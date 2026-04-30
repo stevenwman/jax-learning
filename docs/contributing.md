@@ -14,24 +14,26 @@ uv sync --group dev
 uv run python -c "import jax; print(jax.devices())"
 ```
 
-## Running Tests
+## Tests
+
+The default lane is CPU-only and hermetic — runs ~600 tests in 1-2 min:
 
 ```bash
-# Default suite (~800 tests, hermetic where possible). Note: some Warp/Go2/MJX
-# tests collected by default still need GPU + may OOM on a constrained card —
-# pytest marker taxonomy split is in flight (see .context/lessons/algo_port_protocol.md §9).
-uv run python -m pytest tests/ -q
-
-# CPU-safe core (works without GPU, fast)
-JAX_PLATFORMS=cpu uv run python -m pytest tests/test_docs_drift.py tests/test_docs_code_blocks.py \
-    tests/test_polyak.py tests/test_replay_buffer.py tests/test_artifact_contract.py -q
-
-# Run a specific test file
-uv run python -m pytest tests/test_replay_buffer.py -v
-
-# Run a specific test
-uv run python -m pytest tests/test_replay_buffer.py::test_add_and_sample -v
+uv run python -m pytest
 ```
+
+To run subsets:
+
+```bash
+uv run python -m pytest -m gpu              # MJX/CUDA tests (~200)
+uv run python -m pytest -m "warp or go2"   # Go2 Warp surface (~70)
+uv run python -m pytest -m deploy           # Deploy contract tests
+uv run python -m pytest -m "not network"   # Everything except network-bound
+uv run python -m pytest -m slow             # Long-running (CPU or GPU)
+```
+
+Markers are defined in `pyproject.toml`. See `pytest --markers` for
+the live list with descriptions.
 
 ## Code Style
 
