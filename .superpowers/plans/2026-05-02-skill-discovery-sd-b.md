@@ -12,7 +12,7 @@
 
 ## Goal
 
-Stand up a working DIAYN training loop on CheetahRun (MJX) using vanilla SAC + the SD-A `SkillManager`. Replicate DIAYN App. D.4-style behavior: rising discriminator accuracy + per-skill task-return diversity + qualitatively distinct rendered behaviors per fixed skill.
+Stand up a working DIAYN training loop on CheetahRun (MJX) using vanilla SAC + the SD-A `SkillManager`. Replicate DIAYN App. D.3-style behavior: rising discriminator accuracy + per-skill task-return diversity + qualitatively distinct rendered behaviors per fixed skill.
 
 **Out of scope for SD-B:**
 - METRA (deferred to SD-E)
@@ -24,11 +24,11 @@ Stand up a working DIAYN training loop on CheetahRun (MJX) using vanilla SAC + t
 
 ## Algo choice — vanilla SAC for SD-B
 
-Spec §SD-B "Initial algorithm scope" reads `algo: FastSAC only`. **We override here** to vanilla SAC for SD-B because:
+Spec §SD-B "Initial algorithm scope" reads `algo: FastSAC only`. **We override here** to vanilla SAC for SD-B. Rationale, in priority order:
 
-1. FastSAC's C51 categorical critic uses fixed `V_min`/`V_max` bins. DIAYN intrinsic reward `log q(z|s) − log p(z)` is unbounded as the discriminator sharpens; with `gamma=0.99` discounted return can pin the upper bin and lose resolution. Empirical bin tuning is a separate optimization problem that would slow SD-B's plumbing-validation goal.
-2. Vanilla SAC's scalar Q dodges the V_min/V_max problem entirely. ~30-line script delta vs FastSAC.
-3. SAC + skill-conditioned policy is the published DIAYN reference (`ben-eysenbach/sac:diayn.py`) — direct paper-replication.
+1. **Paper-replication discipline.** DIAYN (Eysenbach 2018) was published with scalar-Q SAC. C51-SAC is our project's distributional-critic optimization, unvalidated in conjunction with DIAYN's non-stationary intrinsic reward. SD-B's goal is "validate plumbing against DIAYN paper protocol" — mixing two unvalidated novelties (DIAYN aux + C51 critic) is bad experimental discipline. Vanilla SAC matches the DIAYN reference codebase 1:1.
+2. **C51 V_min/V_max would need empirical tuning.** DIAYN intrinsic reward `log q(z|s) − log p(z)` ranges roughly [-log K, +log K] per step (≈ ±2.08 for `num_skills=8`); discounted return at `gamma=0.99` can grow large after the discriminator sharpens. Defaults like V_min=-10, V_max=10 with 51 bins would probably work but we'd be guessing. Better to measure SD-B intrinsic reward magnitudes empirically, then set bins for SD-C/E with data.
+3. **Script delta is small (~15-20 lines).** Different algo class import, different optimizer config (adam vs adamw + cosine schedule), different preset getter. Buffer + loop wiring identical. Easy to swap later.
 
 **FastSAC switch lands in SD-C/E** once we have empirical reward magnitude data from SD-B to set bins.
 
@@ -37,9 +37,10 @@ Spec §SD-B "Initial algorithm scope" reads `algo: FastSAC only`. **We override 
 **CheetahRun (MJX, mujoco_playground.dm_control_suite)**:
 - Already wired in `jax_rl/training/env_backends/mjx_backend.py`
 - `EnvBundle` actor obs dim = 18d state, action dim = 6
-- Matches DIAYN App. D.4 protocol (HalfCheetah is the primary DIAYN reward-histogram fig env)
+- Matches DIAYN App. D.3 protocol shape (HalfCheetah is one of three envs — Hopper/HalfCheetah/Ant — shown in DIAYN Fig. 15 reward-distribution histograms; not uniquely "primary")
+- **Caveat:** DM Control CheetahRun is NOT identical to Gym HalfCheetah-v5. Differences: DM Control has early termination via healthy_z; reward formula differs; obs structure hides root x. Replication is "DIAYN App. D.3-*style*", not 1:1.
 
-`num_skills = 8` for SD-B (legible visualization, 8 colors per plot). **If 8 fails to converge** (discriminator accuracy stalls < `1/num_skills + 0.1` after 100K steps), escalate per DIAYN reference (`ben-eysenbach/sac:mujoco_all_diayn.py:38` defaults to 50; paper text uses both 20 and 50 across figures — re-grep paper before tuning, **don't hallucinate a specific recommended value**).
+`num_skills = 8` for SD-B (legible visualization, 8 colors per plot). **If 8 fails to converge** (discriminator accuracy stalls < `1/num_skills + 0.1` after 100K steps), escalate per DIAYN paper. **Paper-grounded next step is 20** (DIAYN paper Fig. 12 explicitly uses `num_skills=20` for HalfCheetah). Source-code default is 50 (`ben-eysenbach/sac:mujoco_all_diayn.py:38`) but the paper text uses 20 for HalfCheetah specifically — don't pick 50 just because it's the source default. Re-grep DIAYN paper Fig. 12 + App. C / G.1 before escalating beyond 20.
 
 ## Acceptance for SD-B as a whole
 
@@ -48,16 +49,16 @@ From spec §SD-B "Acceptance" + validation doc Part 4 SD-B:
 **Plumbing gates:**
 - [ ] 10K-step CPU smoke produces finite aux losses, no NaN, buffer fills.
 - [ ] Existing asymmetric-critic buffer tests still pass after generic extras land.
-- [ ] Skill replay storage round-trips: store/sample `skill_z`, `next_skill_z`, `factor_obs`, `next_factor_obs` alongside critic extras (when applicable).
+- [ ] Skill replay storage round-trips: store/sample `skill_z`, `next_skill_z` alongside critic extras (when applicable). `factor_obs` / `next_factor_obs` deferred to SD-C.
 - [ ] Skill checkpoint resume restores aux params + optimizer state.
 - [ ] Existing FastSAC tests pass unchanged.
 - [ ] No changes to `train_fast_sac.py` behavior (we add a new script, not edit the existing one).
 
-**Behavioral gates (paper-grounded):**
+**Behavioral gates (our quantitative thresholds; protocol shape replicates DIAYN App. D.3):**
 - [ ] Discriminator accuracy curve rises above chance (`1/num_skills = 0.125`) within first 100K steps.
-- [ ] At 1M steps: per-skill task-return histogram (M=10 episodes per fixed z). Spread (max − min across 8 skills) > 50% of any single skill's return. Replicates DIAYN App. D.4 protocol.
+- [ ] At 1M steps: per-skill task-return histogram (M=10 episodes per fixed z). Spread (max − min across 8 skills) > 50% of any single skill's return. Replicates DIAYN App. D.3 protocol.
 - [ ] At 1M steps: render 1 video per skill via `record_video.py`. Skills should show qualitatively diverse gaits (subjective check, replicates DIAYN HalfCheetah figure intent).
-- [ ] **Seeds:** 3 seeds minimum, mean ± std reporting. Upgrade to 5 if results contentious.
+- [ ] **Seeds:** 3 seeds minimum, mean ± std reporting. **DIAYN headline figures use 5 seeds**; 3 is our compute-budget floor. Upgrade to 5 for publication-grade or contentious results.
 
 ## File structure
 
@@ -85,13 +86,14 @@ Wave B (after Wave A):
   └── Task 3: skill_offpolicy_loop
 
 Wave C (after Wave B):
-  └── Task 4: train_skill_discovery.py CLI
+  ├── Task 4: train_skill_discovery.py CLI
+  └── Task 4b: record_video.py --skill-index extension (sequential after Task 4 — needs ckpt to smoke-test)
 
 Wave D (after Wave C):
   └── Task 5: smoke + 100K + 1M acceptance runs
 ```
 
-Wave A = 2 parallel subagents. Waves B, C, D = 1 agent each (serial). Total: 5 tasks.
+Wave A = 2 parallel subagents. Wave B + C + D = 1 agent each (serial). Total: 6 tasks.
 
 ---
 
@@ -120,8 +122,9 @@ from jax_rl.training.obs_pipeline import ObsPipeline
 
 def _make_pipeline(has_privileged=False, n_frame_stack=1):
     return ObsPipeline(
-        obs_norm=False,
+        dict_obs=False,
         has_privileged=has_privileged,
+        use_obs_norm=False,
         n_frame_stack=n_frame_stack,
     )
 
@@ -238,7 +241,7 @@ def make_buffer(self, obs_dim, action_dim, buffer_size,
 ```
 
 - [ ] Run: `uv run python -m pytest tests/test_obs_pipeline_extras.py -v` → expect 6 passed.
-- [ ] Run: `uv run python -m pytest tests/test_jax_replay_buffer.py tests/test_obs_pipeline.py -v` → existing critic_obs tests still green (non-regression).
+- [ ] Run: `uv run python -m pytest tests/test_replay_buffer.py tests/test_obs_pipeline.py -v` → existing critic_obs tests still green (non-regression).
 
 ### Step 1.3: Commit
 
@@ -315,7 +318,7 @@ def test_meta_block_round_trip():
     """write_skill_meta_block produces JSON-serializable dict matching spec contract."""
     cfg = _make_cfg()
     block = write_skill_meta_block(cfg)
-    # Required fields per spec lines 333-352:
+    # Required fields per spec §"Checkpoint metadata block":
     assert block["enabled"] is True
     assert block["mode"] == "diayn"
     assert block["prior"] == "one_hot"
@@ -467,7 +470,7 @@ git commit -m "feat(skill): add skill aux checkpoint save/load + meta.json block
 
 **Goal:** new function `run_skill_offpolicy_loop(...)` that mirrors `run_offpolicy_loop` but adds skill discovery hooks. Per spec §"V2 implementation shape" — "Create a dedicated loop first instead of generalizing `run_offpolicy_loop` prematurely."
 
-**Spec gradient-step order** (spec lines 432-442):
+**Spec gradient-step order** (spec §"Gradient-step order"):
 1. Sample replay batch.
 2. Normalize raw obs through ObsPipeline.
 3. Append `skill_z` to actor and critic obs.
@@ -541,10 +544,12 @@ def test_compose_skill_batch_concat_shapes():
 
 def test_intrinsic_reward_replaces_env_reward():
     """intrinsic_reward_then_update should overwrite batch['reward'] with the
-    skill-manager-computed intrinsic reward (modulo intrinsic_weight scaling)."""
+    skill-manager-computed intrinsic reward (modulo intrinsic_weight scaling).
+
+    Note: _make_cfg() defaults already give intrinsic_weight=1.0 + task_reward_weight=0.0
+    (SD-B pure DIAYN). No explicit override needed — defaults are correct.
+    """
     cfg = _make_cfg(4)
-    cfg.intrinsic_weight = 1.0
-    cfg.task_reward_weight = 0.0
     mgr = SkillManager(cfg)
     aux = mgr.init(KEY)
 
@@ -590,27 +595,66 @@ def test_aux_state_changes_under_update():
 
 The full loop is large (~250 lines). Follow `jax_rl/training/offpolicy_loop.py::run_offpolicy_loop` structure, with these additions:
 
+**Function signature** (pin this to prevent subagent variance):
+
+```python
+def run_skill_offpolicy_loop(
+    cfg: TrainConfig,
+    algo_cfg,
+    algo,
+    algo_name: str,
+    env_bundle: EnvBundle,
+    explore_fn: Callable,
+    log_extra_fields: list,
+    log_extra_keys: list,
+    skill_cfg: SkillDiscoveryConfig,
+    skill_manager: SkillManager,
+    seed: int = 0,
+    resume: str | None = None,
+    resume_warmup: str = "policy",   # match run_offpolicy_loop
+    use_wandb: bool = False,
+    wandb_project: str = "jax-rl",
+) -> None: ...
+```
+
 1. **Manager init at startup**: take `skill_cfg: SkillDiscoveryConfig` arg + `skill_manager: SkillManager` (constructed at script level). Call `mgr.init(key)` → `aux_state`. Init per-env `current_z = mgr.sample_skills(key, num_envs)`.
 
-2. **Buffer**: include `skill_z`, `next_skill_z`, `factor_obs`, `next_factor_obs` as named extras in `pipeline.make_buffer(..., extra_obs_dims={"skill_z": skill_dim, "next_skill_z": skill_dim, "factor_obs": ..., "next_factor_obs": ...})`. **For SD-B with single `actor_obs_full` factor**, `factor_obs == obs` (same data) — could omit the extra storage to save buffer memory. Decision: store them anyway for forward-compat with multi-factor configs in SD-E.
+2. **Buffer**: include `skill_z`, `next_skill_z` ONLY as named extras: `pipeline.make_buffer(..., extra_obs_dims={"skill_z": skill_dim, "next_skill_z": skill_dim})`. **DO NOT store `factor_obs` / `next_factor_obs`** in SD-B — for the single `actor_obs_full` factor, the extractor reads `batch["obs"]` directly, so `factor_obs == obs` is pure 2× redundant storage (~144 MB for 1M-step buffer at obs_dim=18). Spec lines 188-194 list factor_obs as a future field; SD-C reintroduces it when sim_data factors arrive that need privileged inputs the actor obs doesn't carry.
 
-3. **Collection step**: after env step, store `(obs, action, reward_env_unscaled, next_obs, done, truncation, skill_z=current_z, next_skill_z=current_z)` per the spec lifecycle rule (next_skill_z=skill_z under `resample="episode"`).
+3. **Collection step**: store `(obs, action, reward_env_unscaled, next_obs, done, truncation, skill_z=current_z, next_skill_z=current_z)`. **CRITICAL: store unscaled env reward** (NOT `env_state.reward * cfg.reward_scaling` like the existing `run_offpolicy_loop:215` does). The skill loop departs from existing-loop convention here — `cfg.reward_scaling` is applied **once** in step 5 below, on the final composed reward. Per spec lines 437-440: "Apply `cfg.reward_scaling` exactly once to the final composed batch reward immediately before `algo.update(...)`." Lifecycle rule: `next_skill_z = skill_z` under `resample="episode"` (spec lines 195-218).
 
 4. **Resample on done**: `current_z = mgr.resample_on_done(current_z, env_state.done, key)`.
 
 5. **Gradient-step inner loop**: factor out two helpers:
-   - `compose_skill_batch(raw_batch, raw_obs_dim, skill_dim)`: returns batch with `obs = concat(obs_normed, skill_z)` and `next_obs = concat(next_obs_normed, next_skill_z)`. Critic obs analogously if asymmetric.
-   - `intrinsic_reward_then_update(composed_batch, raw_batch, mgr, aux_state, skill_cfg, reward_scaling)`: computes intrinsic reward via `mgr.compute_intrinsic_reward(aux_state, raw_batch)`, composes final reward `intrinsic_weight * intrinsic + task_reward_weight * batch["reward"] * reward_scaling` (style/safety zero in SD-B), overwrites `batch["reward"]`. Returns `(composed_batch, intrinsic_reward)` for logging.
+   - `compose_skill_batch(raw_batch, raw_obs_dim, skill_dim)`: returns batch with `obs = concat(obs_normed, skill_z)` and `next_obs = concat(next_obs_normed, next_skill_z)`. **Asymmetric critic path** (when `EnvBundle.has_privileged=True`): also concat skill_z onto `critic_obs` and `critic_next_obs`. CheetahRun has `has_privileged=False`, so only the symmetric path runs in SD-B; the asymmetric branch lands here for SD-C Go2 use.
+   - `intrinsic_reward_then_update(composed_batch, raw_batch, mgr, aux_state, skill_cfg, reward_scaling)`:
+     1. Compute `intrinsic = mgr.compute_intrinsic_reward(aux_state, raw_batch)` (uses **post-norm obs**: discriminator should see same input as actor — reads `raw_batch["obs"]` which has been normalized by ObsPipeline at sample-time per existing pipeline contract).
+     2. Compose `final_reward = reward_scaling * (intrinsic_weight * intrinsic + task_reward_weight * batch["reward"])`. Style/safety weights are zero in SD-B (SD-C onward).
+     3. Overwrite `composed_batch["reward"] = final_reward`.
+     4. Returns `(composed_batch, intrinsic)` for logging.
+
+   **DIAYN reward consumes `batch["obs"]` (current state s) — confirmed in SD-A `diayn.py`. Do not pass `next_obs`.** Common confusion: DADS uses `s'`, DIAYN uses `s`.
 
 6. **Algo update**: `training_state, sac_metrics = algo.update(training_state, composed_batch)` — algo receives augmented obs, sees the composed reward.
 
 7. **Aux update** (after algo update, on the same sampled batch): `aux_state, aux_metrics = mgr.update(aux_state, raw_batch)`. **Important**: actor/critic gradients must not flow through aux nets — but since the algo update happened first with `aux_state` fixed, and aux update uses `raw_batch` (not the composed one), this is naturally enforced.
 
-8. **Checkpoint**: at save points, call existing `CheckpointManager.save(...)` then `save_skill_aux_state(aux_state, ckpt_dir)` and patch `meta.json` with `write_skill_meta_block(skill_cfg)`.
+8. **Eval routing**: per spec line 555, **bypass `maybe_eval_and_checkpoint()`**. The existing helper does not know about skill conditioning. The skill loop should call its own `eval_skills(...)` directly: for each `i in range(skill_cfg.total_skill_dim)`, set fixed `z = one_hot(i)`, run `cfg.num_eval_episodes` rollouts with skill-aware obs composition, log per-skill mean return. Or: extend `maybe_eval_and_checkpoint` with a `skill_action_fn` kwarg that augments obs before policy call. Decision deferred to Task 3 implementation review; either path is acceptable as long as it's pinned in the resulting code.
 
-9. **Resume**: at startup if `--resume`, load base state via `load_checkpoint`, then `load_skill_aux_state(ckpt_dir, template=aux_state)` to restore aux.
+9. **Checkpoint integration**: at save points (eval cycles + final), call existing `CheckpointManager.save(...)` to write base state + meta.json, then **patch meta.json in-place** to add the skill block:
+   ```python
+   ckpt_dir = ctx.ckpt_dir  # path of just-written checkpoint
+   save_skill_aux_state(aux_state, ckpt_dir)
+   meta_path = os.path.join(ckpt_dir, "meta.json")
+   with open(meta_path) as f: meta = json.load(f)
+   meta["skill_discovery"] = write_skill_meta_block(skill_cfg)
+   with open(meta_path, "w") as f: json.dump(meta, f, indent=2)
+   ```
+   Implementation choice: do this synchronously in the loop right after the existing save call (avoiding race with eval-driven concurrent saves).
 
-10. **Logging**: extend metrics with per-factor `f"{name}_disc_loss"`, `f"{name}_disc_accuracy"`, `intrinsic_reward_mean`, `intrinsic_reward_std`, env-reward (informational).
+10. **Resume**: at startup if `--resume`, load base state via `load_checkpoint`, then `load_skill_aux_state(ckpt_dir, template=aux_state)` to restore aux. Re-sample `current_z` fresh (don't try to recover per-env z; that's loop state, not aux state).
+
+11. **Logging**: extend metrics with per-factor `f"{name}_disc_loss"`, `f"{name}_disc_accuracy"`, `intrinsic_reward_mean`, `intrinsic_reward_std`, env-reward (informational), per-skill-eval-return at each eval cycle.
 
 - [ ] Run: `uv run python -m pytest tests/test_skill_offpolicy_loop.py -v` → expect 3 passed.
 
@@ -695,7 +739,7 @@ def main():
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--obs-norm", action="store_true")
     parser.add_argument("--reset-mode", type=str, default=None,
-                        choices=["per_step", "per_episode", None])
+                        choices=["legacy", "per_step"])
     parser.add_argument("--wandb", action="store_true")
     parser.add_argument("--wandb-project", type=str, default="jax-rl")
     parser.add_argument("--resume", type=str, default=None,
@@ -706,8 +750,9 @@ def main():
     if args.total_timesteps:
         cfg = dataclasses.replace(cfg, total_timesteps=args.total_timesteps)
     if args.obs_norm:
-        cfg = dataclasses.replace(cfg, obs_norm=True)
-    if args.reset_mode:
+        # obs_normalization lives on algo_cfg (SACConfig), NOT cfg (TrainConfig)
+        algo_cfg = dataclasses.replace(algo_cfg, obs_normalization=True)
+    if args.reset_mode is not None:
         cfg = dataclasses.replace(cfg, reset_mode=args.reset_mode)
 
     # Build env bundle to learn obs/action dims
@@ -731,18 +776,24 @@ def main():
     else:
         optimizer = optax.adam(cfg.lr)
 
+    alpha_optimizer = optax.adam(algo_cfg.alpha_lr)
     algo = SAC(
-        algo_cfg=algo_cfg,
+        config=algo_cfg,
         obs_dim=augmented_obs_dim,  # actor sees obs + skill_z
         action_dim=action_dim,
-        actor_optimizer=optimizer,
-        critic_optimizer=optimizer,
+        optimizer=optimizer,
+        alpha_optimizer=alpha_optimizer,
         gamma=cfg.gamma,
+        critic_obs_dim=env_bundle.critic_obs_dim,  # None for CheetahRun
     )
 
     def explore_fn(actor_params, obs, key):
-        return algo.actor.apply(actor_params, obs, key)["action"]
+        # SAC.select_action samples from the squashed-Gaussian policy.
+        # Matches scripts/train_sac.py:53 pattern.
+        return algo.select_action(actor_params, obs, key)
 
+    # log_extra_fields: list of (label, key, format_str) tuples per metrics_logger contract
+    # log_extra_keys: list of bare key strings
     run_skill_offpolicy_loop(
         cfg=cfg,
         algo_cfg=algo_cfg,
@@ -750,10 +801,16 @@ def main():
         algo_name="sac_skill",
         env_bundle=env_bundle,
         explore_fn=explore_fn,
-        log_extra_fields=["intrinsic_reward_mean", "full_state_disc_loss",
-                          "full_state_disc_accuracy"],
-        log_extra_keys=["intrinsic_reward_mean", "full_state_disc_loss",
-                        "full_state_disc_accuracy"],
+        log_extra_fields=[
+            ("IntR", "intrinsic_reward_mean", ".3f"),
+            ("DiscL", "full_state_disc_loss", ".3e"),
+            ("DiscA", "full_state_disc_accuracy", ".3f"),
+        ],
+        log_extra_keys=[
+            "intrinsic_reward_mean",
+            "full_state_disc_loss",
+            "full_state_disc_accuracy",
+        ],
         skill_cfg=skill_cfg,
         skill_manager=skill_manager,
         seed=args.seed,
@@ -778,6 +835,63 @@ git commit -m "feat(skill): add train_skill_discovery.py — vanilla SAC + DIAYN
 
 ---
 
+## Task 4b: Extend `scripts/record_video.py` with `--skill-index`
+
+**Files:**
+- Modify: `scripts/record_video.py`
+
+**Depends on Task 4 (script writes meta.json `skill_discovery` block).**
+
+**Goal:** add a `--skill-index N` flag (and optional `--skill-vector path_or_csv`) so Task 5.3 can render per-skill videos. Without this, the SD-B acceptance gate "render 1 video per skill" is unexecutable.
+
+### Step 4b.1: Read existing record_video pattern
+
+Read `scripts/record_video.py` end-to-end. Key sections:
+- Argument parser (~line 583-614)
+- Checkpoint loader (loads `meta.json`, `actor_params.npy`, builds env)
+- Rollout loop (calls `algo.select_action(actor_params, obs, key)` per step)
+
+### Step 4b.2: Implement
+
+1. Add CLI args:
+   ```python
+   parser.add_argument("--skill-index", type=int, default=None,
+                       help="Fixed skill index for skill-discovery checkpoints (one-hot)")
+   parser.add_argument("--skill-vector", type=str, default=None,
+                       help="Path to .csv/.npy with explicit skill vector")
+   ```
+2. After loading meta.json, check for `meta.get("skill_discovery")`:
+   - If present and `--skill-index` not set: raise `ValueError("skill_discovery checkpoint requires --skill-index or --skill-vector")`.
+   - If present and `--skill-index` set: build `z = jnp.eye(meta["skill_discovery"]["total_skill_dim"])[args.skill_index]`.
+   - If `--skill-vector` set: load + validate shape.
+   - If absent and either skill flag set: warn + ignore.
+3. Wrap the policy call to concat z to obs:
+   ```python
+   def policy_step(obs, key):
+       aug_obs = jnp.concatenate([obs, z[None].repeat(obs.shape[0], axis=0)], axis=-1) \
+                 if z is not None else obs
+       return algo.select_action(actor_params, aug_obs, key, deterministic=True)
+   ```
+4. Output filename: append `_skill{idx}` suffix if `--skill-index` set.
+
+### Step 4b.3: Smoke test
+
+```bash
+# After SD-B Task 5 produces a checkpoint:
+MUJOCO_GL=egl uv run python scripts/record_video.py \
+    --checkpoint /path/to/skill_ckpt --skill-index 0 --max-steps 200
+```
+Verify: video produced, no error.
+
+### Step 4b.4: Commit
+
+```bash
+git add scripts/record_video.py
+git commit -m "feat(skill): record_video.py reads meta[skill_discovery] + accepts --skill-index"
+```
+
+---
+
 ## Task 5: Smoke + 100K + 1M acceptance runs
 
 **Files:** none (runs only, plus `.context/journals/2026-05-XX.md` entry).
@@ -785,6 +899,18 @@ git commit -m "feat(skill): add train_skill_discovery.py — vanilla SAC + DIAYN
 **Depends on Tasks 1-4.**
 
 **Goal:** validate SD-B against acceptance gates. Three runs at increasing scale.
+
+### Step 5.0: Resume behavioral guard
+
+Validates the save→restart→train contract end-to-end. Without this, save+load can round-trip in unit tests but the resumed run could silently produce wrong gradients (we've been bitten by this on offpolicy_loop — see commit `653656c test(offpolicy): add resume-warmup behavioral guard`).
+
+- [ ] `uv run python scripts/train_skill_discovery.py --env CheetahRun --num-skills 8 --total-timesteps 5000 --seed 0` → records first checkpoint at `<run_dir>/`.
+- [ ] `uv run python scripts/train_skill_discovery.py --env CheetahRun --num-skills 8 --total-timesteps 6000 --seed 0 --resume <run_dir>` → 1000 more steps from resume.
+- [ ] **Acceptance:**
+  - No NaN aux losses post-resume.
+  - Post-resume `disc_loss` within 2× pre-save `disc_loss` (loose behavioral floor; allows for warmup turbulence but catches "discriminator forgets everything" regression).
+  - `current_z` per env is sampled fresh on resume (verify via stdout log; `current_z` is loop state, not aux state — we don't try to recover per-env z across processes).
+- [ ] **Don't gate on byte-identical post-resume trajectory** — JAX GPU determinism varies; this is by design.
 
 ### Step 5.1: 10K CPU smoke
 
@@ -802,8 +928,8 @@ git commit -m "feat(skill): add train_skill_discovery.py — vanilla SAC + DIAYN
 
 - [ ] **3 seeds:** seed 0, 1, 2. Run all three in background.
 - [ ] `uv run python scripts/train_skill_discovery.py --env CheetahRun --num-skills 8 --total-timesteps 1000000 --seed <s>`
-- [ ] Total runtime: ~30 min/seed on GPU.
-- [ ] **Per-skill task-return histogram (DIAYN App. D.4 protocol):** load best checkpoint per seed; for each fixed `z = one_hot(i)` for `i in range(8)`, run M=10 episodes; record env reward (forward velocity for CheetahRun). Compute mean ± std per skill. Spread (max − min across skills) > 50% of any single skill's mean return → PASS.
+- [ ] Total runtime: rough estimate ~30-60 min/seed on GPU (extrapolated from 5M Go2 FastSAC at 30-60 min, journal 2026-04-25). **Measure on first seed and update plan estimate.** If 1M >> 60 min, reduce to 500K for SD-B and reserve 1M for SD-C.
+- [ ] **Per-skill task-return histogram (DIAYN App. D.3 protocol):** load best checkpoint per seed; for each fixed `z = one_hot(i)` for `i in range(8)`, run M=10 episodes; record env reward (forward velocity for CheetahRun). Compute mean ± std per skill. Spread (max − min across skills) > 50% of any single skill's mean return → PASS.
 - [ ] **Per-skill rendered videos:** `MUJOCO_GL=egl uv run python scripts/record_video.py --checkpoint <best_ckpt> --skill-index <0..7>` → 8 videos. Visually inspect for behavioral diversity. Subjective check; "running fwd / running back / hopping / standing / etc." level of distinctness.
 - [ ] **Cross-seed agreement:** verify all 3 seeds show > chance discriminator accuracy and qualitatively distinct skills (the *which* skills emerge varies by seed; that's expected).
 
@@ -814,7 +940,7 @@ git commit -m "feat(skill): add train_skill_discovery.py — vanilla SAC + DIAYN
   - 100K accuracy curve summary
   - 1M per-skill return spread per seed
   - Qualitative video notes per seed (which skills emerged)
-  - Comparisons against DIAYN App. D.4 if applicable
+  - Comparisons against DIAYN App. D.3 if applicable
 - [ ] No code commit needed for runs themselves — figures + journal land in `.context/journals/`.
 
 ```bash

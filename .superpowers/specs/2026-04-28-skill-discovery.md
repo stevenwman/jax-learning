@@ -476,6 +476,13 @@ obs_norm: supported only if z is composed after ObsPipeline normalization
 frame_stack: initially disallow or explicitly compose z after stack
 ```
 
+**Plan-level override (2026-05-02):** the SD-B execution plan
+(`.superpowers/plans/2026-05-02-skill-discovery-sd-b.md` §"Algo choice") switches
+to **vanilla SAC** for SD-B. Rationale: paper-replication discipline (DIAYN
+reference is scalar-Q SAC), avoid mixing two unvalidated novelties (DIAYN aux +
+C51 critic), defer FastSAC bin tuning to SD-C/E with empirical reward magnitude
+data from SD-B. FastSAC re-enters at SD-C/E.
+
 For SD-B, allow only `resample="episode"` when `n_frame_stack > 1`. Fixed-step
 resampling with frame stack needs skill history in replay and deploy, so defer it
 until after the episode-skill path works.
