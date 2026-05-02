@@ -955,12 +955,8 @@ Note its `<include>` of go2.xml, the keyframe block, and its contact pair declar
   </contact>
 
   <sensor>
-    <!-- Mirrors bongo lesson: contact sensors instead of position thresholds. -->
-    <touch name="FL_belt_touch" site="FL_site"/>
-    <touch name="FR_belt_touch" site="FR_site"/>
-    <touch name="RL_belt_touch" site="RL_site"/>
-    <touch name="RR_belt_touch" site="RR_site"/>
-    <!-- Boolean contact-pair sensors: exact, threshold-free. Used for term_cause + foot_belt_id. -->
+    <!-- Boolean contact-pair sensors per bongo lesson 2026-04-02: exact, threshold-free.
+         Drives both `foot_belt_id` (S§9.1) and termination cause (S§7.3). -->
     <contact name="FL_left_belt"  geom1="FL" geom2="left_belt_geom"/>
     <contact name="FL_right_belt" geom1="FL" geom2="right_belt_geom"/>
     <contact name="FR_left_belt"  geom1="FR" geom2="left_belt_geom"/>
@@ -1024,81 +1020,71 @@ git commit -m "feat(splitbelt): Go2 splitbelt scene XML (treadmill + go2 + conta
 
 ## Stage 3: Env class — TDD-driven
 
-### Task 3.1: Obs schema test (hermetic, mock-based)
+### Task 3.1: Obs schema test (hermetic — name-layout only)
 
 **Files:**
 - Create: `tests/test_splitbelt_obs_schema.py`
 
-Per S§10.1 and lesson §7.1: mock env via `types.SimpleNamespace`, assert `_obs_groups` for each obs_mode produces correct schema. No env build.
+Per S§10.1 and lesson §7.1. We need a hermetic test that checks which obs term *names* end up in `state` vs `privileged_state` per `obs_mode`, without building the env (no fn-bound lambdas, no real Warp graph).
 
-- [ ] **Step 1: Write test (will be RED until env class exists)**
+Since `ObsTerm` (per [`jax_rl/envs/obs_spec.py:21-26`](../../jax_rl/envs/obs_spec.py#L21-L26)) requires `(name: str, fn: Callable, noise_scale: float)` — we cannot construct real ObsTerms hermetically without binding lambdas to env methods. So we split obs-group construction into two halves:
+
+- `obs_term_names(obs_mode: str) -> dict[str, list[str]]` — pure, name-only, no env. Hermetic-test target.
+- `build_obs_groups(env) -> dict[str, list[ObsTerm | IncludeGroup]]` — real, env-method-bound. Used in `_post_init`.
+
+The contract: `[t.name for t in build_obs_groups(env)[group]] == obs_term_names(env._config.obs_mode)[group]`.
+
+- [ ] **Step 1: Write hermetic test (RED until module exists)**
 
 ```python
-"""Hermetic obs-schema tests for SplitbeltTreadmill env (S§10.1, lesson §7.1)."""
+"""Hermetic obs name-layout tests for SplitbeltTreadmill env (S§10.1, lesson §7.1)."""
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
 
-from jax_rl.envs.locomotion.go2_warp_splitbelt import build_obs_groups
+from jax_rl.envs.locomotion.go2_warp_splitbelt import obs_term_names
 
 
-@pytest.mark.parametrize("obs_mode", ["blind", "informed", "error", "history"])
-def test_obs_groups_has_state_and_privileged(obs_mode):
-    env = SimpleNamespace(
-        _config=SimpleNamespace(obs_mode=obs_mode, history_len=4),
-        _action_dim=12,
-    )
-    groups = build_obs_groups(env)
-    assert "state" in groups
-    assert "privileged_state" in groups
+_VALID_MODES = ("blind", "informed", "error", "history")
+
+
+@pytest.mark.parametrize("obs_mode", _VALID_MODES)
+def test_obs_term_names_has_state_and_privileged(obs_mode):
+    layout = obs_term_names(obs_mode)
+    assert "state" in layout
+    assert "privileged_state" in layout
+    assert isinstance(layout["state"], list)
+    assert isinstance(layout["privileged_state"], list)
 
 
 def test_blind_state_excludes_belt_speeds():
-    env = SimpleNamespace(
-        _config=SimpleNamespace(obs_mode="blind", history_len=4),
-        _action_dim=12,
-    )
-    groups = build_obs_groups(env)
-    state_term_names = [t.name for t in groups["state"]]
-    assert "belt_vel" not in state_term_names
+    layout = obs_term_names("blind")
+    assert "belt_vel" not in layout["state"]
 
 
 def test_informed_state_includes_belt_speeds():
-    env = SimpleNamespace(
-        _config=SimpleNamespace(obs_mode="informed", history_len=4),
-        _action_dim=12,
-    )
-    groups = build_obs_groups(env)
-    state_term_names = [t.name for t in groups["state"]]
-    assert "belt_vel" in state_term_names
+    layout = obs_term_names("informed")
+    assert "belt_vel" in layout["state"]
 
 
 def test_error_state_includes_tracking_error_not_belt():
-    env = SimpleNamespace(
-        _config=SimpleNamespace(obs_mode="error", history_len=4),
-        _action_dim=12,
-    )
-    groups = build_obs_groups(env)
-    state_term_names = [t.name for t in groups["state"]]
-    assert "cmd_track_error" in state_term_names
-    assert "drift_xy" in state_term_names
-    assert "belt_vel" not in state_term_names
+    layout = obs_term_names("error")
+    assert "cmd_track_error" in layout["state"]
+    assert "drift_xy" in layout["state"]
+    assert "belt_vel" not in layout["state"]
 
 
 def test_privileged_always_full_info():
-    for mode in ("blind", "informed", "error", "history"):
-        env = SimpleNamespace(
-            _config=SimpleNamespace(obs_mode=mode, history_len=4),
-            _action_dim=12,
-        )
-        groups = build_obs_groups(env)
-        priv = [t.name for t in groups["privileged_state"]]
-        # Privileged always gets these regardless of mode (S§5.3).
+    for mode in _VALID_MODES:
+        priv = obs_term_names(mode)["privileged_state"]
         for required in ("belt_vel", "cmd_track_error", "drift_xy"):
             assert required in priv, f"mode={mode}: privileged missing {required}"
+
+
+def test_unknown_mode_raises():
+    with pytest.raises(ValueError, match="obs_mode"):
+        obs_term_names("not_a_real_mode")
 ```
 
 - [ ] **Step 2: Run, expect fail**
@@ -1162,6 +1148,37 @@ from jax_rl.envs.obs_spec import ObsTerm, IncludeGroup
 
 _VALID_OBS_MODES = ("blind", "informed", "error", "history")
 
+# Shared proprio name list — kept in sync with build_obs_groups bindings below.
+_PROPRIO_NAMES = ("joint_pos", "joint_vel", "last_action", "gravity", "gyro", "cmd")
+
+
+def obs_term_names(obs_mode: str) -> Dict[str, list[str]]:
+    """Pure name-layout (S§5 obs modes). Hermetic — no env, no fn binding.
+
+    Returns dict of {"state": [name, ...], "privileged_state": [name, ...]}.
+    Mirrors the ObsTerm structure that `build_obs_groups` produces; used by tests
+    and as the source-of-truth name list.
+    """
+    if obs_mode not in _VALID_OBS_MODES:
+        raise ValueError(
+            f"obs_mode must be one of {_VALID_OBS_MODES}, got {obs_mode!r}"
+        )
+    proprio = list(_PROPRIO_NAMES)
+    if obs_mode == "blind" or obs_mode == "history":
+        # history applies frame-stacking via wrapper; same name layout as blind.
+        state_names = list(proprio)
+    elif obs_mode == "informed":
+        state_names = list(proprio) + ["belt_vel"]
+    elif obs_mode == "error":
+        state_names = list(proprio) + ["cmd_track_error", "drift_xy"]
+    else:
+        raise AssertionError("unreachable")
+    privileged_names = list(proprio) + [
+        "belt_vel", "cmd_track_error", "drift_xy",
+        "base_lin_vel", "base_ang_vel",
+    ]
+    return {"state": state_names, "privileged_state": privileged_names}
+
 
 def default_config() -> config_dict.ConfigDict:
     """Default config: tied belts at 0.5 m/s, blind obs, cmd=0 (smoke baseline)."""
@@ -1199,52 +1216,38 @@ def default_config() -> config_dict.ConfigDict:
 
 
 def build_obs_groups(env: Any) -> Dict[str, list]:
-    """Build _obs_groups dispatch by obs_mode.
+    """Build real ObsTerm dispatch with env-method-bound lambdas (used in _post_init).
 
-    Hermetic-friendly: only reads `env._config.obs_mode` and `env._config.history_len`,
-    no real env state required. Used both by the env (`_post_init`) and tests.
+    Names must match `obs_term_names(env._config.obs_mode)` exactly — that is the
+    contract validated in tests. Pattern follows `go2_warp_joystick.py:131`.
     """
     cfg = env._config
-    mode = cfg.obs_mode
-    if mode not in _VALID_OBS_MODES:
-        raise ValueError(f"obs_mode must be one of {_VALID_OBS_MODES}, got {mode!r}")
+    layout = obs_term_names(cfg.obs_mode)
 
-    # --- proprio (shared by all modes) ---
-    proprio_terms = [
-        ObsTerm(name="joint_pos", dim=12),
-        ObsTerm(name="joint_vel", dim=12),
-        ObsTerm(name="last_action", dim=12),
-        ObsTerm(name="gravity", dim=3),
-        ObsTerm(name="gyro", dim=3),
-        ObsTerm(name="cmd", dim=3),
-    ]
+    # Map term name → (fn, noise_scale). Fns close over `env`; per joystick precedent,
+    # they accept **kw to absorb compute_obs's keyword args.
+    term_factory = {
+        "joint_pos": (lambda data, **kw: env.get_joint_pos(data), 0.03),
+        "joint_vel": (lambda data, **kw: env.get_joint_vel(data), 1.5),
+        "last_action": (lambda info, **kw: info["last_action"], 0.0),
+        "gravity": (lambda data, **kw: env.get_gravity(data), 0.05),
+        "gyro": (lambda data, **kw: env.get_gyro(data), 0.2),
+        "cmd": (lambda info, **kw: info["cmd"], 0.0),
+        "belt_vel": (lambda info, **kw: info["splitbelt"]["belt_vel"], 0.0),
+        "cmd_track_error": (lambda info, **kw: info["splitbelt"]["cmd_track_error"], 0.0),
+        "drift_xy": (lambda info, **kw: info["splitbelt"]["drift_xy"], 0.0),
+        "base_lin_vel": (lambda data, **kw: data.qvel[:3], 0.0),
+        "base_ang_vel": (lambda data, **kw: data.qvel[3:6], 0.0),
+    }
 
-    # --- mode-specific extras for actor's `state` group ---
-    if mode == "blind":
-        state_terms = list(proprio_terms)
-    elif mode == "informed":
-        state_terms = list(proprio_terms) + [ObsTerm(name="belt_vel", dim=2)]
-    elif mode == "error":
-        state_terms = list(proprio_terms) + [
-            ObsTerm(name="cmd_track_error", dim=3),
-            ObsTerm(name="drift_xy", dim=2),
-        ]
-    elif mode == "history":
-        # Frame-stacked proprio; FrameStackWrapper applies the actual stacking.
-        state_terms = list(proprio_terms)  # stacking is wrapper-side
-    else:
-        raise AssertionError("unreachable")
+    def _build(names: list[str]) -> list[ObsTerm]:
+        return [ObsTerm(name=n, fn=term_factory[n][0], noise_scale=term_factory[n][1])
+                for n in names]
 
-    # --- privileged_state always carries full info regardless of obs_mode (S§5.3) ---
-    privileged_terms = list(proprio_terms) + [
-        ObsTerm(name="belt_vel", dim=2),
-        ObsTerm(name="cmd_track_error", dim=3),
-        ObsTerm(name="drift_xy", dim=2),
-        ObsTerm(name="base_lin_vel", dim=3),
-        ObsTerm(name="base_ang_vel", dim=3),
-    ]
-
-    return {"state": state_terms, "privileged_state": privileged_terms}
+    return {
+        "state": _build(layout["state"]),
+        "privileged_state": _build(layout["privileged_state"]),
+    }
 
 
 class Go2WarpSplitbeltEnv(go2_warp_base.Go2WarpEnv):
@@ -1540,9 +1543,11 @@ def _step(self, state, action: jax.Array):
 
     is_off_belt = jp.any(foot_in_floor)
 
-    # Threshold backstop:
-    gravity_body_z = data.xmat[1, 2, 2]  # gravity dotted into body z; refine per base impl
-    is_tilt = (gravity_body_z < 0.5) | (base_pos_world[2] < 0.18)
+    # Threshold backstop. Use the existing helper from go2_warp_base
+    # (`go2_warp_base.py:189`): self.get_gravity(data) returns gravity in body frame.
+    # The body-z component gives "uprightness": 1.0 = perfectly upright, 0 = sideways.
+    gravity_body = self.get_gravity(data)
+    is_tilt = (gravity_body[2] < 0.5) | (base_pos_world[2] < 0.18)
 
     done = is_fall | is_off_belt | is_tilt
 
@@ -1805,33 +1810,34 @@ git commit -m "test(splitbelt): GPU/Warp env smoke (reset, step, belt qvel, off-
 
 Per S§5.5: register `Go2WarpSplitbelt` with default_config factory. Pattern: existing Go2 env registrations.
 
-- [ ] **Step 1: Read existing registration**
+- [ ] **Step 1: Read existing registration pattern**
 
 ```bash
-grep -n "register_mjx_env\|Go2WarpJoystickFlat" jax_rl/training/env_backends/mjx_backend.py | head
+grep -n "pg_locomotion.register_environment\|Go2WarpJoystickFlat" jax_rl/training/env_backends/mjx_backend.py | head -20
 ```
 
-Note the import + register call pattern.
+Confirms the API is `pg_locomotion.register_environment(name, env_class=..., cfg_class=...)` (or similar — read the existing call args). Each registration is guarded with `if "<Name>" not in pg_locomotion._envs:`.
 
 - [ ] **Step 2: Add registration**
 
-Apply the analogous pattern. Approximately:
+Match the existing block exactly. Approximately (verify against the read above):
 
 ```python
-# In mjx_backend.py, near the bottom or alongside other Go2 registrations:
+# In mjx_backend.py, near the other Go2 registrations:
 from jax_rl.envs.locomotion.go2_warp_splitbelt import (
     Go2WarpSplitbeltEnv,
     default_config as splitbelt_default_config,
 )
 
-register_mjx_env(
-    "Go2WarpSplitbelt",
-    env_cls=Go2WarpSplitbeltEnv,
-    default_config=splitbelt_default_config,
-)
+if "Go2WarpSplitbelt" not in pg_locomotion._envs:
+    pg_locomotion.register_environment(
+        "Go2WarpSplitbelt",
+        Go2WarpSplitbeltEnv,
+        splitbelt_default_config,
+    )
 ```
 
-> **Implementer note:** the actual register-helper API may differ (e.g., a dispatch table written directly). Match the existing pattern; do not invent a new one.
+> **Implementer note:** Mirror the joystick registration's exact arg shape (positional vs kwarg) — do NOT invent new arg names.
 
 - [ ] **Step 3: Smoke import**
 
