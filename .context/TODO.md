@@ -480,44 +480,48 @@ Why it should work: contraction signal enters via reward augmentation `R_c = (ε
 - [ ] **Curriculum callback** — `curriculum_fn(mean_return) → {spec_name: multiplier}` hook in DomainRandWrapper. Expands DR ranges (motor_strength, mass, friction) as policy stabilizes. ~1 hr, ~50 lines.
 - [x] **ObsSpec** — `compute_obs(groups, noise_level, rng, **kwargs)` with per-term noise. All 3 envs refactored. DIAYN appends `ObsTerm("skill_z", ...)` to "state" group — one line.
 
-## Long-term (Phase 6 — Skill Discovery)
-Informed by D3 paper (arXiv:2508.19953) and leggedrobotics/d3-skill-discovery. See `.context/references/d3_skill_discovery.md`.
+## Long-term (Phase 6 — Skill Discovery) — superseded by SD-A → SD-E
 
-### Phase 6A: DIAYN (foundation)
-- [ ] Skill prior — `DirichletSkillPrior(n_skills, concentration_schedule)` with curriculum α ∈ [0.05, 1.0]
-- [ ] Discriminator network — learned q_φ(z|s), 2-layer MLP, softmax output
-- [ ] Intrinsic reward — r_DIAYN(s, z) = log q_φ(z|s) - log p(z), wired via RewardSpec
-- [ ] Skill-conditioned policy — z as context input via `EncoderConfig.context_dim` (scaffolding exists)
-- [ ] Skill vector in obs — append to "state" group via ObsSpec
-- [ ] Benchmark on Go2 Warp — discover forward/backward/strafe skills. Success: 4-5 interpretable skills.
+> **2026-05-02 retitle:** old "Phase 6A–6E" replaced by SD-A through SD-E in `.superpowers/specs/2026-04-28-skill-discovery.md`.
+> The old bullets were optimistic about ObsSpec/RewardSpec being sufficient — the V2 audit found off-policy buffer, frame-stack, normalization, checkpoint, and deploy contracts also need work.
+> Informed by D3 paper (arXiv:2508.19953) and leggedrobotics/d3-skill-discovery. See `.context/references/d3_skill_discovery.md`.
 
-### Phase 6B: Symmetry augmentation
-- [ ] Go2 morphology mirror functions — M_s^k (permute leg indices), M_z^k (permute skill components). 4-fold symmetry for quadruped.
-- [ ] Augmentation in rollout collection — mirror transitions with prob 1/K before buffer storage
-- [ ] A/B test symmetry on skill interpretability
+### SD-A: Contract and scaffolding (active plan)
+**Plan:** `.superpowers/plans/2026-05-02-skill-discovery-sd-a.md`
+- [ ] Pure config + priors + factor registry + DIAYN aux + SkillManager. Unit tests only. No env, no train script.
 
-### Phase 6C: Style factor + safety (required for hardware)
-- [ ] Extrinsic reward terms — joint torques, contacts, height deviation, orientation penalties (D3 Table 9)
-- [ ] Factor weighting λ — sample from truncated Gaussian, enforce Σλ=1, balance conflicting skills
-- [ ] Regularization penalties — torque limits, contact bounds, joint velocity caps (D3 Table 10)
-- [ ] These are NOT optional — D3 proves they're load-bearing for sim-to-real transfer
+### SD-B: FastSAC DIAYN training loop (next)
+- [ ] Extend `ObsPipeline.make_buffer` with generic `extra_obs_dims`
+- [ ] `scripts/train_skill_discovery.py` + `jax_rl/training/skill_offpolicy_loop.py`
+- [ ] Sample-time intrinsic reward replacement; aux update after algo update
+- [ ] DIAYN smoke on CheetahRun or WalkerWalk (no Go2 yet)
 
-### Phase 6D: METRA + factorized skill discovery (D3 endpoint)
-- [ ] `HypersphereSkillPrior(dim)` — z ~ U(S^d-1) for continuous directional skills (d ≤ 3)
-- [ ] State transition predictor φ(s) + Wasserstein distance objective + learnable Lagrange multiplier
-- [ ] Per-factor algorithm selection — METRA for position (unbounded), DIAYN for heading (bounded/discrete)
-- [ ] State factorization — {base position (2D), heading (2D), base height (1D), roll/pitch (2D)} for Go2
-- [ ] Skill resampling within episode (not just once per episode)
+### SD-C: Go2 DIAYN with deployable obs
+- [ ] Target `Go2WarpJoystickUnitree` (45d hardware-conservative obs, action_scale=0.25)
+- [ ] First DIAYN factor: command-conditioned behavior class or base-velocity response (named extractor, not magic indices)
+- [ ] Per-skill eval rollouts, fall rate, behavior summary
 
-### Phase 6E: Sim-to-real with learned skills
-- [ ] Deploy skill library on real Go2 with style factor active
-- [ ] Zero-shot transfer test — walk to goal using learned skill primitives
-- [ ] Compare vs direct PPO policy (no skill library)
+### SD-D: Deploy/export contract for fixed skills (sim only)
+- [ ] Skill-aware deploy obs composer; explicit dim check: `(raw_dim * n_frame_stack) + skill_dim == runner.obs_dim`
+- [ ] CLI: `--skill-index`, `--skill-vector`, `--skill-mode fixed`
+- [ ] ONNX sidecar or `deploy_contract.json` next to `actor.onnx`
+- [ ] `deploy_go2.py` real-mode rejects skill checkpoints unless `meta["skill_discovery"]["hardware_ready"] = true`
+- [ ] Fix `sim2sim_direct.py` action target construction to use checkpoint metadata, not deploy constants
+
+### SD-E: D3-style factorization + hardware
+- [ ] METRA aux module + Lagrangian dual update (deferred from SD-A)
+- [ ] Dirichlet + hypersphere priors (deferred from SD-A)
+- [ ] Named factor extractors for base xy, heading, base height, roll/pitch
+- [ ] Style factor + safety penalties (D3 Tables 9/10) — load-bearing for hardware
+- [ ] Symmetry augmentation (4-fold for quadruped)
+- [ ] Within-episode skill resampling (`resample="fixed_steps"`)
+- [ ] Hardware readiness gate + real-robot deploy
 
 ### Infrastructure already in place
-- [x] RewardSpec — DIAYN reward swap is one line
-- [x] ObsSpec — skill vector z injection is one line
+- [x] RewardSpec / ObsSpec — necessary but not sufficient (V2 audit)
 - [x] Asymmetric critic — critic sees privileged state
-- [x] EncoderConfig.context_dim — skill z as context input (scaffolding exists, unused)
+- [x] `EncoderConfig.context_dim` — reserved/unwired; SD-A uses concat instead, structured fusion deferred
 - [x] Action delay wrapper — sim2real latency simulation
+- [x] `JaxReplayBuffer.extra_obs_dims` — exists for `critic_obs`, generic extension lands in SD-B
+- [x] `meta["obs_schema"]` + `meta["control"]` — strict deploy contract; `skill_discovery` block lands in SD-D
 - [ ] Goal-conditioned encoder fusion (concat/FiLM/cross_attn) — needed for skill z context

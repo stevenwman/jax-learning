@@ -1,5 +1,20 @@
 # Skill Discovery Framework Implementation Plan
 
+> ## ⛔ SUPERSEDED — DO NOT IMPLEMENT FROM THIS DOC
+>
+> Superseded by `.superpowers/specs/2026-04-28-skill-discovery.md` (V2 audit + design)
+> and `.superpowers/plans/2026-05-02-skill-discovery-sd-a.md` (SD-A execution plan).
+>
+> Why: this v1 plan predates RewardSpec/ObsSpec, the env-backend refactor, the
+> EnvBundle entrypoint, ObsPipeline sample-time normalization, schema-stamped
+> deploy contracts, and the off-policy script split. Its file targets
+> (`go2_joystick.py`, `train_offpolicy.py`), magic obs indices (`[48:50]
+> base_xy`, `[50] base_z`), and "store normalized augmented obs in replay"
+> design are all wrong against current repo.
+>
+> Kept for historical intent (DIAYN/METRA module sketches, factorized USD
+> rationale). All implementation guidance is stale.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 > **Drift note (2026-04-20):** This plan predates the 2026-04-12 off-policy script split. References to `train_offpolicy.py` as "the starting point" should be read as "the per-algo script closest to your target (`train_sac.py`, `train_fast_sac.py`, etc.) plus the shared loop at `jax_rl/training/offpolicy_loop.py::run_offpolicy_loop`". The legacy dispatcher lives at `archive/train_offpolicy.py` for reference only.
