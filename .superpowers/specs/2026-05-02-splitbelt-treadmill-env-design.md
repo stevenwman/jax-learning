@@ -41,13 +41,15 @@ The following were chosen during the brainstorming session; rationale captured h
 1. **Robot strategy: R3 — robot-agnostic apparatus, Go2 first.** The treadmill XML and schedule samplers are robot-blind. A humanoid variant is a follow-up env that reuses both. No humanoid asset work today.
 2. **Belt mechanics: M1 — moving-geom belt slabs.** Each belt is a long box geom on a slide joint with a velocity actuator. Bongo-board precedent (`go2_bongo_handstand.py`) proves the pattern works on MuJoCo Warp. Cheaper alternatives (velocity-field force on contact, M2; reference-frame trick, M3) were rejected: M2 weakens the sim2real defensibility ("splitbelt becomes a friction model we made up"); M3 cannot represent per-foot belt frames. Slabs are gross-long (~50m) so a single episode does not require teleport.
 3. **Task framing: T2 — joystick-style cmd.** Existing Go2 joystick env's reward shape ports near-zero. Stand/step-in-place corresponds to `cmd = 0`; walking-forward variants (`cmd_x > 0`) are a separate config later. The cmd vector stays in obs even when always zero (preserves obs/reward plumbing).
-4. **Cmd frame: world/lab frame, sensor reads body frame.** The treadmill is a stationary lab apparatus; belts slide under it. `cmd = 0` means torso stationary in world (≡ body-frame velocity sensor reads ~0). Stride velocity is implicit — set by belt speed, not by cmd. `tracking_lin_vel_xy(cmd=0)` and `treadmill_drift` rewards both point to "torso stationary" with no conflict.
+4. **Cmd frame: cmd is body-frame; treadmill_drift anchors world frame.** The IMU velocity sensor reads body-frame torso velocity, and the cmd vector is interpreted in body frame (matches `Go2WarpJoystickFlat` exactly). `cmd = 0` means body-frame torso velocity → 0; combined with `treadmill_drift` (penalty on world-frame `||base_xy − treadmill_center_xy||`), the two rewards jointly enforce "torso stationary in lab frame." Stride velocity is implicit — set by belt speed, not cmd. The treadmill is a stationary lab apparatus; the belt slabs translate under the robot but the apparatus frame is fixed at world origin (see `treadmill_center_xy` in §7.1).
+   - **`treadmill_center_xy = (0.0, 0.0)`** (world origin). Defined here once; referenced by §7.1, §9.1.
+   - The `cmd > 0` walking variant (§11.2) would conflict with `treadmill_drift` (forward translation vs anchor at origin) and is therefore out of scope for this spec. If walking is ever added, drift must be replaced with a band/region penalty.
 5. **Obs modes: four supported via config switch (`cfg.obs_mode`).**
    - `blind` — proprio + cmd. (A1 fixed policy, A3 meta-RL, default.)
    - `informed` — proprio + cmd + (vL, vR). (A2.)
    - `error` — proprio + cmd + (cmd_track_error, drift_xy). Belt speeds hidden, error explicit. Tests value of explicit error signal alone.
-   - `history` — k-step frame stack of proprio + cmd. Existing `frame_stack.py` substrate.
-   `privileged_state` always carries (vL, vR) + cmd + tracking error + drift, regardless of `obs_mode`.
+   - `history` — k-step frame stack of proprio + cmd via the existing `FrameStackWrapper` (`jax_rl/envs/wrappers/frame_stack.py`). Wired via wrapper at env-bundle time when `obs_mode == "history"`. The env itself emits the same name layout as `blind`; the wrapper does the stacking. `k = cfg.history_len` (default 4).
+   `privileged_state` always carries the full proprio set + (vL, vR) + cmd + cmd_track_error + drift_xy + (true) base_lin_vel + base_ang_vel, regardless of `obs_mode`. "Proprio set" here means the same proprio terms that live in `state` for the `blind` mode; nothing is privilege-hidden from privileged_state.
 6. **Schedule API: S3 — per-episode schedule table.** A `(T, 2)` jax array filled at reset by a per-protocol sampler module (`splitbelt_schedules.py`). Env step is a pure index op, JIT/vmap clean. New protocol = new sampler, env doesn't change.
 7. **Online metrics = primitives only.** Composite metrics (limp index, recovery time, after-effects) computed offline from logged time-series. Reduces bug surface in the env itself; matches the bongo lesson "verify visually, watch for silent reward hacking."
 8. **No symmetry reward.** Step-length symmetry is a *measurement*, not a reward. Rewarding it would make the benchmark question circular. Reward = task (cmd tracking + stay-on-treadmill); asymmetry = what we measure.
@@ -68,9 +70,9 @@ SplitbeltTreadmill env (mjx backend, Warp impl)
 ├── Env: jax_rl/envs/locomotion/go2_warp_splitbelt.py
 │   └── Go2WarpSplitbeltEnv(Go2WarpBase)
 │       ├── _obs_groups gated by cfg.obs_mode ∈ {blind, informed, error, history}
-│       ├── _post_init: schedule_table buffer init
-│       ├── _step: belt actuator vel = schedule_table[step_idx], physics, log primitives
-│       └── _reset: schedule_sampler(rng, cfg.schedule_kind) → (T, 2) buffer
+│       ├── _post_init: schedule_table buffer init, sensor IDs, default_pose
+│       ├── step: belt actuator vel = schedule_table[step_idx], physics, log primitives  # framework calls .step (no underscore)
+│       └── reset: schedule_sampler(rng, cfg.schedule_kind) → (T, 2) buffer
 ├── Schedule samplers: jax_rl/envs/locomotion/splitbelt_schedules.py
 │   ├── tied(v)
 │   ├── split_constant(vL, vR)
@@ -174,6 +176,8 @@ Belt slab length: ~50m per side (configurable). Belts reset to origin each episo
 - `schedule_table` set once at reset, frozen for the episode.
 - Env step is a pure indexing op into `schedule_table` — JIT/vmap clean, no closures, no python state.
 - `schedule_table` lives in `state.info` and flows through vmap/scan transparently. At T=1250 and N=1024 envs, ≈10 MB float32 — fine.
+- **Static-shape lock-in:** `schedule_table.shape == (cfg.episode_length, 2)` always. We do NOT introduce a separate `T_max` cap; the episode_length is the JIT-static shape. This is the same convention as existing locomotion envs (episode_length determines wrapper truncation).
+- **Belt initial qvel:** `_reset` sets belt slide-joint qvel to `schedule_table[0]`. For tied schedules this is the warmup speed; for `random_per_episode` this means the robot's spawn keyframe lands feet on already-moving belts. The `kv=200` actuator settles within one ctrl_dt either way; we accept the first-step transient rather than adding a settle window. (Documented because it's a research consequence: A1 `random` rollouts begin under perturbation immediately.)
 
 ---
 
@@ -181,18 +185,20 @@ Belt slab length: ~50m per side (configurable). Belts reset to origin each episo
 
 ### 7.1 Reward terms
 
-Tracking (port from `Go2WarpJoystickFlat`):
-- `tracking_lin_vel_xy` — body-frame v vs cmd[:2], exp kernel.
-- `tracking_ang_vel_z` — body yaw rate vs cmd[2], exp kernel.
+**All weights ported verbatim from `Go2WarpJoystickFlat` (`jax_rl/envs/locomotion/go2_warp_joystick.py:47-69`).** The implementation must populate `default_config().reward_config.scales` with the joystick numerical defaults — empty/`get(name, default)` patterns are forbidden because they silently produce ~10× weaker tracking reward and lose the calibration target (see §10.5).
 
-Stay-on-treadmill (NEW):
-- `treadmill_drift` — quadratic penalty on `||base_xy − treadmill_center_xy||`. Lateral component dominates; forward component damped.
+Tracking:
+- `tracking_lin_vel_xy` — body-frame v vs cmd[:2], exp kernel. Default scale matches joystick.
+- `tracking_ang_vel_z` — body yaw rate vs cmd[2], exp kernel. Default scale matches joystick.
 
-Stability/smoothness (port verbatim):
+Stay-on-treadmill (NEW; only this term is bespoke):
+- `treadmill_drift` — quadratic penalty `−(w_lat · drift_y² + w_fwd · drift_x²)` where `drift = base_xy − treadmill_center_xy = base_xy − (0, 0)` (treadmill_center per §3.4). Default `w_lat = 4·w_fwd` (lateral drift is the dominant failure mode — robot off the side of the belt → off-belt termination; forward drift is bounded by the long slab and self-corrects). Concrete defaults: `w_lat = 2.0`, `w_fwd = 0.5`. Total reward contribution scaled by an outer `treadmill_drift` weight (default 1.0).
+
+Stability/smoothness (port verbatim from joystick — the implementation MUST include all of these, not a subset):
 - `lin_vel_z`, `ang_vel_xy`, `orientation`, `joint_torques`, `action_rate`, `joint_vel`, `feet_air_time`, `survival`.
 
 Termination:
-- `termination` — large negative on early done.
+- `termination` — large negative on early done. Default scale matches joystick.
 
 ### 7.2 What is NOT in the reward
 - **No step-length symmetry reward.** Symmetry is the measurement, not the target. Including it would bias the policy toward producing it and make the adaptation question circular.
@@ -254,8 +260,13 @@ state.info["splitbelt"] = {
     "cmd_track_error": jp.float32[3],       # body-frame velocity error
     "drift_xy": jp.float32[2],              # base_pos − treadmill_center
 
-    # Termination cause (set when done fires from a hard condition; 0 if alive or truncated)
-    "term_cause": jp.int32,                 # 0=none/truncated 1=fall 2=off-belt 3=tilt
+    # Termination cause. Set on the step that fires `done`; otherwise 0.
+    # Truncation (timeout) lives separately in info["truncation"] (Brax convention).
+    # Episode-end log readers should consult BOTH fields:
+    #   info["truncation"] == 1 → timeout
+    #   term_cause != 0          → hard termination (fall/off-belt/tilt)
+    #   neither                  → mid-episode alive snapshot
+    "term_cause": jp.int32,                 # 0=alive 1=fall 2=off-belt 3=tilt
 
     # Schedule pointer
     "step_idx": jp.int32,
