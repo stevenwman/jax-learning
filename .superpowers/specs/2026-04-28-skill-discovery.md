@@ -324,6 +324,24 @@ class FactorConfig:
     source: Literal["actor_obs", "critic_obs", "sim_data", "info"]
     extractor: str
     dim: int
+
+@dataclass
+class AuxNetConfig:
+    """Architecture defaults for DIAYN discriminator and METRA phi.
+
+    SD-A ships these as plain MLPs. SD-C/E may upgrade DIAYN discriminator
+    to SimBa-style residual MLP (D3 reference uses SimBa[256,256] elu).
+    """
+    discriminator_hidden: tuple[int, ...] = (256, 256)
+    discriminator_activation: str = "relu"        # D3 uses elu; pick one when wiring SimBa
+    discriminator_lr: float = 3e-4                # DIAYN reference launcher (mujoco_all_diayn.py:26)
+    phi_hidden: tuple[int, ...] = (256, 256)      # D3 reference (rsl_rl_usd_cfg.py:82-86)
+    phi_activation: str = "elu"                   # D3 default
+    phi_lr: float = 1e-4                          # METRA + D3 reference
+    dual_lam_init: float = 30.0                   # METRA paper + D3
+    dual_lam_lr: float = 5e-4                     # D3 lr_tau
+    dual_slack: float = 1e-3                      # METRA reference (tests/main.py:132)
+    dual_dist: Literal["one", "l2", "s2_from_s"] = "one"  # METRA default — constraint is ||Δφ||²≤1
 ```
 
 Use `one_hot` for SD-A through SD-C. Move Dirichlet and hypersphere priors to
@@ -476,13 +494,17 @@ Behavioral gates (paper-grounded — see `.context/references/skill_discovery_va
 - 3 seeds minimum, mean ± std reporting. Upgrade to 5 seeds if results
   contentious.
 
-Open implementation questions to resolve before coding (see validation doc Part 5):
+Open implementation questions — RESOLVED via source audits 2026-05-02 (see `.context/references/skill_discovery_source_extracts.md`):
 
-- DIAYN discriminator MLP sizes (paper omits) → read `ben-eysenbach/sac` source;
-  fall back to `[256, 256]`.
-- DIAYN reward feeds **current state s**, not next state `s'`. Discriminator is
-  `q(z|s)` per Eysenbach 2018. Confusable with DADS `q(s'|s,z)` — different
-  paper, different direction.
+- DIAYN discriminator MLP: `[300, 300]` ReLU plain in DIAYN reference;
+  `SimBa[256, 256]` ELU in D3. Spec ships `[256, 256]` plain as `AuxNetConfig`
+  default; SD-C/E may upgrade to SimBa.
+- DIAYN reward feeds **current state s**, not next state `s'` (confirmed
+  `diayn.py:175-180`). Confusable with DADS `q(s'|s,z)` — different paper.
+- DIAYN Adam lr = `3e-4` (launcher overrides class default 3e-3).
+- DIAYN num_skills reference default = 50; SD-A unit tests use 4.
+- **Skip DIAYN's GMM K=4 policy** — modern SAC with squashed Gaussian is fine
+  (D3 also uses simple SAC, not GMM).
 
 ### SD-C: Go2 DIAYN with deployable obs
 
@@ -626,13 +648,30 @@ Acceptance (SD-E — replicates D3 Tables 1, 2, 3 + Fig 5; see validation doc Pa
 - **Seeds:** 5 seeds for sim ablations (matches D3), 3 trials per skill on
   hardware (compute / wall-clock permitting).
 
-Open implementation questions to resolve before SD-E coding (see validation doc Part 5):
+Open implementation questions — RESOLVED via source audits 2026-05-02 (see `.context/references/skill_discovery_source_extracts.md`):
 
-- METRA target φ network used? Read `seohongpark/METRA` source.
-- METRA dual λ init / lr / slack ε — Appendix F.2 of paper, not in HTML; read
-  source `tests/main.py` argparse defaults.
-- Per-skill state-coverage sample count: D3 says "10K+". Use 1K for first run
-  (compute), expand to 10K after sim2real gate.
+- **METRA target φ network: NONE** (only Q-targets). Confirmed `iod/metra.py`.
+- **METRA `dual_lam_init = 30`**, parameterized as `log(lambda)` for positivity.
+- **METRA `dual_slack = 1e-3`** (NOT 1e-5 from v1 plan — must update).
+- **METRA `dual_dist = 'one'` default** — constraint is `||Δφ||² ≤ 1` (constant).
+  L2 / s2_from_s are paper-text-style ablations. Ship 'one' as default; flag for L2.
+- **METRA z continuous: `N(0, I) → unit-sphere project`**.
+- **D3 lr = `1e-3` adaptive schedule** (NOT 1e-4 as paper text).
+- **D3 λ sampling = `F.normalize(|N(0,1)|^skew)`** — half-normal, L2-normalized.
+  NOT Dirichlet, NOT sum-to-1, NOT truncated Gaussian. Major departure from paper text.
+- **D3 per-factor value: 6 fully separate critic MLPs** (not shared encoder + heads).
+  UCB term wired but `beta_advantage_UCB=0.0` — pure weighted sum.
+- **D3 already incorporates DUSDi-style negative-MI penalty** via
+  `lambda_skill_disentanglement=0.1` and `skill_disentanglement=True`. DUSDi's
+  contribution is partially baked into D3 reference.
+- **D3 skill resampling = 375 steps (7.5s @ 50Hz)** for all factors.
+- **D3 Dirichlet α curriculum is adaptive cosine-sim driven** (×1.01 if cos>0.7,
+  ×0.99 if cos<0.6, clamped [0.05, 1.0]). NOT a fixed schedule.
+- **D3 ships NO eval scripts** for Tables 1, 2, 3 — we build our own.
+- **D3 has no `hardware_ready` flag** — our SD-D gate is novel and worth keeping.
+- Per-skill state-coverage sample count: D3 paper says "10K+", D3 code uses
+  pairwise distance over 512 envs (different protocol). Use 1K samples for
+  first run, expand to 10K after sim2real gate (still our convention).
 
 ## Proposed first PR/task split
 

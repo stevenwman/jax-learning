@@ -5,6 +5,7 @@
 **Sources:** Deep-audit reports of DIAYN, METRA, D3, DADS, DUSDi, SkiLD (parallel agent research, 2026-05-02).
 **Related:**
 - Spec: `.superpowers/specs/2026-04-28-skill-discovery.md`
+- **Source extracts: `.context/references/skill_discovery_source_extracts.md`** ← ground-truth values from each paper's official repo (file:line cites). Read alongside this doc.
 - D3 reference: `.context/references/d3_skill_discovery.md`
 - SD-A plan: `.superpowers/plans/2026-05-02-skill-discovery-sd-a.md`
 
@@ -91,11 +92,16 @@ Standard RL benchmarks (return on a reward function) don't apply. There is no "c
 - **DADS-style dynamics model** is more invasive. Worth flagging as SD-F/G (post-D3) only if D3 hierarchical PPO fails to compose skills well downstream. Don't bake into the spec yet.
 - **SkiLD** is irrelevant unless we add manipulation. Note for future, don't plan for now.
 
-### What we should explicitly not pursue
+### What we should explicitly not pursue *for the current locomotion target*
 
 - **Pixel-based skills** (METRA's headline) — Go2 deploy uses proprioception, no cameras. Skip METRA's pixel ablations entirely.
 - **DADS MPPI hardware composition** — needs full forward dynamics model + 20 robot-hours per task. Disproportionate cost.
-- **SkiLD causal graph discovery** — not applicable to monolithic-body locomotion factors.
+
+### What stays on the radar for manipulation extension
+
+- **SkiLD causal graph discovery.** Pure free-running locomotion has dense factor coupling — pCMI between rigid-body factors of one robot is near-saturated, no signal. **But** if we extend to loco-manipulation (which D3 explicitly failed at: "pushing degenerated to unsafe collisions") or stationary manipulation (Go2 arm? table-top robot? bimanual?), SkiLD's interaction-graph discovery becomes load-bearing. The pCMI signal lights up exactly when factors couple intermittently — robot↔object, object↔object — which is the manipulation regime.
+  - **Decision:** keep SkiLD-style interaction-graph hooks orthogonal to the D3 locomotion stack. Don't bake into SD-B/C/D, but design the factor extractor registry (SD-A) so a future `InteractionGraphFactor` can plug in without refactor. Concretely: factor extractors return `(batch_array, metadata_dict)` rather than just an array, so dependency-graph factors can pass `g_target` alongside their state-factor reads. **Cost in SD-A:** ~5 lines of API.
+  - **Re-evaluate at:** start of any manipulation phase (post-SD-E, or earlier branch if hardware target shifts).
 
 ---
 
@@ -171,21 +177,31 @@ Standard RL benchmarks (return on a reward function) don't apply. There is no "c
 
 ---
 
-## Part 5 — Open implementation questions raised by audit
+## Part 5 — Open implementation questions — RESOLVED
 
-Must resolve before each phase's coding starts. **Not blocking SD-A** but blocking SD-B onward.
+All blocking questions resolved via source-code audits 2026-05-02. Detailed values + file:line cites in `.context/references/skill_discovery_source_extracts.md`. Brief table:
 
-| Question | Source | Resolve by | Resolution path |
-|---|---|---|---|
-| DIAYN discriminator MLP sizes | DIAYN paper omits | SD-B start | Read `ben-eysenbach/sac` repo; fall back to `[256, 256]` (community PyTorch repro default) |
-| DIAYN: discriminator on `s` or `s'`? | Paper says current state | SD-B start | Use **current state `s`** per paper. SD-A v1 plan suggested next-state — wrong. Match paper. |
-| METRA: target φ network used? | Paper unclear | SD-E start | Read `seohongpark/METRA` `iod/metra.py`; default to no target net unless source contradicts |
-| METRA: dual λ init / lr / slack ε | Appendix F.2, not in HTML | SD-E start | Read source `tests/main.py` argparse defaults |
-| DIAYN obs to discriminator: full state or factor slice? | Paper: full state for foundational version | SD-B start | SD-B uses full actor obs. SD-C uses factor extractor output. |
-| DADS-style intrinsic reward as alternative? | Out of D3 scope | SD-F+ | Skip for now; revisit if METRA factor underperforms |
-| DUSDi negative-MI penalty as D3 add-on? | Orthogonal to D3 | SD-E ablation | Compare D3 vs D3+DUSDi DCI score on Go2 factors |
-| Per-skill eval episode count M | None of the papers fix M precisely | SD-B start | M=10 sim, M=3 hardware (our convention) |
-| Per-skill state-coverage sample count | D3 says "10K+" | SD-C start | Use 1K samples for first run (cost), expand to 10K after sim2real gate |
+| Question | Resolution |
+|---|---|
+| DIAYN discriminator MLP sizes | DIAYN ref: `[300, 300]` plain ReLU. D3 ref: `SimBa[256, 256]` ELU. Spec ships `[256, 256]` plain in `AuxNetConfig`; SD-C/E may upgrade to SimBa. |
+| DIAYN: discriminator on `s` or `s'`? | **Current state s** (confirmed `diayn.py:175-180`). Common confusion: DADS uses `s'`. |
+| DIAYN obs: full state or factor slice? | DIAYN ref uses **full state**. Our SD-C uses factor extractor output (D3 pattern). |
+| METRA: target φ network used? | **None** — only Q-targets (`iod/metra.py`). |
+| METRA: dual λ init / lr / slack ε | `dual_lam_init=30` (log-parameterized); `dual_lam_lr=5e-4` (D3); `dual_slack=1e-3` (NOT 1e-5). |
+| METRA: dual_dist? | `'one'` default — constraint is `‖Δφ‖²≤1` (constant). L2 is non-default ablation. |
+| METRA: z continuous prior? | `N(0, I) → project to unit sphere`. |
+| D3 learning rate? | `1e-3` adaptive schedule (NOT 1e-4 as paper text). |
+| D3 λ sampling? | Half-normal `|N(0,1)|^skew` then L2-normalized. NOT Dirichlet, NOT sum-1. |
+| D3 per-factor value? | 6 fully separate critic MLPs; UCB wired but disabled (β=0). |
+| D3 already includes DUSDi penalty? | **Yes** — `skill_disentanglement=True`, `lambda_skill_disentanglement=0.1`. |
+| D3 skill resampling cadence? | 375 steps (7.5s @ 50Hz) all factors. |
+| D3 ships eval scripts? | **No** — we build our own for Tables 1/2/3. |
+| Per-skill eval episode count M | M=10 sim, M=3 hardware (our convention; no paper fixes M). |
+| Per-skill state-coverage sample count | 1K first run, 10K post sim2real (our convention). |
+| DADS L (alt-z samples)? | **L=100** in shipped configs (NOT 500 as paper text). |
+| DADS numerical guard? | Hard `np.clip(±50)`, no logsumexp — confirms "improper bound" caveat. |
+| DUSDi anti-discriminator? | `anti=False` default in shipped config; D3 turns it on. |
+| SkiLD lower policy? | Rainbow DQN by default for discrete envs; only upper graph-PPO is on-policy. |
 
 ---
 
@@ -194,6 +210,6 @@ Must resolve before each phase's coding starts. **Not blocking SD-A** but blocki
 1. **Stay with D3 as north star.** It's the only paper proven on quadruped hardware with a clean ablation structure. Our SD-A → SD-E plan tracks it.
 2. **Adopt 5-seed mean ± std as default eval convention.** Matches D3. Upgrade case-by-case.
 3. **Add DUSDi DCI as informational metric in SD-E.** Cheap, gives a number for "are our factors actually independent."
-4. **Defer DADS, SkiLD.** Out of scope for hardware-target locomotion; revisit only if we extend to manipulation (DADS for planning, SkiLD for contact-rich) or D3 hierarchical PPO underperforms (DADS MPPI alternative).
+4. **Defer DADS** for hardware-target locomotion; revisit only if D3 hierarchical PPO underperforms (DADS MPPI alternative). **Keep SkiLD design hooks open** — manipulation extension is on the user's radar, and SkiLD's interaction-graph approach is the strongest candidate for contact-rich / multi-object skill discovery. The factor extractor registry (SD-A) should accept metadata-bearing factors so a future SkiLD-style `InteractionGraphFactor` plugs in without refactor.
 5. **Read source repos before each phase implementation start.** DIAYN architecture and METRA Lagrangian details are not fully specified in paper text. The audits of both papers explicitly flagged Appendix F / source defaults as the ground truth.
 6. **Patch SD-A plan acceptance** with the SD-B "discriminator on `s` not `s'`" fix and the M=10 per-skill rollout convention.
