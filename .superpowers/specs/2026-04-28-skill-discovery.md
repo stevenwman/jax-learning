@@ -452,17 +452,37 @@ until after the episode-skill path works.
 Do not start with FlashSAC. Its standalone loop and BatchNorm path make it a
 bad first target for skill discovery plumbing.
 
-Acceptance:
+Acceptance (SD-B):
+
+Plumbing gates:
 
 - 10k-step CPU/GPU smoke on a simple env produces finite aux losses.
-- 100k-step DIAYN smoke shows discriminator accuracy above random on at least
-  one continuous-control env.
 - Existing asymmetric-critic buffer tests still pass after generic extras land.
 - Skill tests store and sample `skill_z`, `next_skill_z`, `factor_obs`, and
   `next_factor_obs` alongside critic extras.
 - Skill checkpoint resume restores aux params and optimizer state.
 - Existing FastSAC tests pass unchanged.
 - No changes to existing `train_fast_sac.py` behavior.
+
+Behavioral gates (paper-grounded — see `.context/references/skill_discovery_validation.md` Part 4 SD-B):
+
+- Discriminator accuracy curve rises above chance (`1/num_skills`) within first
+  100k steps on a simple continuous-control env (CheetahRun or WalkerWalk).
+- At 1M steps: per-skill task-return histogram (M=10 episodes per fixed z).
+  Spread (max − min across skills) > 50% of any single skill's return. Replicates
+  DIAYN App. D.4 protocol.
+- At 1M steps: render 1 video per skill. Skills should show qualitatively
+  diverse gaits (subjective check, replicates DIAYN HalfCheetah figure intent).
+- 3 seeds minimum, mean ± std reporting. Upgrade to 5 seeds if results
+  contentious.
+
+Open implementation questions to resolve before coding (see validation doc Part 5):
+
+- DIAYN discriminator MLP sizes (paper omits) → read `ben-eysenbach/sac` source;
+  fall back to `[256, 256]`.
+- DIAYN reward feeds **current state s**, not next state `s'`. Discriminator is
+  `q(z|s)` per Eysenbach 2018. Confusable with DADS `q(s'|s,z)` — different
+  paper, different direction.
 
 ### SD-C: Go2 DIAYN with deployable obs
 
@@ -489,17 +509,34 @@ Do not begin with D3 full factorization. First prove that skill-conditioned
 FastSAC can produce distinct stable Go2 behaviors without breaking deployment
 contracts.
 
-Acceptance:
+Acceptance (SD-C — paper-grounded, replicates D3 Table 2 + Fig 5 protocol on a single DIAYN factor; see validation doc Part 4 SD-C):
 
-- Per-skill eval rollouts show behavior diversity without high fall rate.
+Plumbing gates:
+
 - Fixed-skill eval uses skill-aware obs composition for action and Q diagnostics;
   do not route through `maybe_eval_and_checkpoint()` unless it grows a skill
   hook or forwards `action_fn_kwargs`.
-- Report at minimum per-skill return, intrinsic reward, task reward, behavior
-  summary, and fall rate.
 - `meta.json` contains both normal Go2 deploy metadata and `skill_discovery`.
 - A fixed-skill policy can be replayed in sim with the same obs/action contract
   as training.
+
+Behavioral gates:
+
+- **Per-skill state coverage** (D3 Table 2 protocol): 1000+ random skill samples,
+  one rollout each; report std-of-mean-states for the factor's tracked dim.
+  Should rise above no-skill (vanilla SAC) baseline by ≥ 2×.
+- **Per-skill rollout aggregates** (M=10 episodes per fixed z, K=4 one-hot skills):
+  - mean ± std episode return
+  - mean ± std episode length (proxy for fall rate; full D3 illegal-contact %
+    deferred to SD-E)
+  - command-tracking error (since first DIAYN factor is command-conditioned)
+  - per-leg torque RMS
+  - **Fall rate ≤ 20% per skill** (looser than D3 hardware bar; sim-only here)
+- **Skill-following fidelity** (D3-style cosine similarity): cosine(commanded z,
+  realized base velocity direction) > 0.5 mean across skills.
+- **Headline plot:** xy trajectory per skill, color-coded by skill index
+  (METRA Fig 3 protocol).
+- **Seeds:** 3-5 seeds, mean ± std.
 
 ### SD-D: Deploy/export contract for fixed skills
 
@@ -565,6 +602,37 @@ Only after SD-B through SD-D:
 
 V2 should treat style/safety as required for hardware, not optional polish.
 Hardware readiness belongs here or later, not in SD-D.
+
+Acceptance (SD-E — replicates D3 Tables 1, 2, 3 + Fig 5; see validation doc Part 4 SD-E):
+
+- **D3 Table 1 replication** (style on/off, sim): illegal-contact % per body part
+  (base, shank, thigh) + per-skill task return. Style should reduce contacts ≥10×
+  (D3 reports base 4.04% → 0.03%).
+- **D3 Table 2 replication** (algo choice ablation, sim): DIAYN-only, METRA-only,
+  Mixed (D3) on Go2 factors. Mixed should beat single-method on ≥ 2 factors by
+  state-coverage std-of-means.
+- **D3 Table 3 replication** (downstream nav, sim): hierarchical PPO over frozen
+  skills on rough-terrain waypoint task. Report mean reward, heading error,
+  position error, termination ratios.
+- **D3 Fig 5 replication**: roll/pitch coverage map with/without symmetry.
+- **DUSDi DCI score** (informational, not a gate): compute Disentanglement,
+  Completeness, Informativeness on D3 factors. Diagnostic for "are our hand-picked
+  factors actually independent on Go2."
+- **Hardware readiness gate**: `meta["skill_discovery"]["hardware_ready"] = true`
+  only after passing all sim ablations + a sim2real walkability test (no falls in
+  60s sim2sim with operator-slider z).
+- **Hardware deploy** (real Go2): per fixed skill, M=3 trials, report success/fall
+  rate + qualitative video. Match D3's operator-slider deploy protocol.
+- **Seeds:** 5 seeds for sim ablations (matches D3), 3 trials per skill on
+  hardware (compute / wall-clock permitting).
+
+Open implementation questions to resolve before SD-E coding (see validation doc Part 5):
+
+- METRA target φ network used? Read `seohongpark/METRA` source.
+- METRA dual λ init / lr / slack ε — Appendix F.2 of paper, not in HTML; read
+  source `tests/main.py` argparse defaults.
+- Per-skill state-coverage sample count: D3 says "10K+". Use 1K for first run
+  (compute), expand to 10K after sim2real gate.
 
 ## Proposed first PR/task split
 

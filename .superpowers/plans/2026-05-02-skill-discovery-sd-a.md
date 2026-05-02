@@ -2,6 +2,7 @@
 
 **Date:** 2026-05-02
 **Spec:** `.superpowers/specs/2026-04-28-skill-discovery.md`
+**Validation methodology:** `.context/references/skill_discovery_validation.md` ← **read this for paper-grounded eval contracts and method tradeoffs**
 **Phase:** SD-A (first of SD-A → SD-E)
 **Status:** ready
 
@@ -506,6 +507,14 @@ git commit -m "feat(skill): add DIAYN discriminator, sample-time reward, and gra
 - `update(aux_state, batch) -> (new_aux_state, metrics)` — runs gradient steps on all factors
 
 **Important fix vs v1:** optimizers built once in `__init__`, stored on `self`. Do NOT recreate inside `update()`.
+
+**DIAYN reward uses current state `s`, NOT next state `s'`** (per Eysenbach 2018 — discriminator `q(z|s)` is on current state). Common confusion: DADS uses `q(s'|s,z)` which is forward-direction; DIAYN reverses to predict z from s. v1 retired plan had this wrong — used `next_obs` for the discriminator. SD-A's `compute_intrinsic_reward` and `update` both feed `batch["obs"]` (the factor extractor pulls from current state).
+
+When SD-E adds METRA, METRA's reward is `(φ(s')−φ(s))ᵀz` and DOES need both `s` and `s'`. The manager dispatches by `factor.method`:
+- `method="diayn"` → extract from `batch["obs"]` only
+- `method="metra"` → extract from `batch["obs"]` and `batch["next_obs"]`
+
+SD-A only ships DIAYN, so tests only put `"obs"` in the batch.
 
 ### Step 5.1: Write tests (RED)
 
