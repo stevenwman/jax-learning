@@ -486,15 +486,16 @@ Why it should work: contraction signal enters via reward augmentation `R_c = (ε
 > The old bullets were optimistic about ObsSpec/RewardSpec being sufficient — the V2 audit found off-policy buffer, frame-stack, normalization, checkpoint, and deploy contracts also need work.
 > Informed by D3 paper (arXiv:2508.19953) and leggedrobotics/d3-skill-discovery. See `.context/references/d3_skill_discovery.md`.
 
-### SD-A: Contract and scaffolding (active plan)
+### SD-A: Contract and scaffolding ✅
 **Plan:** `.superpowers/plans/2026-05-02-skill-discovery-sd-a.md`
-- [ ] Pure config + priors + factor registry + DIAYN aux + SkillManager. Unit tests only. No env, no train script.
+- [x] Pure config + priors + factor registry + DIAYN aux + SkillManager. Unit tests only. No env, no train script. Landed 2026-05-02 (commits 84883a7, 0317db7, 593ddf4, bd0bcf8, 725eced). 31/31 tests pass; zero regressions.
 
 ### SD-B: FastSAC DIAYN training loop (next)
 - [ ] Extend `ObsPipeline.make_buffer` with generic `extra_obs_dims`
 - [ ] `scripts/train_skill_discovery.py` + `jax_rl/training/skill_offpolicy_loop.py`
 - [ ] Sample-time intrinsic reward replacement; aux update after algo update
-- [ ] DIAYN smoke on CheetahRun or WalkerWalk (no Go2 yet)
+- [ ] DIAYN smoke on **CheetahRun** (MJX, fast). HalfCheetah is the primary DIAYN paper-canonical env (App. D.4 reward histogram fig).
+- [ ] **Future / nice-to-have:** Ant xy-trajectory headline figure replication (per-skill colored xy plot, DIAYN/DADS/METRA canonical visual). Run once at end of SD-B for the visual sanity-check. Two routes: (a) CPU Gym Ant-v5 via existing `gym_backend.py:200` for one-shot figure generation (slow but no new code); (b) port ant.xml → MJX env in `jax_rl/envs/dmc/ant.py` if we want fast Ant for repeated visualizations or downstream phases. Prefer (a) unless we end up needing fast Ant repeatedly. Don't pull in Brax — single env doesn't justify a third backend lib.
 
 ### SD-C: Go2 DIAYN with deployable obs
 - [ ] Target `Go2WarpJoystickUnitree` (45d hardware-conservative obs, action_scale=0.25)
