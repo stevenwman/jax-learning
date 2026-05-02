@@ -102,11 +102,15 @@ Belt slab length: ~50m per side (configurable). Belts reset to origin each episo
 ### 5.2 `xmls/go2_warp_splitbelt_scene.xml` (new robot-specific scene)
 - `<include>` go2.xml + treadmill_splitbelt.xml.
 - Spawn keyframe: Go2 in standard pose, base centered between belts, all four feet on the appropriate belts (FL, RL on left; FR, RR on right).
-- Contact filter: feet × {left_belt, right_belt, fallback_floor}; base/torso × {fallback_floor} for fall termination.
+- Contact filter:
+  - feet × {left_belt, right_belt, fallback_floor}
+  - base/torso × {left_belt, right_belt, fallback_floor} — all three count as fall contacts
+  Per `lessons/bongo.md` (2026-04-02): use exact contact sensors, not position heuristics, for termination. The base/torso × belt filters catch the "robot collapses onto a belt" failure mode that would otherwise rely on tilt/height threshold backstop.
 
 ### 5.3 `go2_warp_splitbelt.py` (new env module)
 - `Go2WarpSplitbeltEnv` subclasses `Go2WarpBase` (NOT joystick — joystick has flat-floor specifics; splitbelt scene replaces them).
 - Inherits Go2 physics, action space, PD control, base obs/reward primitives.
+- **Reward terms duplicated from joystick env, not factored.** Splitbelt env defines its own reward computation reusing the same term shapes (tracking_lin_vel_xy, tracking_ang_vel_z, lin_vel_z, etc.). If a third locomotion env later wants the same shape, factor into a shared helper at that point. Premature abstraction now is a YAGNI violation.
 - Adds:
   - `_belt_step` — look up `state.info["belt_schedule"][state.info["step_idx"], :]`, write to belt actuators.
   - `_compute_gait_metrics` — foot-on-belt detection from contact sensors, foot world positions, base kinematics → `state.info["splitbelt"]` dict.
@@ -161,7 +165,10 @@ Belt slab length: ~50m per side (configurable). Belts reset to origin each episo
 4. Reset belt slab joint qvel to `schedule_table[0]` (so velocity actuator does not have to spin up from rest).
 5. Sample DR fields per `DomainRandWrapper`.
 6. Sample cmd via `cfg.cmd_sampler(rng_cmd)`. Default = always-zero.
-7. Initial obs computed; `info["step_idx"] = 0`.
+7. Zero `info["splitbelt"]["term_cause"] = 0` (vmap-safe — prevents stale term_cause from prior episode bleeding through). All other `info["splitbelt"]` fields recomputed on first step from fresh state.
+8. Initial obs computed; `info["step_idx"] = 0`.
+
+`_step` writes `term_cause` only when `done` fires; otherwise field passes through unchanged (which after reset is 0). Standard auto-reset pattern.
 
 ### 6.3 Invariants
 - `schedule_table` set once at reset, frozen for the episode.
@@ -193,11 +200,14 @@ Termination:
 
 ### 7.3 Termination conditions
 
-Hard:
-- Base contact with `fallback_floor` (fall).
-- Any foot contact with `fallback_floor` outside the belt (off-belt).
-- Excessive base roll/pitch (gravity-vector body-z below threshold ≈ 0.5).
-- Base height below threshold (≈ 0.18 m).
+Hard (contact-based — primary detectors, exact, threshold-free):
+- Base/torso contact with `fallback_floor` (fall onto gap floor) → `term_cause = fall`.
+- Base/torso contact with `left_belt` or `right_belt` (collapse onto a belt) → `term_cause = fall`.
+- Any foot contact with `fallback_floor` (off-belt) → `term_cause = off-belt`.
+
+Hard (threshold-based — backstop only, in case a contact pair is misconfigured):
+- Excessive base roll/pitch (gravity-vector body-z below ≈ 0.5) → `term_cause = tilt`.
+- Base height below ≈ 0.18 m → `term_cause = tilt` (shares cause code; height is a tilt proxy).
 
 Soft:
 - Episode timeout at `episode_length` steps. Sets `info["truncation"] = 1`.
@@ -244,8 +254,8 @@ state.info["splitbelt"] = {
     "cmd_track_error": jp.float32[3],       # body-frame velocity error
     "drift_xy": jp.float32[2],              # base_pos − treadmill_center
 
-    # Termination cause (set on done; one-hot int)
-    "term_cause": jp.int32,                 # 0=none 1=fall 2=off-belt 3=tilt 4=timeout
+    # Termination cause (set when done fires from a hard condition; 0 if alive or truncated)
+    "term_cause": jp.int32,                 # 0=none/truncated 1=fall 2=off-belt 3=tilt
 
     # Schedule pointer
     "step_idx": jp.int32,
