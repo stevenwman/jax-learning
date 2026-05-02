@@ -1194,6 +1194,13 @@ def default_config() -> config_dict.ConfigDict:
         soft_joint_pos_limit_factor=0.95,
         impl="warp",
         contact_mode="training",
+        # Obs noise (consumed by compute_obs at step time; matches joystick env shape).
+        noise_config=config_dict.create(
+            level=1.0,
+            scales=config_dict.create(
+                joint_pos=0.03, joint_vel=1.5, gyro=0.2, gravity=0.05,
+            ),
+        ),
         # Splitbelt-specific
         obs_mode="blind",
         history_len=4,
@@ -1446,21 +1453,26 @@ def _reset(self, rng: jax.Array):
 
 > **Implementer note:** `_init_pipeline` and `_make_state` are conventions from `go2_warp_base` / `mjx_env.MjxEnv`. If the actual API differs (e.g., `mjx_env.init` + `State`), adapt — the precedent is `go2_bongo_handstand.py::_reset`. Don't invent new helpers; reuse base ones.
 
-- [ ] **Step 2: Stub `_compute_obs` so reset doesn't crash**
+- [ ] **Step 2: Implement `_compute_obs` via `compute_obs`**
 
-Add a temporary stub that returns the right structure but with zeros — the real obs comp is part of step:
+Use the canonical pattern from [`go2_warp_joystick.py:395-403`](../../jax_rl/envs/locomotion/go2_warp_joystick.py#L395-L403). `compute_obs` (defined at [`obs_spec.py:63`](../../jax_rl/envs/obs_spec.py#L63)) iterates the groups, calls each `ObsTerm.fn(**kwargs)`, applies per-term noise scaled by `noise_level`, and concatenates per group. RNG is threaded through `info["rng"]`.
 
 ```python
+from jax_rl.envs.obs_spec import compute_obs
+
+
 def _compute_obs(self, data, info) -> Dict[str, jp.ndarray]:
-    """TODO(Task 3.5): real obs from data + info. Stub returns zero-shaped placeholder."""
-    # Compute obs term widths from groups.
-    state_dim = sum(t.dim for t in self._obs_groups["state"])
-    priv_dim = sum(t.dim for t in self._obs_groups["privileged_state"])
-    return {
-        "state": jp.zeros(state_dim),
-        "privileged_state": jp.zeros(priv_dim),
-    }
+    obs, info["rng"] = compute_obs(
+        self._obs_groups,
+        noise_level=self._config.noise_config.level,
+        rng=info["rng"],
+        data=data,
+        info=info,
+    )
+    return obs
 ```
+
+> **Implementer note:** `info["rng"]` is mutated in-place via reassignment; the joystick env does the same (`go2_warp_joystick.py:398`). The `_step` flow then returns the updated info, so the new rng propagates to the next call.
 
 - [ ] **Step 3: Commit**
 
@@ -1623,53 +1635,11 @@ def _step(self, state, action: jax.Array):
     return self._make_state(data, obs, reward, done, new_info, metrics)
 ```
 
-#### Step F: real `_compute_obs`
+#### Step F: bind missing `term_factory` helpers to base-class methods
 
-Replace the stub:
+`build_obs_groups` (Task 3.2) refers to `env.get_joint_pos` / `env.get_joint_vel` / `env.get_gyro`. Verify these exist on `Go2WarpEnv` (they do — see [`go2_warp_base.py`](../../jax_rl/envs/locomotion/go2_warp_base.py); `get_gravity` is at line 189). If any are missing, add a small helper on the splitbelt env that reads from `data.qpos`/`data.qvel` directly. Do NOT modify `Go2WarpEnv` — keep the base class clean.
 
-```python
-def _compute_obs(self, data, info) -> Dict[str, jp.ndarray]:
-    sb = info["splitbelt"]
-    cmd = info["cmd"]
-
-    # Build proprio dict; ObsTerm names must match build_obs_groups.
-    proprio = {
-        "joint_pos": data.qpos[7:7 + 12],  # 12 actuated joints (skip 7 base + slides at end)
-        "joint_vel": data.qvel[6:6 + 12],
-        "last_action": info["last_action"],
-        "gravity": self._gravity_body(data),
-        "gyro": data.qvel[3:6],
-        "cmd": cmd,
-    }
-    extras_state = {}
-    extras_priv = {
-        "belt_vel": sb["belt_vel"],
-        "cmd_track_error": sb["cmd_track_error"],
-        "drift_xy": sb["drift_xy"],
-        "base_lin_vel": sb["base_vel_world"],
-        "base_ang_vel": data.qvel[3:6],
-    }
-
-    mode = self._config.obs_mode
-    if mode == "informed":
-        extras_state["belt_vel"] = sb["belt_vel"]
-    elif mode == "error":
-        extras_state["cmd_track_error"] = sb["cmd_track_error"]
-        extras_state["drift_xy"] = sb["drift_xy"]
-    # blind / history: no extras for state group.
-
-    state_terms = {**proprio, **extras_state}
-    priv_terms = {**proprio, **extras_priv}
-
-    return {
-        "state": jp.concatenate([state_terms[t.name] for t in self._obs_groups["state"]]),
-        "privileged_state": jp.concatenate(
-            [priv_terms[t.name] for t in self._obs_groups["privileged_state"]]
-        ),
-    }
-```
-
-> **Implementer note:** the helpers `_extract_yaw`, `_world_to_body`, `_gravity_body`, `_compute_ctrl`, `_physics_step`, `_init_pipeline`, `_make_state` are go2_warp_base conventions — names approximate. Match what the base class actually exposes; if a name doesn't exist, look at `go2_bongo_handstand.py::_step` for the equivalent and reuse exactly that helper. Don't add new helpers to the base class.
+> **Implementer note:** the helpers `_compute_ctrl`, `_physics_step`, `_init_pipeline`, `_make_state`, `_extract_yaw`, `_world_to_body` are go2_warp_base / mjx_env conventions — names approximate. Match what the base class actually exposes; if a name doesn't exist, look at [`go2_warp_joystick.py`](../../jax_rl/envs/locomotion/go2_warp_joystick.py)'s `_step` (and `go2_bongo_handstand.py::_step`) for the equivalent and reuse exactly that helper. Don't add new helpers to the base class.
 
 - [ ] **Step 1: Wire all sub-steps into `_step` and verify the file imports + the env constructs cleanly** (no Warp invocation needed yet)
 
@@ -1752,6 +1722,15 @@ def test_belt_qvel_matches_schedule(env, rng):
     # 10% tolerance for one-step transient (kv=200 should achieve this).
     assert jnp.abs(actual_left - schedule_step0[0]) < 0.1
     assert jnp.abs(actual_right - schedule_step0[1]) < 0.1
+
+
+def test_obs_groups_match_name_layout(env):
+    """Structural contract: real ObsTerms in env._obs_groups match obs_term_names()."""
+    from jax_rl.envs.locomotion.go2_warp_splitbelt import obs_term_names
+    layout = obs_term_names(env._config.obs_mode)
+    for group in ("state", "privileged_state"):
+        actual_names = [t.name for t in env._obs_groups[group]]
+        assert actual_names == layout[group], f"{group}: drift between obs_term_names + build_obs_groups"
 
 
 def test_off_belt_termination(env, rng):
