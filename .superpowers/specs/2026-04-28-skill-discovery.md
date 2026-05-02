@@ -189,6 +189,9 @@ skill_z      skill used for this transition
 next_skill_z skill bound to the bootstrap state (see lifecycle rule below)
 factor_obs   optional factor inputs needed for intrinsic reward recompute
 next_factor_obs
+action       already stored by SAC buffer for Q update; available to factor
+             extractors at sample time. No replay-schema migration needed
+             for future DADS-style factors that consume (s, a, s').
 reward       raw unscaled env reward until sample-time replacement
 ```
 
@@ -662,21 +665,33 @@ Acceptance (SD-E — replicates D3 Tables 1, 2, 3 + Fig 5; see validation doc Pa
   skills on rough-terrain waypoint task. Report mean reward, heading error,
   position error, termination ratios.
 - **D3 Fig 5 replication**: roll/pitch coverage map with/without symmetry.
-- **DUSDi-style penalty on/off ablation** (NOT "add DUSDi to D3" — D3 already
+- **DUSDi-style penalty 3-arm ablation** (NOT "add DUSDi to D3" — D3 already
   ships `skill_disentanglement=True, lambda_skill_disentanglement=0.1`). The
-  meaningful ablation is enable vs disable in our port. Report DCI score
-  (Disentanglement, Completeness, Informativeness) under each setting as a
-  diagnostic for "are our hand-picked factors actually independent on Go2."
-  If early-training instability appears, run a third arm at
-  `skill_disentanglement_warmup_steps=1_000_000` (DUSDi reference default).
+  decision space is three reference defaults, not on/off binary:
+  - **Arm A** — DUSDi reference default (`anti=False`, penalty disabled)
+  - **Arm B** — D3 reference default (`anti=True, lambda=0.1, warmup_steps=0`)
+  - **Arm C** — DUSDi paper default (`anti=True, lambda=0.1, warmup_steps=1_000_000`)
+  Report per arm: DCI score (Disentanglement, Completeness, Informativeness)
+  + state coverage std-of-means + per-skill task return. D3 picks Arm B for PPO
+  at high throughput; DUSDi reference picks Arm A; we use FastSAC at lower
+  throughput so the regime where Arm C's warmup matters is a larger fraction
+  of training. Run all three.
 - **METRA `dual_dist` ablation** (NOT default-and-forget): run both `'one'` and
   `'l2'` on Go2 position factor, report state coverage std-of-means. METRA's
   source default is `'one'` (constraint is `‖Δφ‖²≤1` constant); `'l2'` is what
   the paper text motivates (temporal-distance bound). The papers don't tell us
   which is right empirically — we must measure on our setup.
 - **Hardware readiness gate**: `meta["skill_discovery"]["hardware_ready"] = true`
-  only after passing all sim ablations + a sim2real walkability test (no falls in
-  60s sim2sim with operator-slider z).
+  only after passing **the load-bearing-for-safety subset** of sim ablations:
+  - **D3 Table 1 replication** (style on/off; illegal contacts ≥10× reduction)
+  - **60s sim2sim walkability test** (no falls / no base contact with
+    operator-slider z held at each fixed skill index)
+
+  Other ablations (Table 2 algo choice, Table 3 downstream nav, Fig 5 symmetry,
+  DUSDi 3-arm DCI, METRA `dual_dist`) are **informational for paper-replication
+  audit**, not hardware-safety gates. They should pass before we publish
+  results, but a partial failure (e.g. Table 3 nav score below D3 number)
+  does not block hardware execution if Table 1 + sim2sim walkability pass.
 - **Hardware deploy** (real Go2): per fixed skill, M=3 trials. Report
   per-trial outcome (success/fall/intervention) + qualitative video, NOT
   mean ± std (3 samples is below statistical-significance threshold; framing

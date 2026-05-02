@@ -52,10 +52,10 @@ New files:
 ## Independence map (for parallel subagent dispatch)
 
 ```
-Wave 1 (parallel, no shared deps):
+Wave 1 (parallel — see package-init note below):
   ├── Task 1: config.py + test_config        — pure dataclasses, JSON round-trip
   ├── Task 2: prior.py + test_prior          — depends only on JAX (no internal deps)
-  ├── Task 3: factors.py + test_factors      — depends on config types (light)
+  ├── Task 3: factors.py + test_factors      — uses FactorConfig from Task 1*
   └── Task 4: diayn.py + test_diayn          — depends on networks/activations only
 
 Wave 2 (after Wave 1):
@@ -63,7 +63,24 @@ Wave 2 (after Wave 1):
                                               + integrates priors + diayn + factors
 ```
 
-Wave 1 = 4 parallel subagents. Wave 2 = 1 agent after Wave 1 commits land.
+**Package-init note:** every Wave 1 task must defensively `Write` the
+`jax_rl/skill_discovery/__init__.py` file containing a single one-line
+docstring (`"""Skill discovery framework — DIAYN (SD-A) + METRA (SD-E) as pluggable aux modules."""`).
+All four tasks write the same content; last-write-wins is safe (idempotent).
+This lets the package import work for each task's tests independently without
+requiring a "Task 0" or serial ordering. The first task's commit creates the
+file; subsequent tasks' identical writes produce no diff.
+
+***Task 3 imports `from jax_rl.skill_discovery.config import FactorConfig`** —
+this requires Task 1's `config.py` to exist on disk by the time Task 3's tests
+run. If Tasks 1 and 3 dispatch truly concurrently, Task 3's RED step will fail
+with `ModuleNotFoundError` until Task 1 has at least written `config.py` (no
+need to wait for Task 1's full commit). In practice, dispatching all 4 in
+parallel is fine — pytest will retry once Task 1's file lands. Alternatively,
+serialize: dispatch Task 1, then dispatch Tasks 2/3/4 in parallel after
+Task 1's commit.
+
+Wave 1 = 4 subagents (parallel with above caveat). Wave 2 = 1 agent after Wave 1 commits land.
 
 ---
 
@@ -175,6 +192,8 @@ def test_config_resample_steps_required_when_fixed():
   - if `factors`: assert `total_skill_dim == sum(f.skill_dim for f in factors)`
   - if `resample == "fixed_steps"`: assert `resample_steps is not None`
 - **DO NOT include `AuxNetConfig` in SD-A.** It's referenced in the spec for forward-compat but is deferred to SD-C plumb-through; SD-A hardcodes Discriminator/optimizer defaults at the manager site (see Task 5).
+- **`__post_init__` empty-factors guard:** wrap the `total_skill_dim == sum(factor.skill_dim)` check in `if self.factors:` so a default `SkillDiscoveryConfig()` (factors=()) is valid. Without the guard, `0 == sum([])` happens to pass anyway, but explicit gating documents intent.
+- **`SkillDiscoveryConfig.deploy` must use `field(default_factory=SkillDeployConfig)`**, NOT `= SkillDeployConfig()`. Bare instances as defaults raise `ValueError: mutable default ... not allowed` at class definition. (Same applies to any nested dataclass default.)
 - `config_to_dict(cfg) -> dict` — recursive dataclass → dict (use `dataclasses.asdict` + tuple→list conversion for the `factors` field)
 - `config_from_dict(d) -> SkillDiscoveryConfig` — inverse: convert `factors` list → tuple of `FactorConfig(**f)`, rebuild `deploy` as `SkillDeployConfig(**d['deploy'])`. A bare `SkillDiscoveryConfig(**d)` will not work because nested dataclasses don't auto-rehydrate.
 
@@ -299,15 +318,7 @@ A factor extractor is a named function `(batch) -> jax.Array` that pulls factor 
 
 **Why a registry, not magic indices:** spec §"Design corrections from the old plan" #1. Decouples policy obs layout from auxiliary reward inputs. Extractors can read `sim_data` / `info` that aren't in deploy actor obs.
 
-**Batch dict keys** that factor extractors may consume now or in future phases:
-- `obs` (raw actor obs) — DIAYN, METRA factors
-- `next_obs` (raw actor next obs) — METRA, future DADS factors
-- `action` — future DADS-style factors that need `q(s'|s, z)` predictions
-- `skill_z`, `next_skill_z` — for skill-conditioned features
-- `sim_data` — privileged simulator state (base xy, height, contacts) — D3 factor pattern
-- `info` — env info dict (per-step metadata)
-
-SD-A only wires `obs` / `next_obs` / `sim_data` / `info`. Adding `action` is a one-line change at SD-F+ if/when DADS-style factors land. Document this so future agents don't think the registry needs a refactor.
+(Batch dict keys + actor_obs_full built-in spec are inlined in Step 3.2 below.)
 
 ### Step 3.1: Write tests (RED)
 
@@ -382,12 +393,24 @@ def test_builtin_extractors_actor_obs_full():
 
 ### Step 3.2: Implement
 
-- `FactorExtractor` dataclass: `name`, `source`, `dim`, `fn: Callable[[dict], jax.Array]`
+- `FactorExtractor` dataclass: `name`, `source`, `dim` (use `-1` as sentinel meaning "any dim, skip extractor-side check"), `fn: Callable[[dict], jax.Array]`
 - Module-level `_REGISTRY: dict[str, FactorExtractor]`
-- `register_extractor(name, source, dim)` — decorator
+- `register_extractor(name, source, dim)` — decorator. **Duplicate-registration policy: last-write-wins (silent overwrite).** This makes registration idempotent across `pytest-xdist` re-imports and avoids module-level errors during test collection. If hard error-on-duplicate is preferred later, flip in SD-B.
 - `get_extractor(name)` — lookup, raise `KeyError("unknown extractor: ...")` if missing
-- `resolve_factor(factor: FactorConfig, batch: dict) -> jax.Array` — get extractor, run, validate dim
-- Built-in extractor: `actor_obs_full` returning `batch["obs"]`
+- `resolve_factor(factor: FactorConfig, batch: dict) -> jax.Array` — get extractor, run, **validate against `factor.dim` only** (not `ext.dim`). The config is the source of truth at validation time; `ext.dim == -1` sentinel skips the extractor-level check entirely. Raise `ValueError("dim mismatch: ...")` if `out.shape[-1] != factor.dim`.
+- Built-in extractor: `@register_extractor(name="actor_obs_full", source="actor_obs", dim=-1)` returning `batch["obs"]`. The `dim=-1` sentinel lets this single built-in serve any actor obs width (48d Flat / 45d Unitree / future variants) without re-registration.
+
+**Batch dict keys** that factor extractors may consume now or in future phases:
+
+- `obs` (raw actor obs) — DIAYN, METRA factors
+- `next_obs` (raw actor next obs) — METRA, future DADS factors
+- `action` — already stored by SAC replay buffer for Q update; available
+  for free if/when DADS-style factors land. No replay schema migration needed.
+- `skill_z`, `next_skill_z` — for skill-conditioned features
+- `sim_data` — privileged simulator state (base xy, height, contacts) — D3 factor pattern
+- `info` — env info dict (per-step metadata)
+
+SD-A only wires `obs` / `next_obs` / `sim_data` / `info` in the test extractors. Future extractors that need `action` or `skill_z` work without registry refactor.
 
 - [ ] Run → expect 5 passed.
 
@@ -489,20 +512,22 @@ def test_diayn_update_metrics_keys():
 DIAYN reward (Eysenbach 2018, **current state s**, NOT next state — `ben-eysenbach/sac:diayn.py:175-180`):
 
 ```python
+EPS = 1e-6  # matches DIAYN reference (diayn.py:21, 185)
 log_q = jax.nn.log_softmax(disc.apply(params, obs_factor), axis=-1)
 log_q_z = jnp.sum(log_q * z_onehot, axis=-1)   # gather chosen-skill log-prob
 log_p_z = -jnp.log(num_skills)                 # uniform prior
-reward = log_q_z - log_p_z                     # (batch,)
+reward = log_q_z - log_p_z + EPS               # (batch,)
 ```
 
 DIAYN update: integer-label softmax cross-entropy on `disc(obs_factor)` vs `z_indices`, Adam.
 
 API:
 
-- `Discriminator(nn.Module)` — MLP using `ACTIVATIONS` from `jax_rl.networks.activations`. Fields: `hidden_dim: tuple[int, ...]`, `num_skills: int`, `activation: str = "relu"`.
+- `Discriminator(nn.Module)` — **plain MLP** using `ACTIVATIONS` from `jax_rl.networks.activations`. Fields: `hidden_dim: tuple[int, ...]`, `num_skills: int`, `activation: str = "relu"`. **DO NOT use ELU or SimBa here** — D3's reference uses ELU+SimBa residual MLP, but those are SD-C/E upgrades. SD-A ships plain ReLU MLP.
 - `diayn_reward(disc_params, disc, obs_factor, z_onehot, num_skills) -> (batch,)`
 - `diayn_update(disc_params, opt_state, disc, optimizer, obs_factor, z_indices) -> (new_params, new_opt_state, metrics)`
   - `optax.softmax_cross_entropy_with_integer_labels(logits, z_indices).mean()`
+  - `disc_accuracy = jnp.mean(jnp.argmax(logits, axis=-1) == z_indices)`
   - returns dict with `disc_loss` and `disc_accuracy`
 
 - [ ] Run → expect 5 passed.

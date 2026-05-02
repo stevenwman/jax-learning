@@ -83,7 +83,11 @@ Standard RL benchmarks (return on a reward function) don't apply. There is no "c
 
 1. **Concrete validation gates per phase.** See Part 4 below.
 2. **Seed/CI convention.** Adopt **5 seeds with mean ± std** (matches D3, the most relevant prior). 8 seeds (METRA gold standard) only if compute permits and a result is contentious.
-3. **Per-skill rollout protocol.** Standardize: for each fixed z, run M episodes (M=10 sim, M=3 hardware), report mean ± std of (return, fall rate, behavior summary). D3 doesn't fix M precisely — we should.
+3. **Per-skill rollout protocol.** Standardize per-skill rollouts: M=10 sim
+   episodes (mean ± std of return, fall rate, behavior summary) and M=3
+   hardware trials (per-trial outcome + qualitative video; **NOT mean ± std**
+   — 3 samples is below significance, dressing it up as statistics is theatre).
+   D3 doesn't fix M precisely — we should.
 4. **Open-impl-questions doc.** DIAYN paper doesn't pin discriminator MLP size; METRA paper doesn't pin λ_init/slack/lr in the readable HTML. We must read source repos before SD-B coding (already in spec but emphasize).
 
 ### What we should evaluate adding outside D3 scope
@@ -168,9 +172,22 @@ Standard RL benchmarks (return on a reward function) don't apply. There is no "c
 - [ ] **D3 Table 2 replication** (algo choice ablation, sim): DIAYN-only, METRA-only, D3 mixed, on Go2 factors. Report state coverage per factor. Mixed should beat single-method on at least 2 factors.
 - [ ] **D3 Table 3 replication** (downstream nav, sim): hierarchical PPO over frozen skills on rough-terrain waypoint task. Report mean reward, heading error, position error, termination ratios.
 - [ ] **D3 Fig 5 replication**: roll/pitch coverage map with/without symmetry.
-- [ ] **DUSDi DCI score** (extra): compute DCI on D3 factors. Report as a number; this is informational, not a gate.
-- [ ] **Hardware readiness gate**: `meta["skill_discovery"]["hardware_ready"] = true` only after passing all sim ablations + a sim2real walkability test (no falls in 60s sim2sim with operator-slider z).
-- [ ] **Hardware deploy** (real Go2): per fixed skill, M=3 trials, report success/fall, qualitative video. Match D3's operator-slider protocol.
+- [ ] **DUSDi 3-arm ablation** (NOT add-vs-don't-add): D3 already ships
+      `skill_disentanglement=True, lambda=0.1`. Run three arms — Arm A
+      (`anti=False`, DUSDi reference), Arm B (`anti=True, warmup=0`, D3 reference),
+      Arm C (`anti=True, warmup=1_000_000`, DUSDi paper). Per arm: DCI score +
+      state coverage std-of-means + per-skill task return. Spec SD-E acceptance.
+- [ ] **METRA `dual_dist` ablation** (sim): run both `'one'` (default) and
+      `'l2'` on Go2 position factor, report state coverage std-of-means.
+      Spec SD-E acceptance gate.
+- [ ] **Hardware readiness gate**: `meta["skill_discovery"]["hardware_ready"] = true`
+      only after **load-bearing-for-safety subset** of sim ablations: D3 Table 1
+      (style on/off, illegal contacts ≥10× reduction) + 60s sim2sim walkability
+      (no falls / no base contact). Other ablations are informational, not safety gates.
+- [ ] **Hardware deploy** (real Go2): per fixed skill, M=3 trials. Per-trial
+      outcome (success/fall/intervention) + qualitative video, NOT mean ± std.
+      Match D3's operator-slider protocol; D3 itself ships qualitative video,
+      not statistical claims, on hardware.
 - [ ] **Seed variance: 5 seeds** for sim ablations, 3 trials per skill on hardware (compute / wall-clock permitting).
 
 **Acceptance threshold:** **at minimum** match D3's qualitative claim on 2 of 3 ablations (style, factorization, downstream). Hardware: zero base contacts in 60s of operator-driven skill execution.

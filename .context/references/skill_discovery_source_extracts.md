@@ -215,7 +215,7 @@ Permutations: identity, left-right, front-back, 180° rotation (`mirroring.py:30
 ### Discriminator + Phi networks
 - **DIAYN discriminator:** SimBa (residual MLP) `[256, 256]` ELU (`diayn.py:105-116`). NOT plain MLP.
 - **METRA Phi (StateRepresentation):** `[256, 256]` ELU (`metra.py:98-103`). No target net.
-- Adam, lr=1e-4 for both. Lagrangian `lr_tau=5e-4`. METRA slack 1e-3 (default).
+- Adam, lr=1e-4 for both. Lagrangian `lr_tau=5e-4`. **METRA slack `1e-5`** (D3 class default at `metra.py (D3):41`; differs from METRA reference repo's `1e-3`). Note divergence: when porting, decide which value to follow — D3-fidelity or METRA-reference-fidelity. Our `AuxNetConfig.dual_slack` defaults to `1e-3` (METRA reference); SD-E should ablate against `1e-5` if D3 reproduction matters.
 
 ### Hyperparameters
 | Param | Value |
