@@ -12,14 +12,14 @@
 | Paper text says | Source actually does | Impact |
 |---|---|---|
 | DIAYN: hidden 256-ish, num_skills 20 | **`[300, 300]`, `num_skills=50` (`mujoco_all_diayn.py:30, 38`)** | Update SD-A defaults |
-| DIAYN: SAC squashed Gaussian | **GMM K=4 mixture policy (`gmm.py:18`)** | Skip — DIAYN's TF1 reference is legacy SAC era; our SD-B FastSAC uses standard squashed Gaussian. (D3 is PPO with diagonal Gaussian MLP actor, also no GMM.) |
+| DIAYN: SAC squashed Gaussian | **GMM K=4 mixture policy (`mujoco_all_diayn.py:29, 212`; `gmm.py:18-55`)** | Skip — DIAYN's TF1 reference is legacy SAC era; our SD-B FastSAC uses standard squashed Gaussian. (D3 is PPO with diagonal Gaussian MLP actor, also no GMM.) |
 | DIAYN: skill per episode | **Skill per epoch** (1000 steps); coincides with episode only because epoch_length=max_path_length (`diayn.py:394`) | Stick with per-episode (what we want for sim2real) |
 | METRA: λ=30 init | Confirmed (`tests/main.py:131`); **stored as `log(lambda)`** (`tests/main.py:391`) | Spec already correct |
 | METRA: ‖Δφ‖ ≤ ‖s'−s‖ Lipschitz | **`dual_dist='one'` default → constraint is `‖Δφ‖²≤1`** (`metra.py:255`); 'l2'/'s2_from_s' are non-default ablations | **Important** — our SD-E impl should default to constant-1 |
 | METRA: slack ε ≈ 1e-5 | **`dual_slack=1e-3`** (`tests/main.py:132`); applied as **upper-clamp** on `cst_penalty` (`metra.py:273`) | Update v1 plan's 1e-5 default |
 | METRA: target φ network | **None** — only Q-targets exist | Spec correct |
 | D3: lr=1e-4 | **`learning_rate=1e-3`, adaptive schedule** (`rsl_rl_usd_cfg.py:48`) | Update SD-E |
-| D3: λ Dirichlet/truncated-Gaussian sum=1 | **Half-normal raised to skew, L2-normalized**: `F.normalize(\|N(0,1)\|^skew)` (`factorized_…py:475-488`) | Major correction for SD-E |
+| D3: λ Dirichlet/truncated-Gaussian sum=1 | **Half-normal raised to skew, L2-normalized**: `F.normalize(\|N(0,1)\|^skew)` (`factoized_…py:475-488`) | Major correction for SD-E |
 | D3: METRA λ=30 | 30 is initial Lagrangian; **`lambda_exploration=100`** is a separate disagreement coefficient (with `ensemble_size=1`, no actual disagreement signal exists) (`rsl_rl_usd_cfg.py:75-86`, `metra.py:40`) | Note for SD-E |
 | D3: Dirichlet α curriculum 0.05→1.0 | **Adaptive cosine-sim driven** (×1.01 if cos>0.7, ×0.99 if cos<0.6) clamped to [0.05, 1.0] (`diayn.py:566-576`) | Update SD-E |
 | D3: heading 2D | **`heading_rate` is 1D scalar** (`observations.py:858-862`); skill dim is 2 but obs dim is 1 | Note for SD-C/E |
@@ -87,7 +87,7 @@
 | `dual_lam` init | `30` | `tests/main.py:131` |
 | `dual_lam` parameterization | `log(lambda)`, ParameterModule | `tests/main.py:391` |
 | `dual_slack` ε | `1e-3` | `tests/main.py:132` |
-| `dual_dist` | `'one'` (constant 1) — NOT L2 by default | `tests/main.py:135` |
+| `dual_dist` | `'one'` (constant 1) — NOT L2 by default | `tests/main.py:133` |
 | `common_lr` (phi, dual, SAC) | `1e-4` | `tests/main.py:98-100, 134` |
 | `sac_tau` | `5e-3` | `tests/main.py:106` |
 | `gamma` | `0.99` | `tests/main.py:109` |
@@ -95,7 +95,7 @@
 | `target_entropy` | `−|A|/2` (half SAC standard) | `metra.py:69` |
 | `batch_size` | `256` | `tests/main.py:82` |
 | `replay_buffer_size` | state: `1e6`, pixel quad/hum: `300k`, kitchen: `100k` | `tests/main.py:113` |
-| `unit_length` (skill) | `1` (continuous → unit sphere) | `tests/main.py:124` |
+| `unit_length` (skill) | `1` (continuous → unit sphere) | `tests/main.py:128` |
 | Critic loss scale | `× 0.5` (Stable-Baselines convention) | `sac_utils.py:53-54` |
 
 ### Update equations (verbatim)
@@ -156,7 +156,7 @@ Total skill width = 2+2+2+4+4 = 14 + 6 weight slots = **20**.
 - **`randomize_factor_weights=True`** for ANYmal — weights resampled per-env on done.
 - **Embedded in z**: yes. Concat order `[skill_factor_1...factor_5, weight_extrinsic, weight_factor_1...factor_5]`.
 - **No curriculum on λ.**
-- (`factorized_…py:475-488`, `rsl_rl_usd_cfg.py:70`)
+- (`factoized_…py:475-488`, `rsl_rl_usd_cfg.py:70`)
 
 ### Style + safety + regularization
 **Style rewards** (extrinsic stream, gated by `λ_extrinsic` slot):
@@ -237,10 +237,12 @@ Permutations: identity, left-right, front-back, 180° rotation (`mirroring.py:30
 | DIAYN α curriculum | adaptive: ×1.01 if cos>0.7, ×0.99 if cos<0.6, clamped [0.05, 1.0] |
 | DIAYN `lambda_skill_disentanglement` | `0.1` (DUSDi-style negative-MI penalty) — **D3 includes this!** |
 | DIAYN `skill_disentanglement` | `True` (active) |
-| Reward normalization | EMA per factor, decay 0.9 (`factorized_…py:202-207`) |
+| Reward normalization | EMA per factor, decay 0.9 (`factoized_…py:202-207`) |
 | Domain randomization | mass ±5kg, friction 0.6-0.9/0.4-0.8, pushes every 2-10s ±0.75 m/s |
 
-**Critical: D3 already incorporates DUSDi-style disentanglement.** `skill_disentanglement=True` + `lambda_skill_disentanglement=0.1` (`rsl_rl_usd_cfg.py:91-95`). This wasn't called out in the paper text or our prior audit. Means DUSDi's contribution is partially baked into D3's reference impl already.
+**Critical: D3 already incorporates DUSDi-style disentanglement.** `skill_disentanglement=True` + `lambda_skill_disentanglement=0.1` (`rsl_rl_usd_cfg.py:90, 97`). This wasn't called out in the paper text or our prior audit. Means DUSDi's contribution is partially baked into D3's reference impl already.
+
+> **D3 file path note:** the file is `factoized_unsupervised_skill_discovery.py` in the upstream repo — the codebase ships with a typo (`factoized_` instead of `factorized_`). All cites in this doc preserve the original spelling.
 
 ### Deploy contract
 - Policy exported as TorchScript `.pt`; ONNX attempted in try/except.
@@ -251,12 +253,12 @@ Permutations: identity, left-right, front-back, 180° rotation (`mirroring.py:30
 - (`scripts/d3_rsl_rl/play.py`, `skill_gui.py`)
 
 ### Eval scripts NOT shipped
-- Tables 1, 2, 3 numbers in paper are not in the repo. Training-time diversity metric exists (`factorized_…py:670-705`: pairwise mean L2 between trajectory-mean state-features for max 512 envs, split by close/far skill quantiles) but this is NOT the 10K-skill-sample protocol described in the paper.
+- Tables 1, 2, 3 numbers in paper are not in the repo. Training-time diversity metric exists (`factoized_…py:670-705`: pairwise mean L2 between trajectory-mean state-features for max 512 envs, split by close/far skill quantiles) but this is NOT the 10K-skill-sample protocol described in the paper.
 - Goal-tracking downstream tasks ship via separate `Isaac-Goal-Tracking-Anymal-D-v0` env + standard PPO runner; aggregation script not in repo.
 
 ### File:line citations
 - Factor list: `anymal_usd_env_cfg.py:189-256`
-- λ sampling: `factorized_…py:475-488`
+- λ sampling: `factoized_…py:475-488`
 - Style + safety: `anymal_usd_env_cfg.py:159-179, 340-378`
 - Symmetry: `mirroring.py:307-369`, `metra.py:515-570`, `diayn.py:883-933`
 - Reward composition: `ppo.py:217-227`

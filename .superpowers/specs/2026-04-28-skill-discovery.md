@@ -329,8 +329,12 @@ class FactorConfig:
 class AuxNetConfig:
     """Architecture defaults for DIAYN discriminator and METRA phi.
 
-    SD-A ships these as plain MLPs. SD-C/E may upgrade DIAYN discriminator
-    to SimBa-style residual MLP (D3 reference uses SimBa[256,256] elu).
+    NOT shipped in SD-A — SD-A's SkillManager hardcodes Discriminator(hidden=(256,256))
+    and optax.adam(3e-4) at the construction site. This dataclass exists in the spec
+    as forward-compat documentation and lands as a real config field in SD-C.
+
+    SD-C/E may upgrade DIAYN discriminator to SimBa-style residual MLP
+    (D3 reference uses SimBa[256,256] elu).
     """
     discriminator_hidden: tuple[int, ...] = (256, 256)
     discriminator_activation: str = "relu"        # D3 uses elu; pick one when wiring SimBa
@@ -342,6 +346,12 @@ class AuxNetConfig:
     dual_lam_lr: float = 5e-4                     # D3 lr_tau
     dual_slack: float = 1e-3                      # METRA reference (tests/main.py:132)
     dual_dist: Literal["one", "l2", "s2_from_s"] = "one"  # METRA default — constraint is ||Δφ||²≤1
+                                                  # NOT default-and-forget: SD-E acceptance requires
+                                                  # ablation between 'one' and 'l2' on Go2 factors.
+    skill_disentanglement_warmup_steps: int = 0   # D3 enables DUSDi-style negative-MI penalty
+                                                  # from step 0; DUSDi reference gates behind 1M-step
+                                                  # warmup. Our default matches D3 but SD-E should
+                                                  # ablate against `1_000_000` if early instability.
 ```
 
 Use `one_hot` for SD-A through SD-C. Move Dirichlet and hypersphere priors to
@@ -652,14 +662,27 @@ Acceptance (SD-E — replicates D3 Tables 1, 2, 3 + Fig 5; see validation doc Pa
   skills on rough-terrain waypoint task. Report mean reward, heading error,
   position error, termination ratios.
 - **D3 Fig 5 replication**: roll/pitch coverage map with/without symmetry.
-- **DUSDi DCI score** (informational, not a gate): compute Disentanglement,
-  Completeness, Informativeness on D3 factors. Diagnostic for "are our hand-picked
-  factors actually independent on Go2."
+- **DUSDi-style penalty on/off ablation** (NOT "add DUSDi to D3" — D3 already
+  ships `skill_disentanglement=True, lambda_skill_disentanglement=0.1`). The
+  meaningful ablation is enable vs disable in our port. Report DCI score
+  (Disentanglement, Completeness, Informativeness) under each setting as a
+  diagnostic for "are our hand-picked factors actually independent on Go2."
+  If early-training instability appears, run a third arm at
+  `skill_disentanglement_warmup_steps=1_000_000` (DUSDi reference default).
+- **METRA `dual_dist` ablation** (NOT default-and-forget): run both `'one'` and
+  `'l2'` on Go2 position factor, report state coverage std-of-means. METRA's
+  source default is `'one'` (constraint is `‖Δφ‖²≤1` constant); `'l2'` is what
+  the paper text motivates (temporal-distance bound). The papers don't tell us
+  which is right empirically — we must measure on our setup.
 - **Hardware readiness gate**: `meta["skill_discovery"]["hardware_ready"] = true`
   only after passing all sim ablations + a sim2real walkability test (no falls in
   60s sim2sim with operator-slider z).
-- **Hardware deploy** (real Go2): per fixed skill, M=3 trials, report success/fall
-  rate + qualitative video. Match D3's operator-slider deploy protocol.
+- **Hardware deploy** (real Go2): per fixed skill, M=3 trials. Report
+  per-trial outcome (success/fall/intervention) + qualitative video, NOT
+  mean ± std (3 samples is below statistical-significance threshold; framing
+  this as "mean ± std" would be theatre). Match D3's operator-slider deploy
+  protocol; D3 itself ships qualitative video evidence, not statistical claims
+  on hardware.
 - **Seeds:** 5 seeds for sim ablations (matches D3), 3 trials per skill on
   hardware (compute / wall-clock permitting).
 

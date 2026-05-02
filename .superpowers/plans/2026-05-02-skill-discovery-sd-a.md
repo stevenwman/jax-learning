@@ -22,7 +22,7 @@ Build the skill discovery scaffolding — config, priors, factor extractor regis
 
 ## Acceptance for SD-A as a whole
 
-From spec lines 331-338:
+From spec SD-A "Acceptance" block:
 
 - [ ] Config round-trips through JSON.
 - [ ] Skill priors sample expected shapes (one_hot only in SD-A).
@@ -171,11 +171,12 @@ def test_config_resample_steps_required_when_fixed():
 `jax_rl/skill_discovery/config.py`:
 - `SkillDeployConfig` — `skill_input_mode: Literal["fixed", "operator", "external"]`, `default_skill: list[float] | None`
 - `FactorConfig` — `name`, `method: Literal["diayn", "metra"]`, `skill_dim: int`, `source: Literal["actor_obs","critic_obs","sim_data","info"]`, `extractor: str`, `dim: int`
-- `SkillDiscoveryConfig` — fields per spec line 280-303 + `__post_init__` validation:
+- `SkillDiscoveryConfig` — fields per spec §SD-A "Core config" block + `__post_init__` validation:
   - if `factors`: assert `total_skill_dim == sum(f.skill_dim for f in factors)`
   - if `resample == "fixed_steps"`: assert `resample_steps is not None`
-- `config_to_dict(cfg) -> dict` — recursive dataclass → dict (use `dataclasses.asdict` + tuple→list conversion)
-- `config_from_dict(d) -> SkillDiscoveryConfig` — inverse, reconstruct nested factors/deploy
+- **DO NOT include `AuxNetConfig` in SD-A.** It's referenced in the spec for forward-compat but is deferred to SD-C plumb-through; SD-A hardcodes Discriminator/optimizer defaults at the manager site (see Task 5).
+- `config_to_dict(cfg) -> dict` — recursive dataclass → dict (use `dataclasses.asdict` + tuple→list conversion for the `factors` field)
+- `config_from_dict(d) -> SkillDiscoveryConfig` — inverse: convert `factors` list → tuple of `FactorConfig(**f)`, rebuild `deploy` as `SkillDeployConfig(**d['deploy'])`. A bare `SkillDiscoveryConfig(**d)` will not work because nested dataclasses don't auto-rehydrate.
 
 - [ ] Run: `uv run python -m pytest tests/test_skill_discovery_config.py -v` → expect 6 passed.
 
@@ -296,7 +297,17 @@ git commit -m "feat(skill): add one_hot prior; Dirichlet/hypersphere deferred to
 
 A factor extractor is a named function `(batch) -> jax.Array` that pulls factor inputs out of a replay batch. Each `FactorConfig` references one by name + source.
 
-**Why a registry, not magic indices:** spec §1 (line 121-154). Decouples policy obs layout from auxiliary reward inputs. Extractors can read `sim_data` / `info` that aren't in deploy actor obs.
+**Why a registry, not magic indices:** spec §"Design corrections from the old plan" #1. Decouples policy obs layout from auxiliary reward inputs. Extractors can read `sim_data` / `info` that aren't in deploy actor obs.
+
+**Batch dict keys** that factor extractors may consume now or in future phases:
+- `obs` (raw actor obs) — DIAYN, METRA factors
+- `next_obs` (raw actor next obs) — METRA, future DADS factors
+- `action` — future DADS-style factors that need `q(s'|s, z)` predictions
+- `skill_z`, `next_skill_z` — for skill-conditioned features
+- `sim_data` — privileged simulator state (base xy, height, contacts) — D3 factor pattern
+- `info` — env info dict (per-step metadata)
+
+SD-A only wires `obs` / `next_obs` / `sim_data` / `info`. Adding `action` is a one-line change at SD-F+ if/when DADS-style factors land. Document this so future agents don't think the registry needs a refactor.
 
 ### Step 3.1: Write tests (RED)
 
@@ -475,12 +486,23 @@ def test_diayn_update_metrics_keys():
 
 ### Step 4.2: Implement
 
-Per spec lines 261-321 of v1 (DIAYN sketch is correct, only file location moves):
+DIAYN reward (Eysenbach 2018, **current state s**, NOT next state — `ben-eysenbach/sac:diayn.py:175-180`):
 
-- `Discriminator(nn.Module)` — MLP using `ACTIVATIONS` from `jax_rl.networks.activations`
-- `diayn_reward(disc_params, disc, obs_factor, z_onehot, num_skills) -> (batch,)` — `log q(z|s) - log p(z)`
+```python
+log_q = jax.nn.log_softmax(disc.apply(params, obs_factor), axis=-1)
+log_q_z = jnp.sum(log_q * z_onehot, axis=-1)   # gather chosen-skill log-prob
+log_p_z = -jnp.log(num_skills)                 # uniform prior
+reward = log_q_z - log_p_z                     # (batch,)
+```
+
+DIAYN update: integer-label softmax cross-entropy on `disc(obs_factor)` vs `z_indices`, Adam.
+
+API:
+
+- `Discriminator(nn.Module)` — MLP using `ACTIVATIONS` from `jax_rl.networks.activations`. Fields: `hidden_dim: tuple[int, ...]`, `num_skills: int`, `activation: str = "relu"`.
+- `diayn_reward(disc_params, disc, obs_factor, z_onehot, num_skills) -> (batch,)`
 - `diayn_update(disc_params, opt_state, disc, optimizer, obs_factor, z_indices) -> (new_params, new_opt_state, metrics)`
-  - integer-label cross-entropy loss
+  - `optax.softmax_cross_entropy_with_integer_labels(logits, z_indices).mean()`
   - returns dict with `disc_loss` and `disc_accuracy`
 
 - [ ] Run → expect 5 passed.
@@ -667,9 +689,12 @@ def test_manager_metra_factor_raises_in_sd_a():
 ```python
 class SkillManager:
     def __init__(self, config: SkillDiscoveryConfig):
-        # validate: any factor.method == "metra" → NotImplementedError("SD-E")
-        # build per-factor network (Discriminator) + optimizer (optax.adam)
+        # validate ALL factors (not just first); any factor.method == "metra" → NotImplementedError("METRA deferred to SD-E")
+        # build per-factor network + optimizer with hardcoded SD-A defaults:
+        #   Discriminator(hidden_dim=(256, 256), num_skills=factor.skill_dim, activation="relu")
+        #   optax.adam(3e-4)
         # store on self._networks[name], self._optimizers[name]
+        # AuxNetConfig plumb-through deferred to SD-C.
 
     @property
     def total_skill_dim(self) -> int: ...
@@ -687,12 +712,19 @@ class SkillManager:
         """concat([obs, z], axis=-1). Shape-checked."""
 
     def compute_intrinsic_reward(self, aux_state, batch) -> jax.Array:
-        """For each factor: extract via factors.resolve_factor, slice z, run diayn_reward.
-        Sum per spec.factor_weights (default: equal weights).
+        """For each factor: extract obs via factors.resolve_factor(factor, batch),
+        slice z (one-hot for DIAYN), run diayn_reward.
+        Sum across factors (default: uniform weights 1/len(factors)).
+        Per-factor weighting is wired in SD-E.
         """
 
     def update(self, aux_state, batch) -> tuple[dict, dict]:
-        """For each factor: extract, slice z, run diayn_update with self._optimizers[name]."""
+        """For each factor: extract obs, slice z, convert one-hot z → int via
+        jnp.argmax(z_slice, axis=-1) for diayn_update's z_indices arg, run
+        diayn_update with self._optimizers[name].
+        Merge per-factor metrics into a flat dict keyed f'{factor.name}_{key}',
+        e.g. 'full_disc_loss', 'full_disc_accuracy'. Tests assert this naming.
+        """
 ```
 
 **Z slicing helper** (private):
@@ -700,6 +732,10 @@ class SkillManager:
 - `_get_factor_z(z, idx) -> z[:, start:end]`
 
 **Factor weights:** default uniform = `1/len(factors)`. SD-A only ships single-factor configs in tests, but support N for forward compat (actual D3 mixing arrives in SD-E).
+
+**One-hot ↔ integer skill index:**
+- `compute_intrinsic_reward` and `diayn_reward` consume one-hot `z_onehot`.
+- `diayn_update` consumes integer `z_indices`. Manager converts via `jnp.argmax(z_slice, axis=-1)` before calling.
 
 - [ ] Run: `uv run python -m pytest tests/test_skill_discovery_manager.py -v` → expect 9 passed.
 
@@ -721,7 +757,7 @@ git commit -m "feat(skill): add SkillManager — z lifecycle, aux init/update, i
 
 After Task 5 lands:
 
-- [ ] Update `.context/TODO.md` Phase 6A → mark SD-A scaffolding complete, point next-action at SD-B.
+- [ ] Update `.context/TODO.md` SD-A section → mark scaffolding complete, point next-action at SD-B.
 - [ ] Add a journal entry `.context/journals/2026-05-02.md` covering: spec retirement, v1 banner, SD-A delivery.
 - [ ] No new lessons unless something surprised us during implementation.
 
