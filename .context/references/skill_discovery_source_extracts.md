@@ -12,7 +12,7 @@
 | Paper text says | Source actually does | Impact |
 |---|---|---|
 | DIAYN: hidden 256-ish, num_skills 20 | **`[300, 300]`, `num_skills=50` (`mujoco_all_diayn.py:30, 38`)** | Update SD-A defaults |
-| DIAYN: SAC squashed Gaussian | **GMM K=4 mixture policy (`gmm.py:18`)** | Skip — modern SAC with squashed Gaussian is fine; D3 also uses simple SAC |
+| DIAYN: SAC squashed Gaussian | **GMM K=4 mixture policy (`gmm.py:18`)** | Skip — DIAYN's TF1 reference is legacy SAC era; our SD-B FastSAC uses standard squashed Gaussian. (D3 is PPO with diagonal Gaussian MLP actor, also no GMM.) |
 | DIAYN: skill per episode | **Skill per epoch** (1000 steps); coincides with episode only because epoch_length=max_path_length (`diayn.py:394`) | Stick with per-episode (what we want for sim2real) |
 | METRA: λ=30 init | Confirmed (`tests/main.py:131`); **stored as `log(lambda)`** (`tests/main.py:391`) | Spec already correct |
 | METRA: ‖Δφ‖ ≤ ‖s'−s‖ Lipschitz | **`dual_dist='one'` default → constraint is `‖Δφ‖²≤1`** (`metra.py:255`); 'l2'/'s2_from_s' are non-default ablations | **Important** — our SD-E impl should default to constant-1 |
@@ -427,7 +427,7 @@ Post-process: if model wrong on factor i (`pred_correct=False`), zero its row; i
 - D3 already includes DUSDi-style negative-MI penalty (`lambda_skill_disentanglement=0.1`).
 
 ### New design decisions surfaced by source audit
-1. **DIAYN's GMM K=4 policy is NOT load-bearing.** D3 uses standard SAC. We follow D3.
+1. **DIAYN's GMM K=4 policy is NOT load-bearing.** Modern SAC ships squashed Gaussian; our SD-B uses FastSAC with standard squashed Gaussian. (D3 is PPO with `[512, 256, 256]` MLP + diagonal Gaussian — different algo, also no GMM. The point: GMM mixture is a legacy artifact of pre-SAC-2018 code, not a DIAYN-required choice.)
 2. **METRA's `dual_dist='one'` is the default but is the trivial constraint.** L2 / s2_from_s are paper-text-style ablations. For our SD-E port, ship 'one' as default and 'l2' as a flag. Document this surprising fact prominently.
 3. **D3's `beta_advantage_UCB=0.0`.** UCB term wired but disabled. Keep wired in our port for future ablation; default to 0 to match.
 4. **D3's λ is L2-normalized half-normal**, not Dirichlet/truncated-Gaussian. Big departure from paper text. Ship correctly.

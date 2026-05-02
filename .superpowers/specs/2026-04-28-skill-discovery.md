@@ -503,8 +503,12 @@ Open implementation questions — RESOLVED via source audits 2026-05-02 (see `.c
   `diayn.py:175-180`). Confusable with DADS `q(s'|s,z)` — different paper.
 - DIAYN Adam lr = `3e-4` (launcher overrides class default 3e-3).
 - DIAYN num_skills reference default = 50; SD-A unit tests use 4.
-- **Skip DIAYN's GMM K=4 policy** — modern SAC with squashed Gaussian is fine
-  (D3 also uses simple SAC, not GMM).
+- **Skip DIAYN's GMM K=4 policy** — DIAYN's TF1 reference uses a Gaussian
+  mixture policy from the legacy SAC era. Modern SAC ships squashed Gaussian.
+  Our SD-B uses FastSAC with standard squashed Gaussian — do NOT replicate
+  DIAYN's GMM. (D3 itself is PPO with a `[512, 256, 256]` MLP actor + diagonal
+  Gaussian, `init_noise_std=1.0`, log_std_range `(-5, 2)` — not relevant to our
+  SAC choice but confirms GMM is not load-bearing.)
 
 ### SD-C: Go2 DIAYN with deployable obs
 
@@ -624,6 +628,17 @@ Only after SD-B through SD-D:
 
 V2 should treat style/safety as required for hardware, not optional polish.
 Hardware readiness belongs here or later, not in SD-D.
+
+**Algo choice — we depart from D3.** D3 uses **PPO** with 6 fully separate
+critic MLPs (one per factor + extrinsic) and symmetry-augmented PPO updates.
+Our SD-B/E uses **FastSAC** (off-policy) for sample efficiency and to leverage
+existing Go2 infra (Go2 Warp + DR + post-truncation-fix sweep validates
+FastSAC at 286). The DIAYN/METRA aux modules are algo-agnostic (port D3's aux
+faithfully). The per-factor *value-decomposition* trick is PPO-specific in
+D3 reference — for our SAC variant, look to DUSDi's `StateMaskCritic` /
+`FactoredValueHead` pattern (vmap'd ensemble of per-factor Q heads, twin Q,
+TD loss summed per head). That's the SAC analog of D3's per-factor value
+heads. Document this departure in the SD-E plan when written.
 
 Acceptance (SD-E — replicates D3 Tables 1, 2, 3 + Fig 5; see validation doc Part 4 SD-E):
 
