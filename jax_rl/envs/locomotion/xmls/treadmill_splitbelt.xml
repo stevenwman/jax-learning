@@ -1,0 +1,49 @@
+<mujoco model="treadmill_splitbelt">
+  <!--
+    Robot-agnostic split-belt treadmill apparatus.
+    Two long belt slabs on slide joints driven by velocity actuators.
+    Use as <include> from a robot-specific scene XML. See spec S§5.1.
+  -->
+
+  <option timestep="0.004"/>
+
+  <default>
+    <default class="treadmill_belt">
+      <geom type="box" rgba="0.3 0.3 0.35 1" friction="1.0 0.005 0.0001"/>
+      <joint type="slide" axis="1 0 0" damping="0" frictionloss="0"/>
+    </default>
+  </default>
+
+  <worldbody>
+    <!-- Static fallback floor catches off-belt feet + falling base.
+         Sits 1 mm below belt surface so belt always wins contact when foot is on a belt. -->
+    <geom name="fallback_floor"
+          type="plane"
+          size="50 1.0 0.1"
+          pos="0 0 -0.005"
+          rgba="0.6 0.55 0.5 1"
+          friction="1.0 0.005 0.0001"/>
+
+    <!-- Left belt: y in [-0.325, -0.025], slides along world x. -->
+    <body name="left_belt" pos="0 -0.175 0">
+      <joint name="left_belt_joint" class="treadmill_belt"/>
+      <geom name="left_belt_geom" class="treadmill_belt" size="25 0.15 0.005"/>
+    </body>
+
+    <!-- Right belt: y in [0.025, 0.325]. -->
+    <body name="right_belt" pos="0 0.175 0">
+      <joint name="right_belt_joint" class="treadmill_belt"/>
+      <geom name="right_belt_geom" class="treadmill_belt" size="25 0.15 0.005"/>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <!-- Velocity actuators: ctrl = target velocity (m/s). High kv for tight tracking.
+         forcerange explicit: Go2WarpEnv.__init__:64-67 clobbers `actuator_forcerange`
+         to match `actuator_ctrlrange`. Splitbelt env's _post_init re-mutates this
+         field and re-puts the model — but the XML default is also generous in case
+         someone uses this asset without that override. -->
+    <velocity name="left_belt_vel"  joint="left_belt_joint"  kv="200" ctrlrange="-3.0 3.0" forcerange="-200 200"/>
+    <velocity name="right_belt_vel" joint="right_belt_joint" kv="200" ctrlrange="-3.0 3.0" forcerange="-200 200"/>
+  </actuator>
+</mujoco>

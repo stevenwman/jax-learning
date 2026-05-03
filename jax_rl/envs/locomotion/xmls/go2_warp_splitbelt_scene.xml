@@ -1,0 +1,101 @@
+<mujoco model="go2_warp_splitbelt_scene">
+  <!--
+    Go2 on a split-belt treadmill. See spec S§5.2.
+    Spawn keyframe places the robot centered between belts, FL+RL on left belt, FR+RR on right.
+  -->
+
+  <!-- INCLUDE ORDER MATTERS. go2.xml MUST come first so its freejoint occupies
+       qpos[0:7] and 12 leg joints occupy qpos[7:19]. Belt slide joints then
+       occupy qpos[19:21]. All hardcoded slices in go2_warp_splitbelt.py
+       (`qpos[7:7+12]`, `qvel[6:6+12]`, `actuator_force[:12]`, `data.ctrl[:12]`)
+       depend on this. Same convention as `xmls/go2_bongo_scene.xml:3-4`. -->
+  <include file="unitree_go2/go2.xml"/>
+  <include file="treadmill_splitbelt.xml"/>
+
+  <!-- Contact filter (S§5.2 + bongo lesson 2026-04-02 — exact contact sensors, not heuristics):
+       - feet × {left_belt, right_belt, fallback_floor}
+       - base/torso × {left_belt, right_belt, fallback_floor} -->
+  <contact>
+    <pair geom1="FL" geom2="left_belt_geom"/>
+    <pair geom1="RL" geom2="left_belt_geom"/>
+    <pair geom1="FR" geom2="right_belt_geom"/>
+    <pair geom1="RR" geom2="right_belt_geom"/>
+    <pair geom1="FL" geom2="fallback_floor"/>
+    <pair geom1="FR" geom2="fallback_floor"/>
+    <pair geom1="RL" geom2="fallback_floor"/>
+    <pair geom1="RR" geom2="fallback_floor"/>
+    <!-- base/torso × belts (catches collapse onto a belt; primary fall detector) -->
+    <pair geom1="torso_box" geom2="left_belt_geom"/>
+    <pair geom1="torso_box" geom2="right_belt_geom"/>
+    <pair geom1="torso_box" geom2="fallback_floor"/>
+    <pair geom1="torso_cyl" geom2="left_belt_geom"/>
+    <pair geom1="torso_cyl" geom2="right_belt_geom"/>
+    <pair geom1="torso_cyl" geom2="fallback_floor"/>
+    <pair geom1="torso_nose" geom2="left_belt_geom"/>
+    <pair geom1="torso_nose" geom2="right_belt_geom"/>
+    <pair geom1="torso_nose" geom2="fallback_floor"/>
+  </contact>
+
+  <sensor>
+    <!-- IMU sensors — copied verbatim from go2_warp_scene_flat.xml:27-49.
+         These are NOT in unitree's go2.xml; they're scene-level aliases that
+         go2_warp_base / go2_constants reference by name. WITHOUT these the env
+         crashes on `self.get_gyro(data)` / `self.get_accelerometer(data)` /
+         `_foot_linvel_sensor_adr` lookup at construction. -->
+    <gyro site="imu" name="gyro"/>
+    <accelerometer site="imu" name="accelerometer"/>
+    <framelinvel objtype="site" objname="imu" name="global_linvel"/>
+    <frameangvel objtype="site" objname="imu" name="global_angvel"/>
+    <velocimeter site="imu" name="local_linvel"/>
+    <framezaxis objtype="site" objname="imu" name="upvector"/>
+    <framexaxis objtype="site" objname="imu" name="forwardvector"/>
+
+    <!-- Per-foot position sensors (relative to IMU) — needed for feet_clearance reward -->
+    <framepos objtype="site" objname="FL_foot" name="FL_pos" reftype="site" refname="imu"/>
+    <framepos objtype="site" objname="FR_foot" name="FR_pos" reftype="site" refname="imu"/>
+    <framepos objtype="site" objname="RL_foot" name="RL_pos" reftype="site" refname="imu"/>
+    <framepos objtype="site" objname="RR_foot" name="RR_pos" reftype="site" refname="imu"/>
+
+    <!-- Per-foot linear velocity sensors — needed for feet_slip reward + foot_linvel_sensor_adr -->
+    <framelinvel objtype="site" objname="FL_foot" name="FL_global_linvel"/>
+    <framelinvel objtype="site" objname="FR_foot" name="FR_global_linvel"/>
+    <framelinvel objtype="site" objname="RL_foot" name="RL_global_linvel"/>
+    <framelinvel objtype="site" objname="RR_foot" name="RR_global_linvel"/>
+
+    <!-- Required by Go2WarpEnv.__init__ (go2_warp_base.py:103-106). The base class
+         looks up `{FL,FR,RL,RR}_floor_found` unconditionally. On splitbelt these fire
+         ONLY when a foot touches `fallback_floor` (off-belt). The splitbelt env's
+         step computes its own air-time grounding from the belt + floor contact-pair
+         sensors below; do NOT use these for feet_air_time. -->
+    <contact name="FL_floor_found" geom1="FL" geom2="fallback_floor" reduce="mindist" num="1" data="found"/>
+    <contact name="FR_floor_found" geom1="FR" geom2="fallback_floor" reduce="mindist" num="1" data="found"/>
+    <contact name="RL_floor_found" geom1="RL" geom2="fallback_floor" reduce="mindist" num="1" data="found"/>
+    <contact name="RR_floor_found" geom1="RR" geom2="fallback_floor" reduce="mindist" num="1" data="found"/>
+
+    <!-- Boolean contact-pair sensors per bongo lesson 2026-04-02: exact, threshold-free.
+         Drives `foot_belt_id` (S§9.1), feet_air_time recompute, and termination (S§7.3). -->
+    <contact name="FL_left_belt"  geom1="FL" geom2="left_belt_geom"/>
+    <contact name="FL_right_belt" geom1="FL" geom2="right_belt_geom"/>
+    <contact name="FR_left_belt"  geom1="FR" geom2="left_belt_geom"/>
+    <contact name="FR_right_belt" geom1="FR" geom2="right_belt_geom"/>
+    <contact name="RL_left_belt"  geom1="RL" geom2="left_belt_geom"/>
+    <contact name="RL_right_belt" geom1="RL" geom2="right_belt_geom"/>
+    <contact name="RR_left_belt"  geom1="RR" geom2="left_belt_geom"/>
+    <contact name="RR_right_belt" geom1="RR" geom2="right_belt_geom"/>
+    <!-- Fall-cause sensors: torso geoms × any belt or floor. -->
+    <contact name="torso_left_belt"  geom1="torso_box" geom2="left_belt_geom"/>
+    <contact name="torso_right_belt" geom1="torso_box" geom2="right_belt_geom"/>
+    <contact name="torso_floor"      geom1="torso_box" geom2="fallback_floor"/>
+  </sensor>
+
+  <keyframe>
+    <!-- Spawn pose: standard Go2 stance, base centered between belts.
+         qpos: 7 (free: xyz + quat) + 12 (leg joints in MJX joint-order: FL,FR,RL,RR) + 2 (belts) = 21 tokens.
+         ctrl: 12 leg actuator targets (in actuator-order: FR,FL,RR,RL) + 2 belt vel = 14 tokens. -->
+    <key name="splitbelt_spawn"
+         qpos="0 0 0.275  1 0 0 0
+               0.0 0.9 -1.8   0.0 0.9 -1.8   0.0 0.9 -1.8   0.0 0.9 -1.8
+               0 0"
+         ctrl="0 0.9 -1.8 0 0.9 -1.8 0 0.9 -1.8 0 0.9 -1.8 0 0"/>
+  </keyframe>
+</mujoco>
