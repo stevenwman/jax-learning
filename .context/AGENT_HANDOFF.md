@@ -204,6 +204,7 @@ Every checkpoint contains: `meta.json` (full config), `metrics.csv` (training cu
 | `Go2WarpJoystickFlatTorqueSpeed` | Flat | Linear torque-speed | A/B vs Flat |
 | `Go2WarpJoystickCurriculum` | 6 rows × 5 cols (rough / pyramid_up / pyramid_down / tilted / flat) | Ideal PD | 4 types goal-directed + flat col (Bernoulli cmd) for flat-env coverage; binary reach/fall advancement |
 | `Go2WarpJoystickCurriculumTorqueSpeed` | Same | Linear torque-speed | Curriculum + actuator model |
+| `Go2WarpSplitbelt` | Two parallel belt slabs (slide + vel actuator) over `fallback_floor` gap | Ideal PD | Adaptation benchmark substrate (A1/A2/A3/A4). Schedule samplers in `splitbelt_schedules.py`. Spec at `.superpowers/specs/2026-05-02-splitbelt-treadmill-env-design.md`. Calibration smoke pending. |
 
 Curriculum env: 128 envs @ 16GB GPU (6 rows × 5 cols = 30 tiles vs 40 previously). Use `--num-envs 128`. v16 20M eval 290.3 ± 6.8 (best 294.7), mean_level 0.73 excl flat. See `.context/lessons/terrain_curriculum.md`.
 

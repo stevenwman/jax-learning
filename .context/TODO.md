@@ -1,5 +1,28 @@
 # TODO
 
+## Completed (2026-05-03) — Splitbelt treadmill env (Go2WarpSplitbelt)
+
+Built the splitbelt-treadmill adaptation-benchmark substrate (spec at `.superpowers/specs/2026-05-02-splitbelt-treadmill-env-design.md`). Two parallel belt slabs on slide+vel actuators over a `fallback_floor` gap, robot-agnostic apparatus + Go2-specific scene. Schedule samplers (tied / split_constant / tied_split_tied / random_per_episode / continual_phase) plus dispatcher cover all four protocol families (A1 within-episode, A2 context-conditioned, A3 meta-RL, A4 continual). 4 obs modes (blind / informed / error / history); reward = full joystick set + new `treadmill_drift` term (`stand_still` dropped since cmd is always 0). Offline gait-asymmetry analyzer in `jax_rl/envs/locomotion/splitbelt_analysis.py`. PPO + FastSAC base presets registered.
+
+Tests landed (`JAX_PLATFORMS=cpu uv run python -m pytest -q` — **753 passed**, +34 over baseline):
+- `tests/test_splitbelt_schedules.py` — 10 schedule-sampler hermetic tests
+- `tests/test_splitbelt_belt_assignment.py` — 5 foot_belt_id tests
+- `tests/test_splitbelt_metrics.py` — 4 offline analyzer tests
+- `tests/test_splitbelt_obs_schema.py` — 13 obs-name-layout + structural-drift tests
+- `tests/test_env_presets.py` — 2 splitbelt-preset shape tests
+- GPU/Warp tests written but deferred (need GPU box):
+  - `tests/test_splitbelt_env_smoke.py` — reset/step/belt_qvel/off-belt term [gpu, warp, go2]
+  - `tests/test_splitbelt_bundle.py` — bundle shape + obs schema round-trip [gpu, warp, go2]
+  - `tests/test_splitbelt_control_metadata.py` — deploy contract drift [gpu, warp, go2, deploy]
+
+Plan at `.superpowers/plans/2026-05-02-splitbelt-treadmill-env.md` (4 audit rounds before exec).
+
+**Open follow-ups (next session):**
+- [ ] **Calibration smoke (Task 5.1):** FastSAC + PPO 1M-step on tied(0.5) belts. Go/no-go: eval > 80, PPO entropy ≥ 0.05. Verify `treadmill_drift` doesn't drown smoothness terms.
+- [ ] **GPU smoke gate:** run the three deferred GPU test files; verify `mjx.put_model` belt forcerange re-call holds (assert `actuator_forcerange[belt_idx, 1] > 100`).
+- [ ] **Per-protocol presets** (A1 / A2 / A3 / A4) — separate brainstorm/spec/plan cycle per spec §11.3.
+- [ ] **History-mode wrapper wiring** — `obs_term_names("history")` returns blind layout but `FrameStackWrapper` is not gated in `mjx_backend`. Land before A3 protocol study.
+
 ## Completed (2026-04-28) — Go2 deploy contract self-describing + action_scale ablation
 
 Closed codex-audit P0 findings on deploy-contract drift. Single source of
