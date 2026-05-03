@@ -1784,6 +1784,8 @@ Copy the full set of `_reward_*` and `_cost_*` methods from `go2_warp_joystick.p
 
 The new method `_reward_treadmill_drift` (defined above) is the only bespoke reward helper.
 
+> **Implementer note — naming hazard:** Splitbelt env uses `info["cmd"]`, `info["last_action"]`, `info["last_last_action"]`. Joystick uses `info["command"]`, `info["last_act"]`, `info["last_last_act"]`. The reward helpers being copied take **positional args** (e.g. `_cost_action_rate(action, last_act, last_last_act)`) — DO NOT pull joystick's `info["last_act"]` lookup inside a copied helper; pass splitbelt's `info["last_action"]` positionally at the call site instead. Same for `cmd` vs `command`.
+
 - [ ] **Step 1: Add all of A–F to `go2_warp_splitbelt.py`. Verify file imports.**
 
 ```bash
@@ -1867,12 +1869,20 @@ def test_belt_qvel_matches_schedule(env, rng):
 
 
 def test_obs_groups_match_name_layout(env):
-    """Structural contract: real ObsTerms in env._obs_groups match obs_term_names()."""
+    """Structural contract: schema-expanded names in env._obs_groups match obs_term_names().
+
+    Privileged group uses `IncludeGroup("state")` (no `.name` attribute), so we
+    must expand via schema_from_obs_groups instead of iterating ObsTerm.name directly.
+    """
     from jax_rl.envs.locomotion.go2_warp_splitbelt import obs_term_names
+    from jax_rl.envs.obs_spec import schema_from_obs_groups
+    schema = schema_from_obs_groups(env._obs_groups)
     layout = obs_term_names(env._config.obs_mode)
-    for group in ("state", "privileged_state"):
-        actual_names = [t.name for t in env._obs_groups[group]]
-        assert actual_names == layout[group], f"{group}: drift between obs_term_names + build_obs_groups"
+    assert schema["state"] == layout["state"], "state: drift between obs_term_names + build_obs_groups"
+    # IncludeGroup expands to state names + privileged-only.
+    state_set = set(layout["state"])
+    expected_priv = layout["state"] + [n for n in layout["privileged_state"] if n not in state_set]
+    assert schema["privileged_state"] == expected_priv, "privileged_state: drift after IncludeGroup expansion"
 
 
 def test_off_belt_termination(env, rng):
