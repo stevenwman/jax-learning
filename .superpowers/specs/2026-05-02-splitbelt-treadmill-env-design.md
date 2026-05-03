@@ -49,7 +49,7 @@ The following were chosen during the brainstorming session; rationale captured h
    - `informed` — proprio + cmd + (vL, vR). (A2.)
    - `error` — proprio + cmd + (cmd_track_error, drift_xy). Belt speeds hidden, error explicit. Tests value of explicit error signal alone.
    - `history` — k-step frame stack of proprio + cmd via the existing `FrameStackWrapper` (`jax_rl/envs/wrappers/frame_stack.py`). Wired via wrapper at env-bundle time when `obs_mode == "history"`. The env itself emits the same name layout as `blind`; the wrapper does the stacking. `k = cfg.history_len` (default 4).
-   `privileged_state` always carries the full proprio set + (vL, vR) + cmd + cmd_track_error + drift_xy + (true) base_lin_vel + base_ang_vel, regardless of `obs_mode`. "Proprio set" here means the same proprio terms that live in `state` for the `blind` mode; nothing is privilege-hidden from privileged_state.
+   `privileged_state` content is defined once in §8 (single source of truth). Summary: full proprio set + (vL, vR) + cmd_track_error + drift_xy + (true) base_lin_vel + base_ang_vel. cmd is already in proprio. Nothing is privilege-hidden.
 6. **Schedule API: S3 — per-episode schedule table.** A `(T, 2)` jax array filled at reset by a per-protocol sampler module (`splitbelt_schedules.py`). Env step is a pure index op, JIT/vmap clean. New protocol = new sampler, env doesn't change.
 7. **Online metrics = primitives only.** Composite metrics (limp index, recovery time, after-effects) computed offline from logged time-series. Reduces bug surface in the env itself; matches the bongo lesson "verify visually, watch for silent reward hacking."
 8. **No symmetry reward.** Step-length symmetry is a *measurement*, not a reward. Rewarding it would make the benchmark question circular. Reward = task (cmd tracking + stay-on-treadmill); asymmetry = what we measure.
@@ -176,8 +176,9 @@ Belt slab length: ~50m per side (configurable). Belts reset to origin each episo
 - `schedule_table` set once at reset, frozen for the episode.
 - Env step is a pure indexing op into `schedule_table` — JIT/vmap clean, no closures, no python state.
 - `schedule_table` lives in `state.info` and flows through vmap/scan transparently. At T=1250 and N=1024 envs, ≈10 MB float32 — fine.
-- **Static-shape lock-in:** `schedule_table.shape == (cfg.episode_length, 2)` always. We do NOT introduce a separate `T_max` cap; the episode_length is the JIT-static shape. This is the same convention as existing locomotion envs (episode_length determines wrapper truncation).
-- **Belt initial qvel:** `_reset` sets belt slide-joint qvel to `schedule_table[0]`. For tied schedules this is the warmup speed; for `random_per_episode` this means the robot's spawn keyframe lands feet on already-moving belts. The `kv=200` actuator settles within one ctrl_dt either way; we accept the first-step transient rather than adding a settle window. (Documented because it's a research consequence: A1 `random` rollouts begin under perturbation immediately.)
+- **Static-shape lock-in:** `schedule_table.shape == (cfg.episode_length, 2)` always. `cfg.episode_length` defaults to `1250` (= 25 s / 0.02 s ctrl_dt). We do NOT introduce a separate `T_max` cap; the episode_length is the JIT-static shape. Same convention as existing locomotion envs.
+- **Belt initial qvel:** `_reset` sets belt slide-joint qvel to `schedule_table[0]`. For tied schedules this is the warmup speed; for `random_per_episode` this means the robot's spawn keyframe lands feet on already-moving belts. Belt actuator gain (set in `treadmill_splitbelt.xml`, default `kv=200`) settles within one ctrl_dt either way; we accept the first-step transient rather than adding a settle window. (Documented because it's a research consequence: A1 `random` rollouts begin under perturbation immediately.)
+- **`step_idx` indexing invariant:** `info["step_idx"]` is incremented AFTER each step that just executed. Reads (`schedule_table[info["step_idx"]]` inside the next step) are always pre-increment, valid range `[0, episode_length-1]`. The episode terminates (`info["truncation"]=1`, wrapper auto-resets) before `step_idx` ever reaches `episode_length`. As defense-in-depth, the env clamps `step_idx_for_index = jnp.minimum(step_idx, episode_length - 1)` before indexing — guards against off-by-one in wrapper compositions.
 
 ---
 
@@ -194,11 +195,15 @@ Tracking:
 Stay-on-treadmill (NEW; only this term is bespoke):
 - `treadmill_drift` — quadratic penalty `−(w_lat · drift_y² + w_fwd · drift_x²)` where `drift = base_xy − treadmill_center_xy = base_xy − (0, 0)` (treadmill_center per §3.4). Default `w_lat = 4·w_fwd` (lateral drift is the dominant failure mode — robot off the side of the belt → off-belt termination; forward drift is bounded by the long slab and self-corrects). Concrete defaults: `w_lat = 2.0`, `w_fwd = 0.5`. Total reward contribution scaled by an outer `treadmill_drift` weight (default 1.0).
 
-Stability/smoothness (port verbatim from joystick — the implementation MUST include all of these, not a subset):
-- `lin_vel_z`, `ang_vel_xy`, `orientation`, `joint_torques`, `action_rate`, `joint_vel`, `feet_air_time`, `survival`.
+Stability/smoothness (port verbatim from joystick — the implementation MUST include the full set, not a subset). The exact term names and scales come from `go2_warp_joystick.default_config().reward_config.scales` (`go2_warp_joystick.py:47-69`):
+- `lin_vel_z`, `ang_vel_xy`, `orientation`, `torques`, `action_rate`, `energy`, `dof_pos_limits`, `feet_air_time`, `feet_slip`, `feet_clearance`, `feet_height`, `pose`, `base_height`.
+
+(Note: this spec previously listed `joint_vel` and `survival` here in error — neither exists in the joystick reward set. Implementer should follow the joystick env file as source of truth, not these bullet names.)
+
+`stand_still` from the joystick set is **dropped** for splitbelt because cmd is always zero — joystick's `_cost_stand_still` evaluates the joint-pose deviation gated by `cmd ≈ 0`, which collapses to a permanent joint-pose anchor. We rely on the existing `pose` term (also a joint-pose anchor) for that role; the redundancy with a permanent `stand_still` would just double-count. If smoke training shows the leg posture drifts, restore `stand_still` (it harmlessly evaluates on cmd=0).
 
 Termination:
-- `termination` — large negative on early done. Default scale matches joystick.
+- `termination` — large negative on early done. Default scale matches joystick (-1.0).
 
 ### 7.2 What is NOT in the reward
 - **No step-length symmetry reward.** Symmetry is the measurement, not the target. Including it would bias the policy toward producing it and make the adaptation question circular.
@@ -233,7 +238,16 @@ Soft:
 | `error` | proprio + cmd + (cmd_track_error, drift_xy) | (probe) | Tests whether explicit error signal alone suffices for adaptation, with the *cause* (belt speeds) hidden. |
 | `history` | k-step frame stack of (proprio + cmd) | (probe) | Vanilla memory-via-stacking; subset of blind, distinct from RNN-meta. |
 
-`obs["privileged_state"]` is always full info regardless of mode: proprio-privileged terms + cmd + (vL, vR) + cmd_track_error + drift_xy. Asymmetric critics work uniformly.
+`obs["privileged_state"]` is always full info regardless of mode. Concrete contents (single source of truth — overrides any earlier mention in §3.5 or §5.3):
+
+- All proprio terms that appear in `blind` mode's `state` (joint_pos, joint_vel, last_action, gravity, gyro, cmd).
+- (vL, vR) belt speeds.
+- cmd_track_error (3-vector).
+- drift_xy (2-vector).
+- True body-frame linear velocity (`base_lin_vel`, no obs-noise).
+- True body-frame angular velocity (`base_ang_vel`, no obs-noise).
+
+Asymmetric critics see all of these uniformly; symmetric critics auto-alias to `state` per the env-bundle layer.
 
 ---
 
@@ -401,6 +415,16 @@ uv run python -m pytest --collect-only -q -m gpu | grep splitbelt
 4. **Q-bias diagnostics on splitbelt.** `evaluate` (MJX path) supports it; analysis of per-protocol Q-bias is interesting but out of scope until baseline lands.
 5. **Composite "limp index"** — left to offline analyzer; not online to keep bug surface small. Spec'd at the analysis-script layer when first protocol report is written.
 6. **Belt-friction DR.** Listed as a candidate DR spec; off by default. Candidate for inclusion once baseline shows the policy is robust to nominal belt friction.
+
+### 11.X Known caveats / surfaced from audit
+
+These are not bugs — they are design consequences worth pre-warning anyone running the benchmark.
+
+- **A1 recovery vs reward gradient.** Within-episode adaptation requires the policy to *want* to recover quickly after the belt switch. The reward set (tracking + drift + smoothness) penalizes deviation magnitude per step but does not directly reward fast recovery. A policy that drifts gradually back to good gait and a policy that snaps back may both achieve similar episode-summed reward. The `recovery_time` metric will measure both, but training pressure to *minimize* recovery_time only emerges if the post-switch reward gradient is steep relative to per-step survival/tracking.
+- **A2 difficulty asymmetry.** Higher (vL, vR) magnitudes mean larger belt drag → harder to maintain torso position → systematically lower per-step reward at high speeds. A2's `generalization_gap` metric will conflate "policy doesn't generalize" with "task is harder at high speeds." Mitigations: report eval scores per (vL, vR) cell normalized by a tied-baseline at the same v_avg; or filter speed range narrowly enough that the difficulty asymmetry is small.
+- **Replay-buffer bloat from `info["splitbelt"]`.** Per-step splitbelt primitives (~50 floats × 4 feet positions = ~50 floats) flow into off-policy replay through `info`. At buffer 1M × num_envs 1024 that's ~200 MB extra memory for fields the actor/critic never read. Mitigation (recommended): gate `info["splitbelt"]` writes behind `cfg.log_splitbelt: bool` (default True for eval/recording, False for training). If the bloat doesn't show up empirically, leave alone.
+- **Episode-length 1250 vs joystick 1000 changes raw return shape.** Per-step training stats (entropy, reward components) are directly comparable; raw eval returns are not. Always normalize by step count when comparing splitbelt evals to joystick evals.
+- **Treadmill_drift magnitude in early training.** With `w_lat=2.0`, drift_y of 0.2 m gives -0.08/step, larger than `pose=0.5` or `feet_air_time=0.1` would contribute at near-default poses. Drift dominates the smoothness terms early. Confirm at the calibration checkpoint: if `pose` or `feet_air_time` reward components stay near zero throughout training, the drift weight is over-tuned.
 
 ---
 
