@@ -28,6 +28,16 @@ FEET_SITES = ["FL_foot", "FR_foot", "RL_foot", "RR_foot"]
 
 FEET_POS_SENSOR = ["FL_pos", "FR_pos", "RL_pos", "RR_pos"]
 
+# Leg actuator names in MJX actuator order (verified against unitree_go2/go2.xml:227-238).
+# Used by envs that add extra non-leg actuators (splitbelt: 12 leg + 2 belt) to filter
+# `_act_to_joint` to leg-only entries. Matches SDK leg ordering: FR, FL, RR, RL.
+LEG_ACTUATOR_NAMES = (
+    "FR_hip", "FR_thigh", "FR_calf",
+    "FL_hip", "FL_thigh", "FL_calf",
+    "RR_hip", "RR_thigh", "RR_calf",
+    "RL_hip", "RL_thigh", "RL_calf",
+)
+
 # ARCHIVED — Menagerie root body name. Warp env uses WARP_ROOT_BODY.
 ROOT_BODY = "base"
 
