@@ -482,6 +482,8 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
     cmd_hist = []
     goal_xy_hist = []
     reward_components_hist: dict[str, list] = {}
+    splitbelt_hist: dict[str, list] = {}        # populated only on splitbelt envs
+    splitbelt_belt_schedule = None              # captured once on first step
 
     print("JIT-compiling rollout step + running Python loop...")
     t0 = time.time()
@@ -505,6 +507,12 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
         if 'reward_components' in info:
             for k, v in info['reward_components'].items():
                 reward_components_hist.setdefault(k, []).append(np.asarray(v))
+        # Splitbelt env per-step gait primitives (S§9.2 sidecar emission).
+        if 'splitbelt' in info:
+            for k, v in info['splitbelt'].items():
+                splitbelt_hist.setdefault(k, []).append(np.asarray(v))
+            if splitbelt_belt_schedule is None and 'belt_schedule' in info:
+                splitbelt_belt_schedule = np.asarray(info['belt_schedule'])
         if float(state_i.done) > 0.5:
             num_frames = i + 1
             print(f"Episode ended at step {num_frames}")
@@ -591,6 +599,15 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
 
     np.savez_compressed(npz_path, **traj_data)
     print(f"Trajectory saved: {npz_path} ({len(traj_data)} arrays)")
+
+    # ── Splitbelt sidecar (S§9.2) — written only when env populates info["splitbelt"] ──
+    if splitbelt_hist:
+        splitbelt_npz_path = video_path.replace(".mp4", "_splitbelt_traj.npz")
+        splitbelt_data = {k: np.stack(vs[:num_frames]) for k, vs in splitbelt_hist.items()}
+        if splitbelt_belt_schedule is not None:
+            splitbelt_data["belt_schedule"] = splitbelt_belt_schedule
+        np.savez_compressed(splitbelt_npz_path, **splitbelt_data)
+        print(f"Splitbelt sidecar saved: {splitbelt_npz_path} ({len(splitbelt_data)} arrays)")
 
 
 def _record_gym(env_name, meta, actor_params, norm_state, actor_batch_stats,
