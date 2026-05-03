@@ -8,7 +8,7 @@
 **Phase:** SD-B (second of SD-A → SD-E)
 **Status:** ready
 
-> **For agentic workers:** REQUIRED SUB-SKILL: `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans`. Strict TDD: test → fail → impl → pass → commit per step. Tickbox each step as you go.
+> **For agentic workers:** invoke `superpowers:subagent-driven-development` (preferred) or `superpowers:executing-plans` before starting. Strict TDD: test → fail → impl → pass → commit per step. Tickbox each step as you go.
 
 ## Goal
 
@@ -260,7 +260,11 @@ No `Co-Authored-By` line.
 - Create: `jax_rl/skill_discovery/checkpointing.py`
 - Create: `tests/test_skill_checkpoint_contract.py`
 
-**Goal:** Wrap the base `CheckpointManager` to additionally save/restore the skill auxiliary state (per-factor params + opt_state) and patch `meta.json` with a `skill_discovery` block. Resume must restore both base training state and skill aux state.
+**Goal:** Wrap the base `CheckpointManager` (`jax_rl/training/checkpointing.py`) to additionally save/restore the skill auxiliary state (per-factor params + opt_state) and patch `meta.json` with a `skill_discovery` block. Resume must restore both base training state and skill aux state.
+
+**Storage choice — npz, not Orbax:**
+
+Aux state is small (single discriminator MLP per factor + Adam state ≈ few MB total for SD-B). The base `CheckpointManager` already uses Orbax for actor/critic params + norm state, but adding a parallel Orbax checkpointable for skill aux means importing Orbax's `CheckpointManager` into the skill subsystem and dealing with its directory locking + version-tracking mechanics for ~MB-scale data. Hand-rolled npz keeps the skill subsystem decoupled, fits the existing project style for small companion files (e.g. `actor_params.npy` lives alongside the orbax dir), and round-trips cleanly via `jax.tree_util.tree_flatten` + np.savez. If aux state grows large in SD-E (multi-factor METRA + Lagrangian), revisit.
 
 ### Step 2.1: Write tests (RED)
 
@@ -470,6 +474,19 @@ git commit -m "feat(skill): add skill aux checkpoint save/load + meta.json block
 
 **Goal:** new function `run_skill_offpolicy_loop(...)` that mirrors `run_offpolicy_loop` but adds skill discovery hooks. Per spec §"V2 implementation shape" — "Create a dedicated loop first instead of generalizing `run_offpolicy_loop` prematurely."
 
+### Conventions diverging from `run_offpolicy_loop`
+
+Hoisted to the top so they don't get buried in step lists. **Read these before writing code.**
+
+| # | Existing `run_offpolicy_loop` | Skill loop override |
+|---|---|---|
+| 1 | At buffer-add: `reward=env_state.reward * cfg.reward_scaling` (line 215) | Store **unscaled** env reward. `cfg.reward_scaling` is applied **once** at sample time on the composed reward (intrinsic + task + style + safety). Spec §"Gradient-step order". |
+| 2 | Eval routes through `maybe_eval_and_checkpoint(...)` | **Bypass** that helper. Skill loop owns its own `eval_skills(...)` per-z. (See step 8 below — decision pinned, not deferred.) |
+| 3 | Buffer extras: only `critic_obs` when asymmetric | Buffer extras: `{"skill_z": skill_dim}` only — buffer auto-allocates `next_skill_z` per `JaxReplayBuffer:77-82` convention. NOT `factor_obs`/`next_factor_obs` in SD-B (deferred to SD-C). |
+| 4 | No aux network update | After `algo.update(...)`, call `mgr.update(aux_state, raw_batch)` on the **same sampled batch** (raw, pre-augmentation). `aux_state` was fixed during algo update so actor/critic gradients can't flow through aux nets. |
+| 5 | No skill checkpoint | After each `CheckpointManager.save(...)`, call `save_skill_aux_state(aux_state, ckpt_dir)` then patch `meta.json` to add `skill_discovery` block. |
+| 6 | Resume restores actor/critic/norm | Resume also calls `load_skill_aux_state(ckpt_dir, template=fresh_aux_state)`. `current_z` is re-sampled fresh (loop state, not aux state). |
+
 **Spec gradient-step order** (spec §"Gradient-step order"):
 1. Sample replay batch.
 2. Normalize raw obs through ObsPipeline.
@@ -619,7 +636,7 @@ def run_skill_offpolicy_loop(
 
 1. **Manager init at startup**: take `skill_cfg: SkillDiscoveryConfig` arg + `skill_manager: SkillManager` (constructed at script level). Call `mgr.init(key)` → `aux_state`. Init per-env `current_z = mgr.sample_skills(key, num_envs)`.
 
-2. **Buffer**: include `skill_z`, `next_skill_z` ONLY as named extras: `pipeline.make_buffer(..., extra_obs_dims={"skill_z": skill_dim, "next_skill_z": skill_dim})`. **DO NOT store `factor_obs` / `next_factor_obs`** in SD-B — for the single `actor_obs_full` factor, the extractor reads `batch["obs"]` directly, so `factor_obs == obs` is pure 2× redundant storage (~144 MB for 1M-step buffer at obs_dim=18). Spec lines 188-194 list factor_obs as a future field; SD-C reintroduces it when sim_data factors arrive that need privileged inputs the actor obs doesn't carry.
+2. **Buffer**: include only `skill_z` as a named extra: `pipeline.make_buffer(..., extra_obs_dims={"skill_z": skill_dim})`. **The buffer auto-allocates a `next_skill_z` companion** per `JaxReplayBuffer:77-82` convention (key without `_obs` → `f"next_{name}"`). Same pattern as `critic_obs` → `critic_next_obs`. **DO NOT pass `next_skill_z` explicitly** — the buffer would interpret it as a new key and allocate `_extra_bufs["next_next_skill_z"]`. At `add_batch` time, pass `skill_z=current_z, next_skill_z=current_z` as kwargs (mirrors `offpolicy_loop.py:209-217` `critic_obs/critic_next_obs` pattern). **DO NOT store `factor_obs` / `next_factor_obs`** in SD-B — for the single `actor_obs_full` factor, the extractor reads `batch["obs"]` directly, so `factor_obs == obs` is pure 2× redundant storage (~144 MB for 1M-step buffer at obs_dim=18). Spec lists factor_obs as a future field; SD-C reintroduces it when sim_data factors arrive that need privileged inputs the actor obs doesn't carry.
 
 3. **Collection step**: store `(obs, action, reward_env_unscaled, next_obs, done, truncation, skill_z=current_z, next_skill_z=current_z)`. **CRITICAL: store unscaled env reward** (NOT `env_state.reward * cfg.reward_scaling` like the existing `run_offpolicy_loop:215` does). The skill loop departs from existing-loop convention here — `cfg.reward_scaling` is applied **once** in step 5 below, on the final composed reward. Per spec lines 437-440: "Apply `cfg.reward_scaling` exactly once to the final composed batch reward immediately before `algo.update(...)`." Lifecycle rule: `next_skill_z = skill_z` under `resample="episode"` (spec lines 195-218).
 
@@ -639,7 +656,7 @@ def run_skill_offpolicy_loop(
 
 7. **Aux update** (after algo update, on the same sampled batch): `aux_state, aux_metrics = mgr.update(aux_state, raw_batch)`. **Important**: actor/critic gradients must not flow through aux nets — but since the algo update happened first with `aux_state` fixed, and aux update uses `raw_batch` (not the composed one), this is naturally enforced.
 
-8. **Eval routing**: per spec line 555, **bypass `maybe_eval_and_checkpoint()`**. The existing helper does not know about skill conditioning. The skill loop should call its own `eval_skills(...)` directly: for each `i in range(skill_cfg.total_skill_dim)`, set fixed `z = one_hot(i)`, run `cfg.num_eval_episodes` rollouts with skill-aware obs composition, log per-skill mean return. Or: extend `maybe_eval_and_checkpoint` with a `skill_action_fn` kwarg that augments obs before policy call. Decision deferred to Task 3 implementation review; either path is acceptable as long as it's pinned in the resulting code.
+8. **Eval routing — DECISION PINNED:** **bypass `maybe_eval_and_checkpoint()`**. The existing helper has no skill conditioning. The skill loop calls its own `eval_skills(...)` directly: for each `i in range(skill_cfg.total_skill_dim)`, set fixed `z = one_hot(i)`, run `cfg.num_eval_episodes` rollouts with skill-aware obs composition, log per-skill mean return. (Alternative — extending `maybe_eval_and_checkpoint` with a `skill_action_fn` kwarg — was considered and rejected: that helper is shared across all off-policy algos; bolting in skill conditioning leaks SD-B concerns into a wider surface. Skill loop owns its own eval.)
 
 9. **Checkpoint integration**: at save points (eval cycles + final), call existing `CheckpointManager.save(...)` to write base state + meta.json, then **patch meta.json in-place** to add the skill block:
    ```python
@@ -865,14 +882,23 @@ Read `scripts/record_video.py` end-to-end. Key sections:
    - If present and `--skill-index` set: build `z = jnp.eye(meta["skill_discovery"]["total_skill_dim"])[args.skill_index]`.
    - If `--skill-vector` set: load + validate shape.
    - If absent and either skill flag set: warn + ignore.
-3. Wrap the policy call to concat z to obs:
-   ```python
-   def policy_step(obs, key):
-       aug_obs = jnp.concatenate([obs, z[None].repeat(obs.shape[0], axis=0)], axis=-1) \
-                 if z is not None else obs
-       return algo.select_action(actor_params, aug_obs, key, deterministic=True)
-   ```
+3. Wrap the policy call to concat z to obs.
+   - **`record_video.py` calls `select_action` with batched obs of shape `(1, obs_dim)`** — see `record_video.py:538` which does `obs_jax = jnp.asarray(obs_arr)[None]` before passing to `select_action`. `z` is `(skill_dim,)`, broadcast to batch.
+   - Concat at the call site (around line 542 for gym path; mirror in MJX path):
+     ```python
+     # obs is (B, obs_dim); z is (skill_dim,)
+     if z is not None:
+         z_b = jnp.broadcast_to(z, (obs.shape[0], z.shape[0]))
+         obs = jnp.concatenate([obs, z_b], axis=-1)
+     return select_action(actor_params, obs, key, deterministic=True)
+     ```
+   - **MJX path is JIT'd** (`build_offpolicy_rollout_step` in `jax_rl/utils/rollout.py:69`). You cannot patch with an external closure. Either:
+     a) Extend `build_offpolicy_rollout_step` signature with `skill_z=None` static arg and concat inside the step fn, OR
+     b) Build a thin local wrapper in `record_video.py` that pre-composes obs before passing to the existing rollout step.
+   - Pick (a) if record_video tests cover skill paths in CI; (b) for a localized patch. Either choice — pin in code.
 4. Output filename: append `_skill{idx}` suffix if `--skill-index` set.
+
+5. **Verify `select_action` accepts `deterministic=True`.** Existing call site at `record_video.py:542` passes it; `SAC.select_action` signature is `(actor_params, obs, key, deterministic=False)` per `sac.py:233`. ✓
 
 ### Step 4b.3: Smoke test
 
