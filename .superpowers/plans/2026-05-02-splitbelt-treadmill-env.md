@@ -1078,8 +1078,11 @@ Note its `<include>` of go2.xml, the keyframe block, and its contact pair declar
          qpos="0 0 0.275  1 0 0 0
                0.0 0.9 -1.8   0.0 0.9 -1.8   0.0 0.9 -1.8   0.0 0.9 -1.8
                0 0"
-         ctrl="0 0 0.9 -1.8 0 0.9 -1.8 0 0.9 -1.8 0 0.9 -1.8"/>
-    <!-- last 2 qpos slots are belt slide joints; ctrl includes belt actuators tail. -->
+         ctrl="0 0.9 -1.8 0 0.9 -1.8 0 0.9 -1.8 0 0.9 -1.8 0 0"/>
+    <!-- ctrl: 12 leg actuator targets (FR_hip,FR_thigh,FR_calf,FL_*,RR_*,RL_*) +
+         2 belt velocity actuators (initially zero). Total 14 tokens — matches
+         model nu = 14 (12 legs + 2 belt vel actuators). qpos: 7 free + 12 leg
+         + 2 belt slide = 21 tokens. -->
   </keyframe>
 </mujoco>
 ```
@@ -1358,12 +1361,14 @@ def default_config() -> config_dict.ConfigDict:
         cmd_zero=True,
         treadmill_drift_lateral_weight=2.0,
         treadmill_drift_forward_weight=0.5,
-        # Replay-bloat gate (spec §11.X caveat). True = write full splitbelt
-        # primitives every step (~200 MB extra per 1M-step replay buffer for
-        # offline analysis). False = skip the writes during training.
-        # Eval/recording presets should set True; train presets should set False
-        # if the empirical bloat is a problem.
-        log_splitbelt=True,
+        # NOTE: spec §11.X flagged a potential replay-bloat caveat (~200 MB extra
+        # per 1M-step buffer from per-step splitbelt primitives). Round-4 added a
+        # `log_splitbelt` gate but it broke `informed`/`error` obs modes (lambdas
+        # read from the gated dict). Reverted: writes are unconditional. If the
+        # bloat shows up empirically, the right fix is to make `belt_vel`,
+        # `cmd_track_error`, `drift_xy` lift out of `info["splitbelt"]` into top-
+        # level info (still cheap), and gate only the heavy fields
+        # (`foot_pos_world`, `foot_in_contact`, `term_cause`). Defer until measured.
         # Reward scales — ported verbatim from go2_warp_joystick:47-69.
         # Splitbelt-specific term `treadmill_drift` added; `stand_still` dropped
         # because cmd is always zero (the term collapses with treadmill_drift).
@@ -2011,22 +2016,19 @@ Port [`_get_reward`](../../jax_rl/envs/locomotion/go2_warp_joystick.py#L416) ver
     state.info["last_contact"] = contact
     state.info["swing_peak"] *= ~contact
 
-    if self._config.log_splitbelt:
-        state.info["splitbelt"] = {
-            "foot_in_contact": contact,
-            "foot_pos_world": foot_pos_world,
-            "foot_belt_id": foot_belt_id,
-            "base_pos_world": base_pos_world,
-            "base_vel_world": data.qvel[:3],   # true world-frame; logged for analysis
-            "base_yaw": jp.float32(0.0),       # placeholder; not used in reward — derive offline if needed
-            "belt_vel": belt_vel_target,
-            "cmd_track_error": cmd_track_error,
-            "drift_xy": drift_xy,
-            "term_cause": term_cause,          # nonzero only on the done step
-            "step_idx": step_idx,
-        }
-    # else: leave the existing (zeroed) splitbelt dict from reset in place; only
-    # eval/recording rollouts log full primitives. Training replay sees zeros.
+    state.info["splitbelt"] = {
+        "foot_in_contact": contact,
+        "foot_pos_world": foot_pos_world,
+        "foot_belt_id": foot_belt_id,
+        "base_pos_world": base_pos_world,
+        "base_vel_world": data.qvel[:3],   # true world-frame; logged for analysis
+        "base_yaw": jp.float32(0.0),       # placeholder; not used in reward — derive offline if needed
+        "belt_vel": belt_vel_target,
+        "cmd_track_error": cmd_track_error,
+        "drift_xy": drift_xy,
+        "term_cause": term_cause,          # nonzero only on the done step
+        "step_idx": step_idx,
+    }
 
     obs = self._get_obs(data, state.info)
     for k, v in rewards.items():
