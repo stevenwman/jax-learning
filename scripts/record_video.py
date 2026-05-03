@@ -63,6 +63,88 @@ ENV_DEFAULTS = {
 }
 
 
+def _resolve_skill_vector(meta, skill_index, skill_vector_path):
+    """Resolve a fixed skill vector z from CLI args + checkpoint meta.
+
+    Returns:
+        jnp.ndarray of shape (skill_dim,) for skill-discovery checkpoints,
+        or None for non-skill checkpoints.
+
+    Raises:
+        ValueError if skill checkpoint detected without --skill-index/--skill-vector,
+        or if --skill-index out of range / --skill-vector wrong shape.
+    """
+    sd_block = meta.get("skill_discovery") if isinstance(meta, dict) else None
+
+    # Non-skill checkpoint: warn if user passed skill flags, then ignore.
+    if not sd_block:
+        if skill_index is not None or skill_vector_path is not None:
+            print("[warn] --skill-index/--skill-vector ignored: checkpoint has no "
+                  "skill_discovery block in meta.json")
+        return None
+
+    total_skill_dim = int(sd_block["total_skill_dim"])
+
+    if skill_vector_path is not None:
+        if skill_vector_path.endswith(".npy"):
+            vec = np.load(skill_vector_path)
+        else:
+            # Treat as csv (whitespace/comma-separated single row).
+            vec = np.loadtxt(skill_vector_path, delimiter=",")
+        vec = np.asarray(vec, dtype=np.float32).reshape(-1)
+        if vec.shape[0] != total_skill_dim:
+            raise ValueError(
+                f"--skill-vector shape {vec.shape} does not match "
+                f"total_skill_dim={total_skill_dim} from checkpoint"
+            )
+        print(f"[skill] using --skill-vector from {skill_vector_path} (dim={vec.shape[0]})")
+        return jnp.asarray(vec)
+
+    if skill_index is not None:
+        if not (0 <= skill_index < total_skill_dim):
+            raise ValueError(
+                f"--skill-index {skill_index} out of range "
+                f"[0, {total_skill_dim})"
+            )
+        z = jnp.eye(total_skill_dim)[skill_index]
+        print(f"[skill] using one-hot --skill-index {skill_index} (total_skill_dim={total_skill_dim})")
+        return z
+
+    raise ValueError(
+        "skill_discovery checkpoint requires --skill-index or --skill-vector"
+    )
+
+
+class _SkillWrappedAlgo:
+    """Wrapper around an algo object that pre-concats a fixed skill_z to obs
+    before delegating to the underlying ``select_action``.
+
+    Duck-typed for ``build_offpolicy_rollout_step`` (used by MJX path) and the
+    gym path's direct ``select_action`` call. Only ``select_action`` is needed
+    for inference; ``init`` is forwarded for the few sites in record() that
+    need a dummy training_state.
+
+    Localized "option (b)": avoids touching the shared
+    ``build_offpolicy_rollout_step`` API in jax_rl/utils/rollout.py.
+    """
+
+    def __init__(self, inner, skill_z):
+        self._inner = inner
+        # Cast once so JIT closure captures a stable jnp array.
+        self._z = jnp.asarray(skill_z)
+
+    def __getattr__(self, name):
+        # Forward all non-overridden attrs (init, _default_actor_bs setter, etc.).
+        return getattr(self._inner, name)
+
+    def select_action(self, actor_params, obs, key, deterministic=False):
+        # obs shape: (B, raw_obs_dim). Broadcast z to (B, skill_dim) and concat.
+        z_b = jnp.broadcast_to(self._z, (obs.shape[0], self._z.shape[0]))
+        obs_aug = jnp.concatenate([obs, z_b], axis=-1)
+        return self._inner.select_action(actor_params, obs_aug, key,
+                                         deterministic=deterministic)
+
+
 def _build_select_action(meta, obs_dim, action_dim):
     """Build a select_action function from checkpoint metadata. Algo-agnostic.
 
@@ -104,8 +186,15 @@ def _build_select_action(meta, obs_dim, action_dim):
             ppo = PPO(config, obs_dim, action_dim, dummy_opt, dummy_opt)
         return ppo, "ppo"
 
-    elif algo in ("sac", "fast_sac"):
-        algo_cfg_key = "sac_config" if "sac_config" in meta else "fast_sac_config"
+    elif algo in ("sac", "fast_sac", "sac_skill"):
+        # sac_skill uses vanilla SAC under the hood (DIAYN training script
+        # writes meta['algo']='sac_skill' + meta['sac_skill_config']). The
+        # actor sees augmented obs (raw + one-hot skill_z); caller must pass
+        # the augmented obs_dim here.
+        if algo == "sac_skill":
+            algo_cfg_key = "sac_skill_config"
+        else:
+            algo_cfg_key = "sac_config" if "sac_config" in meta else "fast_sac_config"
         sc = meta.get(algo_cfg_key, {})
         if algo == "fast_sac":
             from jax_rl.algos.fast_sac import FastSAC
@@ -188,7 +277,9 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
            terrain_level: int | None = None,
            terrain_type: str | None = None,
            force_zero_linvel: bool = False,
-           force_zero_yaw: bool = False):
+           force_zero_yaw: bool = False,
+           skill_index: int | None = None,
+           skill_vector: str | None = None):
 
     # ── Load checkpoint ───────────────────────────────────────────────────
     algo_type = "ppo"  # default
@@ -215,6 +306,13 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
         use_obs_norm = False
         print("Using random (untrained) policy")
 
+    # ── Skill discovery: resolve fixed skill vector z ────────────────────
+    # `z` is None for non-skill checkpoints (the common path). For
+    # skill-discovery checkpoints, the actor expects obs augmented with a
+    # one-hot (or arbitrary) skill vector concatenated on the last axis.
+    # We resolve z once here and thread it through to both backend paths.
+    z = _resolve_skill_vector(meta, skill_index, skill_vector)
+
     env_name = env_name or "CartpoleBalance"
 
     # ── Dispatch by backend ──────────────────────────────────────────────
@@ -226,6 +324,7 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
             actor_batch_stats=actor_batch_stats,
             checkpoint=checkpoint, out=out,
             max_steps=max_steps, video_seed=video_seed,
+            skill_z=z, skill_index=skill_index,
         )
 
     defaults = ENV_DEFAULTS.get(env_name, ((256, 256), None))
@@ -310,8 +409,14 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
 
     raw_obs = env_state.obs
     policy_obs = raw_obs["state"] if isinstance(raw_obs, dict) else raw_obs
-    obs_dim = policy_obs.shape[-1]
+    raw_obs_dim = policy_obs.shape[-1]
     action_dim = env.action_size
+
+    # When skill-aware, the actor was trained on (raw_obs ‖ skill_z) of size
+    # raw_obs_dim + skill_dim. Build the algo with augmented obs_dim so the
+    # restored actor params load into a network of matching shape; the wrapper
+    # below (`_SkillWrappedAlgo`) re-augments obs at inference time.
+    obs_dim = raw_obs_dim + (z.shape[0] if z is not None else 0)
 
     # ── Build algo for select_action ──────────────────────────────────────
     algo, algo_type = _build_select_action(meta, obs_dim, action_dim)
@@ -327,7 +432,9 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
         algo._default_actor_bs = actor_batch_stats
     if norm_state is None:
         from jax_rl.utils.normalization import init as norm_init
-        norm_state = norm_init(obs_dim)
+        # norm_state is applied to RAW env obs (before skill_z concat), so use
+        # raw_obs_dim, not the augmented obs_dim used for actor construction.
+        norm_state = norm_init(raw_obs_dim)
 
     # ── Build rollout step function ───────────────────────────────────────
     if kicks and varied_cmds > 0:
@@ -343,13 +450,20 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
     tc = meta.get("train_config", {}) if isinstance(meta, dict) else {}
     n_fs = int(tc.get("n_frame_stack", 1))
 
+    # For skill-discovery checkpoints, wrap the algo so each select_action
+    # call concats the fixed z onto post-norm obs before calling the actor.
+    # `build_offpolicy_rollout_step` only depends on `algo.select_action`,
+    # so a duck-typed wrapper threads through transparently — no changes to
+    # the shared rollout helper (option (b) per plan).
+    rollout_algo = _SkillWrappedAlgo(algo, z) if z is not None else algo
+
     if algo_type == "ppo":
         rollout_step, _ = build_ppo_rollout_step(
-            algo, training_state, norm_state, env_step,
+            rollout_algo, training_state, norm_state, env_step,
             kicks_fn=kicks_fn, n_frame_stack=n_fs)
     else:
         rollout_step, _ = build_offpolicy_rollout_step(
-            algo, training_state.actor_params, norm_state, env_step,
+            rollout_algo, training_state.actor_params, norm_state, env_step,
             use_obs_norm, kicks_fn=kicks_fn, n_frame_stack=n_fs)
     init_carry = (env_state, key)
 
@@ -449,13 +563,14 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
 
     # ── Save video ────────────────────────────────────────────────────────
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    skill_suffix = f"_skill{skill_index}" if skill_index is not None and z is not None else ""
     if out != "rollout.mp4":
         # User explicitly set --out; honor it verbatim.
         video_path = out
     elif checkpoint is not None:
-        video_path = os.path.join(checkpoint, f"{timestamp}_rollout.mp4")
+        video_path = os.path.join(checkpoint, f"{timestamp}_rollout{skill_suffix}.mp4")
     else:
-        video_path = f"{timestamp}_rollout.mp4"
+        video_path = f"{timestamp}_rollout{skill_suffix}.mp4"
 
     print(f"Saving to {video_path}...")
     imageio.mimsave(video_path, frames, fps=50)  # 50Hz policy = 50fps for real-time
@@ -479,12 +594,20 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
 
 
 def _record_gym(env_name, meta, actor_params, norm_state, actor_batch_stats,
-                checkpoint, out, max_steps, video_seed):
+                checkpoint, out, max_steps, video_seed,
+                skill_z=None, skill_index=None):
     """Record a rollout for a gym-backend env (PushT etc.).
 
     Single-env Python loop; uses env.render(mode='rgb_array') per step
     to capture frames. Saves mp4 + traj npz like the MJX path, but with
     obs/actions/rewards instead of qpos/qvel.
+
+    Args:
+        skill_z: optional fixed skill vector of shape (skill_dim,) for
+            skill-discovery checkpoints. When set, the actor was trained on
+            (raw_obs ‖ z); we concat z onto each batched obs before
+            select_action.
+        skill_index: int — used only for output filename suffix.
     """
     # Build the gym env via the backend factory using stored env_kwargs.
     from jax_rl.configs.train_config import TrainConfig
@@ -503,23 +626,22 @@ def _record_gym(env_name, meta, actor_params, norm_state, actor_batch_stats,
     env = make_env_thunk()
 
     obs, _ = env.reset(seed=int(video_seed))
-    obs_dim = obs.shape[-1] if not isinstance(obs, dict) else obs["state"].shape[-1]
+    raw_obs_dim = obs.shape[-1] if not isinstance(obs, dict) else obs["state"].shape[-1]
     action_dim = int(np.asarray(env.action_space.sample()).shape[-1])
+    # Actor is built with augmented obs_dim when skill-aware (matches MJX path).
+    obs_dim = raw_obs_dim + (skill_z.shape[0] if skill_z is not None else 0)
 
     # Build the actor (algo-agnostic — same factory as MJX path).
     if actor_params is not None:
         algo, kind = _build_select_action(meta, obs_dim, action_dim)
-        if kind == "ppo":
-            select_action = algo.select_action
-        else:
-            select_action = algo.select_action
+        select_action = algo.select_action
     else:
         algo, kind = None, "random"
         select_action = None
 
     use_obs_norm = False
-    for k in ("sac_config", "fast_sac_config", "td3_config", "fast_td3_config",
-              "ppo", "flash_sac_config", "tdmpc2_config"):
+    for k in ("sac_config", "fast_sac_config", "sac_skill_config", "td3_config",
+              "fast_td3_config", "ppo", "flash_sac_config", "tdmpc2_config"):
         if k in meta and meta[k].get("obs_normalization", False):
             use_obs_norm = True
             break
@@ -538,6 +660,12 @@ def _record_gym(env_name, meta, actor_params, norm_state, actor_batch_stats,
             obs_jax = jnp.asarray(obs_arr)[None]
             if use_obs_norm and norm_state is not None:
                 obs_jax = norm_normalize(norm_state, obs_jax)
+            # Skill concat at the call site (post-norm, pre-actor). obs_jax
+            # is (1, raw_obs_dim); broadcast z to (1, skill_dim) and concat
+            # along the last axis.
+            if skill_z is not None:
+                z_b = jnp.broadcast_to(skill_z, (obs_jax.shape[0], skill_z.shape[0]))
+                obs_jax = jnp.concatenate([obs_jax, z_b], axis=-1)
             action = np.asarray(
                 select_action(actor_params, obs_jax, ak, deterministic=True)
             )[0]
@@ -559,12 +687,13 @@ def _record_gym(env_name, meta, actor_params, norm_state, actor_batch_stats,
 
     # ── Save video + traj ────────────────────────────────────────────────
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    skill_suffix = f"_skill{skill_index}" if skill_index is not None and skill_z is not None else ""
     if out != "rollout.mp4":
         video_path = out
     elif checkpoint is not None:
-        video_path = os.path.join(checkpoint, f"{timestamp}_rollout.mp4")
+        video_path = os.path.join(checkpoint, f"{timestamp}_rollout{skill_suffix}.mp4")
     else:
-        video_path = f"{timestamp}_rollout.mp4"
+        video_path = f"{timestamp}_rollout{skill_suffix}.mp4"
     print(f"Saving to {video_path}...")
     imageio.mimsave(video_path, frames, fps=int(env.metadata.get("render_fps", 30)))
     print(f"Done: {video_path}")
@@ -611,6 +740,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--terrain-type", type=str, default=None,
                         choices=[None, "rough", "pyramid_up", "pyramid_down", "tilted", "flat"],
                         help="Curriculum env only: force spawn at this terrain type")
+    parser.add_argument("--skill-index", type=int, default=None,
+                        help="Fixed skill index for skill-discovery checkpoints (one-hot)")
+    parser.add_argument("--skill-vector", type=str, default=None,
+                        help="Path to .csv/.npy with explicit skill vector")
     return parser
 
 
@@ -628,4 +761,6 @@ if __name__ == "__main__":
         terrain_type=args.terrain_type,
         force_zero_linvel=args.force_zero_linvel,
         force_zero_yaw=args.force_zero_yaw,
+        skill_index=args.skill_index,
+        skill_vector=args.skill_vector,
     )
