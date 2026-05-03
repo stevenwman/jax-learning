@@ -110,6 +110,15 @@ def _register_custom_envs():
             _bongo_default_config_contraction,
         )
 
+    from jax_rl.envs.locomotion.go2_warp_splitbelt import Go2WarpSplitbeltEnv
+    from jax_rl.envs.locomotion.go2_warp_splitbelt import default_config as splitbelt_default_config
+    if "Go2WarpSplitbelt" not in pg_locomotion._envs:
+        pg_locomotion.register_environment(
+            "Go2WarpSplitbelt",
+            functools.partial(Go2WarpSplitbeltEnv, task="splitbelt"),
+            splitbelt_default_config,
+        )
+
     # (MuJoCo Warp PushEnv removed 2026-04-20 — replaced by vendored pymunk
     # gym-pusht (`jax_rl/envs/manipulation/pusht/`) for cross-shape work.)
 
