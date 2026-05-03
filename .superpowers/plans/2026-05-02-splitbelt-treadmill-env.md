@@ -955,8 +955,19 @@ Note its `<include>` of go2.xml, the keyframe block, and its contact pair declar
   </contact>
 
   <sensor>
+    <!-- Required by Go2WarpEnv.__init__ (jax_rl/envs/locomotion/go2_warp_base.py:103-106).
+         Base class looks up `{FL,FR,RL,RR}_floor_found` unconditionally. These fire
+         only when the foot is on `fallback_floor` (i.e., off-belt). The base-class
+         "feet_air_time" uses these — for splitbelt that means feet on belts count
+         as "air" by the base helper; the splitbelt env overrides feet_air_time to
+         use the belt + floor sensors below instead. -->
+    <contact name="FL_floor_found" geom1="FL" geom2="fallback_floor" reduce="mindist" num="1" data="found"/>
+    <contact name="FR_floor_found" geom1="FR" geom2="fallback_floor" reduce="mindist" num="1" data="found"/>
+    <contact name="RL_floor_found" geom1="RL" geom2="fallback_floor" reduce="mindist" num="1" data="found"/>
+    <contact name="RR_floor_found" geom1="RR" geom2="fallback_floor" reduce="mindist" num="1" data="found"/>
+
     <!-- Boolean contact-pair sensors per bongo lesson 2026-04-02: exact, threshold-free.
-         Drives both `foot_belt_id` (S§9.1) and termination cause (S§7.3). -->
+         Drives `foot_belt_id` (S§9.1), feet_air_time recompute, and termination (S§7.3). -->
     <contact name="FL_left_belt"  geom1="FL" geom2="left_belt_geom"/>
     <contact name="FL_right_belt" geom1="FL" geom2="right_belt_geom"/>
     <contact name="FR_left_belt"  geom1="FR" geom2="left_belt_geom"/>
@@ -965,10 +976,6 @@ Note its `<include>` of go2.xml, the keyframe block, and its contact pair declar
     <contact name="RL_right_belt" geom1="RL" geom2="right_belt_geom"/>
     <contact name="RR_left_belt"  geom1="RR" geom2="left_belt_geom"/>
     <contact name="RR_right_belt" geom1="RR" geom2="right_belt_geom"/>
-    <contact name="FL_floor" geom1="FL" geom2="fallback_floor"/>
-    <contact name="FR_floor" geom1="FR" geom2="fallback_floor"/>
-    <contact name="RL_floor" geom1="RL" geom2="fallback_floor"/>
-    <contact name="RR_floor" geom1="RR" geom2="fallback_floor"/>
     <!-- Fall-cause sensors: torso geoms × any belt or floor. -->
     <contact name="torso_left_belt"  geom1="torso_box" geom2="left_belt_geom"/>
     <contact name="torso_right_belt" geom1="torso_box" geom2="right_belt_geom"/>
@@ -1109,16 +1116,22 @@ git commit -m "test(splitbelt): obs schema tests (RED, env not yet created)"
 **Files:**
 - Create: `jax_rl/envs/locomotion/go2_warp_splitbelt.py`
 
-Subclass `Go2WarpEnv` (per `go2_warp_base.py`). Stub `_step`/`_reset` with `NotImplementedError`-flavored placeholders; only `build_obs_groups` is real for this task. Reference: `go2_bongo_handstand.py` for class layout, `go2_warp_joystick.py` for obs term examples.
+Subclass `go2_warp_base.Go2WarpEnv` (real class name in [`go2_warp_base.py:34`](../../jax_rl/envs/locomotion/go2_warp_base.py#L34)). Match the joystick env's API EXACTLY:
+- override `reset(rng)` and `step(state, action)` — **no leading underscore**. The framework calls these directly.
+- inline-build `mjx_env.State(data, obs, reward, done, metrics, info)` — no `_init_pipeline`/`_make_state` helpers (those don't exist).
+- `_get_obs(self, data, info)` — not `_compute_obs`.
+- Use real base helpers only: `self.get_gravity(data)`, `self.get_gyro(data)`, `self.get_local_linvel(data)`, `self.get_global_linvel(data)`, `self.get_global_angvel(data)`, `self.get_upvector(data)`, `self.get_accelerometer(data)`. There is NO `get_joint_pos` / `get_joint_vel` / `_extract_yaw` / `_world_to_body`. Use `data.qpos[7:] - self._default_pose` and `data.qvel[6:]` directly.
+- `__init__` MUST accept `task: str` kwarg (Playground's registry passes it via `functools.partial`; ignore it inside if not used). Joystick precedent: [`go2_warp_joystick.py:85-95`](../../jax_rl/envs/locomotion/go2_warp_joystick.py#L85-L95).
+- The base class `Go2WarpEnv.__init__` looks up `{FL,FR,RL,RR}_floor_found` sensors at [`go2_warp_base.py:103-106`](../../jax_rl/envs/locomotion/go2_warp_base.py#L103-L106). The scene XML (Task 2.2) declares them. Don't override the lookup.
 
-- [ ] **Step 1: Read references**
+- [ ] **Step 1: Read precedent**
 
 ```bash
-cat jax_rl/envs/locomotion/go2_bongo_handstand.py | head -120
-cat jax_rl/envs/locomotion/go2_warp_joystick.py | head -120
+sed -n '40,200p' jax_rl/envs/locomotion/go2_warp_joystick.py    # default_config + _post_init + _obs_groups + _reward_spec
+sed -n '236,395p' jax_rl/envs/locomotion/go2_warp_joystick.py   # reset + step + _get_obs
 ```
 
-Note `_post_init`, `_obs_groups` definition pattern, ObsTerm + IncludeGroup usage.
+Note: real call signatures, real helper names, real `mjx_env.State` construction, real reward computation pattern (named lambdas → weighted sum × dt → clip).
 
 - [ ] **Step 2: Implement skeleton**
 
@@ -1181,7 +1194,12 @@ def obs_term_names(obs_mode: str) -> Dict[str, list[str]]:
 
 
 def default_config() -> config_dict.ConfigDict:
-    """Default config: tied belts at 0.5 m/s, blind obs, cmd=0 (smoke baseline)."""
+    """Default config: tied belts at 0.5 m/s, blind obs, cmd=0 (smoke baseline).
+
+    Reward scales ported VERBATIM from go2_warp_joystick.default_config (S§7.1).
+    Empty / `.get(name, default)` patterns are forbidden — they silently produce
+    ~10× weaker tracking reward and lose the calibration target (S§10.5).
+    """
     return config_dict.create(
         ctrl_dt=0.02,
         sim_dt=0.004,
@@ -1199,6 +1217,7 @@ def default_config() -> config_dict.ConfigDict:
             level=1.0,
             scales=config_dict.create(
                 joint_pos=0.03, joint_vel=1.5, gyro=0.2, gravity=0.05,
+                linvel=0.1, accelerometer=0.1,
             ),
         ),
         # Splitbelt-specific
@@ -1213,8 +1232,33 @@ def default_config() -> config_dict.ConfigDict:
         cmd_zero=True,
         treadmill_drift_lateral_weight=2.0,
         treadmill_drift_forward_weight=0.5,
-        # Reuse joystick reward scales — will be filled in Task 3.5.
-        reward_config=config_dict.create(scales=config_dict.create()),
+        # Reward scales — ported verbatim from go2_warp_joystick:47-69.
+        # Splitbelt-specific term `treadmill_drift` added; `stand_still` dropped
+        # because cmd is always zero (the term collapses with treadmill_drift).
+        reward_config=config_dict.create(
+            scales=config_dict.create(
+                tracking_lin_vel=10.0,
+                tracking_ang_vel=5.0,
+                lin_vel_z=-0.5,
+                ang_vel_xy=-0.05,
+                orientation=-5.0,
+                torques=-0.0002,
+                action_rate=-0.01,
+                energy=-0.001,
+                dof_pos_limits=-1.0,
+                feet_air_time=0.1,
+                feet_slip=-0.1,
+                feet_clearance=-2.0,
+                feet_height=-0.2,
+                termination=-1.0,
+                pose=0.5,
+                base_height=-5.0,
+                # New for splitbelt:
+                treadmill_drift=1.0,
+            ),
+            tracking_sigma=0.25,
+            max_foot_height=0.1,
+        ),
         # MJX/Warp tuning
         naconmax=4 * 8192,
         naccdmax=4000,
@@ -1226,35 +1270,45 @@ def build_obs_groups(env: Any) -> Dict[str, list]:
     """Build real ObsTerm dispatch with env-method-bound lambdas (used in _post_init).
 
     Names must match `obs_term_names(env._config.obs_mode)` exactly — that is the
-    contract validated in tests. Pattern follows `go2_warp_joystick.py:131`.
+    contract validated in tests. Pattern follows go2_warp_joystick.py:128-159.
+    Uses IncludeGroup("state") in privileged so the actor's terms are inherited
+    automatically (saves duplication, idiomatic per obs_spec.py:46-49).
     """
     cfg = env._config
     layout = obs_term_names(cfg.obs_mode)
+    noise = cfg.noise_config.scales
 
-    # Map term name → (fn, noise_scale). Fns close over `env`; per joystick precedent,
-    # they accept **kw to absorb compute_obs's keyword args.
+    # `data.qpos[7:]` and `data.qvel[6:]` are the real way to read joint pos/vel
+    # for Go2 (post-base, post-freejoint). Joystick precedent: lines 137-140.
     term_factory = {
-        "joint_pos": (lambda data, **kw: env.get_joint_pos(data), 0.03),
-        "joint_vel": (lambda data, **kw: env.get_joint_vel(data), 1.5),
+        "joint_pos": (lambda data, **kw: data.qpos[7:7+12] - env._default_pose, noise.joint_pos),
+        "joint_vel": (lambda data, **kw: data.qvel[6:6+12], noise.joint_vel),
         "last_action": (lambda info, **kw: info["last_action"], 0.0),
-        "gravity": (lambda data, **kw: env.get_gravity(data), 0.05),
-        "gyro": (lambda data, **kw: env.get_gyro(data), 0.2),
+        "gravity": (lambda data, **kw: env.get_gravity(data), noise.gravity),
+        "gyro": (lambda data, **kw: env.get_gyro(data), noise.gyro),
         "cmd": (lambda info, **kw: info["cmd"], 0.0),
         "belt_vel": (lambda info, **kw: info["splitbelt"]["belt_vel"], 0.0),
         "cmd_track_error": (lambda info, **kw: info["splitbelt"]["cmd_track_error"], 0.0),
         "drift_xy": (lambda info, **kw: info["splitbelt"]["drift_xy"], 0.0),
-        "base_lin_vel": (lambda data, **kw: data.qvel[:3], 0.0),
-        "base_ang_vel": (lambda data, **kw: data.qvel[3:6], 0.0),
+        # Privileged-only terms read TRUE base velocities (no noise).
+        "base_lin_vel": (lambda data, **kw: env.get_local_linvel(data), 0.0),
+        "base_ang_vel": (lambda data, **kw: env.get_global_angvel(data), 0.0),
     }
 
-    def _build(names: list[str]) -> list[ObsTerm]:
+    def _build(names):
         return [ObsTerm(name=n, fn=term_factory[n][0], noise_scale=term_factory[n][1])
                 for n in names]
 
-    return {
-        "state": _build(layout["state"]),
-        "privileged_state": _build(layout["privileged_state"]),
-    }
+    # State group: real ObsTerms.
+    state_terms = _build(layout["state"])
+
+    # Privileged: IncludeGroup("state") + privileged extras (the names in `layout`
+    # that are NOT in `state`). Order preserved.
+    state_set = set(layout["state"])
+    priv_extras = [n for n in layout["privileged_state"] if n not in state_set]
+    privileged_terms = [IncludeGroup("state")] + _build(priv_extras)
+
+    return {"state": state_terms, "privileged_state": privileged_terms}
 
 
 class Go2WarpSplitbeltEnv(go2_warp_base.Go2WarpEnv):
@@ -1262,26 +1316,37 @@ class Go2WarpSplitbeltEnv(go2_warp_base.Go2WarpEnv):
 
     def __init__(
         self,
-        config: Optional[config_dict.ConfigDict] = None,
+        task: str = "splitbelt",
+        config: config_dict.ConfigDict = None,
         config_overrides: Optional[Dict[str, Union[str, int, list]]] = None,
     ) -> None:
+        # `task` accepted for Playground registry compatibility; not used internally.
+        del task
         cfg = config if config is not None else default_config()
         xml_path = (
             Path(__file__).parent / "xmls" / "go2_warp_splitbelt_scene.xml"
         ).as_posix()
-        super().__init__(xml_path=xml_path, config=cfg, config_overrides=config_overrides)
-        # _post_init is invoked from base; the heavy lifting lives there.
+        super().__init__(
+            xml_path=xml_path, config=cfg, config_overrides=config_overrides
+        )
+        self._post_init()
 
     def _post_init(self) -> None:
-        # TODO(Task 3.3): schedule_table buffer, contact sensor IDs, belt geometry, default_pose.
-        super()._post_init()
-        self._obs_groups = build_obs_groups(self)
+        # NOTE: go2_warp_base.Go2WarpEnv.__init__ does NOT call _post_init itself.
+        # Joystick env calls it explicitly from its own __init__ (line 96).
+        # Heavy lifting (sensor lookup, default_pose, belt IDs) lives here.
+        # See Task 3.3 for the full implementation.
         self._action_dim = 12
+        self._default_pose = jp.array(self._mj_model.keyframe("splitbelt_spawn").qpos[7:7+12])
+        self._init_q = jp.array(self._mj_model.keyframe("splitbelt_spawn").qpos)
+        self._obs_groups = build_obs_groups(self)
+        # Task 3.3 fills in: belt_layout, belt actuator/joint IDs, contact-pair sensor IDs,
+        # torso fall sensors, schedule_T.
 
-    def _reset(self, rng: jax.Array):
+    def reset(self, rng: jax.Array):
         raise NotImplementedError("Implemented in Task 3.4")
 
-    def _step(self, state, action: jax.Array):
+    def step(self, state, action: jax.Array):
         raise NotImplementedError("Implemented in Task 3.5")
 ```
 
@@ -1307,17 +1372,28 @@ git commit -m "feat(splitbelt): env skeleton + obs_groups dispatch (GREEN obs sc
 **Files:**
 - Modify: `jax_rl/envs/locomotion/go2_warp_splitbelt.py`
 
-This populates env attributes used by `_step`/`_reset`. No new tests at this stage — `_post_init` is exercised by Task 3.6 smoke test [gpu, warp, go2].
+This populates env attributes used by `step`/`reset`. No new tests here — exercised by Task 3.6 smoke `[gpu, warp, go2]`.
 
-- [ ] **Step 1: Implement**
-
-Replace the stub `_post_init` with:
+- [ ] **Step 1: Replace the stub `_post_init` with the full version**
 
 ```python
 def _post_init(self) -> None:
-    super()._post_init()
     self._action_dim = 12
-    self._obs_groups = build_obs_groups(self)
+    self._init_q = jp.array(self._mj_model.keyframe("splitbelt_spawn").qpos)
+    self._default_pose = jp.array(
+        self._mj_model.keyframe("splitbelt_spawn").qpos[7:7+12]
+    )
+
+    # Soft joint limits — first joint is freejoint; next 12 are leg joints.
+    # Belt slide joints come AFTER the legs in the keyframe; only legs are limited.
+    self._lowers, self._uppers = self.mj_model.jnt_range[1:1+12].T
+    self._soft_lowers = self._lowers * self._config.soft_joint_pos_limit_factor
+    self._soft_uppers = self._uppers * self._config.soft_joint_pos_limit_factor
+
+    self._torso_body_id = self._mj_model.body(consts.WARP_ROOT_BODY).id
+    self._feet_site_id = np.array(
+        [self._mj_model.site(name).id for name in consts.FEET_SITES]
+    )
 
     cfg = self._config
     self._belt_layout = geom.BeltLayout(
@@ -1327,38 +1403,52 @@ def _post_init(self) -> None:
         right_y_max=cfg.belt_layout.right_y_max,
     )
 
-    # Belt actuator IDs (for writing belt-vel commands per step).
+    # Belt actuator + joint IDs.
     self._left_belt_act_id = self._mj_model.actuator("left_belt_vel").id
     self._right_belt_act_id = self._mj_model.actuator("right_belt_vel").id
-    self._left_belt_jnt_id = self._mj_model.joint("left_belt_joint").id
-    self._right_belt_jnt_id = self._mj_model.joint("right_belt_joint").id
+    # Belt slide joints sit AFTER the leg joints in the model.
+    # Use joint().qposadr/dofadr for indexing into qpos/qvel — joint id alone is
+    # not the qpos index. Joystick precedent reads qpos[7:7+12] directly because
+    # leg joints are positions 7..18; for belts we look up by name.
+    self._left_belt_qposadr = self._mj_model.joint("left_belt_joint").qposadr[0]
+    self._right_belt_qposadr = self._mj_model.joint("right_belt_joint").qposadr[0]
+    self._left_belt_dofadr = self._mj_model.joint("left_belt_joint").dofadr[0]
+    self._right_belt_dofadr = self._mj_model.joint("right_belt_joint").dofadr[0]
 
-    # Foot contact-pair sensor IDs for foot_belt_id (S§9.1).
+    # Belt actuator addresses in `data.ctrl` (for writing belt-vel commands).
+    # Leg actuators are 0..11; belt actuators come after.
+    self._left_belt_ctrl_idx = self._mj_model.actuator("left_belt_vel").id
+    self._right_belt_ctrl_idx = self._mj_model.actuator("right_belt_vel").id
+
+    # Contact-pair sensor IDs for foot_belt_id + termination cause (S§9.1).
     feet_order = ("FL", "FR", "RL", "RR")
-    self._foot_left_belt_sensors = jp.array(
-        [self._mj_model.sensor(f"{f}_left_belt").adr[0] for f in feet_order]
+    def _adr(name):
+        sid = self._mj_model.sensor(name).id
+        return self._mj_model.sensor_adr[sid]
+    self._foot_left_belt_adr = jp.array(
+        [_adr(f"{f}_left_belt") for f in feet_order]
     )
-    self._foot_right_belt_sensors = jp.array(
-        [self._mj_model.sensor(f"{f}_right_belt").adr[0] for f in feet_order]
+    self._foot_right_belt_adr = jp.array(
+        [_adr(f"{f}_right_belt") for f in feet_order]
     )
-    self._foot_floor_sensors = jp.array(
-        [self._mj_model.sensor(f"{f}_floor").adr[0] for f in feet_order]
+    # Floor-found sensors (declared in scene XML; Go2WarpEnv.__init__ also reads them).
+    self._foot_floor_adr = jp.array(
+        [_adr(f"{f}_floor_found") for f in feet_order]
     )
+    self._torso_left_belt_adr = _adr("torso_left_belt")
+    self._torso_right_belt_adr = _adr("torso_right_belt")
+    self._torso_floor_adr = _adr("torso_floor")
 
-    # Torso fall sensors.
-    self._torso_left_belt_sensor = self._mj_model.sensor("torso_left_belt").adr[0]
-    self._torso_right_belt_sensor = self._mj_model.sensor("torso_right_belt").adr[0]
-    self._torso_floor_sensor = self._mj_model.sensor("torso_floor").adr[0]
-
-    # Default pose from spawn keyframe.
-    spawn_id = self._mj_model.keyframe("splitbelt_spawn").id
-    self._default_pose = jp.array(self._mj_model.key_qpos[spawn_id])
-
-    # Episode-length cap for schedule_table allocation (T = episode_length).
+    self._obs_groups = build_obs_groups(self)
     self._schedule_T = int(cfg.episode_length)
 ```
 
-- [ ] **Step 2: Smoke-import (the env still raises NotImplementedError on _step but should at least construct)**
+> **Implementer notes:**
+> - `consts.WARP_ROOT_BODY` and `consts.FEET_SITES` are already used by joystick — reuse the constants, do not invent new ones.
+> - We do NOT call `super()._post_init()`. The base class doesn't define one; joystick env calls `_post_init` itself from its own `__init__` (line 96), which is what `Go2WarpSplitbeltEnv.__init__` already does (Task 3.2 Step 2).
+> - Soft joint limits use `[1:1+12]` (12 leg joints), not `[1:]` — joystick uses `[1:]` because it has no extra slide joints. We must skip the belt slide joints in the soft-limit slice.
+
+- [ ] **Step 2: Smoke-import (CPU path; only constructs — `step`/`reset` still raise NotImplementedError)**
 
 ```bash
 JAX_PLATFORMS=cpu uv run python -c "
@@ -1366,11 +1456,12 @@ from jax_rl.envs.locomotion.go2_warp_splitbelt import Go2WarpSplitbeltEnv
 env = Go2WarpSplitbeltEnv()
 print('action_dim', env._action_dim)
 print('belt_layout', env._belt_layout)
+print('default_pose len', len(env._default_pose))
 print('obs_groups keys', list(env._obs_groups.keys()))
 "
 ```
 
-Expected: prints without crashing. (CPU MuJoCo path; Warp not invoked because `_reset`/`_step` are not called.) If this fails on Warp-only setup, this manual check is `[gpu, warp]`-only — skip and continue; the smoke test in Task 3.6 covers it.
+Expected: prints without crashing. If this fails on a Warp-only setup, this manual check moves to `[gpu, warp]` — skip and let Task 3.6's smoke test catch issues.
 
 - [ ] **Step 3: Commit**
 
@@ -1380,56 +1471,80 @@ git commit -am "feat(splitbelt): _post_init wires sensors + belt geometry + defa
 
 ---
 
-### Task 3.4: `_reset` — schedule sample, state init, term_cause zeroing
+### Task 3.4: `reset` — schedule sample, state init, term_cause zeroing
 
 **Files:**
 - Modify: `jax_rl/envs/locomotion/go2_warp_splitbelt.py`
 
-Per S§6.2 and S§9.1: sample schedule table, set belt qvel, sample cmd, zero `term_cause`.
+Per S§6.2 and S§9.1: sample schedule table, set belt qvel, sample cmd, zero `term_cause`. Mirror joystick's `reset` exactly ([`go2_warp_joystick.py:236-300`](../../jax_rl/envs/locomotion/go2_warp_joystick.py#L236-L300)).
 
-- [ ] **Step 1: Implement `_reset`**
-
-Reference `go2_bongo_handstand.py::_reset` for the qpos/qvel sampling pattern + DR + obs computation. Adapt:
+- [ ] **Step 1: Add imports at top of file**
 
 ```python
-def _reset(self, rng: jax.Array):
-    rng, k_qpos, k_qvel, k_sched, k_cmd = jax.random.split(rng, 5)
+import jax
+import jax.numpy as jp
+from mujoco import mjx
+from mujoco_playground._src import mjx_env
+from jax_rl.envs.obs_spec import compute_obs
+```
 
-    # qpos/qvel: spawn keyframe + small noise (existing pattern).
-    qpos = self._default_pose + jax.random.uniform(
-        k_qpos, self._default_pose.shape, minval=-0.01, maxval=0.01
+- [ ] **Step 2: Implement `reset` (no leading underscore — framework calls this directly)**
+
+```python
+def reset(self, rng: jax.Array) -> mjx_env.State:
+    rng, k_qpos, k_qvel, k_sched = jax.random.split(rng, 4)
+
+    # qpos: spawn keyframe + small per-joint noise on legs only.
+    qpos = self._init_q
+    qpos_noise = jax.random.uniform(
+        k_qpos, (12,), minval=-0.01, maxval=0.01
     )
-    qvel = jp.zeros(self._mj_model.nv)
+    qpos = qpos.at[7:7+12].set(qpos[7:7+12] + qpos_noise)
 
-    # Belt slabs back to origin; initial belt qvel = first row of schedule_table.
+    # Belt slabs back to origin (override whatever was in keyframe).
+    qpos = qpos.at[self._left_belt_qposadr].set(0.0)
+    qpos = qpos.at[self._right_belt_qposadr].set(0.0)
+
+    # Belt schedule sampled per episode (S§5.4).
     schedule_table = sched.sample_schedule(
         k_sched,
         T=self._schedule_T,
         kind=self._config.schedule_kind,
         params=dict(self._config.schedule_params),
     )
-    # Index belt slide-joint qvel by joint id; the qvel layout matches qpos for slides.
-    qvel = qvel.at[self._left_belt_jnt_id].set(schedule_table[0, 0])
-    qvel = qvel.at[self._right_belt_jnt_id].set(schedule_table[0, 1])
-    # Belt qpos at zero (slabs back to origin).
-    qpos = qpos.at[self._left_belt_jnt_id].set(0.0)
-    qpos = qpos.at[self._right_belt_jnt_id].set(0.0)
 
-    # cmd: always-zero by config default (S§7.4).
-    cmd = jp.zeros(3) if self._config.cmd_zero else jax.random.uniform(
-        k_cmd, (3,), minval=-1.0, maxval=1.0
+    # qvel: zeros for legs + base; belts pre-seeded to schedule[0]
+    # (S§6.3 — accept first-step transient for non-tied schedules).
+    qvel = jp.zeros(self.mjx_model.nv)
+    qvel = qvel.at[self._left_belt_dofadr].set(schedule_table[0, 0])
+    qvel = qvel.at[self._right_belt_dofadr].set(schedule_table[0, 1])
+
+    # Build initial mjx data — same call as joystick:256-265.
+    data = mjx_env.make_data(
+        self.mj_model,
+        qpos=qpos,
+        qvel=qvel,
+        ctrl=jp.zeros(self.mjx_model.nu),
+        impl=self.mjx_model.impl.value,
+        naconmax=self._config.naconmax,
+        naccdmax=self._config.naccdmax,
+        njmax=self._config.njmax,
     )
+    data = mjx.forward(self.mjx_model, data)
 
-    # Build initial pipeline state via base helper.
-    data = self._init_pipeline(qpos, qvel)
+    # cmd: always-zero by default (S§7.4). Plumbed through obs/reward.
+    cmd = jp.zeros(3)
 
-    # info dict carries schedule + step_idx + splitbelt primitives (S§9.1).
     info = {
         "rng": rng,
         "step_idx": jp.int32(0),
         "belt_schedule": schedule_table,
         "cmd": cmd,
         "last_action": jp.zeros(self._action_dim),
+        "last_last_action": jp.zeros(self._action_dim),
+        "feet_air_time": jp.zeros(4),
+        "last_contact": jp.zeros(4, dtype=bool),
+        "swing_peak": jp.zeros(4),
         "splitbelt": {
             "foot_in_contact": jp.zeros(4, dtype=jp.bool_),
             "foot_pos_world": jp.zeros((4, 3)),
@@ -1440,224 +1555,252 @@ def _reset(self, rng: jax.Array):
             "belt_vel": schedule_table[0],
             "cmd_track_error": jp.zeros(3),
             "drift_xy": jp.zeros(2),
-            "term_cause": jp.int32(0),  # S§9.1: 0 = none/truncated, 1=fall, 2=off-belt, 3=tilt
+            "term_cause": jp.int32(0),  # S§9.1: 0=alive, 1=fall, 2=off-belt, 3=tilt
             "step_idx": jp.int32(0),
+        },
+        "reward_components": {
+            k: jp.zeros(()) for k in self._config.reward_config.scales.keys()
         },
     }
 
-    obs = self._compute_obs(data, info)
-    reward, done = jp.zeros(()), jp.zeros((), dtype=jp.bool_)
-    metrics = {}
-    return self._make_state(data, obs, reward, done, info, metrics)
+    metrics = {f"reward/{k}": jp.zeros(()) for k in self._config.reward_config.scales.keys()}
+
+    obs = self._get_obs(data, info)
+
+    reward, done = jp.zeros(2)
+    return mjx_env.State(data, obs, reward, done, metrics, info)
 ```
 
-> **Implementer note:** `_init_pipeline` and `_make_state` are conventions from `go2_warp_base` / `mjx_env.MjxEnv`. If the actual API differs (e.g., `mjx_env.init` + `State`), adapt — the precedent is `go2_bongo_handstand.py::_reset`. Don't invent new helpers; reuse base ones.
-
-- [ ] **Step 2: Implement `_compute_obs` via `compute_obs`**
-
-Use the canonical pattern from [`go2_warp_joystick.py:395-403`](../../jax_rl/envs/locomotion/go2_warp_joystick.py#L395-L403). `compute_obs` (defined at [`obs_spec.py:63`](../../jax_rl/envs/obs_spec.py#L63)) iterates the groups, calls each `ObsTerm.fn(**kwargs)`, applies per-term noise scaled by `noise_level`, and concatenates per group. RNG is threaded through `info["rng"]`.
+- [ ] **Step 3: Implement `_get_obs` (the canonical wrapper around `compute_obs`)**
 
 ```python
-from jax_rl.envs.obs_spec import compute_obs
-
-
-def _compute_obs(self, data, info) -> Dict[str, jp.ndarray]:
+def _get_obs(self, data, info):
     obs, info["rng"] = compute_obs(
         self._obs_groups,
         noise_level=self._config.noise_config.level,
         rng=info["rng"],
-        data=data,
-        info=info,
+        data=data, info=info,
     )
     return obs
 ```
 
-> **Implementer note:** `info["rng"]` is mutated in-place via reassignment; the joystick env does the same (`go2_warp_joystick.py:398`). The `_step` flow then returns the updated info, so the new rng propagates to the next call.
-
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git commit -am "feat(splitbelt): _reset samples schedule + zeroes term_cause + cmd"
+git commit -am "feat(splitbelt): reset + _get_obs (mjx_env.State pattern from joystick)"
 ```
 
 ---
 
-### Task 3.5: `_step` — belt actuation, gait primitives, obs, reward, termination
+### Task 3.5: `step` — belt actuation, gait primitives, obs, reward, termination
 
 **Files:**
 - Modify: `jax_rl/envs/locomotion/go2_warp_splitbelt.py`
 
-This is the largest sub-task; break into sub-steps.
+This is the largest sub-task. Mirror joystick's `step` ([`go2_warp_joystick.py:302-391`](../../jax_rl/envs/locomotion/go2_warp_joystick.py#L302-L391)) — same PD-substep `lax.scan`, same reward computation pattern, same `state.replace` return.
 
-#### Step A: belt-vel write + physics step
+**Hard rules to remember:**
+- DO NOT write `info["truncation"]` here — that's the wrapper layer's job (`EpisodeWrapper` / `DomainRandWrapper`).
+- DO NOT use `state.pipeline_state` — it's `state.data` per `mjx_env.State`.
+- DO NOT call `self._compute_ctrl` / `_physics_step` / `_init_pipeline` / `_make_state` / `_extract_yaw` / `_world_to_body` — none exist. Use the precedent below.
+- Reward weights live in `self._config.reward_config.scales[name]` — direct dict lookup, NO `.get(name, default)`.
 
-- [ ] **Implement `_step` skeleton with belt actuation only**
+#### Step A: belt-vel write + physics substep loop
 
 ```python
-def _step(self, state, action: jax.Array):
-    info = state.info
-    step_idx = info["step_idx"]
-    belt_vel_target = info["belt_schedule"][step_idx]  # (2,)
+def step(self, state: mjx_env.State, action: jax.Array) -> mjx_env.State:
+    motor_targets = self._default_pose + action * self._config.action_scale
 
-    # Joint-space PD: target = action_scale * action + default_pose[joint_slice]
-    # (Pattern: see go2_warp_base / go2_warp_joystick.)
-    ctrl = self._compute_ctrl(action)  # 12-dim joint torques/positions per base impl
+    step_idx = state.info["step_idx"]
+    belt_vel_target = state.info["belt_schedule"][step_idx]  # (2,)
 
-    # Append belt-vel commands. The full ctrl vector is (12 motor + 2 belt vel).
-    full_ctrl = jp.concatenate([ctrl, belt_vel_target])
+    kp = self._kp
+    kd = self._kd
+    model = self.mjx_model
+    a2j = self._act_to_joint  # actuator → joint remap (joystick:323)
 
-    data = self._physics_step(state.pipeline_state, full_ctrl)
-    # ... (rest below)
+    def substep(data, _):
+        current_q = data.qpos[7:7+12]      # leg joints (FL,FR,RL,RR order in qpos)
+        current_dq = data.qvel[6:6+12]
+        tau_joint = kp * (motor_targets - current_q) + kd * (0.0 - current_dq)
+        tau_joint = self._apply_torque_speed_limit(tau_joint, current_dq)  # joystick:329
+        # Build full ctrl vector: leg actuators (in actuator order) + belt actuators.
+        leg_ctrl = tau_joint[a2j]
+        full_ctrl = data.ctrl.at[:12].set(leg_ctrl)
+        full_ctrl = full_ctrl.at[self._left_belt_ctrl_idx].set(belt_vel_target[0])
+        full_ctrl = full_ctrl.at[self._right_belt_ctrl_idx].set(belt_vel_target[1])
+        data = data.replace(ctrl=full_ctrl)
+        return mjx.step(model, data), None
+
+    data = jax.lax.scan(substep, state.data, (), self.n_substeps)[0]
 ```
 
-> **Implementer note:** `_compute_ctrl` and `_physics_step` are again base-class conventions. Look at `go2_warp_base` for the exact helper names; they may be `_pre_step` + `_post_step` or `_apply_action` + `mjx.step` directly. Match the precedent.
-
-#### Step B: gait primitive computation
+#### Step B: gait primitives (S§9.1)
 
 ```python
-    # --- Gait primitives (S§9.1) ---
     sensordata = data.sensordata
-    foot_in_left = sensordata[self._foot_left_belt_sensors] > 0.0
-    foot_in_right = sensordata[self._foot_right_belt_sensors] > 0.0
-    foot_in_floor = sensordata[self._foot_floor_sensors] > 0.0
+    foot_in_left = sensordata[self._foot_left_belt_adr] > 0.0
+    foot_in_right = sensordata[self._foot_right_belt_adr] > 0.0
+    foot_in_floor = sensordata[self._foot_floor_adr] > 0.0  # off-belt landings
 
-    foot_in_contact = foot_in_left | foot_in_right | foot_in_floor
+    contact = foot_in_left | foot_in_right | foot_in_floor
     foot_belt_id = jp.where(
         foot_in_left, jp.int32(0),
         jp.where(foot_in_right, jp.int32(1), jp.int32(-1)),
     )
 
-    feet_geom_ids = jp.array([self._mj_model.geom(g).id for g in consts.FEET_GEOMS])
-    foot_pos_world = data.geom_xpos[feet_geom_ids]
-    base_pos_world = data.qpos[:3]
-    base_vel_world = data.qvel[:3]
-    base_yaw = self._extract_yaw(data)
+    foot_pos_world = data.site_xpos[self._feet_site_id]   # joystick:344 pattern
 
-    # Tracking error in body frame (cmd[:2] − body-frame v_xy, cmd[2] − body yaw rate).
-    cmd = info["cmd"]
-    body_vel = self._world_to_body(base_vel_world, base_yaw)
+    base_pos_world = data.qpos[:3]
+    body_lin_vel = self.get_local_linvel(data)             # body-frame, joystick:163
+    body_ang_vel = self.get_gyro(data)                     # body yaw rate at index 2
+
+    # Tracking error in body frame (cmd is body-frame; S§3.4).
+    cmd = state.info["cmd"]
     cmd_track_error = jp.concatenate([
-        cmd[:2] - body_vel[:2],
-        cmd[2:3] - data.qvel[5:6],  # yaw rate from base ang vel
+        cmd[:2] - body_lin_vel[:2],
+        cmd[2:3] - body_ang_vel[2:3],
     ])
-    drift_xy = base_pos_world[:2]  # treadmill_center = origin
+    drift_xy = base_pos_world[:2]   # treadmill_center = (0, 0); S§7.1
 ```
 
-#### Step C: termination with term_cause
+#### Step C: termination with term_cause (S§7.3)
 
 ```python
-    # --- Termination (S§7.3) ---
-    # Contact-based primary detectors:
-    fall_torso_left = sensordata[self._torso_left_belt_sensor] > 0.0
-    fall_torso_right = sensordata[self._torso_right_belt_sensor] > 0.0
-    fall_torso_floor = sensordata[self._torso_floor_sensor] > 0.0
-    is_fall = fall_torso_left | fall_torso_right | fall_torso_floor
-
+    # Contact-based primary detectors.
+    fall_torso = (
+        (sensordata[self._torso_left_belt_adr] > 0.0)
+        | (sensordata[self._torso_right_belt_adr] > 0.0)
+        | (sensordata[self._torso_floor_adr] > 0.0)
+    )
     is_off_belt = jp.any(foot_in_floor)
 
-    # Threshold backstop. Use the existing helper from go2_warp_base
-    # (`go2_warp_base.py:189`): self.get_gravity(data) returns gravity in body frame.
-    # The body-z component gives "uprightness": 1.0 = perfectly upright, 0 = sideways.
+    # Threshold backstop. self.get_gravity(data) returns body-frame gravity;
+    # the z component is "uprightness" (1 = upright, 0 = sideways).
     gravity_body = self.get_gravity(data)
     is_tilt = (gravity_body[2] < 0.5) | (base_pos_world[2] < 0.18)
 
-    done = is_fall | is_off_belt | is_tilt
+    done = fall_torso | is_off_belt | is_tilt
 
-    # term_cause priority: fall > off_belt > tilt.
+    # term_cause priority: fall > off-belt > tilt.
     term_cause = jp.where(
-        is_fall, jp.int32(1),
+        fall_torso, jp.int32(1),
         jp.where(is_off_belt, jp.int32(2),
                  jp.where(is_tilt, jp.int32(3), jp.int32(0))),
     )
 ```
 
-#### Step D: reward (S§7.1)
+#### Step D: reward — port full term set from joystick
+
+Port [`_get_reward`](../../jax_rl/envs/locomotion/go2_warp_joystick.py#L416) verbatim with two changes:
+- Replace `tracking_lin_vel`/`tracking_ang_vel` to use `cmd = jp.zeros(3)` substituted into joystick's existing kernels (the kernels work fine with cmd=0 — they reduce to "minimize body velocity" and "minimize yaw rate"). No code change to the kernels themselves.
+- Replace `stand_still` with new `treadmill_drift` term:
 
 ```python
-    # --- Reward (S§7.1) ---
-    scales = self._config.reward_config.scales
-    # Tracking
-    r_track_lin = jp.exp(-jp.sum(jp.square(cmd[:2] - body_vel[:2])) / 0.25)
-    r_track_ang = jp.exp(-jp.square(cmd[2] - data.qvel[5]) / 0.25)
-    # Stay-on-treadmill
-    r_drift = -(
-        self._config.treadmill_drift_lateral_weight * jp.square(drift_xy[1])
-        + self._config.treadmill_drift_forward_weight * jp.square(drift_xy[0])
-    )
-    # Survival + termination
-    r_survival = 1.0
-    r_term = jp.where(done, -1.0, 0.0)
-    # Smoothness — port a subset; see go2_warp_joystick.
-    r_action_rate = -jp.sum(jp.square(action - info["last_action"]))
+    # Use the existing reward helper methods from joystick verbatim — copy them
+    # into go2_warp_splitbelt.py: _reward_tracking_lin_vel, _reward_tracking_ang_vel,
+    # _cost_lin_vel_z, _cost_ang_vel_xy, _cost_orientation, _cost_torques,
+    # _cost_action_rate, _cost_energy, _cost_joint_pos_limits, _reward_feet_air_time,
+    # _cost_feet_slip, _cost_feet_clearance, _cost_feet_height, _cost_termination,
+    # _reward_pose, _cost_base_height. Sources: go2_warp_joystick.py:416-560 (approx).
 
-    reward = (
-        scales.get("tracking_lin_vel_xy", 1.0) * r_track_lin
-        + scales.get("tracking_ang_vel_z", 0.5) * r_track_ang
-        + r_drift
-        + scales.get("survival", 1.0) * r_survival
-        + scales.get("termination", 1.0) * r_term
-        + scales.get("action_rate", 0.01) * r_action_rate
-    )
+    def _reward_treadmill_drift(self, drift_xy):
+        wL = self._config.treadmill_drift_lateral_weight
+        wF = self._config.treadmill_drift_forward_weight
+        return -(wL * jp.square(drift_xy[1]) + wF * jp.square(drift_xy[0]))
+
+    # In step:
+    contact_filt = contact | state.info["last_contact"]
+    first_contact = (state.info["feet_air_time"] > 0.0) * contact_filt
+    state.info["feet_air_time"] += self.dt
+    p_fz = foot_pos_world[..., -1]
+    state.info["swing_peak"] = jp.maximum(state.info["swing_peak"], p_fz)
+
+    rewards = {
+        "tracking_lin_vel": self._reward_tracking_lin_vel(cmd, body_lin_vel),
+        "tracking_ang_vel": self._reward_tracking_ang_vel(cmd, body_ang_vel),
+        "lin_vel_z":        self._cost_lin_vel_z(self.get_global_linvel(data)),
+        "ang_vel_xy":       self._cost_ang_vel_xy(self.get_global_angvel(data)),
+        "orientation":      self._cost_orientation(self.get_upvector(data)),
+        "torques":          self._cost_torques(data.actuator_force[:12]),
+        "action_rate":      self._cost_action_rate(action, state.info["last_action"], state.info["last_last_action"]),
+        "energy":           self._cost_energy(data.qvel[6:6+12], data.actuator_force[:12]),
+        "dof_pos_limits":   self._cost_joint_pos_limits(data.qpos[7:7+12]),
+        "feet_air_time":    self._reward_feet_air_time(state.info["feet_air_time"], first_contact, cmd),
+        "feet_slip":        self._cost_feet_slip(data, contact, state.info),
+        "feet_clearance":   self._cost_feet_clearance(data),
+        "feet_height":      self._cost_feet_height(state.info["swing_peak"], first_contact, state.info),
+        "termination":      self._cost_termination(done),
+        "pose":             self._reward_pose(data.qpos[7:7+12]),
+        "base_height":      self._cost_base_height(data),
+        "treadmill_drift":  self._reward_treadmill_drift(drift_xy),
+    }
+    rewards = {k: v * self._config.reward_config.scales[k] for k, v in rewards.items()}
+    reward = jp.clip(sum(rewards.values()) * self.dt, 0.0, 10000.0)
+    state.info["reward_components"] = rewards
 ```
+
+> **Implementer note:** the leg actuator force is at indices `[:12]` of `data.actuator_force`; belt actuators come after. Joystick uses bare `data.actuator_force` because all 12 entries are legs. We must slice.
+> Helpers `_apply_torque_speed_limit`, `_act_to_joint`, `_kp`, `_kd`, `n_substeps`, `dt`, `mjx_model`, `mj_model` are inherited from `go2_warp_base.Go2WarpEnv` — used by joystick verbatim, no overrides needed.
 
 #### Step E: info update + obs + return
 
 ```python
-    new_splitbelt = {
-        "foot_in_contact": foot_in_contact,
+    state.info["last_last_action"] = state.info["last_action"]
+    state.info["last_action"] = action
+    state.info["step_idx"] = step_idx + 1
+    state.info["feet_air_time"] *= ~contact
+    state.info["last_contact"] = contact
+    state.info["swing_peak"] *= ~contact
+
+    state.info["splitbelt"] = {
+        "foot_in_contact": contact,
         "foot_pos_world": foot_pos_world,
         "foot_belt_id": foot_belt_id,
         "base_pos_world": base_pos_world,
-        "base_vel_world": base_vel_world,
-        "base_yaw": base_yaw,
+        "base_vel_world": data.qvel[:3],   # true world-frame; logged for analysis
+        "base_yaw": jp.float32(0.0),       # placeholder; not used in reward — derive offline if needed
         "belt_vel": belt_vel_target,
         "cmd_track_error": cmd_track_error,
         "drift_xy": drift_xy,
-        "term_cause": term_cause,  # nonzero only when done; else 0
+        "term_cause": term_cause,          # nonzero only on the done step
         "step_idx": step_idx,
     }
 
-    new_info = dict(info)
-    new_info["splitbelt"] = new_splitbelt
-    new_info["step_idx"] = step_idx + 1
-    new_info["last_action"] = action
-    # Truncation flag (lesson env_backends §2): timeout is truncation, not termination.
-    new_info["truncation"] = jp.where(
-        new_info["step_idx"] >= self._schedule_T, jp.int32(1), jp.int32(0)
-    )
+    obs = self._get_obs(data, state.info)
+    for k, v in rewards.items():
+        state.metrics[f"reward/{k}"] = v
+    state.metrics["splitbelt/term_cause"] = term_cause.astype(reward.dtype)
 
-    obs = self._compute_obs(data, new_info)
-    metrics = {
-        "track_lin": r_track_lin,
-        "track_ang": r_track_ang,
-        "drift": r_drift,
-    }
-    return self._make_state(data, obs, reward, done, new_info, metrics)
+    done = done.astype(reward.dtype)
+    return state.replace(data=data, obs=obs, reward=reward, done=done)
 ```
 
-#### Step F: bind missing `term_factory` helpers to base-class methods
+> **Hard rule (env-backend lesson §2):** `info["truncation"]` is set by the `EpisodeWrapper`/`DomainRandWrapper`, not by inner `step`. Joystick env does not write it; we don't either. The wrapper pops/repopulates it.
 
-`build_obs_groups` (Task 3.2) refers to `env.get_joint_pos` / `env.get_joint_vel` / `env.get_gyro`. Verify these exist on `Go2WarpEnv` (they do — see [`go2_warp_base.py`](../../jax_rl/envs/locomotion/go2_warp_base.py); `get_gravity` is at line 189). If any are missing, add a small helper on the splitbelt env that reads from `data.qpos`/`data.qvel` directly. Do NOT modify `Go2WarpEnv` — keep the base class clean.
+#### Step F: copy reward helper methods from joystick
 
-> **Implementer note:** the helpers `_compute_ctrl`, `_physics_step`, `_init_pipeline`, `_make_state`, `_extract_yaw`, `_world_to_body` are go2_warp_base / mjx_env conventions — names approximate. Match what the base class actually exposes; if a name doesn't exist, look at [`go2_warp_joystick.py`](../../jax_rl/envs/locomotion/go2_warp_joystick.py)'s `_step` (and `go2_bongo_handstand.py::_step`) for the equivalent and reuse exactly that helper. Don't add new helpers to the base class.
+Copy the full set of `_reward_*` and `_cost_*` methods from `go2_warp_joystick.py` (the methods invoked above) verbatim into `go2_warp_splitbelt.py`. Per spec §5.3, we duplicate rather than factor — premature abstraction is YAGNI.
 
-- [ ] **Step 1: Wire all sub-steps into `_step` and verify the file imports + the env constructs cleanly** (no Warp invocation needed yet)
+The new method `_reward_treadmill_drift` (defined above) is the only bespoke reward helper.
+
+- [ ] **Step 1: Add all of A–F to `go2_warp_splitbelt.py`. Verify file imports.**
 
 ```bash
 JAX_PLATFORMS=cpu uv run python -c "
-from jax_rl.envs.locomotion.go2_warp_splitbelt import Go2WarpSplitbeltEnv, default_config
-cfg = default_config()
-env = Go2WarpSplitbeltEnv(cfg)
-print('OK env constructs; obs_dim placeholder', env._obs_groups)
+from jax_rl.envs.locomotion.go2_warp_splitbelt import Go2WarpSplitbeltEnv
+env = Go2WarpSplitbeltEnv()
+print('OK env constructs')
+print('reward terms:', list(env._config.reward_config.scales.keys()))
 "
 ```
 
-Expected: prints. If `mujoco_playground` requires Warp to import, this CPU smoke might error — switch to checking via the GPU smoke test in Task 3.6.
+Expected: prints. Reward terms list matches `default_config()` exactly (16 entries).
 
 - [ ] **Step 2: Commit**
 
 ```bash
-git commit -am "feat(splitbelt): _step belt actuation + gait primitives + reward + termination"
+git commit -am "feat(splitbelt): step + full reward set + term_cause"
 ```
 
 ---
@@ -1715,10 +1858,9 @@ def test_belt_qvel_matches_schedule(env, rng):
     state = env.reset(rng)
     action = jnp.zeros((env._action_dim,))
     state2 = env.step(state, action)
-    # The belt is velocity-actuated, so within ctrl_dt the joint qvel should be near schedule.
     schedule_step0 = state.info["belt_schedule"][0]
-    actual_left = state2.pipeline_state.qvel[env._left_belt_jnt_id]
-    actual_right = state2.pipeline_state.qvel[env._right_belt_jnt_id]
+    actual_left = state2.data.qvel[env._left_belt_dofadr]
+    actual_right = state2.data.qvel[env._right_belt_dofadr]
     # 10% tolerance for one-step transient (kv=200 should achieve this).
     assert jnp.abs(actual_left - schedule_step0[0]) < 0.1
     assert jnp.abs(actual_right - schedule_step0[1]) < 0.1
@@ -1736,13 +1878,13 @@ def test_obs_groups_match_name_layout(env):
 def test_off_belt_termination(env, rng):
     """Force a foot off-belt by shifting robot in y; assert term_cause = 2."""
     state = env.reset(rng)
-    # Cheat: replace base y in qpos to put robot fully off the right side of belts.
-    qpos = state.pipeline_state.qpos.at[1].set(2.0)  # y = 2 m, well outside belts
-    new_pipeline = state.pipeline_state.replace(qpos=qpos)
-    state = state.replace(pipeline_state=new_pipeline)
+    # Replace base y in qpos to put robot fully off the right side of belts.
+    qpos = state.data.qpos.at[1].set(2.0)  # y = 2 m, well outside belts
+    new_data = state.data.replace(qpos=qpos)
+    state = state.replace(data=new_data)
     action = jnp.zeros((env._action_dim,))
     s2 = env.step(state, action)
-    # On the next step, foot×fallback_floor should fire.
+    # foot×fallback_floor should fire.
     assert bool(s2.done)
     assert int(s2.info["splitbelt"]["term_cause"]) == 2  # off-belt
 ```
@@ -1789,34 +1931,41 @@ git commit -m "test(splitbelt): GPU/Warp env smoke (reset, step, belt qvel, off-
 
 Per S§5.5: register `Go2WarpSplitbelt` with default_config factory. Pattern: existing Go2 env registrations.
 
-- [ ] **Step 1: Read existing registration pattern**
+- [ ] **Step 1: Read existing registration block**
 
 ```bash
-grep -n "pg_locomotion.register_environment\|Go2WarpJoystickFlat" jax_rl/training/env_backends/mjx_backend.py | head -20
+sed -n '25,115p' jax_rl/training/env_backends/mjx_backend.py
 ```
 
-Confirms the API is `pg_locomotion.register_environment(name, env_class=..., cfg_class=...)` (or similar — read the existing call args). Each registration is guarded with `if "<Name>" not in pg_locomotion._envs:`.
+Confirms: every registration lives inside `_register_custom_envs()` (line 26), uses `pg_locomotion.register_environment(name, functools.partial(EnvClass, task=...), default_config_factory)`, and is guarded with `if "<Name>" not in pg_locomotion._envs:`.
 
-- [ ] **Step 2: Add registration**
+- [ ] **Step 2: Add the splitbelt block inside `_register_custom_envs`**
 
-Match the existing block exactly. Approximately (verify against the read above):
+Insert just after the existing Bongo block (around line 111, after the `Go2BongoHandstandContraction` registration):
 
 ```python
-# In mjx_backend.py, near the other Go2 registrations:
-from jax_rl.envs.locomotion.go2_warp_splitbelt import (
-    Go2WarpSplitbeltEnv,
-    default_config as splitbelt_default_config,
-)
-
-if "Go2WarpSplitbelt" not in pg_locomotion._envs:
-    pg_locomotion.register_environment(
-        "Go2WarpSplitbelt",
-        Go2WarpSplitbeltEnv,
-        splitbelt_default_config,
-    )
+    from jax_rl.envs.locomotion.go2_warp_splitbelt import Go2WarpSplitbeltEnv
+    from jax_rl.envs.locomotion.go2_warp_splitbelt import default_config as splitbelt_default_config
+    if "Go2WarpSplitbelt" not in pg_locomotion._envs:
+        pg_locomotion.register_environment(
+            "Go2WarpSplitbelt",
+            functools.partial(Go2WarpSplitbeltEnv, task="splitbelt"),
+            splitbelt_default_config,
+        )
 ```
 
-> **Implementer note:** Mirror the joystick registration's exact arg shape (positional vs kwarg) — do NOT invent new arg names.
+The `task="splitbelt"` is required for symmetry with the existing pattern — Playground's loader passes `config=` and `config_overrides=` kwargs to the partial, and the partial pre-binds `task=`. The env's `__init__` signature (Task 3.2) accepts `task` and discards it.
+
+- [ ] **Step 3: Verify imports + the function still type-checks**
+
+```bash
+JAX_PLATFORMS=cpu uv run python -c "
+from jax_rl.training.env_backends import mjx_backend
+print('Go2WarpSplitbelt' in __import__('mujoco_playground._src.locomotion', fromlist=['_envs'])._envs)
+"
+```
+
+Expected: prints `True`. (Triggering `_register_custom_envs` may require importing the env_backend module — `mjx_backend` calls it at module load.)
 
 - [ ] **Step 3: Smoke import**
 
@@ -1837,10 +1986,12 @@ git commit -am "feat(splitbelt): register Go2WarpSplitbelt in mjx_backend"
 
 ---
 
-### Task 4.2: Bundle test [gpu]
+### Task 4.2: Bundle test [gpu, warp, go2]
 
 **Files:**
 - Create: `tests/test_splitbelt_bundle.py`
+
+Per lesson §7.5 + §1: `make_env_bundle("Go2WarpSplitbelt", ...)` constructs the real Warp env, so the file needs the FULL marker set `[gpu, warp, go2]`. (The existing `tests/test_env_bundle.py` is `[gpu]`-only — that's an existing contract violation in the codebase; we do not copy it.)
 
 - [ ] **Step 1: Write test**
 
@@ -1851,12 +2002,14 @@ from __future__ import annotations
 
 import pytest
 
-pytestmark = [pytest.mark.gpu]
+pytestmark = [pytest.mark.gpu, pytest.mark.warp, pytest.mark.go2]
 
 
 @pytest.fixture
 def cfg():
-    from jax_rl.training.train_config import TrainConfig  # actual class — adjust path if different
+    # TrainConfig lives in jax_rl.configs.train_config (jax_rl/configs/train_config.py:8),
+    # NOT jax_rl.training.train_config — verify by `grep -n 'class TrainConfig' jax_rl/`.
+    from jax_rl.configs.train_config import TrainConfig
     return TrainConfig(env_name="Go2WarpSplitbelt", num_envs=4, total_timesteps=100)
 
 
@@ -1869,6 +2022,27 @@ def test_make_env_bundle_returns_populated(cfg):
     assert bundle.action_dim == 12
     assert bundle.obs_dim > 0
     assert bundle.critic_obs_dim is not None
+    assert bundle.num_envs == 4   # mjx doesn't cap; should equal cfg.num_envs
+
+
+def test_make_env_bundle_obs_schema_matches_name_layout(cfg):
+    """Locks in deploy-side contract: schema_from_obs_groups output names ==
+    obs_term_names() output names. Catches IncludeGroup expansion drift."""
+    from jax_rl.training import make_env_bundle
+    from jax_rl.envs.obs_spec import schema_from_obs_groups
+    from jax_rl.envs.locomotion.go2_warp_splitbelt import obs_term_names
+    bundle = make_env_bundle(cfg, seed=0)
+    # bundle.env exposes the inner env's _obs_groups via the wrapper chain.
+    inner = bundle.env
+    while hasattr(inner, "env"):
+        inner = inner.env
+    schema = schema_from_obs_groups(inner._obs_groups)
+    layout = obs_term_names(inner._config.obs_mode)
+    assert schema["state"] == layout["state"]
+    # IncludeGroup expansion: privileged should be state names + privileged-only.
+    state_set = set(layout["state"])
+    expected_priv = layout["state"] + [n for n in layout["privileged_state"] if n not in state_set]
+    assert schema["privileged_state"] == expected_priv
 ```
 
 - [ ] **Step 2: Run on GPU box**
@@ -1893,36 +2067,61 @@ git commit -m "test(splitbelt): bundle test [gpu]"
 **Files:**
 - Create: `tests/test_splitbelt_control_metadata.py`
 
-Per lesson §7.2. Verify `env.get_control_metadata()` matches `deploy/go2_constants.py`.
+Per lesson §7.2. Mirrors `tests/test_deploy_e2e.py::test_env_metadata_matches_deploy_constants` ([test_deploy_e2e.py:130-165](../../tests/test_deploy_e2e.py#L130-L165)) — same assertions, env swapped.
+
+Real `deploy/go2_constants.py` exports `DEFAULT_POSE_POLICY`, `DEFAULT_POSE_SDK`, `POLICY_TO_SDK`, `SDK_TO_POLICY`, `ACTION_SCALE` (and `KP_WARP`/`KD_WARP`/etc.). There is **no** `KP`/`KD`/`JOINT_ORDER` symbol — those were guesses in the v1 plan.
 
 - [ ] **Step 1: Write test**
 
 ```python
-"""Control metadata test for SplitbeltTreadmill env (lesson §7.2)."""
+"""Control metadata test for SplitbeltTreadmill env (lesson §7.2).
+
+Catches drift between env XML keyframe / scale and deploy/go2_constants.py —
+the same drift class that bricked the deploy stack 2026-04-10 → 2026-04-24.
+"""
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 pytestmark = [pytest.mark.gpu, pytest.mark.warp, pytest.mark.go2, pytest.mark.deploy]
 
 
-@pytest.fixture
-def env():
+def test_splitbelt_metadata_matches_deploy_constants():
+    pytest.importorskip("mujoco")
+    pytest.importorskip("warp")
+
     from jax_rl.envs.locomotion.go2_warp_splitbelt import Go2WarpSplitbeltEnv
-    return Go2WarpSplitbeltEnv()
+    from deploy.go2_constants import (
+        DEFAULT_POSE_POLICY, DEFAULT_POSE_SDK, POLICY_TO_SDK, SDK_TO_POLICY,
+        ACTION_SCALE,
+    )
 
+    env = Go2WarpSplitbeltEnv()
+    m = env.get_control_metadata()
 
-def test_control_metadata_matches_deploy_constants(env):
-    from deploy import go2_constants as deploy_consts
-    md = env.get_control_metadata()
-    assert md["Kp"] == deploy_consts.KP
-    assert md["Kd"] == deploy_consts.KD
-    assert md["action_scale"] == deploy_consts.ACTION_SCALE
-    assert md["joint_order"] == deploy_consts.JOINT_ORDER
+    np.testing.assert_array_almost_equal(
+        m["default_pose_policy"], DEFAULT_POSE_POLICY,
+        err_msg="splitbelt_spawn keyframe ≠ deploy/go2_constants.DEFAULT_POSE_POLICY",
+    )
+    np.testing.assert_array_almost_equal(
+        m["default_pose_sdk"], DEFAULT_POSE_SDK,
+        err_msg="env-derived default_pose_sdk drifted from constants",
+    )
+    np.testing.assert_array_equal(m["policy_to_sdk"], POLICY_TO_SDK)
+    np.testing.assert_array_equal(m["sdk_to_policy"], SDK_TO_POLICY)
+    assert np.isclose(m["action_scale"], ACTION_SCALE), (
+        f"action_scale drift: env={m['action_scale']} vs constants={ACTION_SCALE}"
+    )
 ```
 
-> **Implementer note:** the exact field names in `get_control_metadata()` and `go2_constants.py` may differ; mirror what `tests/test_deploy_e2e.py::test_env_metadata_matches_deploy_constants` asserts.
+> **Implementer notes:**
+> - `get_control_metadata` reads `self._default_pose` (set in `_post_init`). Splitbelt's `_default_pose` is the 12-element leg slice from `splitbelt_spawn`. Good.
+> - **`go2_warp_base.py:141-144` shape-checks `_default_pose.shape == (self._mj_model.nu,)`.** For splitbelt, `nu = 14` (12 legs + 2 belt actuators). The check FAILS. Two options for the implementer:
+>   1. **Override `get_control_metadata` in `Go2WarpSplitbeltEnv`** to skip the shape assertion and slice `[:12]` consistently. Keep the test asserting against deploy constants for the leg subset only.
+>   2. **Pad `_default_pose` to length nu** (12 leg values + 2 zeros for belt joints). Base class assertion passes; the SDK remap (`POLICY_TO_SDK` is len-12) needs careful indexing.
+>   Pick (1) — it's a minimal local override and the deploy contract only ever cared about the 12 leg actuators. Document the override in `_post_init` with a one-line comment.
 
 - [ ] **Step 2: Run on GPU box**
 
@@ -1939,15 +2138,139 @@ git commit -m "test(splitbelt): control metadata matches deploy constants"
 
 ---
 
+### Task 4.4: Base PPO + FastSAC presets (S§5.6, in-scope)
+
+**Files:**
+- Modify: `jax_rl/configs/env_presets.py`
+
+Spec §5.6 requires base presets; only the per-protocol variants (A1-A4) are deferred (§11.3). Without these, no smoke train can be invoked by the standard CLI.
+
+- [ ] **Step 1: Read existing pattern**
+
+```bash
+grep -n "Go2WarpJoystickFlat\|_FAST_SAC_BASE_CFG\|_PPO_BASE_CFG" jax_rl/configs/env_presets.py | head
+```
+
+Note: each env gets a `(TrainConfig, AlgoConfig)` pair per algo, registered into the dispatch dict.
+
+- [ ] **Step 2: Add splitbelt presets**
+
+Add entries cloning the joystick presets, switching `env_name` and adjusting `episode_length=1250`. Same DR / reward / num_envs as joystick. Concrete example (verify shape against joystick precedent):
+
+```python
+# In env_presets.py, near the joystick presets:
+def _splitbelt_fast_sac():
+    train_cfg, algo_cfg = _go2_warp_joystick_fast_sac()
+    train_cfg = dataclasses.replace(train_cfg, env_name="Go2WarpSplitbelt", episode_length=1250)
+    return train_cfg, algo_cfg
+
+def _splitbelt_ppo_fast():
+    train_cfg, algo_cfg = _go2_warp_joystick_ppo_fast()
+    train_cfg = dataclasses.replace(train_cfg, env_name="Go2WarpSplitbelt", episode_length=1250)
+    return train_cfg, algo_cfg
+
+PRESETS["Go2WarpSplitbelt", "fast_sac"] = _splitbelt_fast_sac
+PRESETS["Go2WarpSplitbelt", "ppo_fast"] = _splitbelt_ppo_fast
+```
+
+- [ ] **Step 3: Smoke-load presets**
+
+```bash
+JAX_PLATFORMS=cpu uv run python -c "
+from jax_rl.configs.env_presets import PRESETS
+print('fast_sac:', PRESETS[('Go2WarpSplitbelt', 'fast_sac')]())
+print('ppo_fast:', PRESETS[('Go2WarpSplitbelt', 'ppo_fast')]())
+"
+```
+
+Expected: prints both `(TrainConfig, AlgoConfig)` tuples without error.
+
+- [ ] **Step 4: Regenerate preset docs (per CLAUDE.md cross-reference table)**
+
+```bash
+uv run python docs/scripts/gen_env_presets.py
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add jax_rl/configs/env_presets.py docs/api/env_presets.md
+git commit -m "feat(splitbelt): base PPO + FastSAC presets (S§5.6)"
+```
+
+---
+
+### Task 4.5: Wire `splitbelt_traj.npz` sidecar in `record_video.py` (S§9.2)
+
+**Files:**
+- Modify: `scripts/record_video.py`
+
+Spec §9.2: `record_video.py` writes `splitbelt_traj.npz` whenever `bundle.env_state.info` contains a `splitbelt` key. Without this, the offline analyzer (Tasks 1.8/1.9) has no input.
+
+- [ ] **Step 1: Read existing traj-emit pattern**
+
+```bash
+grep -n "_traj.npz\|np.savez" scripts/record_video.py | head
+```
+
+Note where the existing `_traj.npz` is written; add the sidecar near it.
+
+- [ ] **Step 2: Add sidecar emission**
+
+Pseudocode (verify exact API against existing emission):
+
+```python
+# After existing _traj.npz save:
+state_info_traj = collected_info_per_step  # however the existing collector does it
+if "splitbelt" in state_info_traj[0]:
+    splitbelt_traj = {
+        k: np.stack([s["splitbelt"][k] for s in state_info_traj])
+        for k in state_info_traj[0]["splitbelt"].keys()
+    }
+    splitbelt_traj["belt_schedule"] = state_info_traj[0]["belt_schedule"]
+    np.savez(out_dir / "splitbelt_traj.npz", **splitbelt_traj)
+```
+
+The conditional means non-splitbelt envs are auto-skipped (no key, no file).
+
+- [ ] **Step 3: Smoke check by recording a 50-step rollout (manual, post Task 5.1 ckpt)**
+
+```bash
+MUJOCO_GL=egl uv run python scripts/record_video.py --checkpoint checkpoints/<latest_splitbelt_ckpt>/best --n-steps 50
+ls checkpoints/<latest_splitbelt_ckpt>/best/splitbelt_traj.npz
+```
+
+- [ ] **Step 4: Verify offline analyzer can load the sidecar**
+
+```bash
+JAX_PLATFORMS=cpu uv run python -c "
+import numpy as np
+from jax_rl.envs.locomotion import splitbelt_analysis as sba
+data = np.load('checkpoints/<dir>/best/splitbelt_traj.npz')
+events = sba.detect_step_events(data['foot_in_contact'])
+print('events:', events)
+"
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+git commit -am "feat(splitbelt): emit splitbelt_traj.npz sidecar from record_video"
+```
+
+---
+
 ## Stage 5: Validation + docs
 
-### Task 5.1: Calibration smoke train (manual, post-implementation)
+### Task 5.1: Calibration smoke train — FastSAC + PPO (manual, post-implementation)
 
-This is not a pytest test — it's a sanity training run that proves the env behaves like its joystick analog when belts are tied.
+This is not a pytest test — it's a sanity training run that proves the env (a) is learnable, (b) doesn't bake in algo-specific failure modes (project rule: env must work cleanly across algos).
+
+Per the audit: training only on FastSAC misses PPO entropy-collapse risk (joystick env had documented PPO-collapse precedent). We launch BOTH algos at modest budget; both must pass go/no-go before claiming the env works.
 
 **Files:** none (logs only)
 
-- [ ] **Step 1: Run tied-belt smoke**
+- [ ] **Step 1a: Tied-belt FastSAC smoke (1M steps)**
 
 ```bash
 uv run python scripts/train_fast_sac.py \
@@ -1955,20 +2278,33 @@ uv run python scripts/train_fast_sac.py \
     --num-envs 1024 \
     --total-timesteps 1000000 \
     --reset-mode per_step \
-    > /tmp/splitbelt_tied_smoke.log 2>&1 &
+    > /tmp/splitbelt_fastsac_smoke.log 2>&1 &
 ```
 
-Note: 1M-step run. Expect ~30-60 min on a 16 GB GPU.
+Expect ~30-60 min on 16 GB GPU. Go/no-go: end-of-run eval > 80 (proves env is learnable, not the calibration target — that's reserved for the longer 5M run).
 
-- [ ] **Step 2: Periodic check**
+- [ ] **Step 1b: Tied-belt PPO smoke (1M steps, parallel — wait for FastSAC to finish if GPU is shared)**
 
 ```bash
-grep "EVAL" /tmp/splitbelt_tied_smoke.log | tail -10
+uv run python scripts/train_ppo_fast.py \
+    --env Go2WarpSplitbelt \
+    --num-envs 1024 \
+    --total-timesteps 1000000 \
+    > /tmp/splitbelt_ppo_smoke.log 2>&1 &
 ```
 
-Expected end-of-run eval: same order of magnitude as `Go2WarpJoystickFlat` at the same belt speed (eval ~150-250 at 1M steps; full convergence ~280-290 at 5M).
+Go/no-go: eval > 80 AND `entropy/mean` log values do NOT collapse below 0.05. If entropy collapses early, the env's reward shape is biased toward exploit gait — flag for follow-up reward tuning before proceeding.
 
-If wildly off (e.g., < 50 or NaN-ing), env wiring is wrong — debug before continuing.
+- [ ] **Step 2: Periodic checks**
+
+```bash
+grep "EVAL" /tmp/splitbelt_fastsac_smoke.log | tail -10
+grep "EVAL\|entropy" /tmp/splitbelt_ppo_smoke.log | tail -10
+```
+
+Both must pass go/no-go thresholds. Compare to joystick env at the same step count for sanity (per-step mean reward, NOT raw eval — splitbelt episode_length=1250 vs joystick 1000, so raw returns scale differently).
+
+If FastSAC passes but PPO fails entropy-collapse, document in journal — env is acceptable but with an algo-specific caveat.
 
 - [ ] **Step 3: Visual verification (HARD RULE — bongo lesson)**
 
@@ -1990,12 +2326,12 @@ If any item fails, do NOT proceed to Task 5.2. The metric numbers are not to be 
 Open `.context/journals/2026-05-02.md` (create if absent). Append a section under "splitbelt env smoke":
 
 ```markdown
-### Splitbelt env tied-belt smoke
-- Run: 1M FastSAC, num_envs=1024, schedule=tied(0.5)
-- Eval: <score> at <step>
-- Visual: PASS / FAIL (notes)
-- Wandb: <id if logged>
-- Compare: Go2WarpJoystickFlat at same step gives ~<score>
+### Splitbelt env tied-belt smoke (Task 5.1)
+- FastSAC: 1M, num_envs=1024, schedule=tied(0.5). Eval/step: <value>. Joystick same-step: <value>.
+- PPO: 1M, num_envs=1024. Eval/step: <value>. entropy/mean (final): <value>. Joystick same-step: <value>.
+- Visual (FastSAC ckpt): PASS / FAIL — notes
+- Wandb: <ids if logged>
+- Verdict: env passes algo-agnosticism gate / NEEDS WORK (reason)
 ```
 
 - [ ] **Step 5: Commit doc**
@@ -2086,7 +2422,7 @@ JAX_PLATFORMS=cpu uv run python -m pytest -q tests/test_splitbelt_*.py
 uv run python -m pytest --collect-only -q -m gpu | grep splitbelt
 ```
 
-Expected: hermetic tests pass; collection lists the 3 gpu-marked files (env_smoke, bundle, control_metadata).
+Expected: hermetic tests pass; collection lists the 3 gpu-marked files (env_smoke, bundle, control_metadata) — bundle test marker is `[gpu, warp, go2]` (lesson §1).
 
 - [ ] **Step 4: Docs in sync**
 
@@ -2102,16 +2438,17 @@ Splitbelt env build is complete. Next milestone (out of scope for this plan): pe
 
 ---
 
-## Out-of-scope items (cut intentionally per spec)
+## Out-of-scope items (cut intentionally per spec §11)
 
 These were explicitly deferred per spec §11; do **not** add to this plan:
 
-- Per-protocol algo presets (`Go2WarpSplitbelt` × {A1, A2, A3, A4} × {PPO, FastSAC}).
+- Per-protocol algo presets (`Go2WarpSplitbelt` × {A1, A2, A3, A4} × {PPO, FastSAC}). Base `(PPO, FastSAC)` × `Go2WarpSplitbelt` presets ARE in scope (Task 4.4).
 - Humanoid asset port (R3 step 2).
 - Walking-cmd variant (`cmd_x > 0`).
 - Composite limp index online (offline only).
-- Belt-friction DR spec (off by default).
+- Belt-friction DR spec (off by default; the env reuses joystick DR specs verbatim — no new DR-composition test needed per lesson §7.4).
 - `scripts/analyze_splitbelt.py` CLI shim (library exists; CLI when first protocol report is written).
+- **Lesson §7.6 (off-policy loop smoke):** N/A — the base PPO + FastSAC presets land in Task 4.4, but the test pattern at `tests/_loop_helpers.py` is for stub-env smoke against the shared `run_offpolicy_loop`. Defer until per-protocol presets land (then the loop smoke makes sense as a contract test). Out of scope for this PR.
 
 ---
 
@@ -2133,9 +2470,14 @@ These were explicitly deferred per spec §11; do **not** add to this plan:
 - `tests/test_splitbelt_control_metadata.py` — `[gpu, warp, go2, deploy]`
 
 **Modified:**
-- `jax_rl/training/env_backends/mjx_backend.py` — register Go2WarpSplitbelt
-- `.context/AGENT_HANDOFF.md` — env list
-- `.context/TODO.md` — completion + new entries
-- `.context/journals/2026-05-02.md` — calibration smoke result
+- `jax_rl/training/env_backends/mjx_backend.py` — register Go2WarpSplitbelt (Task 4.1)
+- `jax_rl/configs/env_presets.py` — base PPO + FastSAC presets (Task 4.4)
+- `scripts/record_video.py` — splitbelt_traj.npz sidecar emission (Task 4.5)
+- `docs/api/env_presets.md` — auto-regenerated from `gen_env_presets.py` (Task 4.4)
+- `.context/AGENT_HANDOFF.md` — env list (Task 5.2)
+- `.context/TODO.md` — completion + new entries (Task 5.2)
+- `.context/journals/2026-05-02.md` — calibration smoke result (Task 5.1)
 
-**Total commits:** ~25 (one per task step), each 2-5 minute units.
+**Bundle test marker:** `[gpu, warp, go2]` (corrected from earlier `[gpu]` per lesson §1 — `make_env_bundle("Go2WarpSplitbelt")` constructs the Warp env so the file needs the full set).
+
+**Total commits:** ~30 (one per task step), each 2-5 minute units.
