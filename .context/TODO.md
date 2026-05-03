@@ -490,12 +490,25 @@ Why it should work: contraction signal enters via reward augmentation `R_c = (ε
 **Plan:** `.superpowers/plans/2026-05-02-skill-discovery-sd-a.md`
 - [x] Pure config + priors + factor registry + DIAYN aux + SkillManager. Unit tests only. No env, no train script. Landed 2026-05-02 (commits 84883a7, 0317db7, 593ddf4, bd0bcf8, 725eced). 31/31 tests pass; zero regressions.
 
-### SD-B: FastSAC DIAYN training loop (next)
-- [ ] Extend `ObsPipeline.make_buffer` with generic `extra_obs_dims`
-- [ ] `scripts/train_skill_discovery.py` + `jax_rl/training/skill_offpolicy_loop.py`
-- [ ] Sample-time intrinsic reward replacement; aux update after algo update
-- [ ] DIAYN smoke on **CheetahRun** (MJX, fast). HalfCheetah is the primary DIAYN paper-canonical env (App. D.4 reward histogram fig).
-- [ ] **Future / nice-to-have:** Ant xy-trajectory headline figure replication (per-skill colored xy plot, DIAYN/DADS/METRA canonical visual). Run once at end of SD-B for the visual sanity-check. Two routes: (a) CPU Gym Ant-v5 via existing `gym_backend.py:200` for one-shot figure generation (slow but no new code); (b) port ant.xml → MJX env in `jax_rl/envs/dmc/ant.py` if we want fast Ant for repeated visualizations or downstream phases. Prefer (a) unless we end up needing fast Ant repeatedly. Don't pull in Brax — single env doesn't justify a third backend lib.
+### SD-B: vanilla SAC + DIAYN training loop on CheetahRun (in progress)
+**Plan:** `.superpowers/plans/2026-05-02-skill-discovery-sd-b.md` (vanilla SAC override; FastSAC re-enters at SD-C/E)
+
+**Wave A + B + C (code) — DONE 2026-05-03:**
+- [x] Extend `ObsPipeline.make_buffer` with generic `extra_obs_dims` — `fb0bcbc`
+- [x] Skill checkpoint wrapper (`jax_rl/skill_discovery/checkpointing.py`) — `b2a433b`
+- [x] `jax_rl/training/skill_offpolicy_loop.py` w/ sample-time intrinsic reward + aux update — `7d6154d`
+- [x] `scripts/train_skill_discovery.py` CLI — `9c19ade`
+- [x] `scripts/record_video.py --skill-index` — `47d41cc`
+- 13/13 SD-B unit tests pass; 0 regressions on existing 54 buffer/pipeline tests
+
+**Wave D (acceptance runs) — IN PROGRESS:**
+All commands prefix with `XLA_CLIENT_MEM_FRACTION=0.55` (default 0.7 OOMs at eval-scan graph creation on 16 GB GPU with Warp env).
+- [ ] Phase 5.0 resume guard: 5K → save → resume → 1K, verify post-resume disc_loss within 2× pre-save, no NaN, current_z resampled fresh
+- [ ] Phase 5.1 10K smoke (seed 0): finite aux losses, buffer fills
+- [ ] Phase 5.2 100K validation (seed 0): discriminator accuracy > 0.225 (chance + 0.1) by 100K
+- [ ] Phase 5.3 1M acceptance (seeds 0, 1, 2): per-skill task-return spread > 50% of any skill's mean; qualitative video diversity
+
+**Future / nice-to-have:** Ant xy-trajectory headline figure (DIAYN App. D.3-style canonical visual). Two routes: (a) CPU Gym Ant-v5 via existing `gym_backend.py:200` for one-shot figure generation; (b) port ant.xml → MJX env if we need fast Ant repeatedly. Prefer (a). Don't pull in Brax — single env doesn't justify a third backend lib.
 
 ### SD-C: Go2 DIAYN with deployable obs
 - [ ] Target `Go2WarpJoystickUnitree` (45d hardware-conservative obs, action_scale=0.25)
