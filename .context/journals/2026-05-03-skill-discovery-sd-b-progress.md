@@ -61,12 +61,42 @@ Run convention: one phase at a time, journal between phases (compaction-safe bou
 
 `checkpoints/20260503_000548_sac_skill_skill_cheetahrun_seed0/` — 5K-step ckpt from Task 4 verify. Used to validate Task 4b record_video skill-index path. Contains `meta.json` with `skill_discovery` block, `skill_aux/full_state/{params,opt_state}.npz`.
 
+## Wave D progress so far
+
+### Phase 5.0 resume guard — PASS
+- Used existing 5K ckpt (`checkpoints/20260503_000548_sac_skill_skill_cheetahrun_seed0/`) as save point.
+- Resume command: `--total-timesteps 6000 --seed 0 --resume <ckpt>` → produced new run dir `20260503_004146_*`.
+- Log confirmed `Resuming from step 0 (aux state restored)`.
+- All 8 skills evaluated finite (z0-z7 returns 11.2 to 25.1 mean 16.2 ± 4.7).
+- No NaN. current_z resampled fresh.
+- Caveat: both runs below `min_buffer=8192` so 0 gradient steps fired in either run; the disc_loss-equivalence gate from plan §5.0 is moot. Pipe + aux-state + current_z lifecycle verified.
+
+### Phase 5.1 10K smoke — PASS
+- Run: `--total-timesteps 10000 --seed 0` → ckpt `20260503_004238_*`.
+- 120 gradient updates after warmup (15 outer steps × 8 grad_updates_per_step = 120 — matches buffer fill at step 8192/128 = outer step 64, ran until 78, so 14 outer steps × 8 ≈ 112; reported 120 includes eval grads).
+- Per-skill eval: z0-z7 returns 0.2-11.7, mean 3.6 ± 4.2. **Skill diversity emerging** (4 of 8 near 0, 4 above 4) at very early training.
+- No NaN. Buffer fills past min_buffer.
+- metrics.csv not written (run too short to trigger eval cycles + checkpointing inside loop). disc_loss curve will be visible at 5.2 (100K) which has multiple eval cycles.
+
+## Wave D pending
+
+- [ ] Phase 5.2 100K seed 0 — discriminator accuracy > 0.225 by 100K (chance + 0.1)
+- [ ] Phase 5.3 1M acceptance × 3 seeds (0, 1, 2) — per-skill spread > 50%, qualitative video diversity
+
 ## Next session pickup
 
 If session compacts here:
 1. Read this journal entry for state.
-2. Read `.superpowers/plans/2026-05-02-skill-discovery-sd-b.md` §Task 5.
+2. Read `.superpowers/plans/2026-05-02-skill-discovery-sd-b.md` §Task 5 (5.2 + 5.3 specs).
 3. Check `.context/TODO.md` SD-B section for Wave D phase status.
-4. Memory file: `project_skill_discovery_state.md` has canonical doc paths + run conventions.
+4. Memory file: `project_skill_discovery_state.md` has canonical doc paths + run conventions + XLA mem fix.
 5. Run `git log --oneline -15` to see commit history.
-6. Resume Wave D at the next-pending phase.
+6. Resume Wave D at Phase 5.2 (100K seed 0 validation).
+7. **All Wave D commands prefix with `XLA_CLIENT_MEM_FRACTION=0.55`.**
+
+### Phase 5.2 command (next)
+```bash
+XLA_CLIENT_MEM_FRACTION=0.55 uv run python scripts/train_skill_discovery.py \
+    --env CheetahRun --num-skills 8 --total-timesteps 100000 --seed 0
+```
+Run in background (Bash run_in_background=true), grep stdout for `disc_acc` to monitor accuracy curve. ~5-10 min wall-clock on GPU.
