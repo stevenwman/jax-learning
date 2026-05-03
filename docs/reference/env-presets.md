@@ -30,6 +30,7 @@ Select an algorithm tab below to see its presets. Defaults (gamma=0.99, reward_s
     | Go2WarpJoystickCurriculumTorqueSpeed | 4,096 | 100M | 3e-04 | 20 | 4 | 0.01 | gamma=0.97, num_updates_per_batch=4, policy_hidden_dim=(512, 256, 128), value_hidden_dim=(512, 256, 128), max_grad_norm=1, reset_mode=per_step |
     | Go2BongoHandstand | 256 | 100M | 3e-04 | 64 | 4 | 0.01 | n_frame_stack=3 |
     | Go2BongoHandstandContraction | 256 | 100M | 3e-04 | 64 | 4 | 0.01 | n_frame_stack=3 |
+    | Go2WarpSplitbelt | 4,096 | 100M | 3e-04 | 20 | 4 | 0.01 | gamma=0.97, num_updates_per_batch=4, policy_hidden_dim=(512, 256, 128), value_hidden_dim=(512, 256, 128), max_grad_norm=1, reset_mode=per_step |
 
     PPO algo defaults: `clip_eps=0.3`, `entropy_coef=0.01`, `gae_lambda=0.95`, `num_epochs=4`, `num_steps=64`, `num_updates_per_batch=1`, `policy_hidden_dim=(32, 32, 32, 32)`, `value_hidden_dim=(256, 256, 256, 256, 256)`, `activation=swish`, `squash=True`, `state_dependent_std=False`, `max_grad_norm=None`, `anneal_lr=True`, `critic_encoder=None`, `policy_head=None`, `normalize_advantage=True`, `contraction=None`.
 
@@ -85,8 +86,11 @@ Select an algorithm tab below to see its presets. Defaults (gamma=0.99, reward_s
     | HumanoidRun | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97 |
     | Go2WarpJoystickFlat | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97 |
     | Go2WarpJoystickFlatTorqueSpeed | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97 |
+    | Go2WarpJoystickFlatNoAccel | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97 |
+    | Go2WarpJoystickUnitree | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97 |
     | Go2WarpJoystickCurriculum | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97 |
     | Go2WarpJoystickCurriculumTorqueSpeed | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97 |
+    | Go2WarpSplitbelt | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97 |
 
     FastSAC algo defaults: `tau=0.125`, `hidden_dim=(512, 256, 128)`, `activation=swish`, `batch_size=8,192`, `grad_updates_per_step=8`, `buffer_size=4M`, `min_buffer_size=8,192`, `q_layer_norm=True`.
 

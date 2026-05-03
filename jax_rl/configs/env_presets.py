@@ -160,6 +160,18 @@ PRESETS["Go2BongoHandstandContraction"] = dataclasses.replace(
     env_name="Go2BongoHandstandContraction",
 )
 
+# Splitbelt env (S§5.6) — PPO preset clones joystick + bumps episode_length to 1250
+# to match splitbelt env default (25 s @ ctrl_dt=0.02). Per spec note: PPO is the
+# secondary calibration smoke (FastSAC primary); both must clear go/no-go gates
+# in Task 5.1 to validate algo-agnosticism. PPO entropy-collapse is a documented
+# risk (zero-clip on negative-return steps); see spec §11.X caveat.
+PRESETS["Go2WarpSplitbelt"] = dataclasses.replace(
+    PRESETS["Go2WarpJoystickFlat"],
+    env_name="Go2WarpSplitbelt",
+    episode_length=1250,
+    reset_mode="per_step",
+)
+
 
 # SAC presets — matching MuJoCo Playground dm_control_suite_params.brax_sac_config()
 # Reference HPs: lr=1e-3, batch_size=512, grad_updates_per_step=8, q_layer_norm=True
@@ -370,6 +382,15 @@ FAST_SAC_PRESETS["Go2WarpJoystickCurriculum"] = (
 )
 FAST_SAC_PRESETS["Go2WarpJoystickCurriculumTorqueSpeed"] = (
     dataclasses.replace(_FAST_SAC_BASE_CFG, env_name="Go2WarpJoystickCurriculumTorqueSpeed", reset_mode="per_step"),
+    _FAST_SAC_BASE_ALGO,
+)
+
+# Splitbelt env (S§5.6) — FastSAC preset clones joystick base + bumps episode_length
+# to 1250 to match splitbelt env default. per_step reset mode required for
+# DomainRandWrapper auto-reset semantics.
+FAST_SAC_PRESETS["Go2WarpSplitbelt"] = (
+    dataclasses.replace(_FAST_SAC_BASE_CFG, env_name="Go2WarpSplitbelt",
+                        episode_length=1250, reset_mode="per_step"),
     _FAST_SAC_BASE_ALGO,
 )
 
