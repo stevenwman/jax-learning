@@ -167,7 +167,8 @@ class ObsPipeline:
     # ── Buffer factory ────────────────────────────────────────────────────
 
     def make_buffer(self, obs_dim, action_dim, buffer_size,
-                    critic_obs_dim=None, num_envs=None):
+                    critic_obs_dim=None, num_envs=None,
+                    extra_obs_dims=None):
         """Create JaxReplayBuffer with correct frame_stack + extra_obs_dims.
 
         Args:
@@ -178,15 +179,25 @@ class ObsPipeline:
             critic_obs_dim: Privileged critic obs dim. Required when
                 has_privileged is True. Ignored otherwise.
             num_envs: Number of parallel envs (required when n_frame_stack > 1).
+            extra_obs_dims: dict[str, int] | None — additional named extras (e.g.
+                {"skill_z": 8, "factor_obs": 18}). Merged with auto-injected
+                critic_obs when has_privileged. Caller must not put 'critic_obs'
+                in extra_obs_dims; that key is reserved for the privileged path.
 
         Returns:
             JaxReplayBuffer configured for this pipeline.
         """
-        extra_obs_dims = None
+        merged_extras = dict(extra_obs_dims) if extra_obs_dims else {}
+
         if self.has_privileged:
             if critic_obs_dim is None:
                 raise ValueError("critic_obs_dim required when has_privileged=True")
-            extra_obs_dims = {"critic_obs": critic_obs_dim}
+            if "critic_obs" in merged_extras:
+                raise ValueError(
+                    "extra_obs_dims must not contain 'critic_obs' when has_privileged=True; "
+                    "use critic_obs_dim arg instead"
+                )
+            merged_extras["critic_obs"] = critic_obs_dim
 
         frame_stack_config = None
         if self.n_frame_stack > 1:
@@ -199,12 +210,12 @@ class ObsPipeline:
             return JaxReplayBuffer(
                 raw_dim, action_dim, max_size=buffer_size,
                 frame_stack_config=frame_stack_config,
-                extra_obs_dims=extra_obs_dims,
+                extra_obs_dims=merged_extras or None,
             )
 
         return JaxReplayBuffer(
             obs_dim, action_dim, max_size=buffer_size,
-            extra_obs_dims=extra_obs_dims,
+            extra_obs_dims=merged_extras or None,
         )
 
     # ── Eval helper ───────────────────────────────────────────────────────
