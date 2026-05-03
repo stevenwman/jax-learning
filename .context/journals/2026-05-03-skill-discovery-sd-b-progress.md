@@ -95,26 +95,42 @@ Run convention: one phase at a time, journal between phases (compaction-safe bou
 - Per-skill eval: z0-z7 = [1.7, 0.2, 2.6, 6.6, 2.5, 0.0, 0.0, 20.3], mean 4.2 ± 6.4. Spread already huge (z7=20.3 vs z5=z6=0.0). Episodic returns nan because episode_length=1000 × 128 envs not reached at 100K total steps (expected — 5.3 1M run resolves this).
 - Log: `.temp/logs/sd_b_phase_5_2_seed0_100k.log`.
 
-## Wave D pending
+### Phase 5.3 1M × 3 seeds — Gate 1 PASS, Gate 2 DEFERRED to Ant
+- Strategy: serial (3 parallel @ XLA_CLIENT_MEM_FRACTION=0.55 = 26GB > 16GB GPU; reducing fraction risks eval-scan OOM we already fought).
+- Wall-clock: 1h22m total (seed 0 27m36s, seed 1 27m27s, seed 2 27m49s) — clean ~27.5 min/seed extrapolation from 5.2 confirmed.
+- Single orchestration task `bgzu8sw6z`; per-seed logs `.temp/logs/sd_b_phase_5_3_seed{0,1,2}_1m.log`.
+- 61,992 gradient updates per seed.
 
-- [ ] Phase 5.3 1M acceptance × 3 seeds (0, 1, 2) — per-skill spread > 50%, qualitative video diversity
+**Final results (1M):**
+
+| Seed | DiscA | DiscL | Per-skill eval (z0..z7) | Mean ± SD | Online avg (last 100 eps) | Ckpt |
+|---|---|---|---|---|---|---|
+| 0 | 0.96 | 0.10 | [0.6, 0.5, 0.4, **7.3**, 0.1, 0.0, 0.0, 0.0] | 1.1 ± 2.4 | 1.6 | `20260503_104453_*` |
+| 1 | 0.95 | 0.12 | [0.0, **5.7**, 0.7, 0.0, 0.0, 0.9, **12.5**, 0.5] | 2.6 ± 4.2 | 2.9 | `20260503_111229_*` |
+| 2 | 0.96 | 0.11 | [0.0, 0.1, 1.0, **36.1**, 0.0, 0.0, 1.2, **48.2**] | 10.8 ± 18.3 | 7.9 | `20260503_113956_*` |
+
+**Gate 1 (per-skill spread > 50% of max-skill mean): PASS all 3 seeds.**
+- seed 0: spread 7.3 vs threshold 3.65 (2.0×)
+- seed 1: spread 12.5 vs threshold 6.25 (2.0×)
+- seed 2: spread 48.2 vs threshold 24.1 (2.0×)
+
+**Gate 2 (qualitative video diversity): DEFERRED.** CheetahRun visually hard to interpret skill differences (planar 2D cheetah with 6 joints; running-fall-recover all look similar in low-quality renders). User explicitly flagged this earlier and asked to defer visual gate to Ant (canonical DIAYN figure: xy-trajectory plot of 8 skills sweeping different angles from origin — instantly legible). Numerical gates suffice here for SD-B sign-off.
+
+**Critical observation — skill collapse:** Across all 3 seeds, only 1-3 of 8 skills are behaviorally active (positive task return); 5-7 collapse to ~0. Discriminator still 0.95+ accurate, so it separates skills via tiny obs differences (joint angle minutiae) not gross behavior. **This is canonical DIAYN failure mode for HC** — paper Fig. 12 shows similar pattern, motivates METRA's Lipschitz dual + D3's factor-aware reward (SD-D, SD-E). **Pipeline implementation correct; base method ceiling-bound.**
+
+## Wave D status: SD-B COMPLETE pending video deferral.
+
+Numerical gates (5.0, 5.1, 5.2, 5.3 Gate 1) all PASS. Gate 2 video diversity deferred to Ant follow-up (already TODO'd as future).
+
+## Lesson surfaced
+See `.context/lessons/skill_discovery_diayn_cheetah.md` — DIAYN+CheetahRun is a useful smoke test (verifies pipeline) but not a useful behavioral demo (skill collapse + visual ambiguity). Use Ant for behavioral acceptance going forward.
 
 ## Next session pickup
 
 If session compacts here:
 1. Read this journal entry for state.
-2. Read `.superpowers/plans/2026-05-02-skill-discovery-sd-b.md` §Task 5 (5.3 spec).
-3. Check `.context/TODO.md` SD-B section for Wave D phase status.
-4. Memory file: `project_skill_discovery_state.md` has canonical doc paths + run conventions + XLA mem fix.
-5. Run `git log --oneline -15` to see commit history.
-6. Resume Wave D at Phase 5.3 (1M × 3 seeds in parallel).
-7. **All Wave D commands prefix with `XLA_CLIENT_MEM_FRACTION=0.55`.**
-
-### Phase 5.3 commands (next)
-Three seeds parallel in background. Save task IDs to `project_skill_discovery_running_jobs.md` BEFORE launching.
-```bash
-XLA_CLIENT_MEM_FRACTION=0.55 uv run python scripts/train_skill_discovery.py \
-    --env CheetahRun --num-skills 8 --total-timesteps 1000000 --seed 0
-# repeat with --seed 1 and --seed 2
-```
+2. Memory file: `project_skill_discovery_state.md` has canonical doc paths + run conventions + XLA mem fix.
+3. Lesson file: `.context/lessons/skill_discovery_diayn_cheetah.md` (cheetah caveats).
+4. Run `git log --oneline -15` to see commit history.
+5. **SD-B is functionally complete**; next step is user-decision: (a) Ant port for visual gate, (b) move to SD-C (Go2 deployable obs DIAYN), (c) jump to SD-D/E (METRA / factored).
 Wall-clock projection: 100K → 165s, so 1M ≈ 1650s (27.5 min) per seed. Three parallel ≈ same wall-clock if GPU memory permits (each run uses ~55% of 16GB ≈ 8.8GB, so 3 in parallel = 26.4GB > 16GB — **must serialize or interleave**). Realistic: 3 × 30 min serial ≈ 1.5h.

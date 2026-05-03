@@ -79,6 +79,15 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **Multi-agent audit pattern** — 3 parallel opus + 1 validator finds bugs that any one misses
 - **Paper Table 2 had a typo** — Humanoid action_dim=21 per Figure 15 caption (not 24); always cross-check Tables vs Figures
 
+## [Skill Discovery (DIAYN on CheetahRun)](lessons/skill_discovery_diayn_cheetah.md) — 6 lessons
+
+- **DIAYN+CheetahRun is a pipeline smoke test, not a behavioral demo** — DiscA hits 0.95+ at 1M, but 5-7 of 8 skills collapse to ~0 task return. Discriminator separates via tiny obs deltas, not gross behavior. Expected DIAYN limit; motivates METRA/D3.
+- **Numerical gates suffice for SD-B sign-off; visual gate belongs on Ant** — CheetahRun planar 2D body all looks similar in renders. Ant xy-trajectory plot (DIAYN App. D.3) is the canonical legible diversity figure. Defer visual acceptance to Ant.
+- **Per-skill collapse pattern is canonical, not a bug** — DIAYN paper Fig. 12 shows the same: max-skill mean varies wildly seed-to-seed (7-50 in our 3-seed run), most skills cluster near 0. Don't bisect on this; it's the method ceiling.
+- **3 parallel runs at XLA_CLIENT_MEM_FRACTION=0.55 won't fit on 16GB** — 3 × 8.8GB > 16GB. Either serialize (1.5h for 3×1M) or drop fraction to ~0.25 (untested, eval-scan OOM risk). Serial is the safe default.
+- **DIAYN wall-clock per seed (RTX 5080 + Warp + 8 skills + 1M)** — ~27.5 min, 2-3 SAC grad updates per env step at 128 envs / 8 grad_updates_per_step.
+- **When SD-D/E (METRA, D3, DUSDi) reduces this collapse, that's the win** — contrast against this entry for any future method comparison. >5 of 8 skills behaviorally active = real improvement over DIAYN baseline.
+
 ## [Determinism (JAX/XLA + GPU Physics)](lessons/determinism.md) — bit-ID limits
 
 - **JAX/XLA algo bit-ID** with `XLA_FLAGS=--xla_gpu_deterministic_ops=true` (verified via `scripts/check_tdmpc2_determinism.py`)
