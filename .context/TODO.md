@@ -503,9 +503,9 @@ Why it should work: contraction signal enters via reward augmentation `R_c = (ε
 
 **Wave D (acceptance runs) — IN PROGRESS:**
 All commands prefix with `XLA_CLIENT_MEM_FRACTION=0.55` (default 0.7 OOMs at eval-scan graph creation on 16 GB GPU with Warp env).
-- [ ] Phase 5.0 resume guard: 5K → save → resume → 1K, verify post-resume disc_loss within 2× pre-save, no NaN, current_z resampled fresh
-- [ ] Phase 5.1 10K smoke (seed 0): finite aux losses, buffer fills
-- [ ] Phase 5.2 100K validation (seed 0): discriminator accuracy > 0.225 (chance + 0.1) by 100K
+- [x] Phase 5.0 resume guard — PASS (5K ckpt + resume; current_z fresh, no NaN; both runs below min_buffer so disc_loss-equivalence moot)
+- [x] Phase 5.1 10K smoke (seed 0) — PASS (120 grad updates, skill diversity emerging, no NaN)
+- [x] Phase 5.2 100K validation (seed 0) — PASS (DiscA 0.199→0.480, gate 0.225 cleared by 70K, ckpt `20260503_102424_*`, log `.temp/logs/sd_b_phase_5_2_seed0_100k.log`, 165s wall-clock)
 - [ ] Phase 5.3 1M acceptance (seeds 0, 1, 2): per-skill task-return spread > 50% of any skill's mean; qualitative video diversity
 
 **Future / nice-to-have:** Ant xy-trajectory headline figure (DIAYN App. D.3-style canonical visual). Two routes: (a) CPU Gym Ant-v5 via existing `gym_backend.py:200` for one-shot figure generation; (b) port ant.xml → MJX env if we need fast Ant repeatedly. Prefer (a). Don't pull in Brax — single env doesn't justify a third backend lib.

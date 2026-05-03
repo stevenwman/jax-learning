@@ -78,25 +78,43 @@ Run convention: one phase at a time, journal between phases (compaction-safe bou
 - No NaN. Buffer fills past min_buffer.
 - metrics.csv not written (run too short to trigger eval cycles + checkpointing inside loop). disc_loss curve will be visible at 5.2 (100K) which has multiple eval cycles.
 
+### Phase 5.2 100K seed 0 — PASS
+- Run: `--total-timesteps 100000 --seed 0` → ckpt `20260503_102424_sac_skill_skill_cheetahrun_seed0/`.
+- Wall-clock: 165s (2m45s) — well under 5-10 min estimate.
+- 5,744 gradient updates total (steps 8192-99968 / 128 envs × 8 grad_updates_per_step ≈ 5,737).
+- **Discriminator accuracy curve:**
+  - Step 10K: DiscA=0.199 (chance ≈ 0.125)
+  - Step 30K: DiscA=0.223 (just below gate)
+  - Step 50K: DiscA=0.213
+  - Step 70K: DiscA=0.291 (gate cleared)
+  - Step 90K: DiscA=0.434
+  - **Step 100K: DiscA=0.480** (gate `> 0.225` — passed by 2.1×)
+- DiscL: 2.003 → 1.470 (monotonic decrease post-30K)
+- IntR: 0.076 → 0.610 (rising as discriminator gets confident — DIAYN signal working)
+- No NaN. Q1/ActLoss stable.
+- Per-skill eval: z0-z7 = [1.7, 0.2, 2.6, 6.6, 2.5, 0.0, 0.0, 20.3], mean 4.2 ± 6.4. Spread already huge (z7=20.3 vs z5=z6=0.0). Episodic returns nan because episode_length=1000 × 128 envs not reached at 100K total steps (expected — 5.3 1M run resolves this).
+- Log: `.temp/logs/sd_b_phase_5_2_seed0_100k.log`.
+
 ## Wave D pending
 
-- [ ] Phase 5.2 100K seed 0 — discriminator accuracy > 0.225 by 100K (chance + 0.1)
 - [ ] Phase 5.3 1M acceptance × 3 seeds (0, 1, 2) — per-skill spread > 50%, qualitative video diversity
 
 ## Next session pickup
 
 If session compacts here:
 1. Read this journal entry for state.
-2. Read `.superpowers/plans/2026-05-02-skill-discovery-sd-b.md` §Task 5 (5.2 + 5.3 specs).
+2. Read `.superpowers/plans/2026-05-02-skill-discovery-sd-b.md` §Task 5 (5.3 spec).
 3. Check `.context/TODO.md` SD-B section for Wave D phase status.
 4. Memory file: `project_skill_discovery_state.md` has canonical doc paths + run conventions + XLA mem fix.
 5. Run `git log --oneline -15` to see commit history.
-6. Resume Wave D at Phase 5.2 (100K seed 0 validation).
+6. Resume Wave D at Phase 5.3 (1M × 3 seeds in parallel).
 7. **All Wave D commands prefix with `XLA_CLIENT_MEM_FRACTION=0.55`.**
 
-### Phase 5.2 command (next)
+### Phase 5.3 commands (next)
+Three seeds parallel in background. Save task IDs to `project_skill_discovery_running_jobs.md` BEFORE launching.
 ```bash
 XLA_CLIENT_MEM_FRACTION=0.55 uv run python scripts/train_skill_discovery.py \
-    --env CheetahRun --num-skills 8 --total-timesteps 100000 --seed 0
+    --env CheetahRun --num-skills 8 --total-timesteps 1000000 --seed 0
+# repeat with --seed 1 and --seed 2
 ```
-Run in background (Bash run_in_background=true), grep stdout for `disc_acc` to monitor accuracy curve. ~5-10 min wall-clock on GPU.
+Wall-clock projection: 100K → 165s, so 1M ≈ 1650s (27.5 min) per seed. Three parallel ≈ same wall-clock if GPU memory permits (each run uses ~55% of 16GB ≈ 8.8GB, so 3 in parallel = 26.4GB > 16GB — **must serialize or interleave**). Realistic: 3 × 30 min serial ≈ 1.5h.
