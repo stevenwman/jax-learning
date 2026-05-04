@@ -114,7 +114,17 @@ class Ant(mjx_env.MjxEnv):
         )
         data = mjx.forward(self.mjx_model, data)
 
-        info = {"rng": rng}
+        # Seed all info keys that step() will populate so the wrapper's
+        # jax.lax.scan over action_repeat sees a stable pytree structure
+        # between reset (carry input) and step (carry output).
+        info = {
+            "rng": rng,
+            "x_position": data.qpos[0],
+            "y_position": data.qpos[1],
+            "distance_from_origin": jp.linalg.norm(data.qpos[0:2]),
+            "x_velocity": jp.zeros(()),
+            "y_velocity": jp.zeros(()),
+        }
         metrics = {
             "reward_forward": jp.zeros(()),
             "reward_ctrl": jp.zeros(()),

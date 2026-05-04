@@ -126,6 +126,21 @@ def _register_custom_envs():
 _register_custom_envs()
 
 
+def maybe_load_custom_env(env_name: str):
+    """Return a locally-defined MJX env instance for env_name, or None.
+
+    For envs we hand-roll outside of `mujoco_playground.registry` (so they
+    are NOT registered in pg_registry), this returns the constructed env.
+    Callers should fall through to ``pg_registry.load`` when this returns
+    None. The check is intentionally explicit (`if env is None`) at call
+    sites — env structs can evaluate falsy under JAX dataclasses.
+    """
+    if env_name == "AntMJX":
+        from jax_rl.envs.locomotion.ant import Ant
+        return Ant()
+    return None
+
+
 def _safe_obs(obs, has_bad):
     """Zero out obs for envs with NaN/Inf. Works with flat arrays or dicts."""
     if isinstance(obs, dict):
@@ -187,7 +202,9 @@ def make_envs(cfg: TrainConfig, seed: int):
         action_dim: action dimensionality
         key: PRNG key (after reset_key consumption)
     """
-    env = pg_registry.load(cfg.env_name)
+    env = maybe_load_custom_env(cfg.env_name)
+    if env is None:
+        env = pg_registry.load(cfg.env_name)
 
     from jax_rl.envs.wrappers import apply_wrapper_pipeline
     env = apply_wrapper_pipeline(env, cfg)
@@ -212,7 +229,9 @@ def make_envs(cfg: TrainConfig, seed: int):
     key, reset_key = jax.random.split(key)
     env_state = env.reset(jax.random.split(reset_key, cfg.num_envs))
 
-    eval_env = pg_registry.load(cfg.env_name)
+    eval_env = maybe_load_custom_env(cfg.env_name)
+    if eval_env is None:
+        eval_env = pg_registry.load(cfg.env_name)
     import dataclasses
     eval_cfg = cfg
     if cfg.action_delay_range_ms is not None:

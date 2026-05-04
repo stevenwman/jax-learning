@@ -46,6 +46,7 @@ from jax_rl.training.checkpointing import load_actor_for_inference
 # Register custom envs (Go2 etc.) with Playground's registry.
 import jax_rl.training.env_setup  # noqa: F401 — side effect: registers custom envs
 from jax_rl.training.env_backends import detect_backend
+from jax_rl.training.env_backends.mjx_backend import maybe_load_custom_env
 from jax_rl.utils.normalization import normalize as norm_normalize
 from jax_rl.utils.rollout import build_ppo_rollout_step, build_offpolicy_rollout_step
 from jax_rl.envs.locomotion.go2_rendering import apply_kicks, make_varied_cmd_fn, render_command_overlays
@@ -331,7 +332,9 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
     camera = camera or defaults[1]
 
     # ── Create env (unwrapped — single env, no auto-reset) ────────────────
-    env = pg_registry.load(env_name)
+    env = maybe_load_custom_env(env_name)
+    if env is None:
+        env = pg_registry.load(env_name)
 
     # Apply wrapper pipeline from checkpoint config (action delay, frame stacking, etc.)
     train_cfg = meta.get("train_config", {})
