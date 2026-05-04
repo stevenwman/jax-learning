@@ -70,7 +70,7 @@ def default_config() -> config_dict.ConfigDict:
         Kd=0.5,
         torque_speed_model=False,
         action_repeat=1,
-        action_scale=1.0,
+        action_scale=0.5,  # match joystick + deploy contract (deploy/go2_constants.ACTION_SCALE)
         soft_joint_pos_limit_factor=0.95,
         impl="warp",
         contact_mode="training",
