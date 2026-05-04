@@ -414,6 +414,9 @@ class Go2WarpSplitbeltEnv(go2_warp_base.Go2WarpEnv):
         }
 
         metrics = {f"reward/{k}": jp.zeros(()) for k in self._config.reward_config.scales.keys()}
+        # term_cause logged as a metric for offline analysis. Must be initialized
+        # in reset so step's pytree structure matches under lax.scan (action_repeat).
+        metrics["splitbelt/term_cause"] = jp.zeros(())
 
         obs = self._get_obs(data, info)
         reward, done = jp.zeros(2)
