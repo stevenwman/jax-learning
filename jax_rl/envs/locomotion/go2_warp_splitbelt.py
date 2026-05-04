@@ -454,15 +454,22 @@ class Go2WarpSplitbeltEnv(go2_warp_base.Go2WarpEnv):
         sensordata = data.sensordata
         foot_in_left = sensordata[self._foot_left_belt_adr] > 0.0
         foot_in_right = sensordata[self._foot_right_belt_adr] > 0.0
-        foot_in_floor = sensordata[self._foot_floor_adr] > 0.0  # off-belt landings
+
+        # NOTE: do NOT use the {FL,FR,RL,RR}_floor_found contact sensors for
+        # off-belt detection. They use MuJoCo's geom-pair margin and fire even
+        # at ~2cm distance from fallback_floor — every foot at spawn (z=0.014)
+        # registers as "in floor" when fallback_floor is at z=-0.005. Use a
+        # geometric foot-position check instead (splitbelt_geom.foot_belt_id).
+        foot_pos_world = data.site_xpos[self._feet_site_id]
+        foot_xy = foot_pos_world[..., :2]
+        foot_belt_id = geom.foot_belt_id(foot_xy, self._belt_layout)
+        # foot_off_belt_geom = foot is positioned outside both belt y-ranges
+        foot_off_belt_geom = foot_belt_id == jp.int32(-1)
+        # foot_in_floor (for analysis only — used in info["splitbelt"]) approximates
+        # "foot is grounded outside a belt" via geometric position + low z.
+        foot_in_floor = foot_off_belt_geom & (foot_pos_world[..., 2] < 0.02)
 
         contact = foot_in_left | foot_in_right | foot_in_floor
-        foot_belt_id = jp.where(
-            foot_in_left, jp.int32(0),
-            jp.where(foot_in_right, jp.int32(1), jp.int32(-1)),
-        )
-
-        foot_pos_world = data.site_xpos[self._feet_site_id]
 
         base_pos_world = data.qpos[:3]
         body_lin_vel = self.get_local_linvel(data)
@@ -482,8 +489,11 @@ class Go2WarpSplitbeltEnv(go2_warp_base.Go2WarpEnv):
             | (sensordata[self._torso_floor_adr] > 0.0)
         )
         is_off_belt = jp.any(foot_in_floor)
-        gravity_body = self.get_gravity(data)
-        is_tilt = (gravity_body[2] < 0.5) | (base_pos_world[2] < 0.18)
+        # Joystick precedent: flipped = upvector.z < 0 (body z-axis points down).
+        # `get_gravity` returns body-frame gravity which is (0,0,-1) when upright,
+        # so the previous `gravity[2] < 0.5` check ALWAYS fired. Use upvector.
+        upvector_z = self.get_upvector(data)[-1]
+        is_tilt = (upvector_z < 0.5) | (base_pos_world[2] < 0.18)
         done = fall_torso | is_off_belt | is_tilt
         term_cause = jp.where(
             fall_torso, jp.int32(1),
