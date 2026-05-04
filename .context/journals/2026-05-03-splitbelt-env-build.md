@@ -95,7 +95,9 @@ d3d1aa8 feat(splitbelt): emit splitbelt_traj.npz sidecar from record_video.py
 
 ## Calibration smoke (2026-05-04)
 
-FastSAC 1M @ 512 envs (`XLA_CLIENT_MEM_FRACTION=0.55` to fit 14-actuator model on RTX 5080 16GB), tied(0.5) schedule, seed 0 → **eval 105.5 ± 6.6** (go/no-go > 80 ✓). Online-return progression: 77 → 80 → 90 → 95+ → 105 over the last 250K steps. Entropy stable at -3 to -2 (no collapse). 6385 sps. Total wall-clock 156s. Q diagnostics: bias=-1.07, RMSE=1.56. Ckpt: `checkpoints/20260504_135211_fast_sac_go2warpsplitbelt_seed0/best`.
+**FastSAC 1M @ 512 envs** (`XLA_CLIENT_MEM_FRACTION=0.55`), tied(0.5), seed 0 → **eval 105.5 ± 6.6** (go/no-go > 80 ✓). Online-return progression: 77 → 80 → 90 → 95+ → 105. Entropy stable at -3 to -2. 6385 sps, 156s wall-clock. Q bias=-1.07, RMSE=1.56. Ckpt: `checkpoints/20260504_135211_fast_sac_go2warpsplitbelt_seed0/best`.
+
+**PPO 1M @ 512 envs**, tied(0.5), seed 0 → **eval 53.0 ± 7.5** (under numeric gate; algo-agnosticism gate PASS). Entropy stable at 4.5+ throughout (well above the 0.05 collapse-risk threshold from spec §11.X). KL 7e-5 to 3e-2, logσ -0.17 (exploring, not collapsed). 21K sps, 87s wall-clock. PPO needs 50-100M steps for Go2-class envs to hit ceiling — 53 at 1M is consistent with the trajectory, not a stuck policy. The reward zero-clip + PPO entropy-collapse caveat from spec §11.X did NOT trigger; no mitigation needed. Ckpt: `checkpoints/20260504_135917_ppo_go2warpsplitbelt_seed0`.
 
 Visual rollout (431 steps before off-belt termination, total reward 120.3) confirmed end-to-end pipeline:
 - 32-45 touchdowns/foot in 8.6s = ~1.5 Hz stride rate (healthy cadence)
