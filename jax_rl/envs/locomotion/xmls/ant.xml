@@ -80,4 +80,12 @@
     <motor ctrllimited="true" ctrlrange="-1.0 1.0" joint="hip_3" gear="150"/>
     <motor ctrllimited="true" ctrlrange="-1.0 1.0" joint="ankle_3" gear="150"/>
   </actuator>
+  <!-- Dummy framelinacc sensor triggers mujoco_warp's rne_postconstraint pass,
+       which is what populates cfrc_ext. Without it, cfrc_ext stays identically
+       zero through Warp's forward step and the Gym contact_cost reward term
+       drops to zero — silently breaking parity. The sensor's value is unused
+       (we do not read sensordata); only its presence matters. -->
+  <sensor>
+    <framelinacc objtype="body" objname="torso" name="torso_linacc"/>
+  </sensor>
 </mujoco>
