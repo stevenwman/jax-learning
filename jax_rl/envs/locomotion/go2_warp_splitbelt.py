@@ -330,8 +330,8 @@ class Go2WarpSplitbeltEnv(go2_warp_base.Go2WarpEnv):
         return {
             "default_pose_policy": default_pose_policy.tolist(),
             "default_pose_sdk": default_pose_sdk.tolist(),
-            "policy_to_sdk": list(POLICY_TO_SDK),
-            "sdk_to_policy": list(np.argsort(POLICY_TO_SDK)),
+            "policy_to_sdk": [int(i) for i in POLICY_TO_SDK],
+            "sdk_to_policy": [int(i) for i in np.argsort(POLICY_TO_SDK)],
             "action_scale": float(self._config.action_scale),
             "Kp": float(self._config.Kp),
             "Kd": float(self._config.Kd),
