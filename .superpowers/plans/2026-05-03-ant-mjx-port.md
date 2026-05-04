@@ -821,41 +821,138 @@ Audit r1 saw lines 190 and 215 in `mjx_backend.py` and 334 in `record_video.py` 
 
 - [ ] **Step 8:** Bigger smoke: SAC 5K-step training on AntMJX (no DIAYN yet) — verifies the existing SAC pipeline runs end-to-end:
   ```bash
-  XLA_CLIENT_MEM_FRACTION=0.55 uv run python scripts/train_sac.py \
+  XLA_PYTHON_CLIENT_PREALLOCATE=false uv run python scripts/train_sac.py \
       --env AntMJX --total-timesteps 5000 --seed 0 2>&1 | tail -20
   ```
   Expected: finite losses, finite returns, no NaN. If `reward_forward` is consistently negative early, that's expected (random policy). If everything is `nan`, check `_is_unhealthy` gating + reset noise.
+  **Note on env vars (verified 2026-05-04):** `XLA_PYTHON_CLIENT_PREALLOCATE=false` is the right knob for AntMJX, not `XLA_CLIENT_MEM_FRACTION=0.55` — RK4 + Warp PTX module load OOMs at 0.55 because the JAX preallocation eats all of VRAM. Disabling preallocation lets Warp load lazily. The 5K smoke also needs reduced buffer/env counts to fit defaults: defaults `num_envs=128, buffer_size=4M` × 105d obs ≈ 3.6 GB buffer alone, OOM-bound. Use `--num-envs 64 --buffer-size 1048576` if the script supports those flags (see Stage 4.9 below). For the bare 5K smoke that already landed, an inline runner with `num_envs=8, buffer_size=20K` was used; pipeline confirmed healthy.
+
+---
+
+## Stage 4.9: Prep for Stage 5 — buffer/env CLI flags + AntMJXClassic variant
+
+This stage was added after Stages 0-4 surfaced two issues during the 5K SAC smoke: (a) `train_skill_discovery.py` has no flags to override the buffer-size / num-envs defaults, so 1M training on AntMJX (105d obs) won't fit on a 16 GB GPU; (b) DIAYN's canonical paper figure used a smaller-obs Ant (no contact forces) — we want both variants for side-by-side comparison.
+
+### Task 4.9.1: Add `AntMJXClassic` env variant (27d obs, no cfrc)
+
+**Files:** `jax_rl/training/env_backends/mjx_backend.py` (extend `maybe_load_custom_env`), `tests/test_ant_env.py` (one new test).
+
+- [ ] **Step 1:** Extend `maybe_load_custom_env` in `mjx_backend.py`:
+  ```python
+  def maybe_load_custom_env(env_name: str):
+      if env_name == "AntMJX":
+          from jax_rl.envs.locomotion.ant import Ant
+          return Ant()                                           # 105d obs (Gym v5 default)
+      if env_name == "AntMJXClassic":
+          from jax_rl.envs.locomotion.ant import Ant, default_config
+          cfg = default_config()
+          cfg.unlock()
+          cfg.include_cfrc_ext_in_observation = False            # 27d obs (Gym v4-style, closer to DIAYN paper)
+          return Ant(config=cfg)
+      return None
+  ```
+- [ ] **Step 2:** Add a confirmation test in `tests/test_ant_env.py`:
+  ```python
+  def test_ant_classic_obs_dim_27():
+      cfg = default_config()
+      cfg.unlock()
+      cfg.include_cfrc_ext_in_observation = False
+      env = Ant(config=cfg)
+      state = env.reset(jax.random.PRNGKey(0))
+      assert state.obs.shape == (27,)
+  ```
+- [ ] **Step 3:** Smoke `detect_backend("AntMJXClassic") == "mjx"` (default fallthrough; should work without registration).
+- [ ] **Step 4:** Smoke `maybe_load_custom_env("AntMJXClassic")` returns an `Ant` instance with `observation_size == 27`:
+  ```bash
+  XLA_PYTHON_CLIENT_PREALLOCATE=false uv run python -c "
+  from jax_rl.training.env_backends.mjx_backend import maybe_load_custom_env
+  env = maybe_load_custom_env('AntMJXClassic')
+  print('obs_dim:', int(env.observation_size), 'action_dim:', env.action_size)
+  assert int(env.observation_size) == 27 and env.action_size == 8
+  "
+  ```
+
+### Task 4.9.2: Add `--buffer-size` and `--num-envs` flags to `train_skill_discovery.py`
+
+**Files:** `scripts/train_skill_discovery.py`.
+
+- [ ] **Step 1:** Add CLI flags:
+  ```python
+  parser.add_argument("--buffer-size", type=int, default=None,
+                      help="Override SACConfig.buffer_size (default 4_194_304). "
+                           "AntMJX 105d obs needs ~1_048_576 to fit 16GB GPU.")
+  parser.add_argument("--num-envs", type=int, default=None,
+                      help="Override TrainConfig.num_envs (default 128). "
+                           "AntMJX may need 64 or fewer to fit GPU.")
+  ```
+- [ ] **Step 2:** Wire the flags into the SAC config / TrainConfig construction. Use `dataclasses.replace` patterns matching the existing optimizer override surface in `train_skill_discovery.py`. Both flags are optional — `None` means "use existing default" so CheetahRun runs are unaffected.
+- [ ] **Step 3:** Smoke that `CheetahRun` baseline still works at defaults (sanity check we didn't break the existing path):
+  ```bash
+  XLA_CLIENT_MEM_FRACTION=0.55 uv run python scripts/train_skill_discovery.py \
+      --env CheetahRun --num-skills 8 --total-timesteps 5000 --seed 0 2>&1 | tail -10
+  ```
+  Expected: finite eval (we did this before; still works).
+- [ ] **Step 4:** Smoke the new flags work end-to-end on AntMJXClassic (cheap; 27d obs):
+  ```bash
+  XLA_PYTHON_CLIENT_PREALLOCATE=false uv run python scripts/train_skill_discovery.py \
+      --env AntMJXClassic --num-skills 8 --total-timesteps 5000 --seed 0 \
+      --buffer-size 524288 --num-envs 64 2>&1 | tail -10
+  ```
+  Expected: finite losses, no NaN, buffer config respected.
+
+### Task 4.9.3: Stage 4.9 commit
+
+- [ ] **Step 1:** `git add jax_rl/training/env_backends/mjx_backend.py scripts/train_skill_discovery.py tests/test_ant_env.py`. Commit with subject `feat(env): AntMJXClassic 27d variant + train_skill_discovery buffer/envs flags`. Body covers: rationale (DIAYN-paper-canonical comparison + 16GB GPU buffer fit), default behavior unchanged for CheetahRun.
 
 ---
 
 ## Stage 5: DIAYN acceptance + visual figure
 
-### Task 5.1: DIAYN smoke (10K seed 0)
+**Variant strategy:** train BOTH `AntMJXClassic` (27d, DIAYN-paper-canonical) AND `AntMJX` (105d, Gym v5 default). The side-by-side is the science: if Classic shows clean xy-fanout but v5 collapses, that's a real finding about DIAYN's obs sensitivity (richer obs lets the discriminator hide skill differences in tiny contact-force diffs, the same failure mode we saw on CheetahRun). If both look similar, we just learn which is easier.
+
+### Task 5.1: DIAYN smoke — 10K seed 0 on Classic + v5
 
 **Files:** none (training only).
 
-- [ ] **Step 1:**
+- [ ] **Step 1: Classic 10K smoke (cheap, 27d obs):**
   ```bash
-  XLA_CLIENT_MEM_FRACTION=0.55 uv run python scripts/train_skill_discovery.py \
+  XLA_PYTHON_CLIENT_PREALLOCATE=false uv run python scripts/train_skill_discovery.py \
+      --env AntMJXClassic --num-skills 8 --total-timesteps 10000 --seed 0 \
+      --buffer-size 524288 --num-envs 64 \
+      2>&1 | tee .temp/logs/ant_classic_diayn_smoke.log
+  ```
+- [ ] **Step 2: v5 10K smoke (richer obs):**
+  ```bash
+  XLA_PYTHON_CLIENT_PREALLOCATE=false uv run python scripts/train_skill_discovery.py \
       --env AntMJX --num-skills 8 --total-timesteps 10000 --seed 0 \
-      2>&1 | tee .temp/logs/ant_diayn_smoke.log
+      --buffer-size 1048576 --num-envs 64 \
+      2>&1 | tee .temp/logs/ant_v5_diayn_smoke.log
   ```
-- [ ] **Step 2:** Acceptance: finite aux losses, no NaN, buffer fills past `min_buffer=8192`. Per-skill eval (z0..z7) returns finite. Same gates as SD-B Phase 5.1 on CheetahRun.
-- [ ] **Step 3:** Journal entry: `.context/journals/2026-05-04-ant-port.md` with smoke result.
+- [ ] **Step 3:** Acceptance for both: finite aux losses, no NaN, buffer fills past `min_buffer=8192`. Per-skill eval (z0..z7) returns finite. Same gates as SD-B Phase 5.1 on CheetahRun.
+- [ ] **Step 4:** Journal entry stub: `.context/journals/2026-05-04-ant-port.md` with smoke results for both variants.
 
-### Task 5.2: DIAYN 1M seed 0 acceptance
+### Task 5.2: DIAYN 1M seed 0 acceptance — both variants
 
-- [ ] **Step 1:**
+- [ ] **Step 1: Classic 1M seed 0:**
   ```bash
-  XLA_CLIENT_MEM_FRACTION=0.55 uv run python scripts/train_skill_discovery.py \
-      --env AntMJX --num-skills 8 --total-timesteps 1000000 --seed 0 \
-      2>&1 | tee .temp/logs/ant_diayn_1m_seed0.log
+  XLA_PYTHON_CLIENT_PREALLOCATE=false uv run python scripts/train_skill_discovery.py \
+      --env AntMJXClassic --num-skills 8 --total-timesteps 1000000 --seed 0 \
+      --buffer-size 524288 --num-envs 64 \
+      2>&1 | tee .temp/logs/ant_classic_diayn_1m_seed0.log
   ```
-- [ ] **Step 2:** Acceptance gate (with fallback for slower convergence on the richer 105d obs):
+- [ ] **Step 2: v5 1M seed 0:**
+  ```bash
+  XLA_PYTHON_CLIENT_PREALLOCATE=false uv run python scripts/train_skill_discovery.py \
+      --env AntMJX --num-skills 8 --total-timesteps 1000000 --seed 0 \
+      --buffer-size 1048576 --num-envs 64 \
+      2>&1 | tee .temp/logs/ant_v5_diayn_1m_seed0.log
+  ```
+  Run serially (NOT both in parallel; 1.5GB + 3.6GB buffers won't co-fit; plus the smaller Warp graph is rebuilt twice).
+- [ ] **Step 3:** Acceptance gate (with fallback for slower convergence on the richer 105d obs):
   - **Primary**: DiscA > `1/num_skills + 0.1 = 0.225` by 100K, per-skill spread > 50% of max-skill mean at 1M.
-  - **Fallback**: DiscA > `1/num_skills + 0.05 = 0.175` by 100K AND > 0.225 by 200K. Ant's 105d obs is ~5× CheetahRun's 17d, so the discriminator may climb slower in absolute steps even though the learning dynamics are healthy. If primary fails but fallback passes, log it and continue — don't bisect.
-  - Wall-clock projection: similar to CheetahRun (~28 min/seed). Run in background.
-- [ ] **Step 3:** If skill collapse on Ant looks similar to CheetahRun (1-3 active of 8 by task return), that confirms DIAYN-on-quadruped ceiling — SAME canonical pattern. Document; this is expected per `lessons/skill_discovery_diayn_cheetah.md`. **Crucially**: even if return-spread collapses, the xy-trajectory figure (Stage 5.3) may still show legible diversity since DIAYN can produce skills that go in different *directions* with similar magnitudes — the plot reveals diversity that scalar return doesn't.
+  - **Fallback**: DiscA > `1/num_skills + 0.05 = 0.175` by 100K AND > 0.225 by 200K. Ant's 105d obs is ~5× CheetahRun's 17d, so the v5 discriminator may climb slower in absolute steps even though the learning dynamics are healthy. If primary fails but fallback passes, log it and continue — don't bisect. (Classic 27d should hit primary easily; if it doesn't, something is wrong.)
+  - Wall-clock projection: similar to CheetahRun (~28 min/seed). Two seeds × ~28 min = ~1h serial total for Step 1+2. Run each in background.
+- [ ] **Step 4:** Compare per-skill task-return spread between Classic and v5. If Classic spreads cleanly but v5 collapses, document as supporting evidence for the canonical-DIAYN-limit lesson. If both collapse, document as not-a-bug-just-the-method-ceiling. **Skill collapse on either variant is NOT a port failure.** This is expected per `lessons/skill_discovery_diayn_cheetah.md`. Crucially: even if return-spread collapses, the xy-trajectory figure (Stage 5.3) may still show legible diversity since DIAYN can produce skills that go in different *directions* with similar magnitudes — the plot reveals diversity that scalar return doesn't.
 
 ### Task 5.3: xy-trajectory diversity figure
 
@@ -1045,15 +1142,19 @@ Audit r1 saw lines 190 and 215 in `mjx_backend.py` and 334 in `record_video.py` 
   ```
   *Two private-attribute reads (`env._init_qpos`, `env._init_qvel`, `env._config.*`, `env._get_obs`) are intentional — `Ant` is a sibling module, not external API. Add public properties on `Ant` if this script grows beyond a one-shot figure.*
 
-- [ ] **Step 2:** Generate figure for seed 0:
+- [ ] **Step 2:** Generate figures for both variants (seed 0):
   ```bash
   uv run python scripts/plot_skill_xy.py \
+      --checkpoint checkpoints/<latest_antmjxclassic_seed0> \
+      --rollouts-per-skill 3 --rollout-length 500 \
+      --output .context/figures/ant_classic_diayn_seed0.png
+
+  uv run python scripts/plot_skill_xy.py \
       --checkpoint checkpoints/<latest_antmjx_seed0> \
-      --num-skills 8 \
-      --rollouts-per-skill 3 \
-      --rollout-length 500 \
-      --output .context/figures/ant_diayn_seed0.png
+      --rollouts-per-skill 3 --rollout-length 500 \
+      --output .context/figures/ant_v5_diayn_seed0.png
   ```
+  Side-by-side panel via small matplotlib stitcher (or in headline doc).
 
 - [ ] **Step 3:** **Numerical visual gate** (already implemented as `_evaluate_gate(...)` in Step 1's script). The gate prints three metrics:
   - `max_pairwise` — Euclidean distance between the most-distant pair of skill mean-endpoints (m).
@@ -1072,16 +1173,30 @@ Audit r1 saw lines 190 and 215 in `mjx_backend.py` and 334 in `record_video.py` 
 
 **Rationale:** Cheetah's Wave D needed 3 seeds to call Gate 1 (seed-2 had max-skill=48.2 vs seed-0 max=7.3). Single-seed is high-variance; the headline figure is much weaker without multi-seed reproduction. The 1.5h serial cost is already in the wall-clock estimate.
 
-- [ ] **Step 1:** Same pattern as SD-B Phase 5.3 — serial 3 seeds (XLA_CLIENT_MEM_FRACTION=0.55 doesn't fit 3 parallel on 16GB GPU; ~1.5h serial total). Save task ID + log paths to memory before launching.
+**Strategy:** primary multi-seed campaign on `AntMJXClassic` (cheaper, closer to DIAYN paper). Single seed on `AntMJX` for the comparison panel. If 5.2 already showed Classic and v5 are essentially the same shape, drop the v5 multi-seed entirely.
+
+- [ ] **Step 1:** Serial 3 seeds on Classic (~28 min/seed × 3 ≈ 1.5h). Save task ID + log paths to `project_skill_discovery_running_jobs.md` BEFORE launching.
   ```bash
   for s in 0 1 2; do
-    XLA_CLIENT_MEM_FRACTION=0.55 uv run python scripts/train_skill_discovery.py \
-        --env AntMJX --num-skills 8 --total-timesteps 1000000 --seed $s \
-        2>&1 | tee .temp/logs/ant_diayn_1m_seed${s}.log
+    XLA_PYTHON_CLIENT_PREALLOCATE=false uv run python scripts/train_skill_discovery.py \
+        --env AntMJXClassic --num-skills 8 --total-timesteps 1000000 --seed $s \
+        --buffer-size 524288 --num-envs 64 \
+        2>&1 | tee .temp/logs/ant_classic_diayn_1m_seed${s}.log
   done
   ```
-- [ ] **Step 2:** Generate 3-panel figure (one xy plot per seed) using `plot_skill_xy.py` × 3, then `matplotlib.subplot`-stitch into a single PNG. Commit alongside.
-- [ ] **Step 3:** Apply the numerical visual gate from Task 5.3 Step 3 to each seed. At least 2 of 3 seeds should pass to call SD-B Gate 2 closed.
+- [ ] **Step 2:** Decision point — do we also need `AntMJX` (v5) seeds 1, 2?
+  - If Step 5.2's Classic-vs-v5 comparison was qualitatively similar (both fan out OR both collapse), single-seed v5 is enough.
+  - If they diverged interestingly (e.g. Classic fans out but v5 collapses), run seeds 1 and 2 of v5 too:
+    ```bash
+    for s in 1 2; do
+      XLA_PYTHON_CLIENT_PREALLOCATE=false uv run python scripts/train_skill_discovery.py \
+          --env AntMJX --num-skills 8 --total-timesteps 1000000 --seed $s \
+          --buffer-size 1048576 --num-envs 64 \
+          2>&1 | tee .temp/logs/ant_v5_diayn_1m_seed${s}.log
+    done
+    ```
+- [ ] **Step 3:** Generate 3-panel figure (Classic seeds 0,1,2 — one xy plot per seed) using `plot_skill_xy.py` × 3, then `matplotlib.subplot`-stitch into a single PNG. If v5 seeds 1,2 ran, also stitch a 6-panel (Classic top row, v5 bottom row).
+- [ ] **Step 4:** Apply the numerical visual gate from Task 5.3 Step 3 to each Classic seed. At least 2 of 3 seeds should pass to call SD-B Gate 2 closed.
 
 ---
 
@@ -1096,18 +1211,13 @@ Audit r1 saw lines 190 and 215 in `mjx_backend.py` and 334 in `record_video.py` 
 
 ### Task 6.2: Commit
 
-- [ ] **Step 1:** Stage code files (run `git status` first to confirm what was actually modified — `env_backends/__init__.py` is a no-edit verification per Stage 4.1 Step 1, so drop it from this list if `git status` shows it clean):
+- [ ] **Step 1:** Stages 1-4 already committed (commits `3f52e19`, `fcf781e`, `6806d38`, `f32e310` per HEAD `git log`). Stage 4.9 already committed. Only `scripts/plot_skill_xy.py` and any per-stage docs/journal updates remain to commit:
   ```bash
-  git add jax_rl/envs/locomotion/ant.py \
-          jax_rl/envs/locomotion/xmls/ant.xml \
-          jax_rl/training/env_backends/mjx_backend.py \
-          scripts/record_video.py \
-          scripts/plot_skill_xy.py \
-          tests/test_ant_xml.py tests/test_ant_env.py tests/test_ant_parity.py
+  git add scripts/plot_skill_xy.py
   ```
-  Stage docs separately.
-- [ ] **Step 2:** Commit with subject `feat(env): port Gym Ant-v5 to MJX/Warp as AntMJX`. Body covers: behavioral contract source, scalars locked, three-site dispatch hook, env-name choice (`AntMJX` to avoid collision with existing gym `Ant`), xy-trajectory figure as SD-B Gate 2.
-- [ ] **Step 3:** Second commit with docs sync.
+  Stage docs separately under Task 6.1.
+- [ ] **Step 2:** Commit `plot_skill_xy.py` with subject `feat(skill): plot_skill_xy.py — DIAYN xy-trajectory figure script`. Body covers: deterministic-reset across skills (avoids reset-noise dominating), helper reuse from `record_video.py`, numerical visual gate (max_pairwise + circular-std headings).
+- [ ] **Step 3:** Second commit with docs sync (lesson + journal + TODO + handoff).
 
 ---
 
