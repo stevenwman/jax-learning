@@ -1,4 +1,4 @@
-# 2026-05-03 — Splitbelt treadmill env build
+# 2026-05-03 → 05-04 — Splitbelt treadmill env build + calibration smoke
 
 ## What landed
 
@@ -92,6 +92,31 @@ d3d1aa8 feat(splitbelt): emit splitbelt_traj.npz sidecar from record_video.py
 
 (Plus 5 spec/plan commits prior to execution: `4027412`, `5f54eb8`, `e1283c1`,
 `b78f893`, `7c1a5bf`, `fc72d10`.)
+
+## Calibration smoke (2026-05-04)
+
+FastSAC 1M @ 512 envs (`XLA_CLIENT_MEM_FRACTION=0.55` to fit 14-actuator model on RTX 5080 16GB), tied(0.5) schedule, seed 0 → **eval 105.5 ± 6.6** (go/no-go > 80 ✓). Online-return progression: 77 → 80 → 90 → 95+ → 105 over the last 250K steps. Entropy stable at -3 to -2 (no collapse). 6385 sps. Total wall-clock 156s. Q diagnostics: bias=-1.07, RMSE=1.56. Ckpt: `checkpoints/20260504_135211_fast_sac_go2warpsplitbelt_seed0/best`.
+
+Visual rollout (431 steps before off-belt termination, total reward 120.3) confirmed end-to-end pipeline:
+- 32-45 touchdowns/foot in 8.6s = ~1.5 Hz stride rate (healthy cadence)
+- Sidecar `splitbelt_traj.npz` emitted (12 arrays); offline analyzer reads + computes asymmetry (-0.27 on tied — undertrained, expected to converge to ~0 with more steps).
+
+### Bugs found + fixed during calibration smoke (5 commits)
+
+1. **`action_scale=1.0` vs deploy contract `0.5`** (`33f093a`) — control-metadata test failed; aligned with joystick + deploy.
+2. **`splitbelt/term_cause` metric not initialized in reset** (`2061ef8`) — `lax.scan` over action_repeat needed pytree match between reset and step metrics dicts.
+3. **`np.argsort` returns int64 not JSON-serializable** in `get_control_metadata` (`40561c5`) — meta.json save crashed; cast via `[int(i) for i in ...]`.
+4. **Warp CUDA OOM on RTX 5080 with 1024 envs** — dropped to 512 envs + `XLA_CLIENT_MEM_FRACTION=0.55`. Documented in calibration recipe below.
+5. **`floor_found` contact sensor margin-fires at 2cm distance** (`d7a6771`) — every foot at spawn (z=0.014) registered as `floor_found=1.0` because `fallback_floor` is a plane (infinite extent). Fix: switched off-belt detection from sensor-based to position-based via `splitbelt_geom.foot_belt_id` + foot_z<2cm check. Off-belt now fires only when foot is geometrically over the gap AND grounded.
+6. **`is_tilt = gravity_body[2] < 0.5` always fired** (same commit) — `get_gravity` returns `(0,0,-1)` when upright, NOT `(0,0,+1)`. Joystick uses `get_upvector(data)[-1] < 0.0` for flipped detection. Fixed to use upvector.
+
+After fixes 5+6: zero-action episode survives 200+ steps (was terminating at step 1). 1M training run climbs eval from 0 to 105 cleanly.
+
+### Lessons added (suggested for `.context/lessons/go2.md`)
+
+- MuJoCo plane geoms are infinite — using `<contact data="found">` against a plane causes contact-pair sensors to fire from any near-z geom, regardless of xy. Use a finite box, OR position-based check.
+- `get_gravity()` body-frame z = -1 when upright. `get_upvector()` body-frame z = +1 when upright. Use upvector for "flipped" detection (joystick precedent).
+- 1M-step run on RTX 5080 (16GB) needs ≤ 512 envs + `XLA_CLIENT_MEM_FRACTION=0.55` for splitbelt's 14-actuator model. 1024 envs OOMs Warp graph capture during eval env construction.
 
 ## What's deferred to next session
 
