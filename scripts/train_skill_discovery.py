@@ -61,6 +61,12 @@ def main():
     parser.add_argument("--wandb-project", type=str, default="jax-rl")
     parser.add_argument("--resume", type=str, default=None,
                         help="Path to checkpoint directory to resume from")
+    parser.add_argument("--buffer-size", type=int, default=None,
+                        help="Override SACConfig.buffer_size (default 4_194_304). "
+                             "AntMJX 105d obs needs ~1_048_576 to fit 16GB GPU.")
+    parser.add_argument("--num-envs", type=int, default=None,
+                        help="Override TrainConfig.num_envs (default depends on preset). "
+                             "AntMJX may need 64 or fewer to fit GPU.")
     args = parser.parse_args()
 
     cfg, algo_cfg = get_sac_preset(args.env)
@@ -71,6 +77,10 @@ def main():
         algo_cfg = dataclasses.replace(algo_cfg, obs_normalization=True)
     if args.reset_mode is not None:
         cfg = dataclasses.replace(cfg, reset_mode=args.reset_mode)
+    if args.num_envs is not None:
+        cfg = dataclasses.replace(cfg, num_envs=args.num_envs)
+    if args.buffer_size is not None:
+        algo_cfg = dataclasses.replace(algo_cfg, buffer_size=args.buffer_size)
 
     # Build env bundle to learn obs/action dims
     env_bundle = make_env_bundle(cfg, args.seed)

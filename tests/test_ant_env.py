@@ -140,3 +140,17 @@ def test_ant_obs_no_cfrc():
     env = Ant(config=cfg)
     state = env.reset(jax.random.PRNGKey(0))
     assert state.obs.shape == (27,)  # 13 qpos[2:] + 14 qvel
+
+
+# -- Task 4.9.1: AntMJXClassic registration ----------------------------------
+
+
+def test_ant_classic_obs_dim_27():
+    """Confirms the 27d AntMJXClassic variant constructs cleanly via the same
+    config path used by `maybe_load_custom_env('AntMJXClassic')`."""
+    cfg = default_config()
+    cfg.unlock()
+    cfg.include_cfrc_ext_in_observation = False
+    env = Ant(config=cfg)
+    state = env.reset(jax.random.PRNGKey(0))
+    assert state.obs.shape == (27,)

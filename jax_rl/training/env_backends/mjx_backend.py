@@ -138,6 +138,12 @@ def maybe_load_custom_env(env_name: str):
     if env_name == "AntMJX":
         from jax_rl.envs.locomotion.ant import Ant
         return Ant()
+    if env_name == "AntMJXClassic":
+        from jax_rl.envs.locomotion.ant import Ant, default_config
+        cfg = default_config()
+        cfg.unlock()
+        cfg.include_cfrc_ext_in_observation = False  # 27d obs (Gym v4-style, closer to DIAYN paper)
+        return Ant(config=cfg)
     return None
 
 
