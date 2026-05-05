@@ -118,6 +118,22 @@ def _register_custom_envs():
             functools.partial(Go2WarpSplitbeltEnv, task="splitbelt"),
             splitbelt_default_config,
         )
+    # DR variant: every episode samples (vL, vR) from (v_range, ratio_range).
+    # Trains a policy across the full belt-speed manifold (A2 protocol prep).
+    def _splitbelt_dr_default_config():
+        cfg = splitbelt_default_config()
+        cfg.schedule_kind = "random_per_episode"
+        cfg.schedule_params = config_dict.create(
+            v_range=(0.3, 1.5),
+            ratio_range=(0.5, 2.0),
+        )
+        return cfg
+    if "Go2WarpSplitbeltDR" not in pg_locomotion._envs:
+        pg_locomotion.register_environment(
+            "Go2WarpSplitbeltDR",
+            functools.partial(Go2WarpSplitbeltEnv, task="splitbelt_dr"),
+            _splitbelt_dr_default_config,
+        )
 
     # (MuJoCo Warp PushEnv removed 2026-04-20 — replaced by vendored pymunk
     # gym-pusht (`jax_rl/envs/manipulation/pusht/`) for cross-shape work.)
