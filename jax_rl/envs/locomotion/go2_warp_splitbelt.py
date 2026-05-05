@@ -23,8 +23,11 @@ from jax_rl.envs.obs_spec import ObsTerm, IncludeGroup, compute_obs
 
 _VALID_OBS_MODES = ("blind", "informed", "error", "history")
 
-# Shared proprio name list — kept in sync with build_obs_groups bindings below.
-_PROPRIO_NAMES = ("joint_pos", "joint_vel", "last_act", "gravity", "gyro", "command")
+# Shared proprio name list — order matches WarpJoystickNoAccel state group exactly
+# (go2_warp_joystick.py:130-143 minus accelerometer). Lets a joystick-trained
+# policy drop in without retraining; gives all splitbelt-mode obs schemas a
+# consistent baseline that lines up with the rest of the Go2 stack.
+_PROPRIO_NAMES = ("gyro", "gravity", "joint_pos_offset", "joint_vel", "last_act", "command")
 
 
 def obs_term_names(obs_mode: str) -> Dict[str, list[str]]:
@@ -139,7 +142,9 @@ def build_obs_groups(env: Any) -> Dict[str, list]:
     noise = cfg.noise_config.scales
 
     term_factory = {
-        "joint_pos": (lambda data, **kw: data.qpos[7:7+12] - env._default_pose, noise.joint_pos),
+        # Name `joint_pos_offset` (not `joint_pos`) matches WarpJoystickNoAccel
+        # exactly — same value (qpos[7:19] - default_pose), same key name.
+        "joint_pos_offset": (lambda data, **kw: data.qpos[7:7+12] - env._default_pose, noise.joint_pos),
         "joint_vel": (lambda data, **kw: data.qvel[6:6+12], noise.joint_vel),
         "last_act": (lambda info, **kw: info["last_act"], 0.0),
         "gravity": (lambda data, **kw: env.get_gravity(data), noise.gravity),
