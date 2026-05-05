@@ -61,7 +61,8 @@ ENV_DEFAULTS = {
     "HumanoidWalk":     ((256, 256), "side"),
     "HumanoidStand":    ((256, 256), "side"),
     "Go2WarpJoystickFlat": ((480, 480), None),  # no named camera — use free cam
-    "Go2WarpSplitbelt":    ((640, 480), "splitbelt_side"),  # fixed cam — robot stays put
+    "Go2WarpSplitbelt":     ((640, 480), "splitbelt_side"),  # fixed cam — robot stays put
+    "Go2WarpSplitbeltDR":   ((640, 480), "splitbelt_side"),
 }
 
 
