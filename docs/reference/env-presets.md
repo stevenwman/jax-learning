@@ -91,6 +91,8 @@ Select an algorithm tab below to see its presets. Defaults (gamma=0.99, reward_s
     | Go2WarpJoystickCurriculum | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97 |
     | Go2WarpJoystickCurriculumTorqueSpeed | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97 |
     | Go2WarpSplitbelt | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97 |
+    | Go2WarpSplitbeltDR | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97 |
+    | Go2WarpSplitbeltPoseDR | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97 |
 
     FastSAC algo defaults: `tau=0.125`, `hidden_dim=(512, 256, 128)`, `activation=swish`, `batch_size=8,192`, `grad_updates_per_step=8`, `buffer_size=4M`, `min_buffer_size=8,192`, `q_layer_norm=True`.
 

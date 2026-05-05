@@ -230,6 +230,15 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **pyramid_up is persistently hardest** — stuck ~L0–L1 after 20M, 4-col and 5-col. Probably needs face-stair spawn tuning or start-of-episode cmd shaping.
 - **Warp non-determinism across runs with same seed** — single-seed lifetime tests misleading; flat env survival varies 607/871/1000/1000 across consecutive seed=0-3 runs on same checkpoint.
 
+## [Splitbelt Treadmill](lessons/splitbelt.md) — 6 lessons (2026-05-04 → 05)
+
+- **MuJoCo planes are infinite** — `<contact data="found">` against a plane fires from any near-z geom regardless of xy (margin-based). Use a box for finite extent, OR derive off-belt from foot xy + height directly.
+- **`get_gravity()` body-z = -1 when upright** — opposite of intuition. Use `get_upvector()[-1] < threshold` for flipped detection (joystick precedent at `go2_warp_joystick.py:409`).
+- **`Go2WarpEnv.__init__` clobbers `actuator_forcerange` before `mjx.put_model`** — XML default ignored for non-leg actuators. In `_post_init`, mutate `_mj_model.actuator_forcerange[idx]` then re-call `mjx.put_model`. Smoke-assert in `_post_init` so drift fails fast.
+- **Asymmetric AC actor blindness in cross-policy transfer** — joystick policy on splitbelt env at cmd=0: stands while belt drags it. Body lin vel is privileged-only, invisible to actor. Reward shape (drift penalty) is training-time signal not inference-time. Splitbelt blind reaches eval 72 because it was trained with that drift signal — same actor obs, different reward → different policy.
+- **Belt sign convention = biomech "drag speed"** — schedule v > 0 means "belt drags foot backward at v." Slide joint axis is +x, robot faces +x → ctrl & qvel writes are NEGATED so positive schedule = belt moves -x. Got it wrong initially: v1 ckpt eval=105 was free-ride (belt pushed robot forward).
+- **Obs schema must align with sister envs** — splitbelt original blind order was arbitrary; aligning to `Go2WarpJoystickFlatNoAccel` (gyro, gravity, joint_pos_offset, joint_vel, last_act, command) enables zero-retrain cross-deploy in both directions. Renamed `joint_pos` → `joint_pos_offset` to match exactly.
+
 ## [Go2 Locomotion](lessons/go2.md) — 7 lessons
 
 - **Reward rebalancing when porting robots** — 10x tracking weights needed (Go1→Go2), pose dominated at 1x

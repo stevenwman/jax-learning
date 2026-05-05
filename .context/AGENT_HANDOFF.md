@@ -204,7 +204,9 @@ Every checkpoint contains: `meta.json` (full config), `metrics.csv` (training cu
 | `Go2WarpJoystickFlatTorqueSpeed` | Flat | Linear torque-speed | A/B vs Flat |
 | `Go2WarpJoystickCurriculum` | 6 rows × 5 cols (rough / pyramid_up / pyramid_down / tilted / flat) | Ideal PD | 4 types goal-directed + flat col (Bernoulli cmd) for flat-env coverage; binary reach/fall advancement |
 | `Go2WarpJoystickCurriculumTorqueSpeed` | Same | Linear torque-speed | Curriculum + actuator model |
-| `Go2WarpSplitbelt` | Two parallel belt slabs (slide + vel actuator) over `fallback_floor` gap | Ideal PD | Adaptation benchmark substrate (A1/A2/A3/A4). Schedule samplers in `splitbelt_schedules.py`. Spec at `.superpowers/specs/2026-05-02-splitbelt-treadmill-env-design.md`. Calibration: FastSAC 1M @ 512 envs `XLA_CLIENT_MEM_FRACTION=0.55` → eval **105.5 ± 6.6** (2026-05-04, ckpt `20260504_135211_fast_sac_go2warpsplitbelt_seed0`). |
+| `Go2WarpSplitbelt` | Two parallel belt slabs (slide + vel actuator) over `fallback_floor` gap | Ideal PD | Adaptation benchmark substrate (A1/A2/A3/A4). `tied(0.5)` schedule by default. Obs schema aligned to `Go2WarpJoystickFlatNoAccel` — joystick ckpts pop in directly. Calibration: FastSAC 1M @ 512 envs `XLA_CLIENT_MEM_FRACTION=0.55` → v2 (correct belt direction) eval **72.3 ± 13.4** (2026-05-04, ckpt `20260504_180757_fast_sac_go2warpsplitbelt_seed0`); v1 105.5 was free-ride bug. |
+| `Go2WarpSplitbeltDR` | Same apparatus | Ideal PD | Belt-speed DR variant. `random_per_episode` schedule (v∈[0.3,1.5], ratio∈[0.5,2.0]). Same obs as Splitbelt. A2-protocol prep without explicit belt-vel obs. |
+| `Go2WarpSplitbeltPoseDR` | Same apparatus | Ideal PD | Pose-track variant: actor sees world-frame body pos + upvec + forwardvec (idealized — NOT deployable). Reward = pos+orient tracking. `random_per_episode` schedule. For studying stabilization on unseen belt velocities. |
 
 Curriculum env: 128 envs @ 16GB GPU (6 rows × 5 cols = 30 tiles vs 40 previously). Use `--num-envs 128`. v16 20M eval 290.3 ± 6.8 (best 294.7), mean_level 0.73 excl flat. See `.context/lessons/terrain_curriculum.md`.
 

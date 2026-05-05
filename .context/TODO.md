@@ -1,5 +1,21 @@
 # TODO
 
+## Completed (2026-05-05) — Splitbelt env variants + visual upgrades
+
+Belt sign fix (drag-backward biomech convention), obs schema aligned to joystick NoAccel (cross-deploy works both ways), checker textures + directional lights + fixed side cam, three new env variants:
+- `Go2WarpSplitbelt` — baseline tied(0.5), v2 eval **72.3 ± 13.4** at 1M
+- `Go2WarpSplitbeltDR` — random_per_episode belt speeds (untrained)
+- `Go2WarpSplitbeltPoseDR` — pose_track obs (world-frame body pose) + belt DR. **eval 280.6 ± 207.8** at 1M (`checkpoints/20260505_184757_fast_sac_go2warpsplitbeltposedr_seed0`). Idealized — actor sees ground-truth pose; not real-robot deployable.
+
+Cross-deploy demo: joystick policy on splitbelt env → robot stands while belt drags. Asymmetric-AC actor blindness: body lin vel is privileged-only. See `.context/lessons/splitbelt.md`.
+
+**Open follow-ups:**
+- [ ] OOD eval on PoseDR ckpt at unseen belt speeds (>1.5 m/s)
+- [ ] A1 protocol probe: existing PoseDR ckpt under `tied_split_tied` schedule, run offline analyzer
+- [ ] Train splitbelt with `error` obs_mode (cmd_track_error + drift_xy in actor) — closes the AC blindness gap
+- [ ] Per-protocol algo presets (A1/A2/A3/A4) — fresh brainstorm/spec/plan cycle
+- [ ] History-mode `FrameStackWrapper` wiring in `mjx_backend` (still deferred)
+
 ## Completed (2026-05-03) — Splitbelt treadmill env (Go2WarpSplitbelt)
 
 Built the splitbelt-treadmill adaptation-benchmark substrate (spec at `.superpowers/specs/2026-05-02-splitbelt-treadmill-env-design.md`). Two parallel belt slabs on slide+vel actuators over a `fallback_floor` gap, robot-agnostic apparatus + Go2-specific scene. Schedule samplers (tied / split_constant / tied_split_tied / random_per_episode / continual_phase) plus dispatcher cover all four protocol families (A1 within-episode, A2 context-conditioned, A3 meta-RL, A4 continual). 4 obs modes (blind / informed / error / history); reward = full joystick set + new `treadmill_drift` term (`stand_still` dropped since cmd is always 0). Offline gait-asymmetry analyzer in `jax_rl/envs/locomotion/splitbelt_analysis.py`. PPO + FastSAC base presets registered.

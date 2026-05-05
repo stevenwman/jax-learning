@@ -1,4 +1,4 @@
-# 2026-05-03 → 05-04 — Splitbelt treadmill env build + calibration smoke
+# 2026-05-03 → 05-05 — Splitbelt treadmill env build + calibration + variants
 
 ## What landed
 
@@ -119,6 +119,67 @@ After fixes 5+6: zero-action episode survives 200+ steps (was terminating at ste
 - MuJoCo plane geoms are infinite — using `<contact data="found">` against a plane causes contact-pair sensors to fire from any near-z geom, regardless of xy. Use a finite box, OR position-based check.
 - `get_gravity()` body-frame z = -1 when upright. `get_upvector()` body-frame z = +1 when upright. Use upvector for "flipped" detection (joystick precedent).
 - 1M-step run on RTX 5080 (16GB) needs ≤ 512 envs + `XLA_CLIENT_MEM_FRACTION=0.55` for splitbelt's 14-actuator model. 1024 envs OOMs Warp graph capture during eval env construction.
+
+## 2026-05-05 — belt sign fix, obs alignment, visual upgrades, env variants
+
+### Belt direction bug (`55ed717`)
+
+User noticed in v1 video: belts moved *with* the robot's forward direction instead of dragging it backward. Schedule `tied(0.5)` produced joint qvel = +0.5 along +x; robot faces +x → belt slab moved with robot → "free-ride" treadmill. Fix: negate ctrl/qvel writes in step + reset so positive schedule speed = "drag foot backward" (biomech convention). Spec §6.3 invariants block updated.
+
+Re-trained as v2 → eval **72.3 ± 13.4** (vs v1 105.5 free-ride). Lower because the task is genuinely harder when you have to step forward to stay put.
+
+### Obs schema alignment to joystick (`1babc73`)
+
+Initial splitbelt blind obs order was `[joint_pos, joint_vel, last_act, gravity, gyro, command]`. No reason — plan oversight, not lined up to existing joystick env. Joystick NoAccel order: `[gyro, gravity, joint_pos_offset, joint_vel, last_act, command]`. Both 45d.
+
+Aligned splitbelt blind to joystick's exact name + order (`joint_pos` → `joint_pos_offset`). Two-way transfer now works:
+- Existing joystick ckpts pop into splitbelt env without retraining.
+- Future splitbelt ckpts can be tested on joystick without obs surgery.
+
+v2 ckpt invalidated by the rename (first-layer weights expect old order). Did NOT retrain — no current use case demands a splitbelt baseline; future training will produce aligned ckpts naturally.
+
+### Visual / camera upgrades (`9736364`, `8b3afc0`, `d6be8a0`)
+
+For visual inspection of belt motion + gait:
+- Belt checker textures (left = blue-tone, right = red-tone), `texrepeat="50 2"` (1m × 0.15m squares — readable per pixel without mipmap aliasing).
+- Three directional lights (overhead + 2 fill). `directional="true"` removes spot-cone falloff that darkened belt ends as they scrolled past.
+- Three fixed cameras: `splitbelt_side` (default — robot's left flank, `xyaxes="-1 0 0  0 0 1"`), `splitbelt_front`, `splitbelt_iso`.
+- `record_video.py --no-early-term` flag — keep rolling after `done=True` so failure dynamics are visible. Default still breaks on done.
+
+### Cross-deploy demo (joystick policy on splitbelt)
+
+Recorded `checkpoints/20260428_085344_fast_sac_go2warpjoystickflatnoaccel_seed7002/best/20260505_183541_rollout.mp4` — joystick NoAccel ckpt running on splitbelt env (45d obs match by alignment).
+
+Result: **policy stands still while belt drags it backward.** Joystick state obs does NOT include body lin vel (privileged-only term). Asymmetric AC blindness: actor sees gyro=0, gravity=(0,0,-1), joint_pos_offset≈0, joint_vel≈0, cmd=0 → "perfect standing" → no compensation. Translation is invisible to actor; reward shape (which would punish drift) is a training-time signal, not an inference-time one.
+
+This is structurally interesting — splitbelt's `blind` mode reaches eval 72 because its `treadmill_drift` reward shaped the policy to step forward despite being equally blind to lin vel. Cf. spinal CPG models: open-loop-ish gait shaped by reward, not closed-loop kinematic tracking.
+
+### New env variants (`8b3afc0`, `813d043`, `94e0412`)
+
+| Env name | Obs mode | Schedule | Use case |
+|---|---|---|---|
+| `Go2WarpSplitbelt` | blind (default) | tied(0.5) | Baseline calibration env |
+| `Go2WarpSplitbeltDR` | blind | random_per_episode (v∈[0.3,1.5], ratio∈[0.5,2.0]) | Speed-DR, A2 prep without explicit belt obs |
+| `Go2WarpSplitbeltPoseDR` | pose_track | random_per_episode | Idealized stabilization probe — actor sees world-frame body pos + upvec + forwardvec; reward = pos+orient tracking; treadmill_drift dropped |
+
+`pose_track` is **not real-robot deployable** (no SLAM) but cheap to study DR-belt-speed generalization since policy gets ground-truth state. Tests stabilization on unseen belt velocities.
+
+PoseDR FastSAC 1M training in flight (`/tmp/splitbelt-smoke/posedr.log`) at session end.
+
+### Bugs found + fixed in 2026-05-05
+
+7. **Belt slab moved wrong direction** (`55ed717`) — schedule semantics unspecified; default sign was treadmill-incorrect (above).
+8. **`np.argsort` int64 not JSON-serializable** (`40561c5`) — `get_control_metadata` save crashed.
+9. **`config_dict` not imported** in `mjx_backend.py` (`94e0412`) — DR + PoseDR variant configs failed to construct on first env load.
+
+### Net lessons (added to lesson docs this session)
+
+- MuJoCo planes are infinite → contact-pair `data="found"` margin-fires from any near-z geom (not actual contact). Use box for finite extent, or position-based check.
+- `get_gravity()` body-z = -1 when upright. Use `get_upvector()[-1] < 0` for flipped detection.
+- `Go2WarpEnv.__init__:64-67` clobbers `actuator_forcerange` BEFORE `mjx.put_model`. XML default insufficient for non-leg actuators. Mutate `_mj_model.actuator_forcerange[idx]` in `_post_init` then re-call `mjx.put_model`. Smoke assertion catches drift.
+- `lax.scan` over `action_repeat` requires reset & step state.metrics dicts to have IDENTICAL keys. Init all metric fields in reset.
+- Asymmetric AC: actor obs blindness to body translation. Cross-policy transfer demos must check actor obs schema, not just dimension.
+- RTX 5080 16GB with 14-actuator model: ≤512 envs + `XLA_CLIENT_MEM_FRACTION=0.55` for FastSAC training to fit Warp graph during eval env construction.
 
 ## What's deferred to next session
 
