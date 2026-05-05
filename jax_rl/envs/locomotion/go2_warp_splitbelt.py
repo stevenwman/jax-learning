@@ -21,7 +21,7 @@ from jax_rl.envs.locomotion import splitbelt_schedules as sched
 from jax_rl.envs.obs_spec import ObsTerm, IncludeGroup, compute_obs
 
 
-_VALID_OBS_MODES = ("blind", "informed", "error", "history")
+_VALID_OBS_MODES = ("blind", "informed", "error", "history", "pose_track")
 
 # Shared proprio name list — order matches WarpJoystickNoAccel state group exactly
 # (go2_warp_joystick.py:130-143 minus accelerometer). Lets a joystick-trained
@@ -49,6 +49,14 @@ def obs_term_names(obs_mode: str) -> Dict[str, list[str]]:
         state_names = list(proprio) + ["belt_vel"]
     elif obs_mode == "error":
         state_names = list(proprio) + ["cmd_track_error", "drift_xy"]
+    elif obs_mode == "pose_track":
+        # Idealized stabilization probe — actor sees world-frame body pose directly.
+        # NOT real-robot deployable (no SLAM) but cheap to study DR-belt-speed
+        # generalization since policy gets full ground-truth state. Cmd target is
+        # implicit at origin + identity orientation; deltas == absolute values.
+        state_names = list(proprio) + [
+            "body_pos_world", "body_upvector", "body_forwardvector",
+        ]
     else:
         raise AssertionError("unreachable")
     privileged_names = list(proprio) + [
@@ -120,6 +128,11 @@ def default_config() -> config_dict.ConfigDict:
                 base_height=-5.0,
                 # New for splitbelt:
                 treadmill_drift=1.0,
+                # pose_track-mode rewards: 0.0 by default. The pose-track env
+                # variant (Go2WarpSplitbeltPoseDR) overrides these to nonzero
+                # AND sets treadmill_drift=0.0 to swap the position reward.
+                pose_pos_track=0.0,
+                pose_orient_track=0.0,
             ),
             tracking_sigma=0.25,
             max_foot_height=0.1,
@@ -155,6 +168,10 @@ def build_obs_groups(env: Any) -> Dict[str, list]:
         "drift_xy": (lambda info, **kw: info["splitbelt"]["drift_xy"], 0.0),
         "base_lin_vel": (lambda data, **kw: env.get_local_linvel(data), 0.0),
         "base_ang_vel": (lambda data, **kw: env.get_global_angvel(data), 0.0),
+        # Pose-track mode: world-frame body pose. Target = (0, 0, 0.275) + identity.
+        "body_pos_world":      (lambda data, **kw: data.qpos[:3] - jp.array([0.0, 0.0, 0.275]), 0.0),
+        "body_upvector":       (lambda data, **kw: env.get_upvector(data),       0.0),
+        "body_forwardvector":  (lambda data, **kw: data.sensordata[env._forwardvector_adr:env._forwardvector_adr+3], 0.0),
     }
 
     def _build(names):
@@ -252,6 +269,11 @@ class Go2WarpSplitbeltEnv(go2_warp_base.Go2WarpEnv):
         self._torso_left_belt_adr = _adr("torso_left_belt")
         self._torso_right_belt_adr = _adr("torso_right_belt")
         self._torso_floor_adr = _adr("torso_floor")
+
+        # Forwardvector sensor (body x-axis in world frame, 3d) — used by pose_track
+        # obs mode. Base class doesn't expose a helper; read sensordata directly.
+        fwd_sid = self._mj_model.sensor("forwardvector").id
+        self._forwardvector_adr = self._mj_model.sensor_adr[fwd_sid]
 
         # Foot global linvel sensor addresses — needed by joystick reward helpers.
         foot_linvel_sensor_adr = []
@@ -541,6 +563,9 @@ class Go2WarpSplitbeltEnv(go2_warp_base.Go2WarpEnv):
             "pose":             self._reward_pose(data.qpos[7:7+12]),
             "base_height":      self._cost_base_height(data),
             "treadmill_drift":  self._reward_treadmill_drift(drift_xy),
+            # Pose-track rewards. Targets: pos=(0,0,0.275), orient=identity (upvec=+z).
+            "pose_pos_track":    self._reward_pose_pos_track(base_pos_world),
+            "pose_orient_track": self._reward_pose_orient_track(self.get_upvector(data)),
         }
         rewards = {k: v * self._config.reward_config.scales[k] for k, v in rewards.items()}
         reward = jp.clip(sum(rewards.values()) * self.dt, 0.0, 10000.0)
@@ -665,3 +690,15 @@ class Go2WarpSplitbeltEnv(go2_warp_base.Go2WarpEnv):
         wL = self._config.treadmill_drift_lateral_weight
         wF = self._config.treadmill_drift_forward_weight
         return -(wL * jp.square(drift_xy[1]) + wF * jp.square(drift_xy[0]))
+
+    # ── Pose-track rewards (used by pose_track obs_mode) ──────────────────
+
+    def _reward_pose_pos_track(self, base_pos_world):
+        """Exp kernel on world-frame position error from target (0, 0, 0.275)."""
+        target = jp.array([0.0, 0.0, 0.275])
+        err_sq = jp.sum(jp.square(base_pos_world - target))
+        return jp.exp(-err_sq / 0.1)  # sigma=0.1 → drops to 0.37 at 0.32m error
+
+    def _reward_pose_orient_track(self, upvector):
+        """Cosine similarity with world-up. 1 = perfectly upright, 0 = sideways."""
+        return jp.maximum(upvector[2], 0.0)

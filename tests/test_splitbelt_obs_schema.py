@@ -7,7 +7,7 @@ import pytest
 from jax_rl.envs.locomotion.go2_warp_splitbelt import obs_term_names
 
 
-_VALID_MODES = ("blind", "informed", "error", "history")
+_VALID_MODES = ("blind", "informed", "error", "history", "pose_track")
 
 
 @pytest.mark.parametrize("obs_mode", _VALID_MODES)

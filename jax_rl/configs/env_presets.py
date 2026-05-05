@@ -393,6 +393,16 @@ FAST_SAC_PRESETS["Go2WarpSplitbelt"] = (
                         episode_length=1250, reset_mode="per_step"),
     _FAST_SAC_BASE_ALGO,
 )
+FAST_SAC_PRESETS["Go2WarpSplitbeltDR"] = (
+    dataclasses.replace(_FAST_SAC_BASE_CFG, env_name="Go2WarpSplitbeltDR",
+                        episode_length=1250, reset_mode="per_step"),
+    _FAST_SAC_BASE_ALGO,
+)
+FAST_SAC_PRESETS["Go2WarpSplitbeltPoseDR"] = (
+    dataclasses.replace(_FAST_SAC_BASE_CFG, env_name="Go2WarpSplitbeltPoseDR",
+                        episode_length=1250, reset_mode="per_step"),
+    _FAST_SAC_BASE_ALGO,
+)
 
 # (MuJoCo Warp Push{T,L,Circle,Plus} presets removed 2026-04-20 —
 # `push_env.py` was junk, cross-shape work moved to vendored gym-pusht.)

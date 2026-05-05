@@ -134,6 +134,28 @@ def _register_custom_envs():
             functools.partial(Go2WarpSplitbeltEnv, task="splitbelt_dr"),
             _splitbelt_dr_default_config,
         )
+    # Pose-track + DR variant: actor sees world-frame body pose (idealized,
+    # NOT real-robot deployable). Belt speed DR via random_per_episode.
+    # Reward = pose-position + pose-orientation tracking (treadmill_drift dropped).
+    def _splitbelt_pose_dr_default_config():
+        cfg = splitbelt_default_config()
+        cfg.obs_mode = "pose_track"
+        cfg.schedule_kind = "random_per_episode"
+        cfg.schedule_params = config_dict.create(
+            v_range=(0.3, 1.5),
+            ratio_range=(0.5, 2.0),
+        )
+        # Swap reward: drop treadmill_drift, enable pose-track terms.
+        cfg.reward_config.scales.treadmill_drift = 0.0
+        cfg.reward_config.scales.pose_pos_track = 5.0
+        cfg.reward_config.scales.pose_orient_track = 2.0
+        return cfg
+    if "Go2WarpSplitbeltPoseDR" not in pg_locomotion._envs:
+        pg_locomotion.register_environment(
+            "Go2WarpSplitbeltPoseDR",
+            functools.partial(Go2WarpSplitbeltEnv, task="splitbelt_pose_dr"),
+            _splitbelt_pose_dr_default_config,
+        )
 
     # (MuJoCo Warp PushEnv removed 2026-04-20 — replaced by vendored pymunk
     # gym-pusht (`jax_rl/envs/manipulation/pusht/`) for cross-shape work.)
