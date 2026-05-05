@@ -364,10 +364,11 @@ class Go2WarpSplitbeltEnv(go2_warp_base.Go2WarpEnv):
             params=dict(self._config.schedule_params),
         )
 
-        # qvel: zeros for legs + base; belts pre-seeded to schedule[0].
+        # qvel: zeros for legs + base; belts pre-seeded to -schedule[0]
+        # (negate to match step convention — see step() comment on belt direction).
         qvel = jp.zeros(self.mjx_model.nv)
-        qvel = qvel.at[self._left_belt_dofadr].set(schedule_table[0, 0])
-        qvel = qvel.at[self._right_belt_dofadr].set(schedule_table[0, 1])
+        qvel = qvel.at[self._left_belt_dofadr].set(-schedule_table[0, 0])
+        qvel = qvel.at[self._right_belt_dofadr].set(-schedule_table[0, 1])
 
         # Build initial mjx data (joystick precedent).
         data = mjx_env.make_data(
@@ -436,6 +437,14 @@ class Go2WarpSplitbeltEnv(go2_warp_base.Go2WarpEnv):
         leg_a2j = self._leg_act_to_joint
         leg_act_ids = self._leg_act_ids
 
+        # Belt convention (biomech): schedule v > 0 means belt DRAGS foot BACKWARD
+        # at speed v. Robot faces +x; backward drag = belt slab moves in -x. Slide
+        # joint axis is +x, so we negate ctrl to map (positive schedule speed) →
+        # (negative joint velocity) → (slab moves -x) → (foot dragged backward).
+        # Spec §3.4: cmd=0 + backward drag → robot steps forward to stay over
+        # treadmill center in world frame.
+        belt_ctrl = -belt_vel_target
+
         def substep(data, _):
             current_q = data.qpos[7:7+12]
             current_dq = data.qvel[6:6+12]
@@ -443,8 +452,8 @@ class Go2WarpSplitbeltEnv(go2_warp_base.Go2WarpEnv):
             tau_joint = self._apply_torque_speed_limit(tau_joint, current_dq)
             leg_ctrl = tau_joint[leg_a2j]
             full_ctrl = data.ctrl.at[leg_act_ids].set(leg_ctrl)
-            full_ctrl = full_ctrl.at[self._left_belt_ctrl_idx].set(belt_vel_target[0])
-            full_ctrl = full_ctrl.at[self._right_belt_ctrl_idx].set(belt_vel_target[1])
+            full_ctrl = full_ctrl.at[self._left_belt_ctrl_idx].set(belt_ctrl[0])
+            full_ctrl = full_ctrl.at[self._right_belt_ctrl_idx].set(belt_ctrl[1])
             data = data.replace(ctrl=full_ctrl)
             return mjx.step(model, data), None
 

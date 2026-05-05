@@ -37,7 +37,12 @@ def test_single_step_no_nan(env, rng):
 
 
 def test_belt_qvel_matches_schedule(env, rng):
-    """Schedule plumbing: belt joint qvel after one step matches schedule_table[0]."""
+    """Schedule plumbing: belt joint qvel after one step matches -schedule_table[0].
+
+    Joint qvel is NEGATED relative to schedule because schedule semantics is
+    "drag speed" (biomech) — positive value = belt drags foot backward — so
+    the slide-joint along +x has qvel = -schedule_speed (slab moves -x).
+    """
     state = env.reset(rng)
     action = jnp.zeros((env._action_dim,))
     state2 = env.step(state, action)
@@ -45,8 +50,8 @@ def test_belt_qvel_matches_schedule(env, rng):
     actual_left = state2.data.qvel[env._left_belt_dofadr]
     actual_right = state2.data.qvel[env._right_belt_dofadr]
     # 10% tolerance for one-step transient (kv=200 should achieve this).
-    assert jnp.abs(actual_left - schedule_step0[0]) < 0.1
-    assert jnp.abs(actual_right - schedule_step0[1]) < 0.1
+    assert jnp.abs(actual_left - (-schedule_step0[0])) < 0.1
+    assert jnp.abs(actual_right - (-schedule_step0[1])) < 0.1
 
 
 def test_off_belt_termination(env, rng):
