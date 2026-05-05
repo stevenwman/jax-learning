@@ -61,6 +61,7 @@ ENV_DEFAULTS = {
     "HumanoidWalk":     ((256, 256), "side"),
     "HumanoidStand":    ((256, 256), "side"),
     "Go2WarpJoystickFlat": ((480, 480), None),  # no named camera — use free cam
+    "Go2WarpSplitbelt":    ((640, 480), "splitbelt_side"),  # fixed cam — robot stays put
 }
 
 
@@ -280,7 +281,8 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
            force_zero_linvel: bool = False,
            force_zero_yaw: bool = False,
            skill_index: int | None = None,
-           skill_vector: str | None = None):
+           skill_vector: str | None = None,
+           no_early_term: bool = False):
 
     # ── Load checkpoint ───────────────────────────────────────────────────
     algo_type = "ppo"  # default
@@ -517,9 +519,14 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
             if splitbelt_belt_schedule is None and 'belt_schedule' in info:
                 splitbelt_belt_schedule = np.asarray(info['belt_schedule'])
         if float(state_i.done) > 0.5:
-            num_frames = i + 1
-            print(f"Episode ended at step {num_frames}")
-            break
+            if no_early_term:
+                # Keep rolling — let the user see HOW it fails (post-failure dynamics
+                # are informative). Auto-reset wrapper will respawn the env.
+                pass
+            else:
+                num_frames = i + 1
+                print(f"Episode ended at step {num_frames}")
+                break
     t_rollout = time.time() - t0
     print(f"Rollout done: {num_frames} steps in {t_rollout:.2f}s (includes JIT compilation)")
 
@@ -764,6 +771,10 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Fixed skill index for skill-discovery checkpoints (one-hot)")
     parser.add_argument("--skill-vector", type=str, default=None,
                         help="Path to .csv/.npy with explicit skill vector")
+    parser.add_argument("--no-early-term", action="store_true",
+                        help="Don't break the rollout when env emits done=True. "
+                             "Keep rolling so the user can see the failure mode "
+                             "(post-fall dynamics, off-belt slide, etc.).")
     return parser
 
 
@@ -783,4 +794,5 @@ if __name__ == "__main__":
         force_zero_yaw=args.force_zero_yaw,
         skill_index=args.skill_index,
         skill_vector=args.skill_vector,
+        no_early_term=args.no_early_term,
     )

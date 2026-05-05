@@ -7,14 +7,30 @@
 
   <option timestep="0.004"/>
 
+  <asset>
+    <!-- Checker textures so belt motion is visible at render time. Different
+         hues per side so visual side identification is unambiguous. -->
+    <texture name="left_belt_tex"  type="2d" builtin="checker" rgb1="0.25 0.45 0.65" rgb2="0.15 0.30 0.45"
+             width="64" height="512"/>
+    <texture name="right_belt_tex" type="2d" builtin="checker" rgb1="0.65 0.40 0.30" rgb2="0.45 0.25 0.20"
+             width="64" height="512"/>
+    <material name="left_belt_mat"  texture="left_belt_tex"  texrepeat="200 4" specular="0.1" shininess="0.1"/>
+    <material name="right_belt_mat" texture="right_belt_tex" texrepeat="200 4" specular="0.1" shininess="0.1"/>
+  </asset>
+
   <default>
     <default class="treadmill_belt">
-      <geom type="box" rgba="0.3 0.3 0.35 1" friction="1.0 0.005 0.0001"/>
+      <geom type="box" friction="1.0 0.005 0.0001"/>
       <joint type="slide" axis="1 0 0" damping="0" frictionloss="0"/>
     </default>
   </default>
 
   <worldbody>
+    <!-- Lighting — render scene was darker than joystick scene. Add overhead
+         + fill lights so the robot + belt textures read clearly on video. -->
+    <light name="overhead"   pos="0 0 3.0"   dir="0 0 -1"  diffuse="0.7 0.7 0.7"  specular="0.2 0.2 0.2"/>
+    <light name="fill_front" pos="2 0 1.5"   dir="-1 0 -0.5" diffuse="0.3 0.3 0.3"/>
+    <light name="fill_side"  pos="0 2 1.5"   dir="0 -1 -0.5" diffuse="0.3 0.3 0.3"/>
     <!-- Static fallback floor — fills ONLY the gap between belts (y in [-0.025, 0.025])
          and the regions outside belts (|y| > 0.325). Must be a finite BOX, not a plane:
          planes are infinite in MuJoCo, and the floor_found contact sensor would fire
@@ -40,13 +56,13 @@
     <!-- Left belt: y in [-0.325, -0.025], slides along world x. -->
     <body name="left_belt" pos="0 -0.175 0">
       <joint name="left_belt_joint" class="treadmill_belt"/>
-      <geom name="left_belt_geom" class="treadmill_belt" size="25 0.15 0.005"/>
+      <geom name="left_belt_geom" class="treadmill_belt" size="25 0.15 0.005" material="left_belt_mat"/>
     </body>
 
     <!-- Right belt: y in [0.025, 0.325]. -->
     <body name="right_belt" pos="0 0.175 0">
       <joint name="right_belt_joint" class="treadmill_belt"/>
-      <geom name="right_belt_geom" class="treadmill_belt" size="25 0.15 0.005"/>
+      <geom name="right_belt_geom" class="treadmill_belt" size="25 0.15 0.005" material="right_belt_mat"/>
     </body>
   </worldbody>
 

@@ -12,6 +12,13 @@
   <include file="unitree_go2/go2.xml"/>
   <include file="treadmill_splitbelt.xml"/>
 
+  <!-- Fixed cameras for video. Robot supposed to stay stationary, so no tracking. -->
+  <worldbody>
+    <camera name="splitbelt_side"  pos="0 -1.4 0.55" xyaxes="1 0 0  0 0.6 0.8" fovy="55"/>
+    <camera name="splitbelt_front" pos="1.6 0 0.4"   xyaxes="0 -1 0  0 0 1"     fovy="50"/>
+    <camera name="splitbelt_iso"   pos="1.0 -1.0 0.7" xyaxes="0.7 0.7 0  -0.4 0.4 0.8" fovy="55"/>
+  </worldbody>
+
   <!-- Contact filter (S§5.2 + bongo lesson 2026-04-02 — exact contact sensors, not heuristics):
        - feet × {left_belt, right_belt, fallback_floor}
        - base/torso × {left_belt, right_belt, fallback_floor} -->
