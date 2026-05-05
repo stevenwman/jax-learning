@@ -13,6 +13,7 @@ import functools
 
 import jax
 import jax.numpy as jnp
+from ml_collections import config_dict
 
 from mujoco_playground import registry as pg_registry
 from mujoco_playground._src import locomotion as pg_locomotion
