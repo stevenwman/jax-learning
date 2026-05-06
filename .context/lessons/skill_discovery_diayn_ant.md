@@ -14,7 +14,10 @@
 - **A 2D xy plane to render skill trajectories.** Cheetah is planar with no
   lateral/yaw axis; "diversity" reduces to forward-vs-backward velocity which
   looks identical in renders. Ant's torso CoM xy is the canonical DIAYN
-  visualization (Eysenbach 2018, Fig. 4 / App. D.3).
+  visualization (Eysenbach 2018, *Diversity is All You Need* — exact figure
+  number not eyeball-verified against the paper PDF; commonly cited as Fig. 4
+  / App. D.3 but treat as approximate). The figure shape (skills fanning out
+  from origin) is the recognizable artifact, regardless of which appendix.
 - **Two obs variants for side-by-side.** `AntMJXClassic` (no cfrc, 27d) and
   `AntMJX` (with cfrc, 105d). Side-by-side shows the canonical DIAYN-on-rich-obs
   failure mode (discriminator hides skill diffs in tiny contact-force minutiae)
@@ -52,10 +55,32 @@
 | 1 | 1.000 | **z6=+199** | z4=-700 | 900 | 350 (2.6×) | **1.197 m** | 81.8° |
 | 2 | 1.000 | z3=-264 | z1=-1174 | 910 | 587 (1.5×) | 0.673 m | 96.1° |
 
-**Seed 1 is the headline.** z6=+199.6 is the first DIAYN skill across ALL our
-SD-B + Ant runs that produces *positive* task return — meaning that skill
-actually learned to walk forward. max-pairwise 1.197 m vs 0.43/0.67 m on
-seeds 0/2 confirms one trail visibly extends beyond the central cluster.
+**Seed 1 is the headline, but parse it carefully.** Two distinct skills stand
+out for *different* reasons:
+- **z6 = +199.6 task return** (highest), but stays near origin in the figure
+  (pink trail in the central cluster). High return because it stays *healthy*
+  (survive_reward ≈ 1000 over the episode) with low motion → low ctrl/contact
+  costs. This is a *stand-upright/shuffle* skill, NOT a locomotion skill.
+- **z7 = -227 task return** (negative), but visible in the figure as the
+  gray trail extending ~1.4m in the -x direction. Negative return because
+  going backward gives negative forward_reward (the +x bias of the reward).
+  The figure's max-pairwise 1.197m is dominated by this trail.
+
+**Lesson: in Ant, "highest task return" and "biggest xy displacement" can
+be opposite skills.** Ant's reward = `forward (+x bias) + survive − ctrl
+− contact`. Survive dominates if the policy stays healthy; forward only
+helps if motion is in the +x direction. A skill can travel far in -x and
+get heavily penalized; another skill can stand still and reap survive_reward.
+
+(CheetahRun seeds 0-2 also had positive-return skills, e.g. seed 2 z7=48.2,
+but Cheetah's reward is dominated by forward velocity with only tiny
+penalties; positive return there ≈ "running forward". Not directly
+comparable to Ant's positive-return-can-mean-standing-still pattern.)
+
+For DIAYN-paper-canonical "skills moving in different directions", z7's
+1.4m trail IS the kind of legible diversity the paper shows — even though
+it's penalized by the task reward. The visual gate (xy-spread) measures
+that geometric diversity, divorced from task return.
 
 ### AntMJX (105d, with cfrc) — seed 0 only
 
@@ -103,6 +128,35 @@ star marker at origin. Numerical gate prints + emits PASS/FAIL.
 calling `mjx.step` per iteration cause Warp contact-buffer OOMs because
 allocations don't get pooled. JIT the entire `rollout_length` scan and a
 single Warp graph compilation handles all steps.
+
+## §5b. Visual-gate caveats (what the gate is + isn't measuring)
+
+- **`lax.scan` runs full `rollout_length` regardless of `state.done`.** Ant's
+  `step()` does NOT auto-reset on done — it keeps stepping the unhealthy/
+  fallen state through MJX. Post-fall xy can drift, so the recorded
+  "endpoint" may be a drifted-after-fall pose. For our 500-step rollouts,
+  trails are sub-meter (≤1.4m) over 25s = ~5 cm/s avg — clearly NOT
+  locomotion-pace. The gate measures "8 directions to fall in" rather
+  than "locomotion diversity". Both are legible diversity signals but the
+  semantic is different from DIAYN paper Fig 4 (which used full
+  TimeLimit-truncated episodes after extensive training).
+- **`np.arctan2(y, x)` is endpoint-azimuth, not policy-yaw.** The gate
+  captures angular spread of where skills end up relative to origin, NOT
+  where the agent is facing. Skills that "go in different directions" on
+  the figure means their endpoints are spread around the unit circle, not
+  necessarily that the ant's body is yaw-rotated differently.
+- **Visual gate is divorced from task return.** Seed 1's max-pairwise comes
+  from z7 (negative-return backward shuffle), not from z6 (highest return,
+  stand-upright). Don't conflate gate-PASS with "skills locomote".
+- **`norm_state` is loaded but not threaded.** `plot_skill_xy.py` unpacks the
+  4-tuple from `load_actor_for_inference` but ignores `norm_state`. Current
+  Ant DIAYN ckpts have `obs_normalization=False` so it's benign. Latent
+  silent-failure for any future ckpt trained with `--obs-norm`. Fix: add
+  `from jax_rl.utils.normalization import normalize as norm_normalize` and
+  apply to `state.obs` before passing into the wrapped algo.
+- **`actor_batch_stats` is silently discarded** (4th tuple element from
+  `load_actor_for_inference`). FlashSAC ckpts with BN would silently fail.
+  Out of scope for SAC-only DIAYN ckpts; flag if extending.
 
 ## §6. Engineering gotchas (don't lose 1h to these again)
 
