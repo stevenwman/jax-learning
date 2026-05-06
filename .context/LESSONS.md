@@ -88,6 +88,17 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **DIAYN wall-clock per seed (RTX 5080 + Warp + 8 skills + 1M)** — ~27.5 min, 2-3 SAC grad updates per env step at 128 envs / 8 grad_updates_per_step.
 - **When SD-D/E (METRA, D3, DUSDi) reduces this collapse, that's the win** — contrast against this entry for any future method comparison. >5 of 8 skills behaviorally active = real improvement over DIAYN baseline.
 
+## [Skill Discovery (DIAYN on Ant — MJX/Warp port)](lessons/skill_discovery_diayn_ant.md) — 8 lessons
+
+- **AntMJXClassic (27d, no cfrc) closes the visual diversity gate; v5 (105d, +cfrc) doesn't** — 3/3 Classic seeds PASS the numerical xy gate (max-pairwise > 3 m OR circular heading-std > 30°) via heading. v5 still passes via heading-std but tighter xy spread (0.25 m vs 0.43-1.20 m).
+- **Richer obs lets the discriminator hide skill diffs in cfrc minutiae** — DIAYN with 105d obs hits DiscA 0.95+ without skills moving meaningfully. Removing cfrc forces motion-based discriminability. Strong evidence for the canonical-DIAYN-limit hypothesis.
+- **Seed 1 of Classic produced positive-locomotion skill** — z6=+199.6 task return, max-pairwise 1.197 m. First DIAYN skill across all SD-B + Ant runs that actually walks forward. Rare but reproducible: DIAYN can locomotion when seed lands in right basin.
+- **`<framelinacc>` sensor required in ant.xml for cfrc_ext on MJX/Warp** — without an accel/force/torque/framelinacc/frameangacc sensor present, MJX skips `rne_postconstraint` and cfrc_ext is identically zero. Sensor value unused; only its presence matters.
+- **`XLA_PYTHON_CLIENT_PREALLOCATE=false` for AntMJX, NOT `XLA_CLIENT_MEM_FRACTION=0.55`** — RK4 + Warp PTX module load OOMs at 0.55. Disabling preallocation lets Warp load lazily. Per-env knob; CheetahRun MEM_FRACTION still works.
+- **bg-bash dies on session resume (SIGHUP)** — first Classic 1M ghost-completed with 0-byte log + no ckpt. Verify by filesystem (log size, ckpt timestamp, GPU mem usage) — don't trust runtime completion notifications across resumes. Stay in session OR `setsid`/`nohup` for long runs.
+- **Use circular std for heading data, not linear `np.std(arctan2(...))`** — linear std treats +179° and -179° as 358° apart instead of 2°. Circular std from resultant length R: `sqrt(-2 ln R)`.
+- **lax.scan the xy rollout, don't Python-loop env.step** — per `lessons/warp.md`, Python loops calling `mjx.step` per iteration cause Warp contact-buffer OOMs because allocations don't get pooled. JIT the entire rollout scan.
+
 ## [Determinism (JAX/XLA + GPU Physics)](lessons/determinism.md) — bit-ID limits
 
 - **JAX/XLA algo bit-ID** with `XLA_FLAGS=--xla_gpu_deterministic_ops=true` (verified via `scripts/check_tdmpc2_determinism.py`)

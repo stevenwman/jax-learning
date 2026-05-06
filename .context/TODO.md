@@ -545,9 +545,8 @@ All commands prefix with `XLA_CLIENT_MEM_FRACTION=0.55` (default 0.7 OOMs at eva
 - [x] Phase 5.0 resume guard — PASS (5K ckpt + resume; current_z fresh, no NaN; both runs below min_buffer so disc_loss-equivalence moot)
 - [x] Phase 5.1 10K smoke (seed 0) — PASS (120 grad updates, skill diversity emerging, no NaN)
 - [x] Phase 5.2 100K validation (seed 0) — PASS (DiscA 0.199→0.480, gate 0.225 cleared by 70K, ckpt `20260503_102424_*`, log `.temp/logs/sd_b_phase_5_2_seed0_100k.log`, 165s wall-clock)
-- [x] Phase 5.3 1M × 3 seeds — Gate 1 PASS all 3 seeds (per-skill spread > 0.5× max-skill mean); Gate 2 (video diversity) DEFERRED to Ant (CheetahRun visually ambiguous; lesson `lessons/skill_discovery_diayn_cheetah.md`). Ckpts: `20260503_104453_*`, `20260503_111229_*`, `20260503_113956_*`. Total wall-clock 1h22m serial.
-
-**Future / nice-to-have:** Ant xy-trajectory headline figure (DIAYN App. D.3-style canonical visual). Two routes: (a) CPU Gym Ant-v5 via existing `gym_backend.py:200` for one-shot figure generation; (b) port ant.xml → MJX env if we need fast Ant repeatedly. Prefer (a). Don't pull in Brax — single env doesn't justify a third backend lib. **Now elevated from "nice-to-have" to "explicit visual-gate dependency" for SD-B since CheetahRun didn't deliver legible diversity.**
+- [x] Phase 5.3 1M × 3 seeds — Gate 1 PASS all 3 seeds (per-skill spread > 0.5× max-skill mean); Gate 2 (visual diversity) **CLOSED via AntMJX port (2026-05-05)**. CheetahRun ckpts: `20260503_104453_*`, `20260503_111229_*`, `20260503_113956_*`. Total wall-clock 1h22m serial.
+- [x] **Ant MJX port (closes Gate 2)** — AntMJXClassic (27d) + AntMJX (105d) variants ported to MJX/Warp. 3/3 Classic seeds PASS numerical visual gate (max-pairwise > 3m OR circular heading-std > 30°). Seed 1 z6=+199.6 (first positive-locomotion DIAYN skill). Headlines: `.context/figures/ant_classic_diayn_3seeds.png` + `.context/figures/ant_classic_vs_v5_seed0.png`. Lesson: `lessons/skill_discovery_diayn_ant.md`. Plan: `.superpowers/plans/2026-05-03-ant-mjx-port.md`.
 
 ### SD-C: Go2 DIAYN with deployable obs
 - [ ] Target `Go2WarpJoystickUnitree` (45d hardware-conservative obs, action_scale=0.25)
