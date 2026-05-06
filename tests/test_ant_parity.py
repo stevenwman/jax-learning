@@ -23,8 +23,16 @@ N_STEPS = 5
 ACTION_SCALE = 0.3
 
 
+# Note on matched-pair semantics: gym seeds trajectory t with seed=t (line 74)
+# while MJX seeds with `jax.random.split(PRNGKey(0), n_traj)[t]`. Per-trajectory
+# init states are therefore NOT bit-identical between backends — both are random
+# samples from the same reset_noise distribution, so distributional asserts
+# (mean / std over n=200) are valid. Do not interpret per-trajectory alignment.
+
+
 def _make_action_sequence(n_traj: int, n_steps: int, seed: int) -> np.ndarray:
-    """Same actions for both backends — keeps parity comparison sound."""
+    """Same actions for both backends — keeps parity comparison sound at the
+    distributional level. Per-trajectory init differs (see note above)."""
     rng = np.random.default_rng(seed)
     return rng.uniform(
         -ACTION_SCALE, ACTION_SCALE, size=(n_traj, n_steps, 8)
@@ -173,6 +181,20 @@ def test_reward_component_distributions_match():
                 f"{k} mean abs-err {abs_err:.4f} > {tol}: "
                 f"gym={g.mean():.4f} mjx={m.mean():.4f}"
             )
+
+    # Sign sanity for forward_reward: catches a forward_reward sign flip even
+    # at small actions where the abs-tolerance is permissive. Only assert when
+    # BOTH means are well above the standard-error noise floor (~0.03 at
+    # ACTION_SCALE=0.3, N_TRAJ*N_STEPS=1000 samples) — at the action scale we
+    # use, near-zero means in opposite directions are pure sampling noise, NOT
+    # a formula bug. A real sign flip in the forward_reward implementation
+    # would produce mean magnitudes well above 0.10 with consistent sign.
+    g_fwd, m_fwd = gym_rew["forward"].mean(), mjx_rew["forward"].mean()
+    if abs(g_fwd) > 0.10 and abs(m_fwd) > 0.10:
+        assert g_fwd * m_fwd >= 0, (
+            f"forward_reward sign flip between gym and mjx: "
+            f"gym={g_fwd:.4f} mjx={m_fwd:.4f}"
+        )
 
 
 def test_termination_fraction_matches_gym():

@@ -23,6 +23,7 @@ from mujoco_playground._src import mjx_env
 
 from jax_rl.envs.locomotion.ant import Ant, default_config
 from jax_rl.training.checkpointing import load_actor_for_inference
+from jax_rl.utils.normalization import normalize as norm_normalize
 from scripts.record_video import (
     _resolve_skill_vector,
     _SkillWrappedAlgo,
@@ -121,8 +122,35 @@ def main():
     parser.add_argument("--title", type=str, default=None)
     args = parser.parse_args()
 
-    meta, actor_params, norm_state, _ = load_actor_for_inference(args.checkpoint)
+    meta, actor_params, norm_state, actor_batch_stats = load_actor_for_inference(
+        args.checkpoint
+    )
     total_skill_dim = int(meta["skill_discovery"]["total_skill_dim"])
+
+    # FlashSAC checkpoints carry batch_stats; this script doesn't thread them
+    # through select_action. Fail loud rather than producing bogus rollouts.
+    if actor_batch_stats:
+        raise NotImplementedError(
+            f"checkpoint {args.checkpoint} has actor_batch_stats (BN-style "
+            "params); plot_skill_xy.py does not currently thread them. Use "
+            "record_video.py path or extend this script."
+        )
+
+    # Detect whether checkpoint trained with obs normalization. If so, we MUST
+    # normalize the obs before feeding the actor — otherwise rollouts use the
+    # wrong input distribution and silently produce garbage trajectories.
+    train_cfg = meta.get("train_config", {})
+    algo_key = meta.get("algo", "")
+    algo_cfg_block = train_cfg.get(algo_key, {}) if algo_key else {}
+    use_obs_norm = bool(
+        algo_cfg_block.get("obs_normalization", False)
+        or train_cfg.get("obs_normalization", False)
+    )
+    if use_obs_norm and norm_state is None:
+        raise RuntimeError(
+            f"checkpoint {args.checkpoint} has obs_normalization=True but "
+            "no norm_state was loaded — cannot produce correct rollouts."
+        )
 
     env = _make_env_for_ckpt(meta)
     raw_obs_dim = int(env.observation_size)
@@ -145,7 +173,12 @@ def main():
         def rollout_step(carry, _):
             state, key = carry
             key, sub = jax.random.split(key)
-            obs_b = state.obs[None, :]
+            # norm_state is applied to RAW env obs (before _SkillWrappedAlgo
+            # concats skill_z). Mirrors record_video.py:690-691 path.
+            raw_obs = state.obs
+            if use_obs_norm:
+                raw_obs = norm_normalize(norm_state, raw_obs)
+            obs_b = raw_obs[None, :]
             action = wrapped.select_action(actor_params, obs_b, sub, deterministic=True)
             new_state = env.step(state, action[0])
             xy = new_state.data.xpos[main_body_id, :2]
