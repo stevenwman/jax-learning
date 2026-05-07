@@ -78,7 +78,9 @@ def default_config() -> config_dict.ConfigDict:
         sim_dt=0.002,
         episode_length=1000,
         action_repeat=1,
-        action_scale=0.5,
+        # 0.25 from unitree_rl_lab. With knees_bent spawn + alive bonus,
+        # policy doesn't need wide action range early.
+        action_scale=0.25,
         soft_joint_pos_limit_factor=0.95,
         tilt_upvector_threshold=0.5,
         tilt_min_pelvis_z=0.55,
@@ -94,24 +96,45 @@ def default_config() -> config_dict.ConfigDict:
         ),
         reward_config=config_dict.create(
             scales=config_dict.create(
+                # Match unitree_rl_lab/tasks/locomotion/robots/g1/29dof/
+                # velocity_env_cfg.py weights as closely as our reward set
+                # supports. Their full set has gait + feet_slide + undesired_
+                # contacts which we don't implement yet (TODO if needed).
+                # Tracking
                 tracking_lin_vel=1.0,
-                tracking_ang_vel=0.75,
-                ang_vel_xy=-0.15,
-                orientation=-2.0,
-                feet_air_time=2.0,
-                feet_slip=-0.25,
-                stand_still=-1.0,
-                termination=-100.0,
-                joint_deviation_hip=-0.25,
-                joint_deviation_knee=-0.1,
-                dof_pos_limits=-1.0,
+                tracking_ang_vel=0.5,
+                # Survival (per-step bonus, NO big termination cliff —
+                # unitree relies on alive bonus alone, which avoids the
+                # gradient-killing -100 we used in v3/v4).
+                alive=0.15,
+                termination=0.0,
+                # Base motion costs
+                lin_vel_z=-2.0,
+                ang_vel_xy=-0.05,
+                orientation=-5.0,
+                base_height=-10.0,
+                # Smoothness / regularization
+                action_rate=-0.05,
+                dof_pos_limits=-5.0,
+                # Joint deviation (stronger on legs than arms)
+                joint_deviation_hip=-1.0,
+                joint_deviation_knee=-1.0,
                 pose=-0.1,
+                # Feet
+                feet_slip=-0.25,
+                # Dropped (replaced by gait if we add it):
+                # feet_air_time, stand_still, joint_vel, joint_acc, energy
             ),
             tracking_sigma=0.25,
             max_foot_height=0.15,
+            base_height_target=0.755,  # matches knees_bent spawn pelvis_z
         ),
         command_config=config_dict.create(
-            a=[1.0, 0.8, 1.0],
+            # Narrow cmd ranges — early policy learns to STAND (cmd ≈ 0)
+            # before being asked to walk. Mirrors unitree_rl_lab's curriculum
+            # initial cmd range. Once standing trains, we'll expand to
+            # [1.0, 0.5, 0.8] for actual locomotion.
+            a=[0.1, 0.1, 0.1],
             b=[0.9, 0.25, 0.5],
         ),
         impl="warp",
@@ -302,30 +325,38 @@ class G1WarpJoystick(mjx_env.MjxEnv):
         }
 
         self._reward_spec = [
+            # Tracking
             RewardTerm("tracking_lin_vel", lambda data, info, **kw:
                 self._reward_tracking_lin_vel(info["command"], self.get_local_linvel(data))),
             RewardTerm("tracking_ang_vel", lambda data, info, **kw:
                 self._reward_tracking_ang_vel(info["command"], self.get_gyro(data))),
+            # Survival
+            RewardTerm("alive", lambda done, **kw: 1.0 - done.astype(jp.float32)),
+            RewardTerm("termination", lambda done, **kw: self._cost_termination(done)),
+            # Base motion
+            RewardTerm("lin_vel_z", lambda data, **kw:
+                self._cost_lin_vel_z(self.get_global_linvel(data))),
             RewardTerm("ang_vel_xy", lambda data, **kw:
                 self._cost_ang_vel_xy(self.get_global_angvel(data))),
             RewardTerm("orientation", lambda data, **kw:
                 self._cost_orientation(self.get_upvector(data))),
+            RewardTerm("base_height", lambda data, **kw:
+                self._cost_base_height(data)),
+            # Smoothness
+            RewardTerm("action_rate", lambda action, info, **kw:
+                self._cost_action_rate(action, info["last_act"], info["last_last_act"])),
             RewardTerm("dof_pos_limits", lambda data, **kw:
                 self._cost_joint_pos_limits(data.qpos[7:])),
-            RewardTerm("feet_air_time", lambda info, first_contact, **kw:
-                self._reward_feet_air_time(info["feet_air_time"], first_contact, info["command"])),
-            RewardTerm("feet_slip", lambda data, contact, info, **kw:
-                self._cost_feet_slip(data, contact, info)),
-            RewardTerm("termination", lambda done, **kw:
-                self._cost_termination(done)),
-            RewardTerm("stand_still", lambda data, info, **kw:
-                self._cost_stand_still(info["command"], data.qpos[7:])),
+            # Joint deviation
             RewardTerm("joint_deviation_hip", lambda data, info, **kw:
                 self._cost_joint_deviation_hip(data.qpos[7:], info["command"])),
             RewardTerm("joint_deviation_knee", lambda data, **kw:
                 self._cost_joint_deviation_knee(data.qpos[7:])),
             RewardTerm("pose", lambda data, **kw:
                 self._cost_pose(data.qpos[7:])),
+            # Feet
+            RewardTerm("feet_slip", lambda data, contact, info, **kw:
+                self._cost_feet_slip(data, contact, info)),
         ]
 
     # ── Domain randomization ──────────────────────────────────────────
@@ -598,6 +629,12 @@ class G1WarpJoystick(mjx_env.MjxEnv):
     def _cost_joint_deviation_knee(self, qpos):
         error = qpos[self._knee_indices] - self._default_pose[self._knee_indices]
         return jp.sum(jp.abs(error))
+
+    def _cost_base_height(self, data):
+        """Penalize squared deviation from target pelvis height. Strong
+        signal to stay tall (unitree weights this -10)."""
+        z = data.subtree_com[self._pelvis_body_id][2]
+        return jp.square(z - self._config.reward_config.base_height_target)
 
     # ── Command sampling (same Markov-chain pattern as Go2) ─────────────
 
