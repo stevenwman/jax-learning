@@ -4,6 +4,18 @@ This file is repo-wide / cross-project only. Per-project TODOs:
 - Adaptation (splitbelt): `projects/adaptation/TODO.md`
 - Skill discovery: `projects/skill-discovery/` (check that folder)
 
+## Parked — DrQ-v2 vision RL port (Phase A)
+
+Brainstormed + audited 2026-04-27, set down to focus elsewhere.
+Pick-up notes: `.context/references/drqv2_phase_a_handoff.md`. Doc
+contains scope decision, audit findings (replay buffer is float32-only,
+no pixel bundle path, no make_encoder factory), algo-port-protocol
+implications, validation targets, and a paste-ready brainstorm args
+block. Resume by re-running the audit checks at the bottom of the
+handoff doc, then invoking superpowers:brainstorming.
+
+Phase B (DrM) sits behind Phase A; same handoff doc covers it.
+
 ## Completed (2026-04-28) — Go2 deploy contract self-describing + action_scale ablation
 
 Closed codex-audit P0 findings on deploy-contract drift. Single source of
