@@ -61,17 +61,27 @@ _KD_PER_ACTUATOR = (
 
 
 def default_config() -> config_dict.ConfigDict:
+    """G1 joystick config — recipe ported from mujoco_playground/g1/joystick.py.
+
+    Key points:
+    - Spawn from `knees_bent` keyframe (half-squat) — more stable than rigid
+      `home` for SAC random-sigma exploration on a humanoid.
+    - Reward weights: tracking 1.0/0.75 (small), termination -100 (huge "don't
+      fall" gradient), pose -0.1 (cost form), joint_deviation_hip -0.25,
+      joint_deviation_knee -0.1.
+    - Most regularization (torques, action_rate, energy, feet_clearance, etc.)
+      set to 0 — playground found these unnecessary or harmful early.
+    - sim_dt=0.002 (10 substeps per ctrl_dt 0.02) for finer humanoid contact.
+    """
     return config_dict.create(
         ctrl_dt=0.02,
-        sim_dt=0.005,
+        sim_dt=0.002,
         episode_length=1000,
         action_repeat=1,
         action_scale=0.5,
         soft_joint_pos_limit_factor=0.95,
-        # Tilt termination: humanoid is more sensitive than quadruped.
         tilt_upvector_threshold=0.5,
         tilt_min_pelvis_z=0.55,
-        target_pelvis_z=0.78,
         noise_config=config_dict.create(
             level=1.0,
             scales=config_dict.create(
@@ -84,30 +94,24 @@ def default_config() -> config_dict.ConfigDict:
         ),
         reward_config=config_dict.create(
             scales=config_dict.create(
-                tracking_lin_vel=10.0,
-                tracking_ang_vel=5.0,
-                lin_vel_z=-0.5,
-                ang_vel_xy=-0.05,
-                orientation=-5.0,
-                torques=-0.0001,
-                action_rate=-0.01,
-                energy=-0.0005,
+                tracking_lin_vel=1.0,
+                tracking_ang_vel=0.75,
+                ang_vel_xy=-0.15,
+                orientation=-2.0,
+                feet_air_time=2.0,
+                feet_slip=-0.25,
+                stand_still=-1.0,
+                termination=-100.0,
+                joint_deviation_hip=-0.25,
+                joint_deviation_knee=-0.1,
                 dof_pos_limits=-1.0,
-                feet_air_time=0.5,
-                feet_slip=-0.1,
-                feet_clearance=-1.0,
-                feet_height=-0.2,
-                termination=-1.0,
-                stand_still=-0.5,
-                pose=0.5,
-                base_height=-5.0,
+                pose=-0.1,
             ),
             tracking_sigma=0.25,
-            max_foot_height=0.15,  # taller than Go2's 0.10
+            max_foot_height=0.15,
         ),
         command_config=config_dict.create(
-            # Smaller cmd ranges than Go2 — humanoid is slower/less stable.
-            a=[1.0, 0.6, 0.8],
+            a=[1.0, 0.8, 1.0],
             b=[0.9, 0.25, 0.5],
         ),
         impl="warp",
@@ -232,8 +236,28 @@ class G1WarpJoystick(mjx_env.MjxEnv):
     # ── Init helpers ──────────────────────────────────────────────────
 
     def _post_init(self) -> None:
-        self._init_q = jp.array(self._mj_model.keyframe("home").qpos)
-        self._default_pose = jp.array(self._mj_model.keyframe("home").qpos[7:])
+        # Spawn from knees_bent (half-squat) — playground recipe. Stable
+        # initial pose under random exploration; switching from "home" was
+        # what made the difference between 0.1 eval and any actual learning.
+        self._init_q = jp.array(self._mj_model.keyframe("knees_bent").qpos)
+        self._default_pose = jp.array(self._mj_model.keyframe("knees_bent").qpos[7:])
+
+        # Hip / knee joint indices in qpos[7:]. Used by joint_deviation costs.
+        # (Hip pitch is excluded — its deviation is OK for stride.)
+        hip_indices = []
+        for side in ["left", "right"]:
+            for jname in ["hip_roll", "hip_yaw"]:
+                hip_indices.append(
+                    self._mj_model.joint(f"{side}_{jname}_joint").qposadr[0] - 7
+                )
+        self._hip_indices = jp.array(hip_indices)
+
+        knee_indices = []
+        for side in ["left", "right"]:
+            knee_indices.append(
+                self._mj_model.joint(f"{side}_knee_joint").qposadr[0] - 7
+            )
+        self._knee_indices = jp.array(knee_indices)
         if self._default_pose.shape != (consts.NUM_ACTUATORS,):
             raise RuntimeError(
                 f"default_pose shape {self._default_pose.shape} != "
@@ -282,36 +306,26 @@ class G1WarpJoystick(mjx_env.MjxEnv):
                 self._reward_tracking_lin_vel(info["command"], self.get_local_linvel(data))),
             RewardTerm("tracking_ang_vel", lambda data, info, **kw:
                 self._reward_tracking_ang_vel(info["command"], self.get_gyro(data))),
-            RewardTerm("lin_vel_z", lambda data, **kw:
-                self._cost_lin_vel_z(self.get_global_linvel(data))),
             RewardTerm("ang_vel_xy", lambda data, **kw:
                 self._cost_ang_vel_xy(self.get_global_angvel(data))),
             RewardTerm("orientation", lambda data, **kw:
                 self._cost_orientation(self.get_upvector(data))),
-            RewardTerm("torques", lambda data, **kw:
-                self._cost_torques(data.actuator_force)),
-            RewardTerm("action_rate", lambda action, info, **kw:
-                self._cost_action_rate(action, info["last_act"], info["last_last_act"])),
-            RewardTerm("energy", lambda data, **kw:
-                self._cost_energy(data.qvel[6:], data.actuator_force)),
             RewardTerm("dof_pos_limits", lambda data, **kw:
                 self._cost_joint_pos_limits(data.qpos[7:])),
             RewardTerm("feet_air_time", lambda info, first_contact, **kw:
                 self._reward_feet_air_time(info["feet_air_time"], first_contact, info["command"])),
             RewardTerm("feet_slip", lambda data, contact, info, **kw:
                 self._cost_feet_slip(data, contact, info)),
-            RewardTerm("feet_clearance", lambda data, **kw:
-                self._cost_feet_clearance(data)),
-            RewardTerm("feet_height", lambda info, first_contact, **kw:
-                self._cost_feet_height(info["swing_peak"], first_contact, info)),
             RewardTerm("termination", lambda done, **kw:
                 self._cost_termination(done)),
             RewardTerm("stand_still", lambda data, info, **kw:
                 self._cost_stand_still(info["command"], data.qpos[7:])),
+            RewardTerm("joint_deviation_hip", lambda data, info, **kw:
+                self._cost_joint_deviation_hip(data.qpos[7:], info["command"])),
+            RewardTerm("joint_deviation_knee", lambda data, **kw:
+                self._cost_joint_deviation_knee(data.qpos[7:])),
             RewardTerm("pose", lambda data, **kw:
-                self._reward_pose(data.qpos[7:])),
-            RewardTerm("base_height", lambda data, **kw:
-                self._cost_base_height(data)),
+                self._cost_pose(data.qpos[7:])),
         ]
 
     # ── Domain randomization ──────────────────────────────────────────
@@ -440,7 +454,11 @@ class G1WarpJoystick(mjx_env.MjxEnv):
             k: v * self._config.reward_config.scales[k]
             for k, v in rewards.items()
         }
-        reward = jp.clip(sum(rewards.values()) * self.dt, 0.0, 10000.0)
+        # NO lower clip — termination=-100 (with -1 done weight = -100 reward
+        # at fall-step) MUST propagate as a negative gradient. The Go2 pattern
+        # of clip(0, 10000) silently kills the termination penalty; without
+        # this fix policy sees fall == "0 reward" same as standing-still.
+        reward = sum(rewards.values()) * self.dt
         state.info["reward_components"] = rewards
 
         # Update command resampling + housekeeping.
@@ -561,22 +579,25 @@ class G1WarpJoystick(mjx_env.MjxEnv):
         cmd_norm = jp.linalg.norm(commands)
         return jp.sum(jp.abs(qpos - self._default_pose)) * (cmd_norm < 0.01)
 
-    def _reward_pose(self, qpos):
-        # Weight legs and waist more (must be functional); arms allowed to drift
-        # more. Order matches consts.ACTUATOR_NAMES.
-        weight = jp.array(
-            # Legs (12)
-            [1.0] * 12 +
-            # Waist (3)
-            [1.0] * 3 +
-            # Arms (14): low weight so arms don't dominate the cost
-            [0.1] * 14
-        )
-        return jp.exp(-jp.sum(jp.square(qpos - self._default_pose) * weight))
+    def _cost_pose(self, qpos):
+        """Penalize squared deviation from default pose. Cost form (negative
+        reward via -0.1 weight in config). Playground recipe."""
+        return jp.sum(jp.square(qpos - self._default_pose))
 
-    def _cost_base_height(self, data):
-        z = data.subtree_com[self._pelvis_body_id][2]
-        return jp.square(z - self._config.target_pelvis_z)
+    def _cost_joint_deviation_hip(self, qpos, cmd):
+        """Per-side hip roll/yaw deviation. Allows roll deviation when lateral
+        cmd is high (lets the robot lean into a sideways step)."""
+        error = qpos[self._hip_indices] - self._default_pose[self._hip_indices]
+        weight = jp.where(
+            cmd[1] > 0.1,
+            jp.array([0.0, 1.0, 0.0, 1.0]),
+            jp.array([1.0, 1.0, 1.0, 1.0]),
+        )
+        return jp.sum(jp.abs(error) * weight)
+
+    def _cost_joint_deviation_knee(self, qpos):
+        error = qpos[self._knee_indices] - self._default_pose[self._knee_indices]
+        return jp.sum(jp.abs(error))
 
     # ── Command sampling (same Markov-chain pattern as Go2) ─────────────
 
