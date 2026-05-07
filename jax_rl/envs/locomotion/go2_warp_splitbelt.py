@@ -97,8 +97,8 @@ def default_config() -> config_dict.ConfigDict:
         obs_mode="blind",
         history_len=4,
         belt_layout=config_dict.create(
-            left_y_min=-0.300, left_y_max=0.000,
-            right_y_min=0.000, right_y_max=0.300,
+            left_y_min=-0.500, left_y_max=0.000,
+            right_y_min=0.000, right_y_max=0.500,
         ),
         schedule_kind="tied",
         schedule_params=config_dict.create(v=0.5),

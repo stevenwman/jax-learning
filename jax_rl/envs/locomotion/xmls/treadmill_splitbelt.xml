@@ -8,14 +8,18 @@
   <option timestep="0.004"/>
 
   <asset>
-    <!-- Checker textures so belt motion is visible at render time. Different
-         hues per side so visual side identification is unambiguous. -->
-    <texture name="left_belt_tex"  type="2d" builtin="checker" rgb1="0.25 0.45 0.65" rgb2="0.15 0.30 0.45"
-             width="64" height="512"/>
-    <texture name="right_belt_tex" type="2d" builtin="checker" rgb1="0.65 0.40 0.30" rgb2="0.45 0.25 0.20"
-             width="64" height="512"/>
-    <material name="left_belt_mat"  texture="left_belt_tex"  texrepeat="50 2" specular="0.1" shininess="0.1"/>
-    <material name="right_belt_mat" texture="right_belt_tex" texrepeat="50 2" specular="0.1" shininess="0.1"/>
+    <!-- High-contrast checker so belt motion + side ID are obvious at video
+         framerate. texrepeat="200 4" → ~4 checker tiles per meter (×0.25m
+         square cells); dark-vs-bright per side reads cleanly even on the
+         iso cam. Left = blue, right = orange. -->
+    <texture name="left_belt_tex"  type="2d" builtin="checker"
+             rgb1="0.10 0.25 0.55"  rgb2="0.70 0.85 1.00"
+             width="64" height="64"/>
+    <texture name="right_belt_tex" type="2d" builtin="checker"
+             rgb1="0.55 0.18 0.10"  rgb2="1.00 0.75 0.35"
+             width="64" height="64"/>
+    <material name="left_belt_mat"  texture="left_belt_tex"  texrepeat="200 4" specular="0.1" shininess="0.1"/>
+    <material name="right_belt_mat" texture="right_belt_tex" texrepeat="200 4" specular="0.1" shininess="0.1"/>
   </asset>
 
   <default>
@@ -33,7 +37,7 @@
     <light name="fill_front" directional="true" pos="2 0 2.0"  dir="-1 0 -0.5"  diffuse="0.3 0.3 0.3"/>
     <light name="fill_side"  directional="true" pos="0 2 2.0"  dir="0 -1 -0.5" diffuse="0.3 0.3 0.3"/>
     <!-- Static fallback floor — catches feet/body that fall off the side of the
-         belt span (|y| > 0.300). Must be a finite BOX, not a plane: planes are
+         belt span (|y| > 0.500). Must be a finite BOX, not a plane: planes are
          infinite in MuJoCo and trigger margin-based contact-sensor false positives.
 
          Box dimensions: 50m × 2m × 0.005m (half-extents). Top surface at z=-0.005,
@@ -47,16 +51,16 @@
           rgba="0.6 0.55 0.5 1"
           friction="1.0 0.005 0.0001"/>
 
-    <!-- Left belt: y in [-0.300, 0.000], slides along world x. -->
-    <body name="left_belt" pos="0 -0.150 0">
+    <!-- Left belt: y in [-0.500, 0.000], slides along world x. -->
+    <body name="left_belt" pos="0 -0.250 0">
       <joint name="left_belt_joint" class="treadmill_belt"/>
-      <geom name="left_belt_geom" class="treadmill_belt" size="25 0.15 0.005" material="left_belt_mat"/>
+      <geom name="left_belt_geom" class="treadmill_belt" size="25 0.25 0.005" material="left_belt_mat"/>
     </body>
 
-    <!-- Right belt: y in [0.000, 0.300]. Edges meet left belt at y=0. -->
-    <body name="right_belt" pos="0 0.150 0">
+    <!-- Right belt: y in [0.000, 0.500]. Edges meet left belt at y=0. -->
+    <body name="right_belt" pos="0 0.250 0">
       <joint name="right_belt_joint" class="treadmill_belt"/>
-      <geom name="right_belt_geom" class="treadmill_belt" size="25 0.15 0.005" material="right_belt_mat"/>
+      <geom name="right_belt_geom" class="treadmill_belt" size="25 0.25 0.005" material="right_belt_mat"/>
     </body>
   </worldbody>
 
