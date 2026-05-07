@@ -3,7 +3,7 @@
 ## What landed
 
 Built `Go2WarpSplitbelt` end-to-end via subagent-driven-development executing the
-plan at `.superpowers/plans/2026-05-02-splitbelt-treadmill-env.md` (which itself
+plan at `projects/adaptation/plans/2026-05-02-splitbelt-treadmill-env.md` (which itself
 went through 4 audit rounds before execution).
 
 ### New files

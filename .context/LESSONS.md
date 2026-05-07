@@ -79,7 +79,7 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **Multi-agent audit pattern** — 3 parallel opus + 1 validator finds bugs that any one misses
 - **Paper Table 2 had a typo** — Humanoid action_dim=21 per Figure 15 caption (not 24); always cross-check Tables vs Figures
 
-## [Skill Discovery (DIAYN on CheetahRun)](lessons/skill_discovery_diayn_cheetah.md) — 6 lessons
+## [Skill Discovery (DIAYN on CheetahRun)](../projects/skill-discovery/lessons/diayn_cheetah.md) — 6 lessons
 
 - **DIAYN+CheetahRun is a pipeline smoke test, not a behavioral demo** — DiscA hits 0.95+ at 1M, but 5-7 of 8 skills collapse to ~0 task return. Discriminator separates via tiny obs deltas, not gross behavior. Expected DIAYN limit; motivates METRA/D3.
 - **Numerical gates suffice for SD-B sign-off; visual gate belongs on Ant** — CheetahRun planar 2D body all looks similar in renders. Ant xy-trajectory plot (DIAYN App. D.3) is the canonical legible diversity figure. Defer visual acceptance to Ant.
@@ -88,7 +88,7 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **DIAYN wall-clock per seed (RTX 5080 + Warp + 8 skills + 1M)** — ~27.5 min, 2-3 SAC grad updates per env step at 128 envs / 8 grad_updates_per_step.
 - **When SD-D/E (METRA, D3, DUSDi) reduces this collapse, that's the win** — contrast against this entry for any future method comparison. >5 of 8 skills behaviorally active = real improvement over DIAYN baseline.
 
-## [Skill Discovery (DIAYN on Ant — MJX/Warp port)](lessons/skill_discovery_diayn_ant.md) — 8 lessons
+## [Skill Discovery (DIAYN on Ant — MJX/Warp port)](../projects/skill-discovery/lessons/diayn_ant.md) — 8 lessons
 
 - **AntMJXClassic (27d, no cfrc) closes the visual diversity gate; v5 (105d, +cfrc) doesn't** — 3/3 Classic seeds PASS the numerical xy gate (max-pairwise > 3 m OR circular heading-std > 30°) via heading. v5 still passes via heading-std but tighter xy spread (0.25 m vs 0.43-1.20 m).
 - **Richer obs lets the discriminator hide skill diffs in cfrc minutiae** — DIAYN with 105d obs hits DiscA 0.95+ without skills moving meaningfully. Removing cfrc forces motion-based discriminability. Strong evidence for the canonical-DIAYN-limit hypothesis.
@@ -99,7 +99,7 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **Use circular std for heading data, not linear `np.std(arctan2(...))`** — linear std treats +179° and -179° as 358° apart instead of 2°. Circular std from resultant length R: `sqrt(-2 ln R)`.
 - **lax.scan the xy rollout, don't Python-loop env.step** — per `lessons/warp.md`, Python loops calling `mjx.step` per iteration cause Warp contact-buffer OOMs because allocations don't get pooled. JIT the entire rollout scan.
 
-## [Skill Discovery (METRA on Ant — null-delta vs DIAYN)](lessons/skill_discovery_metra_ant.md) — 6 lessons
+## [Skill Discovery (METRA on Ant — null-delta vs DIAYN)](../projects/skill-discovery/lessons/metra_ant.md) — 6 lessons
 
 - **METRA-default-HPs do NOT exceed DIAYN on AntMJXClassic** — 3 seeds × 1M, max-pairwise avg 0.763m (METRA) vs 0.767m (DIAYN), heading-std 71° vs 86°. Hypothesis "Lipschitz constraint produces wider state coverage" REJECTED at this scale.
 - **DualLam → ~0.05 in all 3 METRA seeds** — phi started small → cst_penalty saturated at +slack=1e-3 → Adam descended log_dual_lam → λ decayed → constraint never engaged. Effectively ran "DIAYN with different reward formula", not true METRA.
@@ -250,14 +250,13 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **pyramid_up is persistently hardest** — stuck ~L0–L1 after 20M, 4-col and 5-col. Probably needs face-stair spawn tuning or start-of-episode cmd shaping.
 - **Warp non-determinism across runs with same seed** — single-seed lifetime tests misleading; flat env survival varies 607/871/1000/1000 across consecutive seed=0-3 runs on same checkpoint.
 
-## [Splitbelt Treadmill](lessons/splitbelt.md) — 6 lessons (2026-05-04 → 05)
+## [Splitbelt Treadmill](../projects/adaptation/lessons/splitbelt.md) — 11 lessons (2026-05-04 → 07; project-local)
 
-- **MuJoCo planes are infinite** — `<contact data="found">` against a plane fires from any near-z geom regardless of xy (margin-based). Use a box for finite extent, OR derive off-belt from foot xy + height directly.
-- **`get_gravity()` body-z = -1 when upright** — opposite of intuition. Use `get_upvector()[-1] < threshold` for flipped detection (joystick precedent at `go2_warp_joystick.py:409`).
-- **`Go2WarpEnv.__init__` clobbers `actuator_forcerange` before `mjx.put_model`** — XML default ignored for non-leg actuators. In `_post_init`, mutate `_mj_model.actuator_forcerange[idx]` then re-call `mjx.put_model`. Smoke-assert in `_post_init` so drift fails fast.
-- **Asymmetric AC actor blindness in cross-policy transfer** — joystick policy on splitbelt env at cmd=0: stands while belt drags it. Body lin vel is privileged-only, invisible to actor. Reward shape (drift penalty) is training-time signal not inference-time. Splitbelt blind reaches eval 72 because it was trained with that drift signal — same actor obs, different reward → different policy.
-- **Belt sign convention = biomech "drag speed"** — schedule v > 0 means "belt drags foot backward at v." Slide joint axis is +x, robot faces +x → ctrl & qvel writes are NEGATED so positive schedule = belt moves -x. Got it wrong initially: v1 ckpt eval=105 was free-ride (belt pushed robot forward).
-- **Obs schema must align with sister envs** — splitbelt original blind order was arbitrary; aligning to `Go2WarpJoystickFlatNoAccel` (gyro, gravity, joint_pos_offset, joint_vel, last_act, command) enables zero-retrain cross-deploy in both directions. Renamed `joint_pos` → `joint_pos_offset` to match exactly.
+Moved to `projects/adaptation/lessons/splitbelt.md` as part of the 2026-05-07
+adaptation-project framework. Spans physics setup (planes, forcerange,
+sign convention, tunneling, foot×belt cross-pairs, butted belts) AND eval
+methodology (reward hides failures, tilt is dominant station-keeping
+failure, DR doesn't extrapolate).
 
 ## [Go2 Locomotion](lessons/go2.md) — 7 lessons
 

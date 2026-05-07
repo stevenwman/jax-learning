@@ -2,9 +2,10 @@
 
 > Splitbelt env build + first calibration: 2026-05-03 → 2026-05-05.
 > Tunneling fix + retrain + OOD: 2026-05-06.
-> Spec: `.superpowers/specs/2026-05-02-splitbelt-treadmill-env-design.md`
-> Plan: `.superpowers/plans/2026-05-02-splitbelt-treadmill-env.md`
-> Build journal: `.context/journals/2026-05-03-splitbelt-env-build.md`
+> Eval methodology lessons (reward hides, tilt dominant, DR doesn't extrapolate): 2026-05-07.
+> Spec: `projects/adaptation/specs/2026-05-02-splitbelt-treadmill-env-design.md`
+> Plan: `projects/adaptation/plans/2026-05-02-splitbelt-treadmill-env.md`
+> Build journal: `.context/journals/2026-05-03-splitbelt-env-build.md` (chronological — stays in `.context/`)
 
 ---
 
