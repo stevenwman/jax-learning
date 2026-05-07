@@ -180,6 +180,62 @@ User wanted to drop joystick policy on splitbelt without retraining. Worked mech
 
 ---
 
+## Eval reward hides physics failures (2026-05-07)
+
+**What happened:** PoseDR v2 OOD sweep showed (0.5, 1.0) — at the trained max ratio of 2× — scoring 276 reward (~70% of peak 393). Read as "in-dist edge, mild degradation." Same condition under physics-metric sweep: **75% termination rate**, 12/16 episodes died by tilt within ~16s. Across 144 episodes (9 OOD conditions), the only condition with 0% termination was tied (0.5, 0.5). Every other condition — including in-dist edges — had ≥19% termination, mostly tilt-out.
+
+**Root cause:** The reward function blends survival reward + per-step pose-track terms. A policy that survives ~600 of 1250 steps cleanly accumulates more reward than one that immediately collapses, but both are "broken" by any deployment standard. Reading mean reward without the reward decomposition AND survival rate hides catastrophic failure modes behind a 70%-of-peak number.
+
+**Fix:** Built `scripts/eval_splitbelt_physics.py` that reports per-condition termination rate (broken down by cause), mean survival steps, mean final and max |drift_x| (lag), max |drift_y| (sway). Ignores reward.
+
+**Lesson:**
+1. Reward is a *training* signal, not an *evaluation* signal. For deployment-relevant claims, evaluate on physical metrics (lag, sway, termination cause, survival).
+2. Add a "termination rate" panel to every locomotion eval lane. A policy with 0 termination at one operating point and 75% at another is not "60% as good" — it's "broken outside one point."
+3. When a policy reads as "moderate degradation" on reward, check survival before believing it. Reward-only OOD plots produce false-confidence narratives about generalization.
+
+---
+
+## Tilt is the dominant station-keeping failure (2026-05-07)
+
+**What happened:** Across 144 PoseDR v2 episodes spanning 9 (vL, vR) conditions, termination causes broke down as:
+- `term_cause=1` fall_torso (torso contact): **0** episodes
+- `term_cause=2` off_belt (foot off belt span):  **7** episodes
+- `term_cause=3` tilt (upvector_z<0.5 OR base_z<0.18): **~91** episodes
+
+So even when belts dragged the robot 5.85m off origin in 17s (tied 1.5 condition), the failure was upright-loss, not contact crash. Robot doesn't crumple — it slowly tilts past 60° and the env terminates.
+
+**Root cause hypothesis:** PoseDR's reward weighs `pose_pos_track = 5.0` and `pose_orient_track = 2.0`. Position dominates orientation 2.5×. When belt drag is sustained, the policy pours optimization budget into x-position correction (pushing back) and orientation drifts unchecked. Smoothness terms (action_rate, joint_vel) further suppress the *rapid* corrective torques needed to recover attitude near the tilt threshold (parallel to the bongo `lessons/bongo.md` finding that "regularization penalties can suppress necessary corrective actions").
+
+**Lesson:**
+1. For station-keeping under sustained drag/perturbation, **orientation reward must be heavier than position reward**, not the other way around. Falling over wastes all the position progress; staying upright lets you keep fighting.
+2. Diagnostic: log `term_cause` distribution per OOD condition. If one cause dominates, the policy has a single load-bearing weakness; targeting it is higher-leverage than uniform retraining.
+3. Belt span (50m × 1m here) is large enough that off-belt almost never triggers before tilt. Off-belt termination is mostly a backstop, not an active constraint.
+
+---
+
+## DR doesn't extrapolate, only interpolates (2026-05-07)
+
+**What happened:** PoseDR v2 trained with `random_per_episode` over `vL ∈ U[0.3, 1.5]`, `ratio ∈ U[0.5, 2.0]`. Eval at conditions just past the training boundaries:
+- (0.5, 1.5) ratio 3× (both speeds in-dist absolute, ratio just OOD): **81% term, max drift 1.0m**
+- (0.3, 0.9) ratio 3× at slow magnitudes (both speeds in-dist, ratio just OOD): **100% term**
+- (1.5, 1.5) tied at v=1.5 (in-dist absolute max, no asymmetry, ratio in-dist): **100% term, max drift 5.85m**
+
+vs in-dist:
+- (0.5, 0.5) tied: **0% term, ±10cm wander**
+
+Going from train-max ratio 2× to ratio 3× is a 50% increase in the differential axis. Eval reward dropped 276 → 83 (-70%); termination went 75% → 81%; lag went 0.36m → 1.00m. The policy *did not* generalize — it cliff-dropped.
+
+Direction asymmetry compounds the failure: ratio 3× R-faster (0.5, 1.5) → 81% term. Ratio 0.3× L-faster (1.0, 0.3), which is the inverse of ratio 3.3×, → only 44% term. Same magnitude differential but the policy is biased toward L-faster scenarios — likely the keyframe spawn places FL/RL on left belt, so the gait pattern that emerges in training is asymmetric to begin with.
+
+**Root cause:** Uniform random_per_episode samples a *grid* of (vL, vR) within the support. The policy fits a function that interpolates the grid but has no inductive bias to extrapolate. Past the support boundary the function is whatever the network's smoothness prior says it is — usually wrong.
+
+**Lesson:**
+1. **DR over [a, b] gets you a policy that works on [a, b]** — period. Don't expect it to handle [a-ε, b+ε] without specific training. If you need (e.g.) ratio up to 3×, train with ratio range [0.5, 3.0] from the start.
+2. **Symmetrize the training distribution explicitly.** Spawn keyframe + uniform DR ≠ symmetric exposure. To get symmetric robustness across L-faster vs R-faster, mirror-augment the data (spawn keyframe randomization + sometimes-flip-belt-assignment) or explicitly resample to 50/50 ratio>1 vs ratio<1.
+3. **The training boundary is the policy's behavior cliff, not the failure point.** PoseDR was at 75% termination *inside* the boundary at ratio 2×. The boundary is where the policy stops being useful, not where it stops working entirely.
+
+---
+
 ## Pointers
 - Belt-mech / sign-convention: spec §6.3, env file `_step()` substep block
 - Asymmetric AC blindness: this lesson + `.context/lessons/offpolicy.md`
