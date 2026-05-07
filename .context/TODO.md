@@ -1,65 +1,8 @@
 # TODO
 
-## Completed (2026-05-06) — Foot tunneling fix + PoseDR v2 + OOD sweep
-
-Found PoseDR v1 was exploiting a foot-tunneling physics bug: FL was passing through belt slab (z=-0.05 for 95% of frames) → "free anchor" inflated eval to 280.6.
-
-Three fixes landed:
-1. Closed vestigial 5cm center belt gap (left/right edges meet at y=0).
-2. Added 4 missing cross-belt foot collision pairs (FL×right, FR×left, RL×right, RR×left). Spec assumed feet stay on assigned belt; lateral drift breaks the assumption.
-3. `<pair margin="0.02">` on every foot×belt + foot×fallback_floor pair. Compensates for MJX's lack of CCD: contact engages 20mm above belt → fast-approach foot decelerated before reaching slab → no tunneling.
-
-PoseDR v2 retrained on fixed env (1M FastSAC, ~2.5min): **eval 378.9 ± 113.4** vs v1 280.6 ± 207.8. Higher and tighter — real friction-based stationkeeping. Ckpt: `checkpoints/20260506_195126_fast_sac_go2warpsplitbeltposedr_seed0/best`.
-
-OOD belt-speed sweep (`scripts/eval_splitbelt_ood.py`, 16 ep/v):
-
-| v   | mean  | OOD? |
-|-----|-------|------|
-| 0.30| 215.6 | (in-dist boundary low) |
-| 0.50| **393.2** | peak |
-| 1.00| 378.0 | strong |
-| 1.50| 125.5 | (in-dist boundary high) |
-| 2.00|  65.1 | OOD (17% peak) |
-| 2.50|  29.7 | OOD (8% peak) |
-
-Visual: `splitbelt_side_iso` cam (~16° off pure side, shows lateral sway).
-
-A1 probe (`scripts/eval_splitbelt_a1.py`): right touchdown rate ↑ during split phase (0.5/1.0), early termination at t=776 (mid Phase 3). Mid-episode belt change is per-step OOD for PoseDR (trained on constant-belt episodes). Built-in `step_length_asymmetry` numerically broken for cmd=0 stationkeeping (designed for walking gaits) — switched to touchdown-rate asymmetry.
-
-**Open follow-ups:**
-- [ ] Train PoseDR with `tied_split_tied` schedule for proper A1 study (current PoseDR sees mid-episode belt change as OOD).
-- [ ] Train splitbelt with `error` obs_mode (cmd_track_error + drift_xy in actor) — closes the AC blindness gap (alternative to PoseDR's idealized world-pose obs).
-- [ ] Per-protocol algo presets (A1/A2/A3/A4) — fresh brainstorm/spec/plan cycle.
-- [ ] History-mode `FrameStackWrapper` wiring in `mjx_backend` (still deferred).
-- [ ] Retrain `Go2WarpSplitbelt` (tied(0.5)) on fixed env — only if a use case demands.
-- [ ] Train `Go2WarpSplitbeltDR` on fixed env — same caveat.
-
-## Completed (2026-05-05) — Splitbelt env variants + visual upgrades
-
-Belt sign fix (drag-backward biomech convention), obs schema aligned to joystick NoAccel (cross-deploy works both ways), checker textures + directional lights + fixed side cam, three env variants registered. PoseDR v1 trained eval 280.6 (later INVALIDATED 2026-05-06 by tunneling discovery — see above). Cross-deploy demo: joystick policy on splitbelt env → robot stands while belt drags. Asymmetric-AC actor blindness: body lin vel is privileged-only. See `.context/lessons/splitbelt.md`.
-
-## Completed (2026-05-03) — Splitbelt treadmill env (Go2WarpSplitbelt)
-
-Built the splitbelt-treadmill adaptation-benchmark substrate (spec at `.superpowers/specs/2026-05-02-splitbelt-treadmill-env-design.md`). Two parallel belt slabs on slide+vel actuators over a `fallback_floor` gap, robot-agnostic apparatus + Go2-specific scene. Schedule samplers (tied / split_constant / tied_split_tied / random_per_episode / continual_phase) plus dispatcher cover all four protocol families (A1 within-episode, A2 context-conditioned, A3 meta-RL, A4 continual). 4 obs modes (blind / informed / error / history); reward = full joystick set + new `treadmill_drift` term (`stand_still` dropped since cmd is always 0). Offline gait-asymmetry analyzer in `jax_rl/envs/locomotion/splitbelt_analysis.py`. PPO + FastSAC base presets registered.
-
-Tests landed (`JAX_PLATFORMS=cpu uv run python -m pytest -q` — **753 passed**, +34 over baseline):
-- `tests/test_splitbelt_schedules.py` — 10 schedule-sampler hermetic tests
-- `tests/test_splitbelt_belt_assignment.py` — 5 foot_belt_id tests
-- `tests/test_splitbelt_metrics.py` — 4 offline analyzer tests
-- `tests/test_splitbelt_obs_schema.py` — 13 obs-name-layout + structural-drift tests
-- `tests/test_env_presets.py` — 2 splitbelt-preset shape tests
-- GPU/Warp tests written but deferred (need GPU box):
-  - `tests/test_splitbelt_env_smoke.py` — reset/step/belt_qvel/off-belt term [gpu, warp, go2]
-  - `tests/test_splitbelt_bundle.py` — bundle shape + obs schema round-trip [gpu, warp, go2]
-  - `tests/test_splitbelt_control_metadata.py` — deploy contract drift [gpu, warp, go2, deploy]
-
-Plan at `.superpowers/plans/2026-05-02-splitbelt-treadmill-env.md` (4 audit rounds before exec).
-
-**Open follow-ups (next session):**
-- [ ] **Calibration smoke (Task 5.1):** FastSAC + PPO 1M-step on tied(0.5) belts. Go/no-go: eval > 80, PPO entropy ≥ 0.05. Verify `treadmill_drift` doesn't drown smoothness terms.
-- [ ] **GPU smoke gate:** run the three deferred GPU test files; verify `mjx.put_model` belt forcerange re-call holds (assert `actuator_forcerange[belt_idx, 1] > 100`).
-- [ ] **Per-protocol presets** (A1 / A2 / A3 / A4) — separate brainstorm/spec/plan cycle per spec §11.3.
-- [ ] **History-mode wrapper wiring** — `obs_term_names("history")` returns blind layout but `FrameStackWrapper` is not gated in `mjx_backend`. Land before A3 protocol study.
+This file is repo-wide / cross-project only. Per-project TODOs:
+- Adaptation (splitbelt): `projects/adaptation/TODO.md`
+- Skill discovery: `projects/skill-discovery/` (check that folder)
 
 ## Completed (2026-04-28) — Go2 deploy contract self-describing + action_scale ablation
 
