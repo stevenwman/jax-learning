@@ -3,7 +3,7 @@
 **Date:** 2026-05-02
 **Purpose:** Paper text omits load-bearing implementation details. This doc captures the actual values and code shapes from each project's official repository. Use as the single source of truth when implementing or porting.
 **Sources:** Parallel agent source audits (2026-05-02). Repos cloned to `/tmp/<paper>_src` during audit. File:line cites verify every claim.
-**Companion:** `.context/references/skill_discovery_validation.md` (validation contract per phase).
+**Companion:** `references/skill_discovery_validation.md` (validation contract per phase).
 
 ---
 

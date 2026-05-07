@@ -1,9 +1,9 @@
 # Skill Discovery SD-B — DIAYN Training Loop on CheetahRun
 
 **Date:** 2026-05-02
-**Spec:** `.superpowers/specs/2026-04-28-skill-discovery.md` §SD-B
-**Validation methodology:** `.context/references/skill_discovery_validation.md` Part 4 SD-B
-**Source extracts:** `.context/references/skill_discovery_source_extracts.md`
+**Spec:** `specs/2026-04-28-skill-discovery.md` §SD-B
+**Validation methodology:** `references/skill_discovery_validation.md` Part 4 SD-B
+**Source extracts:** `references/skill_discovery_source_extracts.md`
 **SD-A landed:** commits 84883a7 / 0317db7 / 593ddf4 / bd0bcf8 / 725eced — config, prior, factor registry, DIAYN aux module, SkillManager. 31/31 SD-A tests pass; zero regressions.
 **Phase:** SD-B (second of SD-A → SD-E)
 **Status:** ready

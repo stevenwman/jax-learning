@@ -123,14 +123,14 @@ Run convention: one phase at a time, journal between phases (compaction-safe bou
 Numerical gates (5.0, 5.1, 5.2, 5.3 Gate 1) all PASS. Gate 2 video diversity deferred to Ant follow-up (already TODO'd as future).
 
 ## Lesson surfaced
-See `.context/lessons/skill_discovery_diayn_cheetah.md` — DIAYN+CheetahRun is a useful smoke test (verifies pipeline) but not a useful behavioral demo (skill collapse + visual ambiguity). Use Ant for behavioral acceptance going forward.
+See `projects/skill-discovery/lessons/diayn_cheetah.md` — DIAYN+CheetahRun is a useful smoke test (verifies pipeline) but not a useful behavioral demo (skill collapse + visual ambiguity). Use Ant for behavioral acceptance going forward.
 
 ## Next session pickup
 
 If session compacts here:
 1. Read this journal entry for state.
 2. Memory file: `project_skill_discovery_state.md` has canonical doc paths + run conventions + XLA mem fix.
-3. Lesson file: `.context/lessons/skill_discovery_diayn_cheetah.md` (cheetah caveats).
+3. Lesson file: `projects/skill-discovery/lessons/diayn_cheetah.md` (cheetah caveats).
 4. Run `git log --oneline -15` to see commit history.
 5. **SD-B is functionally complete**; next step is user-decision: (a) Ant port for visual gate, (b) move to SD-C (Go2 deployable obs DIAYN), (c) jump to SD-D/E (METRA / factored).
 Wall-clock projection: 100K → 165s, so 1M ≈ 1650s (27.5 min) per seed. Three parallel ≈ same wall-clock if GPU memory permits (each run uses ~55% of 16GB ≈ 8.8GB, so 3 in parallel = 26.4GB > 16GB — **must serialize or interleave**). Realistic: 3 × 30 min serial ≈ 1.5h.

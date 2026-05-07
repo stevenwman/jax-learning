@@ -4,10 +4,10 @@
 **Purpose:** Resolve the validation gap. Skill discovery has no single benchmark. This doc catalogues how each paper proves its method works, what tradeoffs exist between methods, and how alternatives map to D3.
 **Sources:** Deep-audit reports of DIAYN, METRA, D3, DADS, DUSDi, SkiLD (parallel agent research, 2026-05-02).
 **Related:**
-- Spec: `.superpowers/specs/2026-04-28-skill-discovery.md`
-- **Source extracts: `.context/references/skill_discovery_source_extracts.md`** ← ground-truth values from each paper's official repo (file:line cites). Read alongside this doc.
-- D3 reference: `.context/references/d3_skill_discovery.md`
-- SD-A plan: `.superpowers/plans/2026-05-02-skill-discovery-sd-a.md`
+- Spec: `specs/2026-04-28-skill-discovery.md`
+- **Source extracts: `references/skill_discovery_source_extracts.md`** ← ground-truth values from each paper's official repo (file:line cites). Read alongside this doc.
+- D3 reference: `references/d3_skill_discovery.md`
+- SD-A plan: `plans/2026-05-02-skill-discovery-sd-a.md`
 
 ---
 
@@ -196,7 +196,7 @@ Standard RL benchmarks (return on a reward function) don't apply. There is no "c
 
 ## Part 5 — Open implementation questions — RESOLVED
 
-All blocking questions resolved via source-code audits 2026-05-02. Detailed values + file:line cites in `.context/references/skill_discovery_source_extracts.md`. Brief table:
+All blocking questions resolved via source-code audits 2026-05-02. Detailed values + file:line cites in `references/skill_discovery_source_extracts.md`. Brief table:
 
 | Question | Resolution |
 |---|---|

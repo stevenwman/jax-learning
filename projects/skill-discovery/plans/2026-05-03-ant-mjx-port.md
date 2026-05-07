@@ -952,7 +952,7 @@ This stage was added after Stages 0-4 surfaced two issues during the 5K SAC smok
   - **Primary**: DiscA > `1/num_skills + 0.1 = 0.225` by 100K, per-skill spread > 50% of max-skill mean at 1M.
   - **Fallback**: DiscA > `1/num_skills + 0.05 = 0.175` by 100K AND > 0.225 by 200K. Ant's 105d obs is ~5× CheetahRun's 17d, so the v5 discriminator may climb slower in absolute steps even though the learning dynamics are healthy. If primary fails but fallback passes, log it and continue — don't bisect. (Classic 27d should hit primary easily; if it doesn't, something is wrong.)
   - Wall-clock projection: similar to CheetahRun (~28 min/seed). Two seeds × ~28 min = ~1h serial total for Step 1+2. Run each in background.
-- [ ] **Step 4:** Compare per-skill task-return spread between Classic and v5. If Classic spreads cleanly but v5 collapses, document as supporting evidence for the canonical-DIAYN-limit lesson. If both collapse, document as not-a-bug-just-the-method-ceiling. **Skill collapse on either variant is NOT a port failure.** This is expected per `lessons/skill_discovery_diayn_cheetah.md`. Crucially: even if return-spread collapses, the xy-trajectory figure (Stage 5.3) may still show legible diversity since DIAYN can produce skills that go in different *directions* with similar magnitudes — the plot reveals diversity that scalar return doesn't.
+- [ ] **Step 4:** Compare per-skill task-return spread between Classic and v5. If Classic spreads cleanly but v5 collapses, document as supporting evidence for the canonical-DIAYN-limit lesson. If both collapse, document as not-a-bug-just-the-method-ceiling. **Skill collapse on either variant is NOT a port failure.** This is expected per `lessons/diayn_cheetah.md`. Crucially: even if return-spread collapses, the xy-trajectory figure (Stage 5.3) may still show legible diversity since DIAYN can produce skills that go in different *directions* with similar magnitudes — the plot reveals diversity that scalar return doesn't.
 
 ### Task 5.3: xy-trajectory diversity figure
 
@@ -1147,12 +1147,12 @@ This stage was added after Stages 0-4 surfaced two issues during the 5K SAC smok
   uv run python scripts/plot_skill_xy.py \
       --checkpoint checkpoints/<latest_antmjxclassic_seed0> \
       --rollouts-per-skill 3 --rollout-length 500 \
-      --output .context/figures/ant_classic_diayn_seed0.png
+      --output figures/ant_classic_diayn_seed0.png
 
   uv run python scripts/plot_skill_xy.py \
       --checkpoint checkpoints/<latest_antmjx_seed0> \
       --rollouts-per-skill 3 --rollout-length 500 \
-      --output .context/figures/ant_v5_diayn_seed0.png
+      --output figures/ant_v5_diayn_seed0.png
   ```
   Side-by-side panel via small matplotlib stitcher (or in headline doc).
 
@@ -1167,7 +1167,7 @@ This stage was added after Stages 0-4 surfaced two issues during the 5K SAC smok
 
   Note: `np.arctan2(y, x)` measures the angle of the **endpoint vector from origin**, not the instantaneous heading of motion at the endpoint. That's intentional — DIAYN App. D.3-style figures plot trajectory *endpoints* and ask whether they fan out, not whether the ant's heading is varied at any specific moment.
 
-  If both fail → DIAYN collapsed even on Ant (consistent with the canonical limit). Log the values, treat as expected outcome (NOT a failure of the port), and journal alongside `lessons/skill_discovery_diayn_cheetah.md` for cross-env contrast.
+  If both fail → DIAYN collapsed even on Ant (consistent with the canonical limit). Log the values, treat as expected outcome (NOT a failure of the port), and journal alongside `lessons/diayn_cheetah.md` for cross-env contrast.
 
 ### Task 5.4: 3-seed acceptance (REQUIRED — not optional)
 
@@ -1204,7 +1204,7 @@ This stage was added after Stages 0-4 surfaced two issues during the 5K SAC smok
 
 ### Task 6.1: Lesson + journal + TODO
 
-- [ ] **Step 1:** Append to `.context/lessons/skill_discovery_diayn_cheetah.md` (or create new `skill_discovery_diayn_ant.md` if findings diverge significantly). Compare Ant skill diversity vs Cheetah's collapse pattern. Include the numerical visual-gate values (max_pairwise_dist, heading_std).
+- [ ] **Step 1:** Append to `lessons/diayn_cheetah.md` (or create new `lessons/diayn_ant.md` if findings diverge significantly). Compare Ant skill diversity vs Cheetah's collapse pattern. Include the numerical visual-gate values (max_pairwise_dist, heading_std).
 - [ ] **Step 2:** New journal: `.context/journals/2026-05-04-ant-port.md` with smoke + 1M results + figure path + numerical visual-gate readout per seed.
 - [ ] **Step 3:** Update `.context/TODO.md` SD-B Wave D Phase 5.3 Gate 2 → checked, with Ant figure path.
 - [ ] **Step 4:** Update `.context/AGENT_HANDOFF.md` if `--env AntMJX` is now a routine entry (e.g. visible in Quick Reference). Skip if it's a one-shot figure that won't be re-run regularly.
@@ -1262,7 +1262,7 @@ This stage was added after Stages 0-4 surfaced two issues during the 5K SAC smok
 | **`cfrc_ext` shape under MJX/Warp** | 🟡 medium | Verify in Stage 0 step 3 BEFORE locking obs=105d. Should be `(nbody, 6)`. |
 | **`terminate_when_unhealthy` config flag dead** | 🟡 medium | Wire flag into `done` computation (Task 2.3 step 1, branch on flag). |
 | **pytest markers missing → CPU-lane crash on `mjx.put_model`** | 🟡 medium | Add module-level `pytestmark = [pytest.mark.gpu, pytest.mark.warp]` in all 3 new test files. |
-| **DIAYN skill collapse on Ant** | 🟡 medium | Expected per `lessons/skill_discovery_diayn_cheetah.md`; xy-trajectory figure may still show legible diversity even when scalar return spread collapses. Numerical visual gate (Task 5.3 step 3) handles this case. |
+| **DIAYN skill collapse on Ant** | 🟡 medium | Expected per `lessons/diayn_cheetah.md`; xy-trajectory figure may still show legible diversity even when scalar return spread collapses. Numerical visual gate (Task 5.3 step 3) handles this case. |
 | **Skill_offpolicy_loop expects env attributes** | 🟢 low | Validated by Task 4.1 step 7 (`make_env_bundle` smoke). |
 | **3 parallel seeds OOM at fraction=0.55** | 🟢 low | Serialize per SD-B 5.3 lesson (~1.5h). |
 | **`record_video.py` helper functions nested** | 🟢 low | Stage 5.3 step 0 refactor exposes them at module scope. Separate prep PR. |
@@ -1285,8 +1285,8 @@ This stage was added after Stages 0-4 surfaced two issues during the 5K SAC smok
 1. `tests/test_ant_*.py` green (xml + env + parity, all under `[gpu, warp]` markers).
 2. `detect_backend("AntMJX") == "mjx"` and `make_env_bundle("AntMJX")` produces obs_dim=105, action_dim=8.
 3. `scripts/train_skill_discovery.py --env AntMJX --total-timesteps 1000000 --seed 0` runs to completion. DiscA hits primary gate (> 0.225 by 100K + spread > 50% at 1M) OR fallback gate (> 0.175 by 100K, > 0.225 by 200K).
-4. 3 seeds × 1M completed serial; xy-trajectory figure exists at `.context/figures/ant_diayn_seed{0,1,2}.png` with at least 2 of 3 seeds passing the numerical visual gate (max_pairwise_dist > 3.0 m OR heading_std > 30°).
-5. `lessons/skill_discovery_diayn_cheetah.md` updated with Ant cross-env comparison (or new `_ant.md` lesson if findings diverge enough).
+4. 3 seeds × 1M completed serial; xy-trajectory figure exists at `figures/ant_classic_diayn_seed{0,1,2}.png` with at least 2 of 3 seeds passing the numerical visual gate (max_pairwise_dist > 3.0 m OR heading_std > 30°).
+5. `lessons/diayn_cheetah.md` updated with Ant cross-env comparison (or new `_ant.md` lesson if findings diverge enough).
 6. SD-B Wave D Phase 5.3 Gate 2 checkbox checked in `TODO.md` with figure path.
 
 ---

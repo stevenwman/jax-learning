@@ -2,8 +2,8 @@
 
 > ## ⛔ SUPERSEDED — DO NOT IMPLEMENT FROM THIS DOC
 >
-> Superseded by `.superpowers/specs/2026-04-28-skill-discovery.md` (V2 audit + design)
-> and `.superpowers/plans/2026-05-02-skill-discovery-sd-a.md` (SD-A execution plan).
+> Superseded by `projects/skill-discovery/specs/2026-04-28-skill-discovery.md` (V2 audit + design)
+> and `projects/skill-discovery/plans/2026-05-02-skill-discovery-sd-a.md` (SD-A execution plan).
 >
 > Why: this v1 plan predates RewardSpec/ObsSpec, the env-backend refactor, the
 > EnvBundle entrypoint, ObsPipeline sample-time normalization, schema-stamped

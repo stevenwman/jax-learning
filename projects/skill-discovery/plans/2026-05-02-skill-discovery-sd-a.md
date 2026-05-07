@@ -1,9 +1,9 @@
 # Skill Discovery SD-A — Contract and Scaffolding
 
 **Date:** 2026-05-02
-**Spec:** `.superpowers/specs/2026-04-28-skill-discovery.md`
-**Validation methodology:** `.context/references/skill_discovery_validation.md` ← paper-grounded eval contracts and method tradeoffs
-**Source extracts:** `.context/references/skill_discovery_source_extracts.md` ← ground-truth values from DIAYN, METRA, D3, DADS, DUSDi, SkiLD official repos (file:line cites)
+**Spec:** `specs/2026-04-28-skill-discovery.md`
+**Validation methodology:** `references/skill_discovery_validation.md` ← paper-grounded eval contracts and method tradeoffs
+**Source extracts:** `references/skill_discovery_source_extracts.md` ← ground-truth values from DIAYN, METRA, D3, DADS, DUSDi, SkiLD official repos (file:line cites)
 **Phase:** SD-A (first of SD-A → SD-E)
 **Status:** ready
 

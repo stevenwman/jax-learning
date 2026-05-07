@@ -543,16 +543,16 @@ Why it should work: contraction signal enters via reward augmentation `R_c = (ε
 
 ## Long-term (Phase 6 — Skill Discovery) — superseded by SD-A → SD-E
 
-> **2026-05-02 retitle:** old "Phase 6A–6E" replaced by SD-A through SD-E in `.superpowers/specs/2026-04-28-skill-discovery.md`.
+> **2026-05-02 retitle:** old "Phase 6A–6E" replaced by SD-A through SD-E in `projects/skill-discovery/specs/2026-04-28-skill-discovery.md`.
 > The old bullets were optimistic about ObsSpec/RewardSpec being sufficient — the V2 audit found off-policy buffer, frame-stack, normalization, checkpoint, and deploy contracts also need work.
-> Informed by D3 paper (arXiv:2508.19953) and leggedrobotics/d3-skill-discovery. See `.context/references/d3_skill_discovery.md`.
+> Informed by D3 paper (arXiv:2508.19953) and leggedrobotics/d3-skill-discovery. See `projects/skill-discovery/references/d3_skill_discovery.md`.
 
 ### SD-A: Contract and scaffolding ✅
-**Plan:** `.superpowers/plans/2026-05-02-skill-discovery-sd-a.md`
+**Plan:** `projects/skill-discovery/plans/2026-05-02-skill-discovery-sd-a.md`
 - [x] Pure config + priors + factor registry + DIAYN aux + SkillManager. Unit tests only. No env, no train script. Landed 2026-05-02 (commits 84883a7, 0317db7, 593ddf4, bd0bcf8, 725eced). 31/31 tests pass; zero regressions.
 
 ### SD-B: vanilla SAC + DIAYN training loop on CheetahRun (in progress)
-**Plan:** `.superpowers/plans/2026-05-02-skill-discovery-sd-b.md` (vanilla SAC override; FastSAC re-enters at SD-C/E)
+**Plan:** `projects/skill-discovery/plans/2026-05-02-skill-discovery-sd-b.md` (vanilla SAC override; FastSAC re-enters at SD-C/E)
 
 **Wave A + B + C (code) — DONE 2026-05-03:**
 - [x] Extend `ObsPipeline.make_buffer` with generic `extra_obs_dims` — `fb0bcbc`
@@ -568,8 +568,8 @@ All commands prefix with `XLA_CLIENT_MEM_FRACTION=0.55` (default 0.7 OOMs at eva
 - [x] Phase 5.1 10K smoke (seed 0) — PASS (120 grad updates, skill diversity emerging, no NaN)
 - [x] Phase 5.2 100K validation (seed 0) — PASS (DiscA 0.199→0.480, gate 0.225 cleared by 70K, ckpt `20260503_102424_*`, log `.temp/logs/sd_b_phase_5_2_seed0_100k.log`, 165s wall-clock)
 - [x] Phase 5.3 1M × 3 seeds — Gate 1 PASS all 3 seeds (per-skill spread > 0.5× max-skill mean); Gate 2 (visual diversity) **CLOSED via AntMJX port (2026-05-05)**. CheetahRun ckpts: `20260503_104453_*`, `20260503_111229_*`, `20260503_113956_*`. Total wall-clock 1h22m serial.
-- [x] **Ant MJX port (closes Gate 2)** — AntMJXClassic (27d) + AntMJX (105d) variants ported to MJX/Warp. 3/3 Classic seeds PASS numerical visual gate (max-pairwise > 3m OR circular heading-std > 30°). Seed 1: z6=+199.6 highest return (stand-upright skill near origin); z7=-227 drives max-pairwise via 1.4m -x trail. Return-rank ≠ xy-spread on Ant — survive_reward dominates if policy stays healthy. Headlines: `.context/figures/ant_classic_diayn_3seeds.png` + `.context/figures/ant_classic_vs_v5_seed0.png`. Lesson: `lessons/skill_discovery_diayn_ant.md`. Plan: `.superpowers/plans/2026-05-03-ant-mjx-port.md`.
-- [x] **Ant METRA baseline contrast (2026-05-07)** — 3 seeds × 1M METRA on AntMJXClassic with default reference HPs. Original hypothesis "METRA's Lipschitz constraint produces wider xy-spread than DIAYN" REJECTED. Avg max-pairwise 0.763m (METRA) vs 0.767m (DIAYN); avg heading-std 71° vs 86°. All 3 METRA seeds had `DualLam → ~0.05` (Lipschitz constraint never engaged) so we effectively ran "DIAYN with different reward + continuous z". `dual_dist="one"` constant-1 is too generous for Ant's small step-to-step state changes; future ablation should try `dual_dist="l2"`. Headlines: `.context/figures/ant_classic_metra_3seeds.png` + `.context/figures/ant_classic_diayn_vs_metra_3seeds.png` (6-panel). Lesson: `lessons/skill_discovery_metra_ant.md`. Plan: `.superpowers/plans/2026-05-05-ant-metra.md`.
+- [x] **Ant MJX port (closes Gate 2)** — AntMJXClassic (27d) + AntMJX (105d) variants ported to MJX/Warp. 3/3 Classic seeds PASS numerical visual gate (max-pairwise > 3m OR circular heading-std > 30°). Seed 1: z6=+199.6 highest return (stand-upright skill near origin); z7=-227 drives max-pairwise via 1.4m -x trail. Return-rank ≠ xy-spread on Ant — survive_reward dominates if policy stays healthy. Headlines: `projects/skill-discovery/figures/ant_classic_diayn_3seeds.png` + `projects/skill-discovery/figures/ant_classic_vs_v5_seed0.png`. Lesson: `projects/skill-discovery/lessons/diayn_ant.md`. Plan: `projects/skill-discovery/plans/2026-05-03-ant-mjx-port.md`.
+- [x] **Ant METRA baseline contrast (2026-05-07)** — 3 seeds × 1M METRA on AntMJXClassic with default reference HPs. Original hypothesis "METRA's Lipschitz constraint produces wider xy-spread than DIAYN" REJECTED. Avg max-pairwise 0.763m (METRA) vs 0.767m (DIAYN); avg heading-std 71° vs 86°. All 3 METRA seeds had `DualLam → ~0.05` (Lipschitz constraint never engaged) so we effectively ran "DIAYN with different reward + continuous z". `dual_dist="one"` constant-1 is too generous for Ant's small step-to-step state changes; future ablation should try `dual_dist="l2"`. Headlines: `projects/skill-discovery/figures/ant_classic_metra_3seeds.png` + `projects/skill-discovery/figures/ant_classic_diayn_vs_metra_3seeds.png` (6-panel). Lesson: `projects/skill-discovery/lessons/metra_ant.md`. Plan: `projects/skill-discovery/plans/2026-05-05-ant-metra.md`.
 
 ### SD-C: Go2 DIAYN with deployable obs
 - [ ] Target `Go2WarpJoystickUnitree` (45d hardware-conservative obs, action_scale=0.25)

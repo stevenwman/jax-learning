@@ -32,7 +32,7 @@ selection only after the contract is explicit.
 | File | Status | Notes |
 |---|---|---|
 | `.context/plans/skill-discovery-plan.md` | Superseded for implementation | Still useful for DIAYN/METRA class sketches and `SkillManager` intent. Stale for paths, env setup, obs normalization, Go2 obs indices, and checkpoint/deploy expectations. |
-| `.context/references/d3_skill_discovery.md` | Conceptual/current | D3 factorization, style, symmetry, and factor weighting remain the correct north star. Its claim that `EncoderConfig.context_dim` is available should be read as "reserved, not wired." |
+| `references/d3_skill_discovery.md` | Conceptual/current | D3 factorization, style, symmetry, and factor weighting remain the correct north star. Its claim that `EncoderConfig.context_dim` is available should be read as "reserved, not wired." |
 | `.context/TODO.md` Phase 6 skill discovery | Partially current | The checklist still points in the right direction, but "skill vector in obs is one line" is too optimistic for off-policy, frame stack, checkpointing, export, and deploy. |
 | `.context/references/mjlab_audit.md` | Conceptual/current | RewardSpec/ObsSpec recommendations have been implemented. Its "manager principle, not full framework" guidance still applies. |
 | `.superpowers/plans/archive/2026-04-02-obs-spec.md` | Historical | The refactor landed. Do not follow the old task list as an implementation plan. |
@@ -477,7 +477,7 @@ frame_stack: initially disallow or explicitly compose z after stack
 ```
 
 **Plan-level override (2026-05-02):** the SD-B execution plan
-(`.superpowers/plans/2026-05-02-skill-discovery-sd-b.md` §"Algo choice") switches
+(`plans/2026-05-02-skill-discovery-sd-b.md` §"Algo choice") switches
 to **vanilla SAC** for SD-B. Rationale: paper-replication discipline (DIAYN
 reference is scalar-Q SAC), avoid mixing two unvalidated novelties (DIAYN aux +
 C51 critic), defer FastSAC bin tuning to SD-C/E with empirical reward magnitude
@@ -502,7 +502,7 @@ Plumbing gates:
 - Existing FastSAC tests pass unchanged.
 - No changes to existing `train_fast_sac.py` behavior.
 
-Behavioral gates (paper-grounded — see `.context/references/skill_discovery_validation.md` Part 4 SD-B):
+Behavioral gates (paper-grounded — see `references/skill_discovery_validation.md` Part 4 SD-B):
 
 - Discriminator accuracy curve rises above chance (`1/num_skills`) within first
   100k steps on a simple continuous-control env (CheetahRun or WalkerWalk).
@@ -514,7 +514,7 @@ Behavioral gates (paper-grounded — see `.context/references/skill_discovery_va
 - 3 seeds minimum, mean ± std reporting. Upgrade to 5 seeds if results
   contentious.
 
-Open implementation questions — RESOLVED via source audits 2026-05-02 (see `.context/references/skill_discovery_source_extracts.md`):
+Open implementation questions — RESOLVED via source audits 2026-05-02 (see `references/skill_discovery_source_extracts.md`):
 
 - DIAYN discriminator MLP: `[300, 300]` ReLU plain in DIAYN reference;
   `SimBa[256, 256]` ELU in D3. Spec ships `[256, 256]` plain as `AuxNetConfig`
@@ -708,7 +708,7 @@ Acceptance (SD-E — replicates D3 Tables 1, 2, 3 + Fig 5; see validation doc Pa
 - **Seeds:** 5 seeds for sim ablations (matches D3), 3 trials per skill on
   hardware (compute / wall-clock permitting).
 
-Open implementation questions — RESOLVED via source audits 2026-05-02 (see `.context/references/skill_discovery_source_extracts.md`):
+Open implementation questions — RESOLVED via source audits 2026-05-02 (see `references/skill_discovery_source_extracts.md`):
 
 - **METRA target φ network: NONE** (only Q-targets). Confirmed `iod/metra.py`.
 - **METRA `dual_lam_init = 30`**, parameterized as `log(lambda)` for positivity.

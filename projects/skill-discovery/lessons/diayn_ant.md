@@ -5,7 +5,7 @@
 > (105d obs, with cfrc — Gym v5 style) closes the visual-diversity gate that
 > CheetahRun couldn't deliver. Three seeds × 1M on Classic all PASS the
 > numerical visual gate (max-pairwise xy > 3.0 m OR circular heading-std > 30°).
-> Companion to `lessons/skill_discovery_diayn_cheetah.md`.
+> Companion to `lessons/diayn_cheetah.md`.
 
 ---
 
@@ -192,9 +192,9 @@ passes via heading-std (relatively wide-fanning despite tighter xy spread).
 Plan acceptance "≥2 of 3 seeds pass" met with margin.
 
 Headline figures:
-- `.context/figures/ant_classic_diayn_3seeds.png` — 3-panel Classic (the
+- `figures/ant_classic_diayn_3seeds.png` — 3-panel Classic (the
   Wave D Gate 2 deliverable)
-- `.context/figures/ant_classic_vs_v5_seed0.png` — side-by-side comparison
+- `figures/ant_classic_vs_v5_seed0.png` — side-by-side comparison
   showing the cfrc-obs effect
 
 ## §8. When to revisit this lesson

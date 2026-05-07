@@ -6,8 +6,8 @@
 > METRA's Lipschitz dual constraint produces wider xy-spread than DIAYN's MI
 > objective. REJECTED at 3 seeds.** METRA matches DIAYN within seed-to-seed
 > noise; the Lipschitz constraint never engaged (`DualLam → ~0.05` in all 3
-> seeds). Companion to `lessons/skill_discovery_diayn_cheetah.md` and
-> `lessons/skill_discovery_diayn_ant.md`.
+> seeds). Companion to `lessons/diayn_cheetah.md` and
+> `lessons/diayn_ant.md`.
 
 ---
 
@@ -25,9 +25,9 @@
 | **METRA avg** | | | **0.763** | **71.4** | |
 
 Side-by-side panels:
-- `.context/figures/ant_classic_metra_3seeds.png` — 3-panel METRA only
-- `.context/figures/ant_classic_diayn_vs_metra_3seeds.png` — 6-panel DIAYN top row, METRA bottom row
-- `.context/figures/ant_classic_diayn_vs_metra_seed0.png` — 2-panel side-by-side (seed 0 only, headline)
+- `figures/ant_classic_metra_3seeds.png` — 3-panel METRA only
+- `figures/ant_classic_diayn_vs_metra_3seeds.png` — 6-panel DIAYN top row, METRA bottom row
+- `figures/ant_classic_diayn_vs_metra_seed0.png` — 2-panel side-by-side (seed 0 only, headline)
 
 ## §2. What went wrong with METRA — `DualLam → 0` degenerate equilibrium
 
@@ -91,9 +91,9 @@ For SD purposes, the visual gate suffices to call "diversity achieved", but it d
 
 | Item | Path |
 |---|---|
-| Plan | `.superpowers/plans/2026-05-05-ant-metra.md` |
-| Lessons (cross-env) | `lessons/skill_discovery_diayn_cheetah.md`, `lessons/skill_discovery_diayn_ant.md`, this file |
-| Source extracts (verbatim METRA hparams) | `.context/references/skill_discovery_source_extracts.md` §METRA (lines 77-136) |
+| Plan | `plans/2026-05-05-ant-metra.md` |
+| Lessons (cross-env) | `lessons/diayn_cheetah.md`, `lessons/diayn_ant.md`, this file |
+| Source extracts (verbatim METRA hparams) | `references/skill_discovery_source_extracts.md` §METRA (lines 77-136) |
 | METRA aux module | `jax_rl/skill_discovery/metra.py` |
 | Manager extension | `jax_rl/skill_discovery/manager.py` (METRA branch) |
 | Train CLI | `scripts/train_skill_discovery.py --algo metra` |
@@ -101,4 +101,4 @@ For SD purposes, the visual gate suffices to call "diversity achieved", but it d
 | Stitcher | `scripts/stitch_skill_xy_panels.py` |
 | Ckpts | `checkpoints/20260506_210720_*` (seed 0), `_225834_*` (seed 1), `20260507_004802_*` (seed 2) |
 | Logs | `.temp/logs/ant_classic_metra_1m_seed{0,1,2}.log` |
-| Headline figure | `.context/figures/ant_classic_diayn_vs_metra_3seeds.png` (6-panel) |
+| Headline figure | `figures/ant_classic_diayn_vs_metra_3seeds.png` (6-panel) |
