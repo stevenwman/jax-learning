@@ -34,7 +34,7 @@ _METRA_PHI_LR = 1e-4
 _METRA_DUAL_LR = 1e-4
 _METRA_DUAL_LAM_INIT = 30.0
 _METRA_DUAL_SLACK = 1e-3
-_METRA_DUAL_DIST = "one"  # constraint = ||Δφ||² ≤ 1
+_METRA_DUAL_DIST = "one"  # constraint = ||Δφ||² ≤ 1 (METRA reference). l2 ablation 2026-05-07 also degenerated → not a constraint-shape issue.
 
 
 class SkillManager:

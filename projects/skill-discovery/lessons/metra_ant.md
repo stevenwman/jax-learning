@@ -80,12 +80,35 @@ For SD purposes, the visual gate suffices to call "diversity achieved", but it d
 - **`unit_sphere` prior at training, basis vectors at inference** — METRA was trained with z ~ uniform on S^{N-1}. We rendered figures with z = standard basis vectors (each is on the unit sphere — valid input). METRA reference's plotting code does the same per `metra.py:561-569`. Distribution mismatch is real but mild; consistent with their published figures.
 - **`<framelinacc>` sensor in ant.xml** still required for `cfrc_ext` — same as DIAYN port. Inherited cleanly; no METRA-specific issue.
 
+## §5c. `dual_dist="l2"` ablation (2026-05-07) — also null
+
+Per §3 follow-up: tried `dual_dist="l2"` on seed 0 (single seed, 1M). Hypothesis: `cst_dist = mean(‖s'-s‖²)` auto-scales with actual state changes, putting cst_penalty in a regime where Adam doesn't immediately saturate at +slack. Should keep λ active and force phi to grow.
+
+Reality: same degenerate equilibrium.
+
+| Run | DualLam final | PhiAlign final | max-pairwise | heading-std |
+|---|---|---|---|---|
+| `one` seed 0 (baseline) | 0.052 | 0.007 | 1.108 m | 74.0° |
+| `l2` seed 0 (ablation) | 0.044 | 0.080 | **0.443 m** | **68.0°** |
+
+`l2` is *worse* than `one` on both visual-gate metrics for seed 0. Per-skill mean −1613 ± 212 vs `one`'s −464 ± 386 (worse task return too).
+
+**Takeaway: the failure isn't constraint shape — `‖Δφ‖²` stays close to zero in both regimes, so cst_penalty saturates at +slack either way and λ decays.** The phi network at 1024×1024 with random init produces near-constant outputs early; without external pressure, it never breaks out of this fixed point.
+
+This rules out the "default `one` was wrong on Ant" hypothesis — both constraint types fail the same way. **Future METRA ablations on Ant must address phi architecture (try 256×256 per D3 fork), phi initialization (warm-start with pretrained features?), or move to a larger env where step-to-step state changes are big enough to make cst_penalty meaningfully negative early in training (Humanoid 376d).**
+
+Ckpt: `checkpoints/20260507_120054_sac_skill_skill_antmjxclassic_seed0`
+Log: `.temp/logs/ant_classic_metra_l2_1m_seed0.log`
+Figure: `figures/ant_classic_metra_l2_seed0.png`
+
+Default `_METRA_DUAL_DIST` reverted to `"one"` (METRA reference value).
+
 ## §6. When to revisit
 
-- If a future ablation tries `dual_dist="l2"` on AntMJXClassic and shows DualLam stabilizing > 1 (constraint actually engaging) AND max-pairwise > 2m (substantial improvement over current 0.76m), revise this lesson — METRA can work, but needs `l2` constraint.
-- If a future ablation uses 256×256 phi (D3 fork choice) with the SAME default `dual_dist="one"` and shows engagement, the lesson is "phi was over-parameterized for our env scale".
-- If neither works on AntMJXClassic, the right contrast environment is probably Humanoid (METRA's reference benchmark) — Ant may be too low-dim for METRA's representation to find meaningful state distances.
-- For SD-D / SD-E (D3 factor decomposition or full DUSDi), use the AntMJXClassic baseline numbers from §1 as the DIAYN-vs-* contrast, but FLAG that METRA-baseline is an inconclusive single experiment.
+- ~~If a future ablation tries `dual_dist="l2"` on AntMJXClassic...~~ — DONE, also null. See §5c.
+- If a future ablation uses 256×256 phi (D3 fork choice) with `dual_dist="one"` and shows engagement, the lesson is "phi was over-parameterized for our env scale". This is now the next-most-likely fix; budget ~2h.
+- If 256×256 phi also degenerates, the right contrast environment is probably Humanoid (METRA's reference benchmark, 376d obs) — Ant may be too low-dim for METRA's representation to find meaningful state distances.
+- For SD-D / SD-E (D3 factor decomposition or full DUSDi), use the AntMJXClassic baseline numbers from §1 as the DIAYN-vs-* contrast, but FLAG that METRA-baseline is an inconclusive 4-seed (3 `one` + 1 `l2`) experiment.
 
 ## §7. Filesystem references
 

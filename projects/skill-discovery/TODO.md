@@ -61,10 +61,8 @@ All commands prefix with `XLA_CLIENT_MEM_FRACTION=0.55` for CheetahRun (default 
 
 ## Open — next branches
 
-### Cheap follow-up: METRA `dual_dist="l2"` ablation
-- [ ] Single-flag manager edit: try `dual_dist="l2"` (auto-scales constraint with actual `‖s'-s‖²` instead of constant 1). Tests if METRA can engage on Ant with different constraint type. ~1.7h training (1 seed × 1M); if interesting, +1.5h × 2 seeds. Decision tree:
-  - DualLam stabilizes > 1 + max-pairwise > DIAYN's 0.77m → run 3 seeds, METRA-on-Ant narrative becomes "default `one` was wrong, `l2` engages"
-  - DualLam still decays / no improvement → confirms METRA-on-Ant ceiling regardless of constraint type → strengthens null result, points to phi architecture or env scale issue
+### ~~Cheap follow-up: METRA `dual_dist="l2"` ablation~~ — DONE 2026-05-07, ALSO NULL
+- [x] Tried `dual_dist="l2"` seed 0 × 1M. Same degenerate equilibrium as `one`: DualLam → 0.044 (vs `one`'s 0.052), PhiAlign → 0.080 (basically zero). Visual gate PASS via heading-std (68°), max-pairwise 0.443m WORSE than `one` seed 0's 1.108m. Confirms METRA-on-Ant ceiling is NOT a constraint-shape issue — phi stays small in both regimes so cst_penalty saturates at +slack either way. See `lessons/metra_ant.md` §5c. Default reverted to `"one"`. Next-likeliest fix: 256×256 phi (D3 fork sizing, ~2h).
 
 ### SD-C: Go2 DIAYN with deployable obs
 - [ ] Target `Go2WarpJoystickUnitree` (45d hardware-conservative obs, action_scale=0.25)
