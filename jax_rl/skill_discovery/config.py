@@ -23,7 +23,7 @@ class SkillDiscoveryConfig:
     enabled: bool = True
     mode: Literal["diayn", "metra", "factorized"] = "diayn"
     total_skill_dim: int = 0
-    prior: Literal["one_hot", "dirichlet", "hypersphere"] = "one_hot"
+    prior: Literal["one_hot", "unit_sphere", "dirichlet"] = "one_hot"
     resample: Literal["episode", "fixed_steps"] = "episode"
     resample_steps: int | None = None
     reward_mode: Literal["sample_time", "collection_time"] = "sample_time"

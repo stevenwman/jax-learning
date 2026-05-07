@@ -39,9 +39,18 @@ def test_dirichlet_not_implemented_in_sd_a():
         sample_skill(KEY, prior="dirichlet", num_envs=4, skill_dim=4)
 
 
-def test_hypersphere_not_implemented_in_sd_a():
-    with pytest.raises(NotImplementedError, match="SD-E"):
-        sample_skill(KEY, prior="hypersphere", num_envs=4, skill_dim=2)
+def test_unit_sphere_prior_shape_and_norm():
+    """METRA continuous z prior: rows sampled from N(0,I) and normalized."""
+    z = sample_skill(KEY, prior="unit_sphere", num_envs=32, skill_dim=4)
+    assert z.shape == (32, 4)
+    norms = jnp.linalg.norm(z, axis=-1)
+    assert jnp.allclose(norms, 1.0, atol=1e-5)
+
+
+def test_unit_sphere_prior_deterministic_under_same_key():
+    z1 = sample_skill(KEY, prior="unit_sphere", num_envs=8, skill_dim=4)
+    z2 = sample_skill(KEY, prior="unit_sphere", num_envs=8, skill_dim=4)
+    assert jnp.array_equal(z1, z2)
 
 
 def test_validate_skill_one_hot():
@@ -51,3 +60,15 @@ def test_validate_skill_one_hot():
     bad = jnp.ones((4, 4)) * 0.5  # not one-hot
     with pytest.raises(ValueError, match="one-hot"):
         validate_skill(bad, prior="one_hot", skill_dim=4)
+
+
+def test_validate_skill_unit_sphere():
+    """validate_skill accepts unit-norm rows, rejects non-unit rows."""
+    rng = jax.random.PRNGKey(7)
+    v = jax.random.normal(rng, (16, 4))
+    z = v / jnp.linalg.norm(v, axis=-1, keepdims=True)
+    validate_skill(z, prior="unit_sphere", skill_dim=4)  # no raise
+
+    bad = jnp.ones((4, 4))  # rows have norm=2, not 1
+    with pytest.raises(ValueError, match="unit_sphere"):
+        validate_skill(bad, prior="unit_sphere", skill_dim=4)
