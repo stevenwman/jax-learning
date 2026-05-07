@@ -69,4 +69,6 @@ See `.context/TODO.md` (top section) for the live priority list.
 - Plan: `.superpowers/plans/2026-05-02-splitbelt-treadmill-env.md`
 - Lessons: `.context/lessons/splitbelt.md`
 - Build journal: `.context/journals/2026-05-03-splitbelt-env-build.md`
-- Seed prompt for fresh agent: `.context/SEED_PROMPT_2026_05_05.md`
+- Seed prompt for fresh agent: `projects/adaptation/SEED_PROMPT.md` (NOTE: as
+  of 2026-05-07, content is dated 2026-05-05 — predates today's tunneling fix
+  + PoseDR v2 retrain + physics sweep + lessons. Regenerate before next compaction.)
