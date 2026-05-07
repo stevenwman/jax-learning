@@ -20,6 +20,12 @@ def _manager_test_extract(batch):
     return batch["obs"]
 
 
+# Paired next-obs extractor — required by METRA factors that read phi(s').
+@register_extractor(name="manager_test_obs_next", source="actor_obs", dim=5)
+def _manager_test_extract_next(batch):
+    return batch["next_obs"]
+
+
 def _make_diayn_cfg(num_skills=4):
     return SkillDiscoveryConfig(
         mode="diayn",
@@ -124,13 +130,66 @@ def test_manager_total_skill_dim_property():
     assert mgr.total_skill_dim == 8
 
 
-def test_manager_metra_factor_raises_in_sd_a():
-    """METRA factors should raise NotImplementedError until SD-E."""
-    cfg = SkillDiscoveryConfig(
+# ── METRA branch tests ────────────────────────────────────────────────
+
+
+def _make_metra_cfg(skill_dim=4):
+    return SkillDiscoveryConfig(
         mode="metra",
-        total_skill_dim=2,
-        factors=(FactorConfig(name="m", method="metra", skill_dim=2,
+        total_skill_dim=skill_dim,
+        prior="unit_sphere",
+        factors=(FactorConfig(name="m", method="metra", skill_dim=skill_dim,
                               source="actor_obs", extractor="manager_test_obs", dim=5),),
     )
-    with pytest.raises(NotImplementedError, match="SD-E"):
-        SkillManager(cfg)
+
+
+def test_manager_metra_init_returns_phi_and_dual_state():
+    """METRA factor aux state: 4 keys (phi_params, phi_opt_state, log_dual_lam, dual_opt_state)."""
+    mgr = SkillManager(_make_metra_cfg(skill_dim=4))
+    aux = mgr.init(KEY)
+    assert "m" in aux
+    for k in ("phi_params", "phi_opt_state", "log_dual_lam", "dual_opt_state"):
+        assert k in aux["m"], f"missing METRA aux key: {k}"
+    # log_dual_lam initialized to log(30.0)
+    assert jnp.isclose(aux["m"]["log_dual_lam"], jnp.log(jnp.array(30.0)))
+
+
+def test_manager_metra_intrinsic_reward_finite():
+    """METRA reward = (phi(s')-phi(s))·z. Finite at random init."""
+    mgr = SkillManager(_make_metra_cfg(skill_dim=3))
+    aux = mgr.init(KEY)
+    rng = jax.random.PRNGKey(1)
+    obs = jax.random.normal(rng, (BATCH, 5))
+    next_obs = obs + 0.01 * jax.random.normal(jax.random.PRNGKey(2), (BATCH, 5))
+    z = jax.random.normal(jax.random.PRNGKey(3), (BATCH, 3))
+    z = z / jnp.linalg.norm(z, axis=-1, keepdims=True)
+    batch = {"obs": obs, "next_obs": next_obs, "skill_z": z}
+    r = mgr.compute_intrinsic_reward(aux, batch)
+    assert r.shape == (BATCH,)
+    assert jnp.all(jnp.isfinite(r))
+
+
+def test_manager_metra_update_returns_finite_metrics():
+    """METRA update: phi step then dual step. All metrics finite, params change."""
+    mgr = SkillManager(_make_metra_cfg(skill_dim=3))
+    aux = mgr.init(KEY)
+    rng = jax.random.PRNGKey(1)
+    obs = jax.random.normal(rng, (BATCH, 5))
+    next_obs = obs + 0.05 * jax.random.normal(jax.random.PRNGKey(2), (BATCH, 5))
+    z = jax.random.normal(jax.random.PRNGKey(3), (BATCH, 3))
+    z = z / jnp.linalg.norm(z, axis=-1, keepdims=True)
+    batch = {"obs": obs, "next_obs": next_obs, "skill_z": z}
+    new_aux, metrics = mgr.update(aux, batch)
+    # Required keys present + finite
+    expected_keys = (
+        "m_phi_loss", "m_phi_alignment", "m_phi_cst_penalty",
+        "m_phi_diff_norm_sq", "m_dual_lam", "m_log_dual_lam",
+    )
+    for k in expected_keys:
+        assert k in metrics, f"missing metric: {k}"
+        assert jnp.all(jnp.isfinite(metrics[k])), f"non-finite metric: {k}"
+    # Phi params should have changed (phi step ran).
+    leaves_old = jax.tree_util.tree_leaves(aux["m"]["phi_params"])
+    leaves_new = jax.tree_util.tree_leaves(new_aux["m"]["phi_params"])
+    any_changed = any(not jnp.array_equal(a, b) for a, b in zip(leaves_old, leaves_new))
+    assert any_changed

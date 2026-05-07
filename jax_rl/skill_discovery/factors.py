@@ -65,3 +65,32 @@ def resolve_factor(factor: FactorConfig, batch: dict) -> jax.Array:
 def _actor_obs_full(batch: dict) -> jax.Array:
     """Built-in: full actor_obs passthrough. dim=-1 sentinel handles any width."""
     return batch["obs"]
+
+
+@register_extractor(name="actor_obs_full_next", source="actor_obs", dim=-1)
+def _actor_obs_full_next(batch: dict) -> jax.Array:
+    """Built-in: full actor next_obs passthrough — METRA reads phi(s')."""
+    return batch["next_obs"]
+
+
+def resolve_factor_next(factor: FactorConfig, batch: dict) -> jax.Array:
+    """Resolve next-obs factor for METRA's phi(s').
+
+    Looks up the *paired* `<extractor>_next` extractor (e.g. ``actor_obs_full``
+    paired with ``actor_obs_full_next``). Validates against ``factor.dim``.
+    """
+    next_name = f"{factor.extractor}_next"
+    if next_name not in _REGISTRY:
+        raise KeyError(
+            f"METRA factor {factor.name!r} requires next-obs extractor "
+            f"{next_name!r}, but it is not registered. Register a "
+            f"`@register_extractor(name='{next_name}', ...)` that pulls "
+            f"next_obs."
+        )
+    out = _REGISTRY[next_name].fn(batch)
+    if out.shape[-1] != factor.dim:
+        raise ValueError(
+            f"dim mismatch: extractor {next_name!r} returned "
+            f"shape[-1]={out.shape[-1]}, factor.dim={factor.dim}"
+        )
+    return out

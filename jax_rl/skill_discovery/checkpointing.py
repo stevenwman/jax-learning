@@ -15,18 +15,20 @@ SCHEMA_VERSION = 1
 def save_skill_aux_state(aux_state: dict, ckpt_dir: str) -> None:
     """Write aux_state to <ckpt_dir>/skill_aux/ as numpy arrays.
 
-    Layout: skill_aux/<factor_name>/{params.npz, opt_state.npz}
+    Layout: ``skill_aux/<factor_name>/<sub_key>.npz`` where ``<sub_key>`` is
+    each top-level key of the per-factor dict (``params`` + ``opt_state`` for
+    DIAYN; ``phi_params`` + ``phi_opt_state`` + ``log_dual_lam`` +
+    ``dual_opt_state`` for METRA). Sub-trees are flattened independently so
+    method-specific schema doesn't leak into the loader.
     """
     skill_dir = os.path.join(ckpt_dir, "skill_aux")
     os.makedirs(skill_dir, exist_ok=True)
     for factor_name, state in aux_state.items():
         factor_dir = os.path.join(skill_dir, factor_name)
         os.makedirs(factor_dir, exist_ok=True)
-        # Flatten params PyTree to numpy arrays for portable storage
-        params_flat = _flatten_pytree(state["params"])
-        np.savez(os.path.join(factor_dir, "params.npz"), **params_flat)
-        opt_flat = _flatten_pytree(state["opt_state"])
-        np.savez(os.path.join(factor_dir, "opt_state.npz"), **opt_flat)
+        for sub_key, sub_state in state.items():
+            sub_flat = _flatten_pytree(sub_state)
+            np.savez(os.path.join(factor_dir, f"{sub_key}.npz"), **sub_flat)
 
 
 def load_skill_aux_state(ckpt_dir: str, template: dict) -> dict:
@@ -34,7 +36,7 @@ def load_skill_aux_state(ckpt_dir: str, template: dict) -> dict:
 
     Args:
         template: a freshly-initialized aux_state with the right PyTree
-            structure (used to unflatten the loaded numpy arrays).
+            structure per sub-key (used to unflatten the loaded numpy arrays).
     """
     skill_dir = os.path.join(ckpt_dir, "skill_aux")
     if not os.path.isdir(skill_dir):
@@ -43,12 +45,10 @@ def load_skill_aux_state(ckpt_dir: str, template: dict) -> dict:
     loaded = {}
     for factor_name, tpl in template.items():
         factor_dir = os.path.join(skill_dir, factor_name)
-        params_flat = dict(np.load(os.path.join(factor_dir, "params.npz")))
-        opt_flat = dict(np.load(os.path.join(factor_dir, "opt_state.npz")))
-        loaded[factor_name] = {
-            "params": _unflatten_pytree(params_flat, tpl["params"]),
-            "opt_state": _unflatten_pytree(opt_flat, tpl["opt_state"]),
-        }
+        loaded[factor_name] = {}
+        for sub_key, sub_tpl in tpl.items():
+            sub_flat = dict(np.load(os.path.join(factor_dir, f"{sub_key}.npz")))
+            loaded[factor_name][sub_key] = _unflatten_pytree(sub_flat, sub_tpl)
     return loaded
 
 
