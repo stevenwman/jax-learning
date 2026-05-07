@@ -89,6 +89,26 @@ def main():
     parser.add_argument("--num-envs", type=int, default=None,
                         help="Override TrainConfig.num_envs (default depends on preset). "
                              "AntMJX may need 64 or fewer to fit GPU.")
+    # SAC-config overrides for paper-parity experiments (e.g. METRA reference).
+    parser.add_argument("--actor-hidden-dim", type=str, default=None,
+                        help="Comma-separated SAC actor hidden dims (e.g. '1024,1024' for METRA paper). "
+                             "Default: SACConfig.hidden_dim = (256, 256).")
+    parser.add_argument("--critic-hidden-dim", type=str, default=None,
+                        help="Comma-separated SAC critic hidden dims (e.g. '1024,1024' for METRA paper). "
+                             "Default: same as --actor-hidden-dim (SACConfig.critic_hidden_dim=None).")
+    parser.add_argument("--lr", type=float, default=None,
+                        help="Override TrainConfig.lr (SAC actor/critic optimizer lr). METRA paper: 1e-4. "
+                             "Default: depends on preset (1e-3 for CheetahRun + AntMJX).")
+    parser.add_argument("--alpha-lr", type=float, default=None,
+                        help="Override SACConfig.alpha_lr (entropy coefficient lr). METRA paper: 1e-4.")
+    parser.add_argument("--alpha-init", type=float, default=None,
+                        help="Override SACConfig.alpha_init. METRA paper: 0.01. Default: 1.0.")
+    parser.add_argument("--batch-size", type=int, default=None,
+                        help="Override SACConfig.batch_size. METRA paper: 256. Default: 512.")
+    parser.add_argument("--grad-updates-per-step", type=int, default=None,
+                        help="Override SACConfig.grad_updates_per_step. "
+                             "METRA paper uses single-env collect → effective 1; our 64-env parallel uses 8. "
+                             "Tune for replay-ratio parity if matching paper.")
     args = parser.parse_args()
 
     cfg, algo_cfg = get_sac_preset(args.env)
@@ -103,6 +123,22 @@ def main():
         cfg = dataclasses.replace(cfg, num_envs=args.num_envs)
     if args.buffer_size is not None:
         algo_cfg = dataclasses.replace(algo_cfg, buffer_size=args.buffer_size)
+    if args.actor_hidden_dim is not None:
+        algo_cfg = dataclasses.replace(
+            algo_cfg, hidden_dim=tuple(int(x) for x in args.actor_hidden_dim.split(",")))
+    if args.critic_hidden_dim is not None:
+        algo_cfg = dataclasses.replace(
+            algo_cfg, critic_hidden_dim=tuple(int(x) for x in args.critic_hidden_dim.split(",")))
+    if args.lr is not None:
+        cfg = dataclasses.replace(cfg, lr=args.lr)
+    if args.alpha_lr is not None:
+        algo_cfg = dataclasses.replace(algo_cfg, alpha_lr=args.alpha_lr)
+    if args.alpha_init is not None:
+        algo_cfg = dataclasses.replace(algo_cfg, alpha_init=args.alpha_init)
+    if args.batch_size is not None:
+        algo_cfg = dataclasses.replace(algo_cfg, batch_size=args.batch_size)
+    if args.grad_updates_per_step is not None:
+        algo_cfg = dataclasses.replace(algo_cfg, grad_updates_per_step=args.grad_updates_per_step)
 
     # Build env bundle to learn obs/action dims
     env_bundle = make_env_bundle(cfg, args.seed)
