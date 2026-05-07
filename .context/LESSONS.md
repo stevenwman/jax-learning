@@ -99,6 +99,15 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **Use circular std for heading data, not linear `np.std(arctan2(...))`** — linear std treats +179° and -179° as 358° apart instead of 2°. Circular std from resultant length R: `sqrt(-2 ln R)`.
 - **lax.scan the xy rollout, don't Python-loop env.step** — per `lessons/warp.md`, Python loops calling `mjx.step` per iteration cause Warp contact-buffer OOMs because allocations don't get pooled. JIT the entire rollout scan.
 
+## [Skill Discovery (METRA on Ant — null-delta vs DIAYN)](lessons/skill_discovery_metra_ant.md) — 6 lessons
+
+- **METRA-default-HPs do NOT exceed DIAYN on AntMJXClassic** — 3 seeds × 1M, max-pairwise avg 0.763m (METRA) vs 0.767m (DIAYN), heading-std 71° vs 86°. Hypothesis "Lipschitz constraint produces wider state coverage" REJECTED at this scale.
+- **DualLam → ~0.05 in all 3 METRA seeds** — phi started small → cst_penalty saturated at +slack=1e-3 → Adam descended log_dual_lam → λ decayed → constraint never engaged. Effectively ran "DIAYN with different reward formula", not true METRA.
+- **Visible diversity despite phi collapse** — 8-skill radial fan-out is comparable to DIAYN's best seed even though phi degenerated. Visual gate measures actor behavior, NOT phi quality. A stricter test would evaluate phi-state-distance correlation.
+- **`dual_dist="one"` constant-1 is too generous on Ant** — Ant has small step-to-step state changes (‖s'-s‖² ≈ 0.001 at random init), so cst_penalty stays at +slack and λ decays. Try `dual_dist="l2"` (auto-scales with actual state changes) before concluding METRA fails on Ant.
+- **METRA wall-clock 106 min/seed on AntMJXClassic** — ~1.9× DIAYN's 56 min, dominated by phi double-forward + 1024×1024 phi net + buffer next_obs I/O.
+- **Sign convention for dual_lam loss is `+log_dual_lam * stop_grad(cst_penalty.mean())`** — Adam descent. Verified against METRA reference `metra.py:292-300` AND D3 fork `d3-skill-discovery/.../metra.py:445`. **Do NOT flip to `-log_dual_lam * ...` — that breaks Lagrangian convention and METRA degenerates further.**
+
 ## [Determinism (JAX/XLA + GPU Physics)](lessons/determinism.md) — bit-ID limits
 
 - **JAX/XLA algo bit-ID** with `XLA_FLAGS=--xla_gpu_deterministic_ops=true` (verified via `scripts/check_tdmpc2_determinism.py`)
