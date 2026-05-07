@@ -1,9 +1,52 @@
 # Splitbelt Treadmill — Lessons
 
 > Splitbelt env build + first calibration: 2026-05-03 → 2026-05-05.
+> Tunneling fix + retrain + OOD: 2026-05-06.
 > Spec: `.superpowers/specs/2026-05-02-splitbelt-treadmill-env-design.md`
 > Plan: `.superpowers/plans/2026-05-02-splitbelt-treadmill-env.md`
 > Build journal: `.context/journals/2026-05-03-splitbelt-env-build.md`
+
+---
+
+## Foot-tunneling through thin slabs in MJX/MuJoCo Warp (2026-05-06)
+
+**What happened:** Splitbelt belts are 10mm-thick boxes. Trained PoseDR policy looked OK in training (eval 280.6) but recorded rollouts showed FL foot center at z=-0.05 (5cm below belt top, INSIDE the slab body) for 95% of frames. Visual: robot looked stuck with one foot through the floor. v1 ckpt eval was inflated by foot-as-anchor exploit.
+
+**Root cause:** MJX has no continuous collision detection (CCD). At foot vertical velocity 1.7 m/s and substep dt=0.005s, foot moves 8.5mm/substep — comparable to slab half-thickness. Per-substep position check sometimes catches foot ABOVE slab at step t and BELOW slab at step t+1 with no overlap detected at either step → contact missed → foot remains sub-slab indefinitely (no force pushing it back up because foot center is now BELOW slab center, slab isn't above the foot in the geom-distance check).
+
+**Fix:** `<pair margin="0.02" .../>` on every foot×belt and foot×fallback_floor pair. Margin extends contact detection range — contact engages when foot bottom is within 20mm of belt top, generating soft repulsive force BEFORE the foot reaches the slab. Foot decelerates earlier → no fast-tunneling. Geometry unchanged (top of slab still at z=+0.005, resting foot center +0.027). 12 pairs total in `xmls/go2_warp_splitbelt_scene.xml`.
+
+```xml
+<pair geom1="FL" geom2="left_belt_geom"  margin="0.02"/>
+<pair geom1="FL" geom2="right_belt_geom" margin="0.02"/>
+... (8 foot×belt pairs total, every foot × every belt)
+<pair geom1="FL" geom2="fallback_floor"  margin="0.02"/>
+... (4 foot×fallback_floor pairs)
+```
+
+Tried alternatives:
+- 50mm thick slab (bottom z=-0.045): catches most tunneling but ~0.2% leak; uglier off-belt visuals (50mm drop).
+- 50mm slab + margin: slightly more tunneling than margin alone (1 frame). GPU non-determinism noise.
+
+**Pre-existing related bug (same fix block):** Original spec assumed FL/RL stay on left belt and FR/RR on right belt → only those 4 collision pairs declared. Robot lateral drift carries any foot over either belt. Added 4 missing cross-belt pairs (`FL×right`, `FR×left`, `RL×right`, `RR×left`). Without these, even with margin, a foot crossing the centerline has no declared collision pair → tunnels.
+
+**Lesson:**
+1. **Always declare every leg-foot × every walkable-surface contact pair.** Don't assume gait keeps feet on a particular belt — drift breaks the assumption.
+2. **For thin slabs in MJX/Warp, use `<pair margin>` to compensate for missing CCD.** 2× the slab thickness is a reasonable starting margin.
+3. **Foot-as-anchor exploit:** policies trained on contact-deficient envs will exploit any tunneling for "free anchor." Eval scores can be inflated. Always sanity-check rollout videos before trusting an eval score.
+4. **Closing the inboard belt-belt gap (5cm vestige) didn't help tunneling** — gap was a sensor-design fossil from `floor_found` era (replaced by position-based detection 2026-05-04). Closing it improved cosmetics but exposed the contact-pair bug.
+
+---
+
+## Belts must butt at y=0 (vestigial center gap removed 2026-05-06)
+
+**What happened:** Original spec had a 5cm inboard gap between belts (y∈[-0.025, 0.025]) where neither belt was present and feet would land on `fallback_floor` 1cm below. Visually: feet bumped into 1cm vertical wall of belt slab when swinging inboard.
+
+**Root cause:** The gap existed so the `<contact data="found">` sensor `floor_found` could distinguish "foot on belt" vs "foot in gap." That sensor was abandoned 2026-05-04 (margin-fires on plane geoms — see lesson above). Position-based off-belt detection (`foot_belt_id` from foot xy) doesn't need the geometric gap. Gap was a dead fossil.
+
+**Fix:** Belts butt together at y=0 (left body pos `(0, -0.150, 0)`, right body pos `(0, +0.150, 0)`, each half-width 0.150). `BeltLayout` config: `left_y_min=-0.300 left_y_max=0.000`, `right_y_min=0.000 right_y_max=0.300`. `fallback_floor` now only catches outside-the-belts feet (|y|>0.300). Test `test_foot_at_boundary_assigns_to_belt`: y=0 lies on both belt edges; left wins by `where`-order.
+
+**Lesson:** When you remove a sensor / detection mechanism, audit the geometry that was sized for it. Gaps, margins, special-case dimensions can be vestigial.
 
 ---
 

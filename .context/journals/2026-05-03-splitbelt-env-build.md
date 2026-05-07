@@ -181,6 +181,75 @@ PoseDR FastSAC 1M training in flight (`/tmp/splitbelt-smoke/posedr.log`) at sess
 - Asymmetric AC: actor obs blindness to body translation. Cross-policy transfer demos must check actor obs schema, not just dimension.
 - RTX 5080 16GB with 14-actuator model: ≤512 envs + `XLA_CLIENT_MEM_FRACTION=0.55` for FastSAC training to fit Warp graph during eval env construction.
 
+## 2026-05-06 — Foot tunneling fix, PoseDR retrain, OOD eval
+
+Reviewed PoseDR ckpt rollout video: FL foot was penetrating belt slab to
+z=-0.05 for 95% of frames in stationary windows. Investigation chain:
+
+1. **Closed vestigial 5cm center gap.** Original spec separated belts with a
+   5cm gap (y∈[-0.025,0.025]) so the abandoned `floor_found` sensor could
+   distinguish "on belt" vs "in gap" — vestigial after 2026-05-04 swap to
+   position-based off-belt detection. Belts now butt at y=0 (left half-width
+   0.150 at body pos -0.150, right at +0.150). Updated `BeltLayout` config
+   (`left_y_max=0.000`, `right_y_min=0.000`).
+2. **Added 4 missing cross-belt foot pairs.** Original scene XML only
+   declared `FL × left_belt_geom`, `FR × right_belt_geom`, etc. — assumed
+   feet stay on their assigned belt. Robot lateral drift carries any foot
+   over either belt → no collision pair declared → tunneling. Added 4 pairs
+   (`FL×right`, `FR×left`, `RL×right`, `RR×left`). All 8 foot×belt + 4
+   foot×fallback_floor pairs now declared.
+3. **Tested 3 fixes for the residual high-velocity tunneling:**
+   - **A. `<pair margin="0.02">`**: zero tunneling, no geometry shift. Winner.
+   - **B. 50mm thick slab**: 99.8% reduction; 0.2% leak; uglier off-belt vis.
+   - **C. Both**: similar to A.
+
+   MJX has no continuous collision detection (CCD). Foot vertical velocity
+   1.7 m/s × substep dt 0.005s = 8.5mm/substep, comparable to slab
+   half-thickness (5mm). Position-only contact misses the contact when foot
+   crosses the slab between substeps. Margin extends contact detection
+   range so cushion engages ABOVE slab top — foot decelerates before
+   reaching the slab. 12 pairs in scene XML now have `margin="0.02"`.
+
+**PoseDR retrain (v2)**: 1M FastSAC, ~2.5min. **Eval 378.9 ± 113.4** vs
+old buggy v1 280.6 ± 207.8. Higher, tighter, real. Old policy was using
+foot-as-anchor exploit; without it, real friction-based station-keeping
+emerged. Q-bias -0.64, Q-corr 0.786 (healthy). Ckpt:
+`checkpoints/20260506_195126_fast_sac_go2warpsplitbeltposedr_seed0/best`.
+
+**Visualization upgrades**:
+- Added `splitbelt_side_iso` cam (pos `(0.5, 1.7, 0.55)`, ~16° yaw off
+  pure side). Shows lateral sway better than pure side.
+
+**OOD belt-speed sweep** (`scripts/eval_splitbelt_ood.py`, 16 episodes/v):
+
+| v   | mean  | OOD? |
+|-----|-------|------|
+| 0.30| 215.6 | (in-dist boundary low) |
+| 0.50| 393.2 | peak |
+| 1.00| 378.0 | strong |
+| 1.50| 125.5 | (in-dist boundary high) |
+| 2.00|  65.1 | OOD |
+| 2.50|  29.7 | OOD |
+
+In-dist peak v=0.5; both training-range boundaries (0.3, 1.5) underperform
+the mid-range. v≥2.0 fails progressively (graceful degradation, not
+catastrophic). Sweep script reuses `record_video._build_select_action` and
+overrides `cfg.schedule_kind="tied"` per-call.
+
+### Bugs found + fixed in 2026-05-06
+- Foot tunneling (margin fix, see above).
+- Missing 4 cross-belt foot collision pairs.
+- `eval_splitbelt_ood.py` initial draft used `maybe_load_custom_env`
+  (returns None for splitbelt — only handles Ant). Switched to
+  `pg_registry.load`.
+- Splitbelt env returns dict obs `{state, privileged_state}`. The
+  `evaluate()` loop's `obs_normalize_fn` must extract `state` before any
+  normalization. Added explicit dict-handling in OOD eval.
+
+### Lessons added 2026-05-06 (in `lessons/splitbelt.md`)
+- Foot tunneling through thin slabs in MJX/Warp (no CCD; use `<pair margin>`).
+- Belts must butt at y=0 — vestigial center gap removed.
+
 ## What's deferred to next session
 
 1. **Calibration smoke (Task 5.1):** FastSAC + PPO 1M steps each on tied(0.5)

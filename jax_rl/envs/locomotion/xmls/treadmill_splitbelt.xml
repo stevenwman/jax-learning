@@ -32,21 +32,14 @@
     <light name="overhead"   directional="true" pos="0 0 5.0"  dir="0 0 -1"     diffuse="0.7 0.7 0.7" specular="0.2 0.2 0.2"/>
     <light name="fill_front" directional="true" pos="2 0 2.0"  dir="-1 0 -0.5"  diffuse="0.3 0.3 0.3"/>
     <light name="fill_side"  directional="true" pos="0 2 2.0"  dir="0 -1 -0.5" diffuse="0.3 0.3 0.3"/>
-    <!-- Static fallback floor — fills ONLY the gap between belts (y in [-0.025, 0.025])
-         and the regions outside belts (|y| > 0.325). Must be a finite BOX, not a plane:
-         planes are infinite in MuJoCo, and the floor_found contact sensor would fire
-         for any foot near z=0 even when on a belt (margin-based detection). With a box,
-         floor_found fires only when a foot is geometrically over the gap or off-the-side.
-
-         The "outside belts" regions are caught by a wider box; we use a single box
-         that's wider than the belt span (y in [-2, 2]) but THIN in z, sitting just
-         below the belt surface. The narrow gap between belts (y∈[-0.025, 0.025]) and
-         the outside-belt regions (|y|>0.325) are uncovered by belts → only the
-         fallback_floor catches them. Under the belts (y∈[-0.325,-0.025] ∪ [0.025,0.325]),
-         feet hit the belt slab first (z=0..0.01) before reaching fallback_floor below.
+    <!-- Static fallback floor — catches feet/body that fall off the side of the
+         belt span (|y| > 0.300). Must be a finite BOX, not a plane: planes are
+         infinite in MuJoCo and trigger margin-based contact-sensor false positives.
 
          Box dimensions: 50m × 2m × 0.005m (half-extents). Top surface at z=-0.005,
-         so 5mm below belt surface — feet on a belt never touch this. -->
+         5mm below belt surface — feet on a belt never touch this. Belts butt
+         together at y=0 (no center gap), so this only catches outside-the-belts
+         regions where |y|>0.300. -->
     <geom name="fallback_floor"
           type="box"
           size="50 2.0 0.005"
@@ -54,14 +47,14 @@
           rgba="0.6 0.55 0.5 1"
           friction="1.0 0.005 0.0001"/>
 
-    <!-- Left belt: y in [-0.325, -0.025], slides along world x. -->
-    <body name="left_belt" pos="0 -0.175 0">
+    <!-- Left belt: y in [-0.300, 0.000], slides along world x. -->
+    <body name="left_belt" pos="0 -0.150 0">
       <joint name="left_belt_joint" class="treadmill_belt"/>
       <geom name="left_belt_geom" class="treadmill_belt" size="25 0.15 0.005" material="left_belt_mat"/>
     </body>
 
-    <!-- Right belt: y in [0.025, 0.325]. -->
-    <body name="right_belt" pos="0 0.175 0">
+    <!-- Right belt: y in [0.000, 0.300]. Edges meet left belt at y=0. -->
+    <body name="right_belt" pos="0 0.150 0">
       <joint name="right_belt_joint" class="treadmill_belt"/>
       <geom name="right_belt_geom" class="treadmill_belt" size="25 0.15 0.005" material="right_belt_mat"/>
     </body>

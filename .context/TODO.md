@@ -1,20 +1,40 @@
 # TODO
 
-## Completed (2026-05-05) — Splitbelt env variants + visual upgrades
+## Completed (2026-05-06) — Foot tunneling fix + PoseDR v2 + OOD sweep
 
-Belt sign fix (drag-backward biomech convention), obs schema aligned to joystick NoAccel (cross-deploy works both ways), checker textures + directional lights + fixed side cam, three new env variants:
-- `Go2WarpSplitbelt` — baseline tied(0.5), v2 eval **72.3 ± 13.4** at 1M
-- `Go2WarpSplitbeltDR` — random_per_episode belt speeds (untrained)
-- `Go2WarpSplitbeltPoseDR` — pose_track obs (world-frame body pose) + belt DR. **eval 280.6 ± 207.8** at 1M (`checkpoints/20260505_184757_fast_sac_go2warpsplitbeltposedr_seed0`). Idealized — actor sees ground-truth pose; not real-robot deployable.
+Found PoseDR v1 was exploiting a foot-tunneling physics bug: FL was passing through belt slab (z=-0.05 for 95% of frames) → "free anchor" inflated eval to 280.6.
 
-Cross-deploy demo: joystick policy on splitbelt env → robot stands while belt drags. Asymmetric-AC actor blindness: body lin vel is privileged-only. See `.context/lessons/splitbelt.md`.
+Three fixes landed:
+1. Closed vestigial 5cm center belt gap (left/right edges meet at y=0).
+2. Added 4 missing cross-belt foot collision pairs (FL×right, FR×left, RL×right, RR×left). Spec assumed feet stay on assigned belt; lateral drift breaks the assumption.
+3. `<pair margin="0.02">` on every foot×belt + foot×fallback_floor pair. Compensates for MJX's lack of CCD: contact engages 20mm above belt → fast-approach foot decelerated before reaching slab → no tunneling.
+
+PoseDR v2 retrained on fixed env (1M FastSAC, ~2.5min): **eval 378.9 ± 113.4** vs v1 280.6 ± 207.8. Higher and tighter — real friction-based stationkeeping. Ckpt: `checkpoints/20260506_195126_fast_sac_go2warpsplitbeltposedr_seed0/best`.
+
+OOD belt-speed sweep (`scripts/eval_splitbelt_ood.py`, 16 ep/v):
+
+| v   | mean  | OOD? |
+|-----|-------|------|
+| 0.30| 215.6 | (in-dist boundary low) |
+| 0.50| **393.2** | peak |
+| 1.00| 378.0 | strong |
+| 1.50| 125.5 | (in-dist boundary high) |
+| 2.00|  65.1 | OOD (17% peak) |
+| 2.50|  29.7 | OOD (8% peak) |
+
+Visual: `splitbelt_side_iso` cam (~16° off pure side, shows lateral sway).
 
 **Open follow-ups:**
-- [ ] OOD eval on PoseDR ckpt at unseen belt speeds (>1.5 m/s)
-- [ ] A1 protocol probe: existing PoseDR ckpt under `tied_split_tied` schedule, run offline analyzer
-- [ ] Train splitbelt with `error` obs_mode (cmd_track_error + drift_xy in actor) — closes the AC blindness gap
-- [ ] Per-protocol algo presets (A1/A2/A3/A4) — fresh brainstorm/spec/plan cycle
-- [ ] History-mode `FrameStackWrapper` wiring in `mjx_backend` (still deferred)
+- [ ] A1 protocol probe: PoseDR v2 under `tied_split_tied(v_warm=0.5, vL_split=0.5, vR_split=1.0, t1=200, t2=600)`; run offline `splitbelt_analysis`. Measures `recovery_time` + `after_effect`. First adaptation-benchmark data without per-protocol training.
+- [ ] Train splitbelt with `error` obs_mode (cmd_track_error + drift_xy in actor) — closes the AC blindness gap (alternative to PoseDR's idealized world-pose obs).
+- [ ] Per-protocol algo presets (A1/A2/A3/A4) — fresh brainstorm/spec/plan cycle.
+- [ ] History-mode `FrameStackWrapper` wiring in `mjx_backend` (still deferred).
+- [ ] Retrain `Go2WarpSplitbelt` (tied(0.5)) on fixed env — only if a use case demands.
+- [ ] Train `Go2WarpSplitbeltDR` on fixed env — same caveat.
+
+## Completed (2026-05-05) — Splitbelt env variants + visual upgrades
+
+Belt sign fix (drag-backward biomech convention), obs schema aligned to joystick NoAccel (cross-deploy works both ways), checker textures + directional lights + fixed side cam, three env variants registered. PoseDR v1 trained eval 280.6 (later INVALIDATED 2026-05-06 by tunneling discovery — see above). Cross-deploy demo: joystick policy on splitbelt env → robot stands while belt drags. Asymmetric-AC actor blindness: body lin vel is privileged-only. See `.context/lessons/splitbelt.md`.
 
 ## Completed (2026-05-03) — Splitbelt treadmill env (Go2WarpSplitbelt)
 

@@ -17,23 +17,32 @@
          pos at robot's left (+y), looking -y; world +x = image-right
          → robot walks right, belts scroll left = correct treadmill visual. -->
   <worldbody>
-    <camera name="splitbelt_side"  pos="0 1.8 0.35" xyaxes="-1 0 0  0 0 1" fovy="45"/>
-    <camera name="splitbelt_front" pos="1.6 0 0.4"  xyaxes="0 -1 0  0 0 1" fovy="50"/>
-    <camera name="splitbelt_iso"   pos="1.2 1.2 0.6" xyaxes="-0.7 0.7 0  -0.3 -0.3 0.9" fovy="50"/>
+    <camera name="splitbelt_side"      pos="0 1.8 0.35" xyaxes="-1 0 0  0 0 1" fovy="45"/>
+    <camera name="splitbelt_side_iso"  pos="0.5 1.7 0.55"
+            xyaxes="-0.956 0.282 0  -0.083 -0.283 0.955" fovy="45"/>
+    <camera name="splitbelt_front"     pos="1.6 0 0.4"  xyaxes="0 -1 0  0 0 1" fovy="50"/>
+    <camera name="splitbelt_iso"       pos="1.2 1.2 0.6" xyaxes="-0.7 0.7 0  -0.3 -0.3 0.9" fovy="50"/>
   </worldbody>
 
   <!-- Contact filter (S§5.2 + bongo lesson 2026-04-02 — exact contact sensors, not heuristics):
-       - feet × {left_belt, right_belt, fallback_floor}
+       - feet × {left_belt, right_belt, fallback_floor} (every foot × every belt — robot
+         lateral drift can carry any foot over any belt; missing a pair = foot tunnels
+         through the slab. Original spec assumed FL/RL stay on left and FR/RR stay on right,
+         but the policy can drift the body laterally and cross feet over.)
        - base/torso × {left_belt, right_belt, fallback_floor} -->
   <contact>
-    <pair geom1="FL" geom2="left_belt_geom"/>
-    <pair geom1="RL" geom2="left_belt_geom"/>
-    <pair geom1="FR" geom2="right_belt_geom"/>
-    <pair geom1="RR" geom2="right_belt_geom"/>
-    <pair geom1="FL" geom2="fallback_floor"/>
-    <pair geom1="FR" geom2="fallback_floor"/>
-    <pair geom1="RL" geom2="fallback_floor"/>
-    <pair geom1="RR" geom2="fallback_floor"/>
+    <pair geom1="FL" geom2="left_belt_geom"  margin="0.02"/>
+    <pair geom1="FL" geom2="right_belt_geom" margin="0.02"/>
+    <pair geom1="FR" geom2="left_belt_geom"  margin="0.02"/>
+    <pair geom1="FR" geom2="right_belt_geom" margin="0.02"/>
+    <pair geom1="RL" geom2="left_belt_geom"  margin="0.02"/>
+    <pair geom1="RL" geom2="right_belt_geom" margin="0.02"/>
+    <pair geom1="RR" geom2="left_belt_geom"  margin="0.02"/>
+    <pair geom1="RR" geom2="right_belt_geom" margin="0.02"/>
+    <pair geom1="FL" geom2="fallback_floor"  margin="0.02"/>
+    <pair geom1="FR" geom2="fallback_floor"  margin="0.02"/>
+    <pair geom1="RL" geom2="fallback_floor"  margin="0.02"/>
+    <pair geom1="RR" geom2="fallback_floor"  margin="0.02"/>
     <!-- base/torso × belts (catches collapse onto a belt; primary fall detector) -->
     <pair geom1="torso_box" geom2="left_belt_geom"/>
     <pair geom1="torso_box" geom2="right_belt_geom"/>
