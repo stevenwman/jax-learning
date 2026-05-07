@@ -37,17 +37,16 @@ import jax_rl.training.env_setup  # noqa: F401 — registers custom envs
 from scripts.record_video import _build_select_action  # type: ignore
 
 
-def make_ood_env(speed: float, base_env_name: str = "Go2WarpSplitbeltPoseDR"):
-    """Build splitbelt env with tied(v=speed) schedule, preserving base env's
-    obs_mode + reward setup (PoseDR has pose_track obs + pose-track rewards)."""
+def make_env(schedule_kind, schedule_params, base_env_name="Go2WarpSplitbeltPoseDR"):
+    """Build splitbelt env with arbitrary schedule override."""
     from jax_rl.envs.locomotion.go2_warp_splitbelt import Go2WarpSplitbeltEnv
     from mujoco_playground import registry as pg_registry
 
     template = pg_registry.load(base_env_name)
     cfg = config_dict.ConfigDict(template._config.to_dict())
     cfg.unlock()
-    cfg.schedule_kind = "tied"
-    cfg.schedule_params = config_dict.create(v=float(speed))
+    cfg.schedule_kind = schedule_kind
+    cfg.schedule_params = config_dict.create(**schedule_params)
 
     task_map = {
         "Go2WarpSplitbelt":       "splitbelt",
@@ -57,10 +56,17 @@ def make_ood_env(speed: float, base_env_name: str = "Go2WarpSplitbeltPoseDR"):
     return Go2WarpSplitbeltEnv(task=task_map[base_env_name], config=cfg)
 
 
+def make_ood_env(speed: float, base_env_name: str = "Go2WarpSplitbeltPoseDR"):
+    return make_env("tied", {"v": float(speed)}, base_env_name)
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--checkpoint", required=True)
-    p.add_argument("--speeds", nargs="+", type=float, default=[0.3, 0.5, 1.0, 1.5, 2.0, 2.5])
+    p.add_argument("--speeds", nargs="+", type=float, default=[0.3, 0.5, 1.0, 1.5, 2.0, 2.5],
+                   help="Tied speed sweep")
+    p.add_argument("--pairs", nargs="+", default=None,
+                   help="Differential sweep: list of vL,vR pairs (e.g. 0.5,1.5 0.3,1.5 0.5,2.0)")
     p.add_argument("--num-episodes", type=int, default=16)
     p.add_argument("--episode-length", type=int, default=1000)
     p.add_argument("--seed", type=int, default=0)
@@ -99,19 +105,12 @@ def main():
             flat = norm_normalize(flat, norm_state)
         return flat
 
-    print(f"\nOOD sweep on {args.base_env} (PoseDR train range: v∈[0.3, 1.5])")
-    print(f"  episodes/v: {args.num_episodes}, episode_length: {args.episode_length}\n")
-    print(f"{'v':>6} | {'mean':>8} {'std':>7} {'min':>8} {'max':>8}  | OOD?")
-    print("-" * 60)
-
     from jax_rl.envs.wrappers import wrap_for_training
-    results = {}
-    for v in args.speeds:
-        env = make_ood_env(v, args.base_env)
+
+    def run_one(env):
         action_repeat = int(getattr(env._config, "action_repeat", 4))
         env_w = wrap_for_training(env, episode_length=args.episode_length, action_repeat=action_repeat)
-
-        m = evaluate(
+        return evaluate(
             select_action_fn=algo.select_action,
             actor_params=actor_params,
             env=env_w,
@@ -120,17 +119,50 @@ def main():
             key=jax.random.PRNGKey(args.seed),
             obs_normalize_fn=obs_normalize_fn,
         )
-        is_ood = v < 0.3 or v > 1.5
-        flag = "OOD" if is_ood else ""
-        print(f"{v:>6.2f} | {m['eval_mean']:>8.1f} {m['eval_std']:>7.1f} {m['eval_min']:>8.1f} {m['eval_max']:>8.1f}  | {flag}")
-        results[v] = m
 
-    in_dist = [m["eval_mean"] for v, m in results.items() if 0.3 <= v <= 1.5]
-    if in_dist:
-        peak = max(in_dist)
-        print(f"\nIn-dist peak: {peak:.1f}")
-        for v, m in sorted(results.items()):
-            print(f"  v={v}: {m['eval_mean']:.1f} ({100 * m['eval_mean'] / peak:+.0f}% of peak)")
+    if args.pairs is not None:
+        # Differential sweep
+        print(f"\nDifferential sweep on {args.base_env}")
+        print(f"  Train range: vL∈[0.3,1.5], ratio∈[0.5,2.0] (so max train ratio=2x, max diff~1.5)")
+        print(f"  episodes/pair: {args.num_episodes}, episode_length: {args.episode_length}\n")
+        print(f"  (vL, vR)        | ratio  diff  | {'mean':>8} {'std':>7} {'min':>8} {'max':>8}  | OOD?")
+        print("-" * 84)
+        for spec in args.pairs:
+            vL, vR = (float(x) for x in spec.split(","))
+            env = make_env("split_constant", {"vL": vL, "vR": vR}, args.base_env)
+            m = run_one(env)
+            ratio = vR / vL
+            diff = vR - vL
+            abs_ood = (vL < 0.3 or vL > 1.5) or (vR < 0.3 or vR > 1.5)
+            ratio_ood = ratio < 0.5 or ratio > 2.0
+            flags = []
+            if abs_ood:   flags.append("ABS")
+            if ratio_ood: flags.append("RATIO")
+            flag = ",".join(flags) or ""
+            print(f"  ({vL:.2f}, {vR:.2f})    | {ratio:>4.2f}x {diff:>+5.2f}  | "
+                  f"{m['eval_mean']:>8.1f} {m['eval_std']:>7.1f} {m['eval_min']:>8.1f} {m['eval_max']:>8.1f}  | {flag}")
+    else:
+        # Tied speed sweep
+        print(f"\nTied-speed sweep on {args.base_env} (PoseDR train range: v∈[0.3, 1.5])")
+        print(f"  episodes/v: {args.num_episodes}, episode_length: {args.episode_length}\n")
+        print(f"{'v':>6} | {'mean':>8} {'std':>7} {'min':>8} {'max':>8}  | OOD?")
+        print("-" * 60)
+
+        results = {}
+        for v in args.speeds:
+            env = make_ood_env(v, args.base_env)
+            m = run_one(env)
+            is_ood = v < 0.3 or v > 1.5
+            flag = "OOD" if is_ood else ""
+            print(f"{v:>6.2f} | {m['eval_mean']:>8.1f} {m['eval_std']:>7.1f} {m['eval_min']:>8.1f} {m['eval_max']:>8.1f}  | {flag}")
+            results[v] = m
+
+        in_dist = [m["eval_mean"] for v, m in results.items() if 0.3 <= v <= 1.5]
+        if in_dist:
+            peak = max(in_dist)
+            print(f"\nIn-dist peak: {peak:.1f}")
+            for v, m in sorted(results.items()):
+                print(f"  v={v}: {m['eval_mean']:.1f} ({100 * m['eval_mean'] / peak:+.0f}% of peak)")
 
 
 if __name__ == "__main__":
