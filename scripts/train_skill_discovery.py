@@ -1,8 +1,12 @@
-"""DIAYN skill discovery training script (vanilla SAC + SkillManager).
+"""Skill discovery training script (vanilla SAC + SkillManager).
 
 Usage:
+    # DIAYN (default)
     uv run python scripts/train_skill_discovery.py --env CheetahRun --num-skills 8
     uv run python scripts/train_skill_discovery.py --env CheetahRun --num-skills 8 --total-timesteps 1000000 --wandb
+
+    # METRA
+    uv run python scripts/train_skill_discovery.py --env AntMJXClassic --algo metra --num-skills 8
 """
 import argparse
 import dataclasses
@@ -24,21 +28,37 @@ from jax_rl.skill_discovery.manager import SkillManager
 # specifies the env-specific dim explicitly via FactorConfig.dim at runtime.
 
 
-def _build_skill_cfg(num_skills: int, obs_dim: int) -> SkillDiscoveryConfig:
-    """SD-B default: single DIAYN factor over full actor obs."""
+def _build_skill_cfg(num_skills: int, obs_dim: int, algo: str) -> SkillDiscoveryConfig:
+    """Single-factor skill config over full actor obs.
+
+    DIAYN: one_hot prior, discriminator on s only.
+    METRA: unit_sphere prior (continuous z), phi on s and s'.
+    """
+    if algo == "diayn":
+        prior = "one_hot"
+        extractor = "actor_obs_full"
+    elif algo == "metra":
+        prior = "unit_sphere"
+        # METRA reads BOTH actor_obs_full (s) AND actor_obs_full_next (s').
+        # The factor only declares the s-side extractor; the manager looks up
+        # `<extractor>_next` automatically.
+        extractor = "actor_obs_full"
+    else:
+        raise ValueError(f"unknown --algo: {algo!r} (expected 'diayn' or 'metra')")
+
     return SkillDiscoveryConfig(
-        mode="diayn",
+        mode=algo,
         total_skill_dim=num_skills,
-        prior="one_hot",
+        prior=prior,
         resample="episode",
         intrinsic_weight=1.0,
-        task_reward_weight=0.0,  # pure DIAYN for SD-B; SD-C adds task mix
+        task_reward_weight=0.0,  # pure intrinsic for SD-B; SD-C adds task mix
         factors=(FactorConfig(
             name="full_state",
-            method="diayn",
+            method=algo,
             skill_dim=num_skills,
             source="actor_obs",
-            extractor="actor_obs_full",
+            extractor=extractor,
             dim=obs_dim,
         ),),
         deploy=SkillDeployConfig(
@@ -49,8 +69,10 @@ def _build_skill_cfg(num_skills: int, obs_dim: int) -> SkillDiscoveryConfig:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="DIAYN skill discovery training")
+    parser = argparse.ArgumentParser(description="Skill discovery training (DIAYN | METRA)")
     parser.add_argument("--env", type=str, default="CheetahRun")
+    parser.add_argument("--algo", type=str, default="diayn", choices=["diayn", "metra"],
+                        help="Skill discovery method. DIAYN uses one_hot z, METRA uses unit_sphere z.")
     parser.add_argument("--num-skills", type=int, default=8)
     parser.add_argument("--total-timesteps", type=int, default=None)
     parser.add_argument("--seed", type=int, default=0)
@@ -88,7 +110,7 @@ def main():
     action_dim = env_bundle.action_dim
 
     # Skill discovery setup
-    skill_cfg = _build_skill_cfg(args.num_skills, obs_dim)
+    skill_cfg = _build_skill_cfg(args.num_skills, obs_dim, args.algo)
     skill_manager = SkillManager(skill_cfg)
 
     # SAC sees augmented obs (raw obs + skill_z)
@@ -121,6 +143,33 @@ def main():
 
     # log_extra_fields: list of (label, key, format_str) tuples per metrics_logger contract
     # log_extra_keys: list of bare key strings
+    if args.algo == "diayn":
+        log_extra_fields = [
+            ("IntR", "intrinsic_reward_mean", ".3f"),
+            ("DiscL", "full_state_disc_loss", ".3e"),
+            ("DiscA", "full_state_disc_accuracy", ".3f"),
+        ]
+        log_extra_keys = [
+            "intrinsic_reward_mean",
+            "full_state_disc_loss",
+            "full_state_disc_accuracy",
+        ]
+    else:  # metra
+        log_extra_fields = [
+            ("IntR", "intrinsic_reward_mean", ".3f"),
+            ("PhiL", "full_state_phi_loss", ".3e"),
+            ("PhiAlign", "full_state_phi_alignment", ".3f"),
+            ("DualLam", "full_state_dual_lam", ".3f"),
+        ]
+        log_extra_keys = [
+            "intrinsic_reward_mean",
+            "full_state_phi_loss",
+            "full_state_phi_alignment",
+            "full_state_phi_cst_penalty",
+            "full_state_phi_diff_norm_sq",
+            "full_state_dual_lam",
+            "full_state_log_dual_lam",
+        ]
     run_skill_offpolicy_loop(
         cfg=cfg,
         algo_cfg=algo_cfg,
@@ -128,16 +177,8 @@ def main():
         algo_name="sac_skill",
         env_bundle=env_bundle,
         explore_fn=explore_fn,
-        log_extra_fields=[
-            ("IntR", "intrinsic_reward_mean", ".3f"),
-            ("DiscL", "full_state_disc_loss", ".3e"),
-            ("DiscA", "full_state_disc_accuracy", ".3f"),
-        ],
-        log_extra_keys=[
-            "intrinsic_reward_mean",
-            "full_state_disc_loss",
-            "full_state_disc_accuracy",
-        ],
+        log_extra_fields=log_extra_fields,
+        log_extra_keys=log_extra_keys,
         skill_cfg=skill_cfg,
         skill_manager=skill_manager,
         seed=args.seed,

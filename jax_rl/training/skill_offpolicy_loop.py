@@ -583,8 +583,18 @@ def run_skill_offpolicy_loop(
                 row["intrinsic_reward_mean"] = last_metrics.get("intrinsic_reward_mean", float("nan"))
                 row["intrinsic_reward_std"] = last_metrics.get("intrinsic_reward_std", float("nan"))
                 row["env_reward_mean"] = last_metrics.get("env_reward_mean", float("nan"))
+                # Per-factor metrics: DIAYN exposes disc_*; METRA exposes
+                # phi_*, dual_*, log_dual_lam. Pull whatever the manager wrote.
                 for fac in skill_cfg.factors:
-                    for suffix in ("disc_loss", "disc_accuracy"):
+                    if fac.method == "diayn":
+                        suffixes = ("disc_loss", "disc_accuracy")
+                    else:  # metra
+                        suffixes = (
+                            "phi_loss", "phi_alignment", "phi_cst_penalty",
+                            "phi_diff_norm_sq", "dual_lam", "log_dual_lam",
+                            "dual_loss",
+                        )
+                    for suffix in suffixes:
                         k = f"{fac.name}_{suffix}"
                         if k in last_metrics:
                             row[k] = float(last_metrics[k])
