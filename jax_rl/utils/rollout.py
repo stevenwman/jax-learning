@@ -25,7 +25,13 @@ def _extract_policy_obs(raw_obs):
 
 
 def _apply_norm(ns, obs, n_frame_stack):
-    if n_frame_stack > 1:
+    # Dispatch by saved-stats shape: when use_obs_norm was False in training,
+    # the running stats track the full stacked obs dim (no tile needed). When
+    # use_obs_norm was True, stats are at raw (single-frame) dim and require
+    # tile-by-n_frame_stack.
+    raw_dim = ns.mean.shape[-1]
+    obs_dim = obs.shape[-1]
+    if n_frame_stack > 1 and raw_dim * n_frame_stack == obs_dim:
         return norm_normalize_stacked(ns, obs, n_frame_stack)
     return norm_normalize(ns, obs)
 
