@@ -24,8 +24,10 @@ OOD belt-speed sweep (`scripts/eval_splitbelt_ood.py`, 16 ep/v):
 
 Visual: `splitbelt_side_iso` cam (~16° off pure side, shows lateral sway).
 
+A1 probe (`scripts/eval_splitbelt_a1.py`): right touchdown rate ↑ during split phase (0.5/1.0), early termination at t=776 (mid Phase 3). Mid-episode belt change is per-step OOD for PoseDR (trained on constant-belt episodes). Built-in `step_length_asymmetry` numerically broken for cmd=0 stationkeeping (designed for walking gaits) — switched to touchdown-rate asymmetry.
+
 **Open follow-ups:**
-- [ ] A1 protocol probe: PoseDR v2 under `tied_split_tied(v_warm=0.5, vL_split=0.5, vR_split=1.0, t1=200, t2=600)`; run offline `splitbelt_analysis`. Measures `recovery_time` + `after_effect`. First adaptation-benchmark data without per-protocol training.
+- [ ] Train PoseDR with `tied_split_tied` schedule for proper A1 study (current PoseDR sees mid-episode belt change as OOD).
 - [ ] Train splitbelt with `error` obs_mode (cmd_track_error + drift_xy in actor) — closes the AC blindness gap (alternative to PoseDR's idealized world-pose obs).
 - [ ] Per-protocol algo presets (A1/A2/A3/A4) — fresh brainstorm/spec/plan cycle.
 - [ ] History-mode `FrameStackWrapper` wiring in `mjx_backend` (still deferred).

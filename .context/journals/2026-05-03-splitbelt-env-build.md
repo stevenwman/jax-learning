@@ -250,6 +250,18 @@ overrides `cfg.schedule_kind="tied"` per-call.
 - Foot tunneling through thin slabs in MJX/Warp (no CCD; use `<pair margin>`).
 - Belts must butt at y=0 — vestigial center gap removed.
 
+### A1 protocol probe (`scripts/eval_splitbelt_a1.py`)
+
+Rolled out PoseDR v2 under `tied_split_tied(v_warm=0.5, vL_split=0.5, vR_split=1.0, t1=200, t2=600)` for 1500 steps. Robot terminated at t=776 (mid Phase 3). Per-phase touchdown rates show clear adaptation signal:
+
+| Phase | L rate (Hz) | R rate (Hz) | rate asym |
+|-------|------------|-------------|-----------|
+| Warm tied (0.5/0.5) | 17.75 | 13.25 | -0.15 |
+| Split early (0.5/1.0) | 14.33 | 17.33 | +0.10 |
+| Split late (0.5/1.0)  | 10.67 | 15.33 | +0.18 |
+
+Right touchdown rate increases as belt drags faster on the right; asymmetry deepens late in split (+0.10 → +0.18). Reward per step also drops (0.40 → 0.33) and robot terminates shortly after split→tied transition. **Mid-episode belt change is per-step OOD for PoseDR** — trained on `random_per_episode` which holds belt speeds CONSTANT within episode. To study A1 properly, need to train with `tied_split_tied` schedule directly. Built-in `step_length_asymmetry` from `splitbelt_analysis` produces nonsensical numbers under cmd=0 stationkeeping (designed for forward-walking gaits where step lengths are positive); switched to touchdown-rate asymmetry which has actual signal in a stationary quadruped under belt drag.
+
 ## What's deferred to next session
 
 1. **Calibration smoke (Task 5.1):** FastSAC + PPO 1M steps each on tied(0.5)
