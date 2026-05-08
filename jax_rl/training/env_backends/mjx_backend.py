@@ -134,6 +134,22 @@ def _register_custom_envs():
             g1_joystick_holosoma_soft_config,
         )
 
+    from jax_rl.envs.locomotion.g1_warp_splitbelt import G1WarpSplitbeltEnv
+    from jax_rl.envs.locomotion.g1_warp_splitbelt import default_config as g1_splitbelt_default_config
+    from jax_rl.envs.locomotion.g1_warp_splitbelt import default_config_tied as g1_splitbelt_tied_config
+    if "G1WarpSplitbelt" not in pg_locomotion._envs:
+        pg_locomotion.register_environment(
+            "G1WarpSplitbelt",
+            functools.partial(G1WarpSplitbeltEnv, task="splitbelt"),
+            g1_splitbelt_default_config,
+        )
+    if "G1WarpSplitbeltTied" not in pg_locomotion._envs:
+        pg_locomotion.register_environment(
+            "G1WarpSplitbeltTied",
+            functools.partial(G1WarpSplitbeltEnv, task="splitbelt"),
+            g1_splitbelt_tied_config,
+        )
+
     from jax_rl.envs.locomotion.go2_warp_splitbelt import Go2WarpSplitbeltEnv
     from jax_rl.envs.locomotion.go2_warp_splitbelt import default_config as splitbelt_default_config
     if "Go2WarpSplitbelt" not in pg_locomotion._envs:

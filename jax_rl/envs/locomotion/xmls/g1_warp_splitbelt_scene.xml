@@ -1,0 +1,102 @@
+<mujoco model="g1 warp splitbelt scene">
+  <!-- G1 model FIRST so its freejoint occupies qpos[0:7]. Then treadmill
+       apparatus so belt slide joints occupy qpos[7+29..7+31] (after the 29
+       body joints). Reverse order would put belt slide joints at qpos[0,1]
+       and shift the freejoint to qpos[2], wrecking the keyframe layout. -->
+  <include file="unitree_g1/g1_feetonly_splitbelt.xml"/>
+  <include file="treadmill_splitbelt.xml"/>
+
+  <statistic center="0 0 0.7" extent="1.6" meansize="0.04"/>
+
+  <visual>
+    <headlight diffuse="0.6 0.6 0.6" ambient="0.1 0.1 0.1" specular="0.9 0.9 0.9"/>
+    <rgba force="1 0 0 1" haze="0.15 0.25 0.35 1"/>
+    <global azimuth="140" elevation="-20"/>
+    <map force="0.01"/>
+    <scale forcewidth="0.3" contactwidth="0.5" contactheight="0.2"/>
+    <quality shadowsize="8192"/>
+  </visual>
+
+  <!-- IMU sensors aliased to bare names so g1_warp_joystick env code can
+       refer to "gyro" / "accelerometer" etc. without suffix. Pelvis IMU
+       used (consistent with flat scene). -->
+  <sensor>
+    <gyro site="imu_in_pelvis" name="gyro"/>
+    <accelerometer site="imu_in_pelvis" name="accelerometer"/>
+    <velocimeter site="imu_in_pelvis" name="local_linvel"/>
+    <framezaxis objtype="site" objname="imu_in_pelvis" name="upvector"/>
+    <framexaxis objtype="site" objname="imu_in_pelvis" name="forwardvector"/>
+    <framelinvel objtype="site" objname="imu_in_pelvis" name="global_linvel"/>
+    <frameangvel objtype="site" objname="imu_in_pelvis" name="global_angvel"/>
+    <framepos objtype="site" objname="left_foot" name="left_foot_pos" reftype="site" refname="imu_in_pelvis"/>
+    <framepos objtype="site" objname="right_foot" name="right_foot_pos" reftype="site" refname="imu_in_pelvis"/>
+    <framelinvel objtype="site" objname="left_foot" name="left_foot_global_linvel"/>
+    <framelinvel objtype="site" objname="right_foot" name="right_foot_global_linvel"/>
+    <!-- For off-belt detection (position-based, see splitbelt_geom) +
+         per-foot floor-found backup. fallback_floor catches |y|>0.500. -->
+    <contact name="left_foot_left_belt"   geom1="left_foot"  geom2="left_belt_geom"  reduce="mindist" num="1" data="found"/>
+    <contact name="left_foot_right_belt"  geom1="left_foot"  geom2="right_belt_geom" reduce="mindist" num="1" data="found"/>
+    <contact name="right_foot_left_belt"  geom1="right_foot" geom2="left_belt_geom"  reduce="mindist" num="1" data="found"/>
+    <contact name="right_foot_right_belt" geom1="right_foot" geom2="right_belt_geom" reduce="mindist" num="1" data="found"/>
+    <contact name="left_foot_fallback"    geom1="left_foot"  geom2="fallback_floor"  reduce="mindist" num="1" data="found"/>
+    <contact name="right_foot_fallback"   geom1="right_foot" geom2="fallback_floor"  reduce="mindist" num="1" data="found"/>
+  </sensor>
+
+  <!-- Contact pairs. Foot×belt cross-pairs (lateral drift carries any foot
+       over either belt — see splitbelt lessons). margin=0.02 prevents
+       fast-foot tunneling through the thin belt slabs in MJX (no CCD). -->
+  <contact>
+    <pair geom1="left_foot"  geom2="left_belt_geom"  margin="0.02" friction="1.0 0.005 0.0001"/>
+    <pair geom1="left_foot"  geom2="right_belt_geom" margin="0.02" friction="1.0 0.005 0.0001"/>
+    <pair geom1="right_foot" geom2="left_belt_geom"  margin="0.02" friction="1.0 0.005 0.0001"/>
+    <pair geom1="right_foot" geom2="right_belt_geom" margin="0.02" friction="1.0 0.005 0.0001"/>
+    <pair geom1="left_foot"  geom2="fallback_floor"  margin="0.02" friction="1.0 0.005 0.0001"/>
+    <pair geom1="right_foot" geom2="fallback_floor"  margin="0.02" friction="1.0 0.005 0.0001"/>
+  </contact>
+
+  <!-- Spawn keyframe: G1 in knees_bent pose centered above belts. Belt slide
+       joints initialized to 0 (will be overwritten in env.reset). -->
+  <keyframe>
+    <!-- Alias `knees_bent` to the belt-augmented qpos (38 entries) so parent
+         G1WarpJoystick._post_init's keyframe lookup works without subclass
+         override. Same content as knees_bent_belt; just two names. -->
+    <key name="knees_bent"
+      qpos="
+      0 0 0.760
+      1 0 0 0
+      -0.312 0 0 0.669 -0.363 0
+      -0.312 0 0 0.669 -0.363 0
+      0 0 0.073
+      0.2 0.2 0 0.6 0 0 0
+      0.2 -0.2 0 0.6 0 0 0
+      0 0
+      "
+      ctrl="
+      -0.312 0 0 0.669 -0.363 0
+      -0.312 0 0 0.669 -0.363 0
+      0 0 0.073
+      0.2 0.2 0 0.6 0 0 0
+      0.2 -0.2 0 0.6 0 0 0
+      0 0
+      "/>
+    <key name="knees_bent_belt"
+      qpos="
+      0 0 0.760
+      1 0 0 0
+      -0.312 0 0 0.669 -0.363 0
+      -0.312 0 0 0.669 -0.363 0
+      0 0 0.073
+      0.2 0.2 0 0.6 0 0 0
+      0.2 -0.2 0 0.6 0 0 0
+      0 0
+      "
+      ctrl="
+      -0.312 0 0 0.669 -0.363 0
+      -0.312 0 0 0.669 -0.363 0
+      0 0 0.073
+      0.2 0.2 0 0.6 0 0 0
+      0.2 -0.2 0 0.6 0 0 0
+      0 0
+      "/>
+  </keyframe>
+</mujoco>

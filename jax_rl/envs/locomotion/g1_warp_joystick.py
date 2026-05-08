@@ -362,11 +362,16 @@ class G1WarpJoystick(mjx_env.MjxEnv):
     # ── Init helpers ──────────────────────────────────────────────────
 
     def _post_init(self) -> None:
-        # Spawn from knees_bent (half-squat) — playground recipe. Stable
-        # initial pose under random exploration; switching from "home" was
-        # what made the difference between 0.1 eval and any actual learning.
-        self._init_q = jp.array(self._mj_model.keyframe("knees_bent").qpos)
-        self._default_pose = jp.array(self._mj_model.keyframe("knees_bent").qpos[7:])
+        # Spawn keyframe — subclasses (e.g. splitbelt) may set _init_q and
+        # _default_pose BEFORE calling super()._post_init() to inject a
+        # different keyframe and to slice qpos beyond just legs+arms (e.g.
+        # splitbelt has +2 belt slide joints).
+        if not hasattr(self, "_init_q"):
+            self._init_q = jp.array(self._mj_model.keyframe("knees_bent").qpos)
+        if not hasattr(self, "_default_pose"):
+            self._default_pose = jp.array(
+                self._mj_model.keyframe("knees_bent").qpos[7:7 + consts.NUM_ACTUATORS]
+            )
 
         # Hip / knee joint indices in qpos[7:]. Used by joint_deviation costs.
         # (Hip pitch is excluded — its deviation is OK for stride.)
@@ -400,7 +405,9 @@ class G1WarpJoystick(mjx_env.MjxEnv):
                 f"({consts.NUM_ACTUATORS},). Keyframe 'home' qpos likely wrong size."
             )
 
-        self._lowers, self._uppers = self.mj_model.jnt_range[1:].T
+        # Joint pos limits — slice to first NUM_ACTUATORS joints only (ignore
+        # any extras like splitbelt's 2 belt slide joints which are unbounded).
+        self._lowers, self._uppers = self.mj_model.jnt_range[1:1 + consts.NUM_ACTUATORS].T
         self._soft_lowers = self._lowers * self._config.soft_joint_pos_limit_factor
         self._soft_uppers = self._uppers * self._config.soft_joint_pos_limit_factor
 
@@ -414,9 +421,9 @@ class G1WarpJoystick(mjx_env.MjxEnv):
                         noise_scale=noise.gyro),
                 ObsTerm("gravity", lambda data, **kw: self.get_gravity(data),
                         noise_scale=noise.gravity),
-                ObsTerm("joint_pos_offset", lambda data, **kw: data.qpos[7:] - self._default_pose,
+                ObsTerm("joint_pos_offset", lambda data, **kw: data.qpos[7:7 + consts.NUM_ACTUATORS] - self._default_pose,
                         noise_scale=noise.joint_pos),
-                ObsTerm("joint_vel", lambda data, **kw: data.qvel[6:],
+                ObsTerm("joint_vel", lambda data, **kw: data.qvel[6:6 + consts.NUM_ACTUATORS],
                         noise_scale=noise.joint_vel),
                 ObsTerm("last_act", lambda info, **kw: info["last_act"]),
                 ObsTerm("command", lambda info, **kw: info["command"]),
@@ -427,8 +434,8 @@ class G1WarpJoystick(mjx_env.MjxEnv):
                 ObsTerm("gravity_clean", lambda data, **kw: self.get_gravity(data)),
                 ObsTerm("linvel_clean", lambda data, **kw: self.get_local_linvel(data)),
                 ObsTerm("angvel", lambda data, **kw: self.get_global_angvel(data)),
-                ObsTerm("joint_pos_clean", lambda data, **kw: data.qpos[7:] - self._default_pose),
-                ObsTerm("joint_vel_clean", lambda data, **kw: data.qvel[6:]),
+                ObsTerm("joint_pos_clean", lambda data, **kw: data.qpos[7:7 + consts.NUM_ACTUATORS] - self._default_pose),
+                ObsTerm("joint_vel_clean", lambda data, **kw: data.qvel[6:6 + consts.NUM_ACTUATORS]),
                 ObsTerm("actuator_force", lambda data, **kw: data.actuator_force),
                 ObsTerm("last_contact", lambda info, **kw: info["last_contact"].astype(jp.float32)),
                 ObsTerm("feet_vel", lambda data, **kw: data.sensordata[self._foot_linvel_sensor_adr].ravel()),
@@ -459,14 +466,14 @@ class G1WarpJoystick(mjx_env.MjxEnv):
             RewardTerm("action_rate", lambda action, info, **kw:
                 self._cost_action_rate(action, info["last_act"], info["last_last_act"])),
             RewardTerm("dof_pos_limits", lambda data, **kw:
-                self._cost_joint_pos_limits(data.qpos[7:])),
+                self._cost_joint_pos_limits(data.qpos[7:7 + consts.NUM_ACTUATORS])),
             # Joint deviation
             RewardTerm("joint_deviation_hip", lambda data, info, **kw:
-                self._cost_joint_deviation_hip(data.qpos[7:], info["command"])),
+                self._cost_joint_deviation_hip(data.qpos[7:7 + consts.NUM_ACTUATORS], info["command"])),
             RewardTerm("joint_deviation_knee", lambda data, **kw:
-                self._cost_joint_deviation_knee(data.qpos[7:])),
+                self._cost_joint_deviation_knee(data.qpos[7:7 + consts.NUM_ACTUATORS])),
             RewardTerm("pose", lambda data, **kw:
-                self._cost_pose(data.qpos[7:])),
+                self._cost_pose(data.qpos[7:7 + consts.NUM_ACTUATORS])),
             # Feet
             RewardTerm("feet_slip", lambda data, contact, info, **kw:
                 self._cost_feet_slip(data, contact, info)),
