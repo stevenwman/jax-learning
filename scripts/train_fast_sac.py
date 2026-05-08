@@ -114,6 +114,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--reset-mode", type=str, default=None,
                         choices=["legacy", "per_step"],
                         help="Reset mode: legacy (AutoReset) or per_step (DomainRandWrapper)")
+    parser.add_argument("--v-min", type=float, default=None,
+                        help="C51 critic support lower bound (default: from algo config, -20 for FastSAC)")
+    parser.add_argument("--v-max", type=float, default=None,
+                        help="C51 critic support upper bound (default: from algo config, +20 for FastSAC)")
+    parser.add_argument("--num-atoms", type=int, default=None,
+                        help="C51 critic atom count (default: from algo config, 101)")
     return parser
 
 

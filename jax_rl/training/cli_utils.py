@@ -11,6 +11,7 @@ CFG_FIELDS = {
 ALGO_FIELDS = {
     "batch_size", "grad_updates_per_step", "buffer_size",
     "target_entropy_scale",
+    "v_min", "v_max", "num_atoms",  # C51 distributional critic support
 }
 
 # CLI name -> algo config field name (where they differ)
