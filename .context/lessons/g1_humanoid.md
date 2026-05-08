@@ -74,13 +74,22 @@ Other differences (also possibly contributing):
 
 **Isolation runs (2026-05-07, 5M each on G1 v7 env w/ gait reward):**
 
-| Config | Eval | Q corr |
-|---|---|---|
-| FastSAC default (v_min=-20, v_max=+20) | -0.7 | -0.3 |
-| + tight C51 support (-5/+5) [v8] | -0.3 | 0.32 |
-| + reward scaling 0.36 [v9] | 0.6 | 0.7 |
-| + tau 0.01, gamma 0.99, delay 2 [v10] | -0.3 | -0.13 |
-| **FlashSAC default** [v7] | **26.8** | 0.17 |
+| Config | Eval | Q corr | Q bias |
+|---|---|---|---|
+| FastSAC default (v_min=-20, v_max=+20) | -0.7 | -0.3 | — |
+| + tight C51 support (-5/+5) [v8] | -0.3 | 0.32 | — |
+| + reward scaling 0.36 [v9] | 0.6 | 0.7 | — |
+| + tau 0.01, gamma 0.99, delay 2 [v10] | -0.3 | -0.13 | 1.7-2.2 |
+| + target_entropy_scale 0.5 [v11, killed @52%] | -0.5 | -0.09 | 2.69 |
+| + grad_updates_per_step 1 [v12] | -0.8 | -0.34 | 1.4 → 3.7 |
+| + tes 0.5 + gups 1 combo [v13, killed @42%] | -1.7 (worse!) | 0.59 | — |
+| **FlashSAC default** [v7] | **26.8** | 0.17 | 0.07 |
+
+**Pattern across all FastSAC variants**: Q-bias drifts upward (critic
+increasingly over-estimates) and Q-corr eventually goes negative.
+Classic SAC critic divergence on high-dim continuous control. None of
+the standard scalar knobs (target entropy, grad updates per step,
+support range, reward scaling, tau, gamma, policy delay) prevent it.
 
 Conclusion: scalar hyperparam differences are NOT the cause. v10 has
 all of FlashSAC's hyperparams except architecture. The remaining
