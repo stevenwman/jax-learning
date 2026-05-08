@@ -5,6 +5,7 @@ import dataclasses
 CFG_FIELDS = {
     "num_envs", "total_timesteps", "lr", "reward_scaling",
     "episode_length", "n_frame_stack", "action_delay_ms", "reset_mode",
+    "gamma",
 }
 
 # Direct algo fields: CLI arg name == config field name
@@ -12,6 +13,7 @@ ALGO_FIELDS = {
     "batch_size", "grad_updates_per_step", "buffer_size",
     "target_entropy_scale",
     "v_min", "v_max", "num_atoms",  # C51 distributional critic support
+    "tau", "policy_delay",  # SAC hyperparams (FlashSAC-comparison diag)
 }
 
 # CLI name -> algo config field name (where they differ)

@@ -72,9 +72,28 @@ Other differences (also possibly contributing):
 - FlashSAC dynamically normalizes rewards (`RewScale ~0.36` in logs)
 - FastSAC does not
 
-**Test to isolate cause** (TODO): run FastSAC with `v_min=-5, v_max=+5`
-on G1. If it then matches FlashSAC, support range was the bottleneck;
-if it still stalls, the residual nets or reward normalization matter.
+**Isolation runs (2026-05-07, 5M each on G1 v7 env w/ gait reward):**
+
+| Config | Eval | Q corr |
+|---|---|---|
+| FastSAC default (v_min=-20, v_max=+20) | -0.7 | -0.3 |
+| + tight C51 support (-5/+5) [v8] | -0.3 | 0.32 |
+| + reward scaling 0.36 [v9] | 0.6 | 0.7 |
+| + tau 0.01, gamma 0.99, delay 2 [v10] | -0.3 | -0.13 |
+| **FlashSAC default** [v7] | **26.8** | 0.17 |
+
+Conclusion: scalar hyperparam differences are NOT the cause. v10 has
+all of FlashSAC's hyperparams except architecture. The remaining
+FlashSAC advantages are:
+1. **Inverted residual blocks + BatchNorm + weight normalization** in
+   actor/critic networks (vs FastSAC's plain MLP)
+2. **Adaptive `RewScale`** that tracks return std dynamically (vs
+   FastSAC's fixed `--reward-scaling`)
+3. **G_max=5 clipping** and **sigma_target=0.15** entropy convention
+
+The architecture is doing most of the work. Reimplementing residual
+blocks + per-batch normalization in FastSAC would essentially replicate
+FlashSAC. Practical takeaway: **use FlashSAC for humanoid**.
 
 **Lesson:**
 1. C51 distributional critics need careful `v_min, v_max` tuning

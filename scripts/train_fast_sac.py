@@ -120,6 +120,12 @@ def build_parser() -> argparse.ArgumentParser:
                         help="C51 critic support upper bound (default: from algo config, +20 for FastSAC)")
     parser.add_argument("--num-atoms", type=int, default=None,
                         help="C51 critic atom count (default: from algo config, 101)")
+    parser.add_argument("--tau", type=float, default=None,
+                        help="Target network soft-update rate (default: 0.125)")
+    parser.add_argument("--gamma", type=float, default=None,
+                        help="Discount factor (default: 0.99)")
+    parser.add_argument("--policy-delay", type=int, default=None,
+                        help="Critic updates per actor update (default: 4)")
     return parser
 
 
