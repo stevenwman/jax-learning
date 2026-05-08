@@ -39,6 +39,80 @@ or similar — let negative gradient through.
 
 ---
 
+## Splitbelt-G1: works but plateaus at eval ~25 — actor needs belt obs to break the gap (2026-05-08)
+
+Ported `G1WarpSplitbeltEnv` from `g1_warp_joystick`. Subclass adds belt
+actuators (slide+vel), schedule sampling at reset, off-belt termination,
+splitbelt info dict. Reuses `splitbelt_geom` + `splitbelt_schedules` from
+the existing splitbelt infrastructure.
+
+| Run | Variant | Eval @ 5M |
+|---|---|---|
+| v18 | flat HoloSoft (FastSAC paper) | **292** |
+| v19 | splitbelt-tied 0.5 | 26.4 ± 19.5 |
+| v20 | splitbelt-DR (random_per_episode v∈[0.3,1.0]) | 22.8 ± 6.3 |
+| v21 | splitbelt-DR + off_belt_term=False | 21.6 ± 8.7 |
+| v22 | splitbelt-DR + treadmill_drift=-5 | 18.6 ± 6.2 |
+
+**Splitbelt costs ~10× the eval ceiling vs flat (292 → ~25)**, even
+holding algo + reward set + spawn pose constant. Diagnostics tried:
+
+- **off_belt_termination disabled (v21)**: no improvement. Hypothesis was
+  that swing-foot lateral drift falsely fires off-belt at y boundary
+  ±0.500m. Disabling didn't recover the gap, so this isn't dominant.
+- **treadmill_drift cost (v22, weight -5)**: penalize body xy from
+  origin → "stay anchored" gradient. Didn't help — policy saw it as
+  one more cost without the observation to act on.
+- All variants: ~20-30 mean, max episode 50-65, episode length ~50 steps
+  avg. Max 100 steps in best cases. Robot CAN walk on belts in some
+  trajectories, just not consistently.
+
+**Diagnosis**: actor obs is proprio + cmd=0 (no belt info). On flat
+ground proprio is enough — feet feel the ground via joint torques. On
+moving belts, proprio gives ambiguous signal: "joint torque rising" can
+mean "I'm pushing into ground" or "ground is pulling me along". Without
+belt_vel in obs, policy has to infer indirectly from gyro/joint
+deflection — way harder.
+
+**Splitbelt-G1 specific quirks** (port pitfalls):
+1. **Joint order in scene XML**: include order matters. With
+   `treadmill_splitbelt.xml` first, belt slide joints occupy `qpos[0,1]`
+   and the freejoint shifts to `qpos[2:9]` (not `qpos[0:7]`). Keyframe
+   qpos layout breaks → robot spawns upside-down at x=0.76, z=0. **Fix**:
+   include `g1_feetonly_splitbelt.xml` FIRST so freejoint occupies
+   `qpos[0:7]`.
+2. **Joint slicing**: parent G1WarpJoystick's reward / obs lambdas
+   originally used `data.qpos[7:]` (all 31 joints in splitbelt model
+   = 29 body + 2 belts). Need to slice `[7:7+NUM_ACTUATORS]` (=29) to
+   match `_default_pose` shape. Same for `data.qvel[6:]` and `jnt_range`.
+3. **Vendored `g1_feetonly_splitbelt.xml`**: stripped the inline
+   `<contact>` block (refs to "floor" geom which splitbelt scene doesn't
+   define) and `<sensor>` block (scene defines all sensors). Just the
+   model.
+4. **Subclass `_post_init` bypass**: parent G1WarpJoystick._post_init
+   loads keyframe "knees_bent" with `qpos[7:]` → would 31-element on
+   splitbelt model. Patched parent to skip if `_init_q`/`_default_pose`
+   already set, so subclass sets them first.
+
+**Future paths to close the gap to flat-G1 (eval 292)**:
+- **(highest leverage)** Add belt_vel + drift_xy to actor obs (like Go2's
+  "informed" / "error" obs modes). Even just a 2-d belt_vel addition
+  should help substantially — actor knows which way feet are being
+  dragged.
+- **PoseDR-style obs**: actor sees world body xyz + upvec + fwdvec
+  (idealized; not deployable). Ground-truth localization shortcuts
+  inferring drag.
+- **Curriculum**: start with v=0.1 belts, ramp up. Robot learns to walk
+  on slow belts first.
+- **Longer training**: 5M is short for this task. Try 20M if compute
+  permits.
+
+Videos in `projects/adaptation/videos/g1_v19_splitbelt_tied/`,
+`g1_v20_splitbelt_dr/`, `g1_v21_splitbelt_dr_no_offbelt/`, and
+`g1_v22_splitbelt_drift/`.
+
+---
+
 ## Holosoma reward weights @ 0.5× penalties = working G1 walker, eval 292 (2026-05-08)
 
 After paper-match unlocked FastSAC (eval 28 on light-penalty Flat env),

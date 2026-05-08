@@ -25,6 +25,7 @@ import numpy as np
 
 from etils import epath
 from mujoco_playground._src import mjx_env
+from jax_rl.envs.reward_spec import RewardTerm
 from jax_rl.envs.locomotion import g1_constants as consts
 from jax_rl.envs.locomotion import go2_sensors
 from jax_rl.envs.locomotion import splitbelt_geom as geom
@@ -57,8 +58,16 @@ def default_config() -> config_dict.ConfigDict:
         left_y_min=-0.500, left_y_max=0.000,
         right_y_min=0.000, right_y_max=0.500,
     )
-    # Off-belt termination via foot position (mirrors Go2 splitbelt).
-    cfg.off_belt_termination = True
+    # Off-belt termination via foot position. G1's swing-foot lateral drift
+    # can cross belt y-boundary momentarily; v19-v21 had this disabled.
+    cfg.off_belt_termination = False
+    # treadmill_drift: penalize body xy drift from origin (indirect "resist
+    # belt drag" signal since actor has no belt_vel obs). Ported from
+    # go2_warp_splitbelt. Lateral drift weighted 2× forward (lateral kills
+    # balance; forward drift is the natural "fall behind" mode).
+    cfg.reward_config.scales.treadmill_drift = 5.0
+    cfg.reward_config.treadmill_drift_lateral_weight = 2.0
+    cfg.reward_config.treadmill_drift_forward_weight = 0.5
     return cfg
 
 
@@ -187,6 +196,14 @@ class G1WarpSplitbeltEnv(G1WarpJoystick):
         # the parent's HoloSoft pose costs — but parent needs _hip_indices /
         # _knee_indices / _pose_weights. Re-build them here.
         super()._post_init()
+
+        # Append splitbelt-specific reward term (treadmill_drift) to the
+        # parent's reward_spec. Inserted as last term so it doesn't shift
+        # existing indices. Penalizes lateral + forward body drift.
+        self._reward_spec.append(RewardTerm(
+            "treadmill_drift",
+            lambda data, **kw: self._reward_treadmill_drift(data),
+        ))
 
     # ── reset / step overrides ────────────────────────────────────────
 
@@ -336,6 +353,17 @@ class G1WarpSplitbeltEnv(G1WarpJoystick):
 
         done = done.astype(reward.dtype)
         return state.replace(data=data, obs=obs, reward=reward, done=done)
+
+    # ── Reward helpers ────────────────────────────────────────────────
+
+    def _reward_treadmill_drift(self, data):
+        """Penalize body xy drift from origin. Ported from
+        go2_warp_splitbelt. Returns negative quadratic of (lateral_w *
+        y_drift² + forward_w * x_drift²)."""
+        base_xy = data.qpos[:2]
+        wL = self._config.reward_config.treadmill_drift_lateral_weight
+        wF = self._config.reward_config.treadmill_drift_forward_weight
+        return -(wL * jp.square(base_xy[1]) + wF * jp.square(base_xy[0]))
 
     def _get_termination(self, data):
         # Standard tilt termination from parent.
