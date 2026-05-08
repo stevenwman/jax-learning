@@ -113,11 +113,18 @@ def _register_custom_envs():
 
     from jax_rl.envs.locomotion.g1_warp_joystick import G1WarpJoystick
     from jax_rl.envs.locomotion.g1_warp_joystick import default_config as g1_joystick_default_config
+    from jax_rl.envs.locomotion.g1_warp_joystick import default_config_holosoma as g1_joystick_holosoma_config
     if "G1WarpJoystickFlat" not in pg_locomotion._envs:
         pg_locomotion.register_environment(
             "G1WarpJoystickFlat",
             functools.partial(G1WarpJoystick, task="flat_terrain"),
             g1_joystick_default_config,
+        )
+    if "G1WarpJoystickHolo" not in pg_locomotion._envs:
+        pg_locomotion.register_environment(
+            "G1WarpJoystickHolo",
+            functools.partial(G1WarpJoystick, task="flat_terrain"),
+            g1_joystick_holosoma_config,
         )
 
     from jax_rl.envs.locomotion.go2_warp_splitbelt import Go2WarpSplitbeltEnv

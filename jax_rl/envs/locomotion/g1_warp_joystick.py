@@ -124,10 +124,15 @@ def default_config() -> config_dict.ConfigDict:
                 # Feet
                 feet_slip=-0.25,
                 feet_phase=1.0,
+                # Defined here at 0 so reward_spec can include them; holosoma
+                # preset overrides with real weights.
+                close_feet_xy=0.0,
+                feet_ori=0.0,
             ),
             tracking_sigma=0.25,
             max_foot_height=0.15,
             base_height_target=0.755,  # matches knees_bent spawn pelvis_z
+            close_feet_threshold=0.15,
             # Gait CPG (port from mujoco_playground/g1/joystick): cubic-Bezier
             # foot-z trajectory at ~1.4Hz, left/right out-of-phase.
             gait_freq_range=(1.25, 1.5),
@@ -149,6 +154,73 @@ def default_config() -> config_dict.ConfigDict:
         naccdmax=4000,
         njmax=100,
     )
+
+
+# Per-joint pose weights from holosoma's g1_29dof_loco config (pose_weights):
+# legs: [hip_pitch=0.01, hip_roll=1.0, hip_yaw=5.0, knee=0.01, ankle_pitch=5.0,
+#        ankle_roll=5.0] × 2 (left, right)
+# waist: [yaw, roll, pitch] = [50, 50, 50] (locked rigid)
+# arms (7 per side): [shoulder_p, shoulder_r, shoulder_y, elbow, wrist_r,
+#                     wrist_p, wrist_y] = [50] × 14 (locked rigid)
+# Hip pitch + knee at 0.01 are basically free → policy can swing legs for stride
+# without paying pose cost. Arms/waist at 50 → strong "keep arms still" signal.
+_HOLOSOMA_POSE_WEIGHTS = (
+    # Left leg: hip_pitch, hip_roll, hip_yaw, knee, ankle_pitch, ankle_roll
+    0.01, 1.0, 5.0, 0.01, 5.0, 5.0,
+    # Right leg
+    0.01, 1.0, 5.0, 0.01, 5.0, 5.0,
+    # Waist: yaw, roll, pitch
+    50.0, 50.0, 50.0,
+    # Left arm (7)
+    50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0,
+    # Right arm (7)
+    50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0,
+)
+
+
+def default_config_holosoma() -> config_dict.ConfigDict:
+    """Holosoma-matched reward set for G1 (per `holosoma/config_values/loco/g1/
+    reward.py:g1_29dof_loco_fast_sac`).
+
+    Differences vs `default_config`:
+    - tracking_lin_vel 1.0 → 2.0
+    - tracking_ang_vel 0.5 → 1.5
+    - alive 0.15 → 10.0  (key for FastSAC variant per holosoma)
+    - feet_phase 1.0 → 5.0 (sigma 0.01 → 0.008 — sharper foot-timing reward)
+    - action_rate -0.05 → -2.0
+    - orientation -5.0 → -10.0
+    - pose -0.1 with uniform weights → -0.5 with per-joint holosoma weights
+      (hip_pitch + knee free; waist + arms locked at 50)
+    - close_feet_xy 0 → -10.0 (penalty if feet xy distance < 0.15m)
+    - feet_ori 0 → -5.0 (penalize foot horizontal orientation deviation)
+    - dof_pos_limits -5 → 0 (holosoma doesn't use explicit dof limit penalty;
+      relies on pose for boundary)
+    - joint_deviation_hip/knee → 0 (subsumed by per-joint pose weights)
+    - lin_vel_z -2 → 0 (subsumed by orientation + base_height)
+    - base_height -10 → 0 (subsumed by orientation; holosoma G1 doesn't
+      penalize height directly in fast_sac variant)
+    - feet_slip -0.25 → 0 (replaced by feet_phase + close_feet_xy combo)
+    """
+    cfg = default_config()
+    cfg.unlock()
+    cfg.reward_config.scales.tracking_lin_vel = 2.0
+    cfg.reward_config.scales.tracking_ang_vel = 1.5
+    cfg.reward_config.scales.alive = 10.0
+    cfg.reward_config.scales.feet_phase = 5.0
+    cfg.reward_config.scales.action_rate = -2.0
+    cfg.reward_config.scales.orientation = -10.0
+    cfg.reward_config.scales.pose = -0.5
+    cfg.reward_config.scales.close_feet_xy = -10.0
+    cfg.reward_config.scales.feet_ori = -5.0
+    cfg.reward_config.scales.dof_pos_limits = 0.0
+    cfg.reward_config.scales.joint_deviation_hip = 0.0
+    cfg.reward_config.scales.joint_deviation_knee = 0.0
+    cfg.reward_config.scales.lin_vel_z = 0.0
+    cfg.reward_config.scales.base_height = 0.0
+    cfg.reward_config.scales.feet_slip = 0.0
+    cfg.reward_config.feet_phase_sigma = 0.008  # sharper than 0.01 default
+    cfg.reward_config.gait_swing_height = 0.09  # holosoma uses 0.09 (we had 0.08)
+    return cfg
 
 
 class G1WarpJoystick(mjx_env.MjxEnv):
@@ -287,6 +359,16 @@ class G1WarpJoystick(mjx_env.MjxEnv):
                 self._mj_model.joint(f"{side}_knee_joint").qposadr[0] - 7
             )
         self._knee_indices = jp.array(knee_indices)
+
+        # Per-joint pose weights (used by holosoma preset; default config uses
+        # uniform 1.0 — equivalent to dropping this and using sum(square(qpos -
+        # default))). 29 entries matching ACTUATOR_NAMES order.
+        self._pose_weights = jp.array(_HOLOSOMA_POSE_WEIGHTS, dtype=jp.float32)
+
+        # Foot body IDs for close_feet + feet_ori costs.
+        self._left_foot_body_id = self._mj_model.body("left_ankle_roll_link").id
+        self._right_foot_body_id = self._mj_model.body("right_ankle_roll_link").id
+
         if self._default_pose.shape != (consts.NUM_ACTUATORS,):
             raise RuntimeError(
                 f"default_pose shape {self._default_pose.shape} != "
@@ -365,6 +447,10 @@ class G1WarpJoystick(mjx_env.MjxEnv):
                 self._cost_feet_slip(data, contact, info)),
             RewardTerm("feet_phase", lambda data, info, **kw:
                 self._reward_feet_phase(data, info["phase"])),
+            RewardTerm("close_feet_xy", lambda data, **kw:
+                self._cost_close_feet_xy(data)),
+            RewardTerm("feet_ori", lambda data, **kw:
+                self._cost_feet_ori(data)),
         ]
 
     # ── Domain randomization ──────────────────────────────────────────
@@ -634,9 +720,59 @@ class G1WarpJoystick(mjx_env.MjxEnv):
         return jp.sum(jp.abs(qpos - self._default_pose)) * (cmd_norm < 0.01)
 
     def _cost_pose(self, qpos):
-        """Penalize squared deviation from default pose. Cost form (negative
-        reward via -0.1 weight in config). Playground recipe."""
-        return jp.sum(jp.square(qpos - self._default_pose))
+        """Per-joint weighted squared deviation from default pose. The weights
+        come from `_HOLOSOMA_POSE_WEIGHTS` (loaded into self._pose_weights in
+        _post_init). holosoma config: hip_pitch + knee → 0.01 (free), waist
+        + arms → 50 (locked rigid)."""
+        return jp.sum(jp.square(qpos - self._default_pose) * self._pose_weights)
+
+    def _cost_close_feet_xy(self, data):
+        """Penalty (binary) when feet xy distance < threshold. Computed in
+        base-local frame (rotated by pelvis yaw) so the lateral spacing is
+        preserved regardless of base heading. Port from holosoma's
+        penalty_close_feet_xy."""
+        threshold = self._config.reward_config.close_feet_threshold
+        left_xy = data.xpos[self._left_foot_body_id, :2]
+        right_xy = data.xpos[self._right_foot_body_id, :2]
+        # Base yaw from pelvis upvector + forwardvector — use forward x/y
+        # components of the framexaxis sensor's value.
+        fwd = self.get_forwardvector(data)
+        # Rotate (left - right) into base-local frame and take |y component|.
+        # base_yaw = atan2(fwd_y, fwd_x); cos/sin form below avoids the atan2.
+        cos_y = fwd[0] / (jp.sqrt(fwd[0]**2 + fwd[1]**2) + 1e-6)
+        sin_y = fwd[1] / (jp.sqrt(fwd[0]**2 + fwd[1]**2) + 1e-6)
+        dx = left_xy[0] - right_xy[0]
+        dy = left_xy[1] - right_xy[1]
+        # Rotate (dx, dy) by -base_yaw to get base-local; we only need the
+        # base-y component (lateral spacing).
+        local_lateral = -sin_y * dx + cos_y * dy
+        feet_distance = jp.abs(local_lateral)
+        return (feet_distance < threshold).astype(jp.float32)
+
+    def _cost_feet_ori(self, data):
+        """Penalize foot orientation deviation from flat. For each foot,
+        rotate gravity into the foot's local frame and take the magnitude of
+        the horizontal component (sqrt of sum of squared x/y). Sums both feet.
+        Port from holosoma's penalty_feet_ori."""
+        # data.xmat is (nbody, 9) row-major rotation matrix per body.
+        # gravity in world = (0, 0, -1).
+        # gravity in body frame = R^T @ gravity = third column of R (since
+        # gravity world = -ẑ_world; R^T @ (-ẑ_world) = -third row of R^T =
+        # -third column of R = -(R[*, 2])). For our purposes only the |xy|
+        # magnitudes matter — sign doesn't affect the cost.
+        left_R = data.xmat[self._left_foot_body_id].reshape(3, 3)
+        right_R = data.xmat[self._right_foot_body_id].reshape(3, 3)
+        # gravity_in_foot_frame x/y components = first two entries of third
+        # column of R^T = first two entries of third row of R.
+        left_g_xy = left_R[2, :2]
+        right_g_xy = right_R[2, :2]
+        return (
+            jp.sqrt(jp.sum(jp.square(left_g_xy)) + 1e-8)
+            + jp.sqrt(jp.sum(jp.square(right_g_xy)) + 1e-8)
+        )
+
+    def get_forwardvector(self, data):
+        return go2_sensors.get_sensor_by_name(self.mj_model, data, "forwardvector")
 
     def _cost_joint_deviation_hip(self, qpos, cmd):
         """Per-side hip roll/yaw deviation. Allows roll deviation when lateral

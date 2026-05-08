@@ -39,7 +39,55 @@ or similar — let negative gradient through.
 
 ---
 
-## FastSAC stalls where FlashSAC progresses on humanoid — likely C51 support range, not distributional-vs-regression (2026-05-07)
+## FastSAC paper defaults work fine on humanoid — earlier "broken architecture" claim was wrong (2026-05-08)
+
+**Updated finding (supersedes the section below):** When user pushed back
+that "vanilla SAC works on Humanoid, why wouldn't FastSAC?", I actually
+read the holosoma source (https://github.com/amazon-far/holosoma) and
+ran one more test: FastSAC + `--obs-norm` + `--reward-scaling 0.2`.
+
+| Config | Eval @ 5M |
+|---|---|
+| FastSAC default | -0.7 |
+| ... 6 isolation variants ... | all -1 to +0.6 |
+| **FastSAC + obs-norm + reward-scale 0.2 (paper)** | **28.2 ± 0.5** |
+| FlashSAC default | 26.8 ± 0.8 |
+
+**The single critical missing knob was `obs_normalization=True`.** Paper
+sets this to True; we had it False by default. The `reward-scaling 0.2`
+also helped but obs-norm is the dominant factor. Both algos use C51,
+both have similar architecture once normalization is matched.
+
+What I got wrong in the earlier diagnostic:
+1. Claimed "FlashSAC uses regression Q" — wrong, it's also C51
+2. Then claimed "FlashSAC's residual blocks + BatchNorm are the magic" —
+   wrong, FastSAC's MLP works fine with proper obs/reward normalization
+3. Spent 7 isolation runs on scalar HP knobs (tau, gamma, target entropy,
+   grad updates per step, etc.) without ever flipping `obs_normalization`
+   to True
+4. The `.context/archive/FAST_ALGOS_LIT_MISMATCH.md` doc had the obs
+   normalization flag listed as "FIXED" but it was only fixed at the
+   CLI/config level — not enabled in the preset I was using
+
+**Lesson:**
+- When a paper specifies normalization (obs, reward, advantage), enable
+  it. Don't compare against a "no-normalization" baseline and conclude
+  the algo is broken.
+- Always read the paper's source code config when a published algo "fails"
+  on a task it was specifically designed for. Holosoma is the FastSAC
+  paper's source — should have looked there first.
+- `obs_normalization` defaulting to False is dangerous; should be True
+  for any humanoid locomotion preset.
+
+---
+
+## (DEPRECATED) FastSAC stalls where FlashSAC progresses on humanoid — likely C51 support range, not distributional-vs-regression (2026-05-07)
+
+**This section is deprecated as of 2026-05-08 — see above.** The
+isolation runs in this section identified Q-bias drift, alpha collapse,
+and Q-corr inversion as fingerprints of a "broken critic" — but the
+actual root cause (no obs normalization) wasn't tested. Keeping the
+content for the diagnostic-pattern observations only.
 
 **What happened:** Same env config (G1 v6, full unitree reward match),
 two algorithms, drastically different outcomes after 2M steps:
