@@ -39,6 +39,60 @@ or similar — let negative gradient through.
 
 ---
 
+## Holosoma reward weights @ 0.5× penalties = working G1 walker, eval 292 (2026-05-08)
+
+After paper-match unlocked FastSAC (eval 28 on light-penalty Flat env),
+ported holosoma's full G1 reward set (`config_values/loco/g1/reward.py:
+g1_29dof_loco_fast_sac`) including missing terms (`close_feet_xy`,
+`feet_ori`, per-joint pose weights, alive=10).
+
+**With full penalty weights**: G1WarpJoystickHolo, FlashSAC 5M → eval
+**10.9 ± 1.7**. WORSE than light-penalty Flat. Penalties dominate before
+the policy learns.
+
+**With penalties × 0.5** (matching holosoma's `penalty_curriculum`
+initial state where `min_scale=0.5`): G1WarpJoystickHoloSoft, FlashSAC
+5M → eval **273.9 ± 2.0**, FastSAC paper-match 5M → eval **292.1 ± 0.6**.
+Full 1000-step episode survival, gait emerges (videos at
+`projects/adaptation/videos/g1_v17_flashsac_holosoft/` and
+`g1_v18_fastsac_holosoft_papermatch/`).
+
+Why holosoma's weights work at 0.5×: their training never actually
+reaches 1.0× because their adaptive `PenaltyCurriculum` ramps up only
+when avg_epl > 750 — robot rarely hits that. So holosoma's *effective*
+weights are ~0.5× throughout training. Static `HoloSoft` preset
+replicates this without curriculum infrastructure.
+
+| Run | Algo | Env | Eval @ 5M |
+|---|---|---|---|
+| v7 | FlashSAC | Flat (light) | 26.8 |
+| v15 | FastSAC paper-match | Flat (light) | 28.2 |
+| v16 | FlashSAC | Holo (full pen.) | 10.9 |
+| v17 | FlashSAC | HoloSoft (pen ×0.5) | 273.9 |
+| **v18** | **FastSAC paper-match** | **HoloSoft (pen ×0.5)** | **292.1** |
+
+**Lesson:**
+1. **Reward magnitude matters more than weight ratios.** Holosoma's full
+   weights (`alive=10, action_rate=-2, orientation=-10`) are correctly
+   *balanced* but absolutely too punishing for early exploration. Halving
+   the penalty terms preserves balance, halves total signal magnitude
+   per-step, lets policy survive long enough to find walking.
+2. **Adaptive curriculum is roughly equivalent to picking the right
+   static `min_scale`** for many tasks. If the robot can't reach
+   `level_up_threshold`, the curriculum's `min_scale` is what it spends
+   most time at. Static preset matching that initial state is a good
+   shortcut before investing in adaptive logic.
+3. Per-joint pose weights matter: `[0.01, 1, 5, 0.01, 5, 5]` × 2 (legs)
+   leaves hip-pitch + knee free for stride; `[50] × 17` (waist + arms)
+   locks upper body rigid. Uniform pose weight (e.g. our earlier `[1] × 29`)
+   forces all 29 DOFs equally toward default — kills the natural gait.
+4. **Ad-hoc reward iteration without checking the paper's reference is a
+   trap.** I burned 13 wrong-headed runs (v1-v14) tuning weights from
+   scratch. Reading `holosoma/config_values/loco/g1/` in 30 seconds
+   would have given the answer.
+
+---
+
 ## FastSAC paper defaults work fine on humanoid — earlier "broken architecture" claim was wrong (2026-05-08)
 
 **Updated finding (supersedes the section below):** When user pushed back

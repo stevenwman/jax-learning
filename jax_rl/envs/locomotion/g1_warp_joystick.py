@@ -223,6 +223,31 @@ def default_config_holosoma() -> config_dict.ConfigDict:
     return cfg
 
 
+def default_config_holosoma_soft() -> config_dict.ConfigDict:
+    """Holosoma weights with penalty terms HALVED — replicates the effective
+    starting state of holosoma's `penalty_curriculum` (min_scale=0.5).
+
+    Their curriculum starts penalties at 0.5× and only ramps to 1.0× when
+    avg episode length exceeds 750 steps. Since our G1 doesn't hit 750 step
+    survival in early training, holosoma's training effectively runs at
+    0.5× penalties most of the time. This preset bakes that in statically
+    (no curriculum logic needed).
+
+    Penalty terms scaled by 0.5 (vs `default_config_holosoma`):
+        action_rate, orientation, close_feet_xy, feet_ori, pose
+    Tracking + alive + feet_phase keep full weight (not curriculum-tagged
+    in holosoma config).
+    """
+    cfg = default_config_holosoma()
+    cfg.unlock()
+    cfg.reward_config.scales.action_rate *= 0.5
+    cfg.reward_config.scales.orientation *= 0.5
+    cfg.reward_config.scales.close_feet_xy *= 0.5
+    cfg.reward_config.scales.feet_ori *= 0.5
+    cfg.reward_config.scales.pose *= 0.5
+    return cfg
+
+
 class G1WarpJoystick(mjx_env.MjxEnv):
     """Track a joystick velocity command with G1 (Warp backend, 29 DOF)."""
 
