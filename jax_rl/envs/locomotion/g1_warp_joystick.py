@@ -21,6 +21,7 @@ import numpy as np
 
 from etils import epath
 from mujoco_playground._src import mjx_env
+from mujoco_playground._src import gait
 from jax_rl.envs.locomotion import g1_constants as consts
 from jax_rl.envs.locomotion import go2_sensors
 from jax_rl.envs.obs_spec import ObsTerm, IncludeGroup, compute_obs
@@ -122,12 +123,17 @@ def default_config() -> config_dict.ConfigDict:
                 pose=-0.1,
                 # Feet
                 feet_slip=-0.25,
-                # Dropped (replaced by gait if we add it):
-                # feet_air_time, stand_still, joint_vel, joint_acc, energy
+                feet_phase=1.0,
             ),
             tracking_sigma=0.25,
             max_foot_height=0.15,
             base_height_target=0.755,  # matches knees_bent spawn pelvis_z
+            # Gait CPG (port from mujoco_playground/g1/joystick): cubic-Bezier
+            # foot-z trajectory at ~1.4Hz, left/right out-of-phase.
+            gait_freq_range=(1.25, 1.5),
+            gait_swing_height=0.08,
+            gait_phase_offsets=(0.0, 3.141592653589793),  # [left_offset, right_offset]
+            feet_phase_sigma=0.01,
         ),
         command_config=config_dict.create(
             # Narrow cmd ranges — early policy learns to STAND (cmd ≈ 0)
@@ -357,6 +363,8 @@ class G1WarpJoystick(mjx_env.MjxEnv):
             # Feet
             RewardTerm("feet_slip", lambda data, contact, info, **kw:
                 self._cost_feet_slip(data, contact, info)),
+            RewardTerm("feet_phase", lambda data, info, **kw:
+                self._reward_feet_phase(data, info["phase"])),
         ]
 
     # ── Domain randomization ──────────────────────────────────────────
@@ -426,6 +434,15 @@ class G1WarpJoystick(mjx_env.MjxEnv):
             key2, shape=(3,), minval=-self._cmd_a, maxval=self._cmd_a
         )
 
+        # Gait phase: ticks at gait_freq Hz; left/right offset by π.
+        gcfg = self._config.reward_config
+        rng, gk = jax.random.split(rng)
+        gait_freq = jax.random.uniform(
+            gk, (), minval=gcfg.gait_freq_range[0], maxval=gcfg.gait_freq_range[1]
+        )
+        phase_dt = 2.0 * jp.pi * self.dt * gait_freq
+        phase = jp.array(gcfg.gait_phase_offsets, dtype=jp.float32)
+
         info = {
             "rng": rng,
             "command": cmd,
@@ -436,6 +453,8 @@ class G1WarpJoystick(mjx_env.MjxEnv):
             "last_contact": jp.zeros(2, dtype=bool),
             "swing_peak": jp.zeros(2),
             "step_count": jp.int32(0),
+            "phase": phase,
+            "phase_dt": phase_dt,
             "reward_components": {
                 k: jp.zeros(()) for k in self._config.reward_config.scales.keys()
             },
@@ -491,6 +510,10 @@ class G1WarpJoystick(mjx_env.MjxEnv):
         # this fix policy sees fall == "0 reward" same as standing-still.
         reward = sum(rewards.values()) * self.dt
         state.info["reward_components"] = rewards
+
+        # Advance gait phase. Wrap to [-pi, pi].
+        phase_tp1 = state.info["phase"] + state.info["phase_dt"]
+        state.info["phase"] = jp.fmod(phase_tp1 + jp.pi, 2.0 * jp.pi) - jp.pi
 
         # Update command resampling + housekeeping.
         rng, key1, key2 = jax.random.split(state.info["rng"], 3)
@@ -635,6 +658,21 @@ class G1WarpJoystick(mjx_env.MjxEnv):
         signal to stay tall (unitree weights this -10)."""
         z = data.subtree_com[self._pelvis_body_id][2]
         return jp.square(z - self._config.reward_config.base_height_target)
+
+    def _reward_feet_phase(self, data, phase):
+        """Cubic-Bezier swing-phase foot height tracking.
+
+        gait.get_rz(phi) returns target z for swing-foot at phase phi:
+        rises 0 → swing_height during 0..pi, returns to 0 during pi..2pi.
+        Per foot, we read its current world z and reward exp(-||z - z*||²).
+        Left/right phases offset by pi → alternating gait emerges naturally.
+        Ported from mujoco_playground/_src/locomotion/g1/joystick.py.
+        """
+        rz = gait.get_rz(phase, swing_height=self._config.reward_config.gait_swing_height)
+        foot_pos = data.site_xpos[self._feet_site_id]
+        foot_z = foot_pos[..., -1]
+        error = jp.sum(jp.square(foot_z - rz))
+        return jp.exp(-error / self._config.reward_config.feet_phase_sigma)
 
     # ── Command sampling (same Markov-chain pattern as Go2) ─────────────
 
