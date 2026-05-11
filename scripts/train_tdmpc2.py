@@ -442,6 +442,7 @@ def train(
     ckpt_dir: str | None = None,
     use_wandb: bool = False,
     wandb_project: str = "jax-rl-tdmpc2",
+    env_kwargs: dict | None = None,
 ):
     print(f"[tdmpc2] env={env_name} total_timesteps={total_timesteps:_} seed={seed}")
     print(f"[tdmpc2] cfg: latent_dim={cfg.latent_dim} horizon={cfg.horizon} "
@@ -458,19 +459,22 @@ def train(
 
     # Build TrainConfig adapter for env bundle
     train_cfg = build_train_config_from_tdmpc2(cfg, env_name, total_timesteps, seed)
+    if env_kwargs:
+        train_cfg = dataclasses.replace(train_cfg, env_kwargs=dict(env_kwargs))
     env_bundle = make_env_bundle(train_cfg, seed)
-    if env_bundle.backend_kind != "mjx":
+    if env_bundle.backend_kind not in ("mjx", "gym"):
         raise ValueError(
-            f"train_tdmpc2 requires an MJX env bundle, but env "
-            f"{env_name!r} routes to backend_kind={env_bundle.backend_kind!r}.\n"
-            f"\n"
-            f"TD-MPC2 uses sequence replay (`buffer.sample_sequence`), full-scan "
-            f"MPPI planning, and a world-model rollout that all assume jit-able "
-            f"env_step. Gym envs don't fit this contract.\n"
-            f"\n"
-            f"For TD-MPC2-style world-model RL on gym envs, no equivalent "
-            f"script exists yet."
+            f"train_tdmpc2: unsupported backend_kind={env_bundle.backend_kind!r}. "
+            f"Supported: mjx, gym."
         )
+    # Gym backend works for TDMPC2 because:
+    # - Collect loop is a Python for-loop (lines 69, 223), not lax.scan over env_step.
+    # - MPPI planning uses the learned world model, not the real env.
+    # - Buffer auto-converts numpy → jnp.asarray at ingest.
+    # Relaxed 2026-04-26 for cross-shape PushT matrix study.
+    if env_bundle.backend_kind == "gym":
+        print(f"[tdmpc2] gym backend (env={env_name!r}) — Python collect loop, "
+              f"MPPI planning still JIT'd on world model.")
     print(f"[tdmpc2] obs_dim={env_bundle.obs_dim} action_dim={env_bundle.action_dim}")
 
     if env_bundle.action_dim != cfg.action_dim:
@@ -559,6 +563,10 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Enable W&B experiment tracking")
     parser.add_argument("--wandb-project", type=str, default="jax-rl-tdmpc2",
                         help="W&B project name (default: jax-rl-tdmpc2)")
+    parser.add_argument("--env-kwargs", type=str, default=None,
+                        help="JSON dict forwarded to gym env factory. "
+                             "Example: --env-kwargs '{\"obs_type\":\"keypoints\","
+                             "\"block_shape\":\"dr\"}'")
     return parser
 
 
@@ -574,10 +582,16 @@ def main():
     if overrides:
         cfg = dataclasses.replace(cfg, **overrides)
 
+    env_kwargs = None
+    if args.env_kwargs:
+        import json
+        env_kwargs = json.loads(args.env_kwargs)
+
     train(
         cfg, args.env, args.total_timesteps,
         seed=args.seed, ckpt_dir=args.ckpt_dir,
         use_wandb=args.wandb, wandb_project=args.wandb_project,
+        env_kwargs=env_kwargs,
     )
 
 

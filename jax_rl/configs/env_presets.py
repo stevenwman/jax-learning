@@ -502,6 +502,11 @@ TDMPC2_PRESETS: dict[str, TDMPC2Config] = {
     "HopperHop": make_tdmpc2_config(action_dim=4, episode_length=500, task_name="HopperHop"),
     "AcrobotSwingup": make_tdmpc2_config(action_dim=1, episode_length=500, task_name="AcrobotSwingup"),
     "CartpoleSwingup": make_tdmpc2_config(action_dim=1, episode_length=500, task_name="CartpoleSwingup"),
+    # PushT (gym backend): action_dim=2 (xy pusher target), episode_length=300
+    # (gym TimeLimit) × action_repeat=2 = 600 control steps. PushT control is
+    # ~50Hz pymunk, so 600 steps ≈ 12 sec real time per episode. Discount
+    # auto-recomputes via compute_discount(300, denom=5) ≈ 0.983.
+    "PushT": make_tdmpc2_config(action_dim=2, episode_length=300, task_name="PushT"),
 }
 
 

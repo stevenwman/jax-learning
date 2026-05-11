@@ -129,6 +129,7 @@ def run_eval(
     eval_env = env_bundle.eval_env
     num_eval = cfg.num_eval_envs
     dict_obs = env_bundle.dict_obs
+    backend_kind = getattr(env_bundle, "backend_kind", "mjx")
 
     plan_params = {
         "encoder": state.encoder_params,
@@ -141,7 +142,7 @@ def run_eval(
     eval_step = env_bundle.env_step
     ep_len = cfg.episode_lengths[0] if cfg.episode_lengths else 1000
 
-    def _rollout(mode: str, key: jax.Array) -> float:
+    def _rollout_mjx(mode: str, key: jax.Array) -> float:
         key, reset_key = jax.random.split(key)
         env_state = eval_env.reset(jax.random.split(reset_key, num_eval))
         eval_prev_mean = jnp.zeros((num_eval, cfg.horizon, cfg.action_dim))
@@ -166,6 +167,42 @@ def run_eval(
             t0 = env_state.done.astype(jnp.bool_)
 
         return float(jnp.mean(total_reward))
+
+    def _rollout_gym(mode: str, key: jax.Array) -> float:
+        # Gym eval_env is a SyncVectorEnv with a single underlying env. Run
+        # num_eval episodes serially and average. Reset signature uses int seed.
+        import numpy as np
+        returns = []
+        for ep in range(num_eval):
+            key, subkey = jax.random.split(key)
+            seed = int(jax.random.randint(subkey, (), 0, 2**31 - 1))
+            obs_np, _ = eval_env.reset(seed=seed)
+            ep_prev_mean = jnp.zeros((1, cfg.horizon, cfg.action_dim))
+            t0 = jnp.ones(1, dtype=jnp.bool_)
+            ep_return = 0.0
+            for _ in range(ep_len):
+                obs = jnp.asarray(obs_np)
+                if dict_obs:
+                    obs = obs["state"] if isinstance(obs, dict) else obs
+                z_0 = encoder.apply(plan_params["encoder"], obs)
+                if mode == "mppi":
+                    key, plan_key = jax.random.split(key)
+                    plan_keys = jax.random.split(plan_key, 1)
+                    action, ep_prev_mean = plan_fn(
+                        plan_params, z_0, ep_prev_mean, t0, cfg, plan_keys, True,
+                    )
+                else:
+                    action = _policy_prior_greedy(plan_params["policy"], z_0, policy)
+                action_np = np.asarray(action, dtype=np.float32)
+                obs_np, r, term, trunc, info = eval_env.step(action_np)
+                ep_return += float(np.asarray(r).reshape(-1)[0])
+                t0 = jnp.asarray(np.asarray(term | trunc, dtype=bool))
+                if bool(np.asarray(term).any() or np.asarray(trunc).any()):
+                    break
+            returns.append(ep_return)
+        return float(sum(returns) / max(len(returns), 1))
+
+    _rollout = _rollout_gym if backend_kind == "gym" else _rollout_mjx
 
     key, mppi_key, prior_key = jax.random.split(key, 3)
     mppi_return = _rollout("mppi", mppi_key)
