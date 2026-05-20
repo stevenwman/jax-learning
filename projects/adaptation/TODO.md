@@ -5,9 +5,21 @@ projects). This file is splitbelt / adaptation-specific.
 
 ## Open
 
+- [ ] **Retrain PoseDR with cross-belt termination** (2026-05-11). New
+  `term_cause=4` lands in `Go2WarpSplitbeltEnv`; current ckpt was
+  trained without it. Fresh 1M FastSAC should produce different gait
+  (less reliance on cross-foot stance). See journal
+  `2026-05-11-usd-and-cross-belt.md` for re-eval table.
+- [ ] **Symmetrize splitbelt training distribution** — L-faster vs
+  R-faster failure modes differ (cross-belt vs tilt). Mirror-augment
+  spawn or flip belt assignment. Per lesson "DR doesn't extrapolate".
+- [ ] **G1 splitbelt informed-actor train** (`G1WarpSplitbeltInformed` —
+  belt_vel R^2 added to actor `state` obs). Env registered 2026-05-08.
 - [ ] **Train PoseDR v3** with broader DR range (`vL ∈ [0.2, 2.0]`,
   `ratio ∈ [0.3, 3.0]`) + heavier orient reward (test the tilt-dominant
   hypothesis from `lessons/splitbelt.md`).
+- [ ] **Phase 2 USD render pipeline** — Blender material setup, HDRI
+  env light, Cycles. `.usd` export already working (Phase 1 done).
 - [ ] **Train splitbelt with `error` obs_mode** — `cmd_track_error +
   drift_xy` in actor. Closes the AC blindness gap. Deployable variant of
   the pose_track idea (no world-pose cheat).

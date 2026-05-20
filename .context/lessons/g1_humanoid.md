@@ -6,6 +6,127 @@
 
 ---
 
+## TRANSITIONAL FLAGS (2026-05-11) — remove once obs schema stabilizes
+
+Currently gated by config flags to preserve back-compat with legacy
+ckpts (HoloSoft 292, HoloClearance 266, HoloClearanceWide v1 239):
+
+- `cfg.gait_phase_obs` (default `False`): when `True`, appends sin/cos
+  of left/right gait phase to actor `state` obs (4 dims). Matches
+  holosoma G1's `g1_29dof_loco_single_wolinvel` preset. HoloClearanceWide
+  v2 onwards enables this.
+- `cfg.command_config.stand_prob` (default `0.0`): probability that a
+  sampled cmd is forced to zero. Matches holosoma `stand_prob=0.2`.
+  HoloClearanceWide v2 onwards bumps to 0.2.
+
+**Why gated**: actor obs dim is hard-coded into trained actor's first
+layer. Setting `gait_phase_obs=True` everywhere would invalidate every
+existing G1 ckpt's obs schema (96→100). Once we settle on the preferred
+obs layout and retrain everything we care about, fold both flags in
+unconditionally and drop the conditional path. Search the repo for
+`TRANSITIONAL FLAG (2026-05-11)` to find every callsite that needs
+unification.
+
+Cross-refs:
+- Code: `jax_rl/envs/locomotion/g1_warp_joystick.py` (file-level
+  docstring + inline comments at flag def + obs append site).
+- Journal: `.context/journals/2026-05-11-phase-obs-add.md`.
+
+---
+
+## Foot-lift shuffle is a reward-Pareto issue, not cmd range (2026-05-08)
+
+User reported the eval-292 HoloSoft policy "shuffles" — survives full
+1000-step episodes but doesn't lift feet. Hypotheses (per seed prompt):
+1a saturated `feet_phase` reward, 1b cmd range too narrow, 1c missing
+push events. Probed each.
+
+Diagnostic ([scripts/diagnostics/g1_foot_lift_probe.py](../../scripts/diagnostics/g1_foot_lift_probe.py))
+runs deterministic rollout on a frozen ckpt and dumps per-step
+`feet_phase` reward, foot z, and target rz. Findings on the 292 ckpt:
+
+| metric | value | interp |
+|---|---|---|
+| `feet_phase_rew` (raw, max=1) | 0.79 mean, 0.78 median | **NOT saturated**; gradient is alive |
+| foot_z p90 | 0.043 m | undershoots target swing 0.09 m |
+| target rz p90 | 0.087 m | gait phase IS commanding lift |
+
+Hypothesis 1a (saturation) **falsified** — the 0.21 reward-gap means the
+policy is actively paying cost rather than finding the reward already
+maxed.
+
+Hypothesis 1b (cmd range): trained `G1WarpJoystickHoloWide`
+(cmd_a=[0.5,0.3,0.5] vs HoloSoft's [0.1,0.1,0.1]) for 5M steps. Result:
+eval ~285 (vs 292 baseline), pelvis drift increased 0.22m → 1.6m over
+33s, but **foot_z still ~0.045 m p90** (no lift improvement). Wider cmd
+made the robot move further but not lift higher. **Not the bottleneck.**
+
+Real bottleneck: the policy found a "low foot, low cost" Pareto-optimum.
+Lifting more would gain ~5×0.21=1.05 reward (feet_phase scale 5) but
+cost ≥1 in action_rate + pose + balance penalties. Net ≈ 0 → no gradient
+to climb out.
+
+**Fix axes** (what works on this Pareto problem):
+- bump `feet_phase` weight 5→10 (double the lift incentive)
+- tighten `feet_phase_sigma` 0.008→0.005 (sharpen gradient near target)
+- explicit `feet_clearance` reward (linear z-during-swing — direct push
+  rather than exponential)
+
+`default_config_holosoma_lift()` does the first two together. Bumping
+weight is safer than aggressive sigma tightening (sigma → 0.001 narrows
+the reward basin so much that early policy can't find it).
+
+**Lesson**: when reward is non-saturated and policy still doesn't optimize
+it, suspect Pareto trade-off vs other penalties. Tune the relative
+weight, not the cmd or perturbation distribution.
+
+**Update 2026-05-08**: tried HoloLift (feet_phase scale 5→10, sigma
+0.008→0.005). 5M FastSAC, eval ~345 (highest of three) but foot_z p90
+still 0.046 m. **The shuffle Pareto-optimum is robust across both
+weight and sigma tweaks.** Three configs (cmd-narrow, cmd-wide,
+weight-doubled) all converged to ~0.045 m max foot lift at ~0.09 target.
+
+**RESOLUTION 2026-05-08**: `HoloClearance` preset
+(`default_config_holosoma_clearance`) added a linear feet-clearance
+reward — `feet_clearance_swing = sum_i min(foot_z_i, 0.10) * (1 -
+contact_i)` weight 30 — and **broke through**:
+
+| variant | foot_z p90 (L/R) | foot_z max | episode_len | reward total |
+|---|---|---|---|---|
+| HoloSoft (5M) | 0.042/0.044 | 0.048/0.055 | 1000 | 290 |
+| HoloWide (5M) | 0.043/0.045 | 0.057/0.061 | 1000 | 285 |
+| HoloLift (5M) | 0.042/0.046 | 0.058/0.060 | 1000 | 346 |
+| **HoloClearance (5M)** | **0.075/0.088** | **0.111/0.106** | 1000 | 327 |
+
+Eval @ 1M-checkpoint: 266 ± 5 (5/5 ep > 260). Pelvis drift: +1.41 m
+forward (vs HoloSoft -0.22 m), qvel_x = +0.074 m/s actual forward
+velocity (vs -0.014 m/s shuffle). Pelvis z mean 0.767 m (vs 0.749 m —
+taller posture). All clinical signs of a real walker.
+
+**Why it worked where feet_phase didn't**: linear (vs exponential)
+reward + contact gating. Three reasons:
+1. **No saturation below target** — gradient is constant ∂rew/∂z = 1
+   (× weight 30) all the way from foot_z=0 to foot_z=0.10. feet_phase
+   has near-zero gradient when far from target (exp tail) → policy
+   can't find a path out.
+2. **Contact-gated** — only paid during swing. Doesn't penalize stance
+   foot for being on ground. feet_phase rewarded foot tracking even
+   in stance phase, leaking incentive.
+3. **Independent of feet_phase** — the existing feet_phase reward
+   stays untouched, so we get its phase-locking benefit + clearance
+   bonus.
+
+**Lesson**: when policy gets stuck in a low-magnitude basin on an
+exponential reward, add a *linear* parallel reward with the same
+target. Linear ≠ exp(small * x²) — the latter has vanishing gradient
+exactly where the policy is stuck.
+
+Ckpt: `checkpoints/20260508_105608_fast_sac_g1warpjoystickholoclearance_seed0/best`.
+Video: `projects/adaptation/videos/g1_holoclearance/holoclearance_default.mp4`.
+Use this as the new flat-G1 baseline.
+
+---
+
 ## Reward `jp.clip(reward, 0, ...)` silently kills negative-weighted terms (2026-05-07)
 
 **What happened:** G1 v2 had `termination=-100` weight to push policy

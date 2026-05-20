@@ -19,15 +19,99 @@
 
 ### Working ckpts (use these as starting points)
 
-| Env | Ckpt | Eval @ 5M | Notes |
+| Env | Ckpt | Eval | Notes |
 |---|---|---|---|
-| G1WarpJoystickHoloSoft | `checkpoints/20260508_014027_fast_sac_g1warpjoystickholosoft_seed0/best` | **292.1 ± 0.6** | flat walking, FastSAC paper-match. Full 1000-step survival. **SHUFFLING foot-lift, not full stride.** |
-| G1WarpJoystickHoloSoft | `checkpoints/20260508_011324_flash_sac_g1warpjoystickholosoft_seed0/best` | 273.9 ± 2.0 | same env, FlashSAC. Comparable shuffling. |
-| G1WarpSplitbeltTied / G1WarpSplitbelt | various v19-v22 ckpts | ~25 ± 10 | splitbelt baseline plateau. Mean 50-step survival. Robot walks on belts in some episodes (max 65). |
+| **G1WarpJoystickHoloClearance** | `checkpoints/20260508_105608_fast_sac_g1warpjoystickholoclearance_seed0/best` | **266 ± 5 @ 1M** | **REAL WALKER**. foot_z p90 0.075-0.088 (target 0.09), forward drift +1.41 m / 33s, qvel_x +0.07 m/s. Use as flat-G1 baseline. |
+| G1WarpJoystickHoloSoft | `checkpoints/20260508_014027_fast_sac_g1warpjoystickholosoft_seed0/best` | 292.1 ± 0.6 @ 5M | shuffles, foot_z p90 0.043. Survives but doesn't really walk. |
+| G1WarpJoystickHoloLift | `checkpoints/20260508_093213_fast_sac_g1warpjoystickhololift_seed0/best` | 345 @ 5M | feet_phase weight 5→10, sigma .008→.005. Still shuffles (foot_z p90 0.046). Higher reward but no real lift improvement. |
+| G1WarpJoystickHoloWide | `checkpoints/20260508_090201_fast_sac_g1warpjoystickholowide_seed0/best` | 285 @ 5M | cmd_a=[0.5,0.3,0.5]. Drifts further but still shuffles. |
+| G1WarpSplitbeltInformed | `checkpoints/20260508_095811_fast_sac_g1warpsplitbeltinformed_seed0/best` | ~20 @ 5M | belt_vel R^2 in actor obs. Falls in 67 steps. |
+| G1WarpSplitbeltInformedTied | `checkpoints/20260508_102715_fast_sac_g1warpsplitbeltinformedtied_seed0/best` | ~10 @ 5M | tied(0.5) + belt_vel obs. Falls in 30 steps. |
+| G1WarpSplitbeltClearanceTied | `checkpoints/20260508_112432_fast_sac_g1warpsplitbeltclearancetied_seed0/best` | peak 32 @ 4.55M, ep_len 19-45 across 8 seeds | HoloClearance reward + tied(0.5) + informed obs. Better than InformedTied but still falls. |
+| G1WarpSplitbeltTied / G1WarpSplitbelt | various v19-v22 ckpts | ~25 ± 10 | splitbelt baseline plateau. |
 
-Videos for all of the above in `projects/adaptation/videos/g1_v15_*` through
-`g1_v22_*`. v18 is the canonical "flat walking" demo — but user noted it
-shuffles, doesn't truly lift feet.
+Videos: `projects/adaptation/videos/{g1_holoclearance,g1_holowide,g1_hololift,g1_splitbelt_informed}/`.
+Diagnostics CSV per ckpt in `projects/adaptation/diagnostics/foot_probe_*.csv`.
+
+### Foot-lift breakthrough via linear clearance reward (2026-05-08)
+
+3 reward configs (HoloSoft / HoloWide / HoloLift) all plateaued at
+foot_z p90 ≈ 0.045 m vs 0.09 m target. Diagnostic showed feet_phase
+reward at 0.79 (NOT saturated) — gradient alive but policy stuck in
+"low foot, low cost" Pareto basin.
+
+**HoloClearance fixed it**: linear contact-gated bonus
+`feet_clearance_swing = sum_i min(foot_z_i, 0.10) * (1 - contact_i)`,
+weight 30 (`default_config_holosoma_clearance` in g1_warp_joystick.py).
+Result: foot_z p90 0.075-0.088, real forward walking, eval 266 at 1M
+steps already (faster convergence than HoloSoft 5M).
+
+**Why it worked**: linear reward has constant gradient below target,
+unlike `exp(-err²/sigma)` which has near-zero gradient when far from
+target. Contact-gating means stance foot doesn't pay → reward only
+fires when policy actually lifts. Adds bonus on TOP of feet_phase
+(complementary), doesn't replace it.
+
+See `.context/lessons/g1_humanoid.md` "Foot-lift shuffle is a
+reward-Pareto issue" lesson for full progression + linear-vs-exp logic.
+
+### Cross-belt termination added; PoseDR re-eval reveals direction asymmetry (2026-05-11)
+
+`Go2WarpSplitbeltEnv` now has 4th term cause: foot grounded on opposite
+belt from spawn assignment (`natural_belt=[1,0,1,0]` for [FL,FR,RL,RR]
+since FL spawns at world +y = right belt). Re-eval of PoseDR v2 ckpt
+(same actor, new env term) under 9 (vL, vR) conditions × 16 ep:
+
+- R-faster (ratio>1) **OOD**: cross-belt dominates (10–14/16 ep). Robot
+  dragged rightward, feet end up on wrong belt.
+- L-faster (ratio<1) OOD: zero cross-belt, all tilt. Policy can't pull
+  right-side feet onto faster left belt — spawn/keyframe bias.
+- Tied at edge of support (1.5,1.5): no cross possible; off-belt drift
+  + tilt mix.
+
+Old eval read row #3 (ratio 2×) as 75% term mostly tilt; new eval = 88%
+term, 10/16 cross-belt. Termination scheme was hiding asymmetry.
+
+Action items: retrain PoseDR with cross-belt active; symmetrize spawn /
+DR to fix L/R asymmetry. See journal `2026-05-11-usd-and-cross-belt.md`
++ lesson `lessons/splitbelt.md` "Cross-belt detection reveals tilt
+failures were mostly belt-crossover".
+
+### USD trajectory replay pipeline (Phase 1, 2026-05-11)
+
+`scripts/export_usd.py` replays a saved `_traj.npz` qpos sequence
+through `mujoco.usd.exporter.USDExporter` → single `.usd` with time
+samples + textures. Tested on PoseDR splitbelt: 9.8 MB, 1250 frames @
+60fps, 178 prims. Viewable in Blender (3.5+ native USD import) /
+usdview / Omniverse. Phase 2 (Cycles material setup, HDRI light) TBD.
+
+`record_video.py` + `record_sweep.py` got `--resolution W H` and
+`--video-quality 1-10` flags (renderer was hardcoded 640×480).
+
+### Splitbelt-G1: bottleneck is dynamics, not actor blindness (2026-05-08)
+
+Tested seed prompt #2a (add belt_vel to actor obs). Three variants:
+- `G1WarpSplitbeltInformed` (random_per_episode v∈[0.3,1.0]): eval ~20,
+  falls in 67 steps. Belt vR can hit 1.4 m/s — too fast for early policy.
+- `G1WarpSplitbeltInformedTied` (v=0.5 fixed both belts): eval ~10,
+  falls in 30 steps. Even slow tied belts crash the policy quickly.
+- `G1WarpSplitbeltClearanceTied` (HoloClearance reward + tied(0.5) +
+  informed obs): peak eval 32 / 5 ep at 4.55M, but per-seed rollouts
+  show ep_len 19-45 (mean ~33) — same crash, just more variable.
+
+Conclusion: actor blindness was NOT the bottleneck. The G1 control
+policy itself can't survive belt drag from-scratch even with the
+foot-lifting reward set proven on flat. Likely paths forward:
+
+a. **Transfer-init from HoloClearance ckpt** — load the 266-eval flat
+   walker as starting actor params, then train splitbelt. The flat
+   walker already lifts feet and walks forward; should survive belt
+   drag much longer. Need ckpt-loading at train start.
+
+b. **Belt-speed curriculum**: start v_range=(0.0, 0.05) for first 1M
+   steps, ramp to (0.3, 1.0) by 5M.
+
+c. **Both** — transfer + curriculum.
 
 ### Reward set: HoloSoft (proven for survival, not foot-lift)
 
@@ -53,49 +137,35 @@ defaults. WITHOUT them FastSAC stalls at eval -1. WITH them, eval 292.
 
 ## Open follow-ups (priority order)
 
-### 1. Encourage real foot lifting on flat (user observation: "both shuffling")
+### 1. Train HoloClearance further / multi-seed
 
-Current eval 292 episodes show robot surviving full episodes but
-shuffling — not picking feet up cleanly. Hypotheses:
+HoloClearance peaked at eval 266 by 1M steps. Train ran to 5M but only
+1 eval period was logged (eval_every_n_episodes=5000 = ~1M-step eval
+cadence). Worth either:
+- Re-evaluate the 5M `best` ckpt with more episodes (current: 1 eval
+  block of 5 ep)
+- Train multi-seed (1, 2, 3) for variance check
+- Cmd-wide variant (HoloClearance + cmd_a=[0.5,0.3,0.5]) — now that
+  foot lift works, see if wide-cmd tracks better
 
-a. **`feet_phase` reward saturates near foot-z=0**: with sigma=0.008 and
-   swing_height=0.09, exp(-error/sigma) is near 1 if foot stays low and
-   target rz also near 0 during stance phase. Policy learns "keep foot
-   near floor" satisfies the reward without lifting during swing.
-   Diagnostic: print `_reward_feet_phase` value on a shuffled rollout —
-   should already be ~1.0 even without lifting.
-   Fix candidates:
-   - Bump swing_height 0.09 → 0.15 (less reward for low-foot)
-   - Tighten sigma 0.008 → 0.002 (sharper penalty for not tracking)
-   - Add explicit `feet_clearance` reward (reward foot z while not in contact)
+### 2. Splitbelt-G1: stop plateau at 25 → use HoloClearance as init
 
-b. **cmd ranges too narrow** (cmd_a = [0.1, 0.1, 0.1]). Tracking_lin_vel
-   reward = exp(0)=1 at vel=0, exp(-(0.1)²/0.25)=0.96 at full cmd.
-   Saturates fast → no incentive to move. **Test**: bump cmd_a to
-   [0.5, 0.3, 0.5] (closer to holosoma's `limit_ranges` of [-0.5, 1.0],
-   [-0.3, 0.3], [-0.2, 0.2]) and retrain.
+Splitbelt baselines + Informed + InformedTied all crash in 30-67
+steps. The bottleneck is fundamental control, not actor obs. New plan:
 
-c. **Push events** (holosoma has interval_range_s=(5,5),
-   magnitude_range=(0.1, 2.0) for vel kick). Forces recovery learning;
-   without them, policy never learns external perturbations so it stays
-   stiff. Implement: env.step adds random qvel kick every ~5s.
+a. **Transfer-init from HoloClearance** — load the 266-eval flat
+   walker as starting actor params, then train splitbelt. The flat
+   walker already lifts feet and walks forward; should survive belt
+   drag much longer. Need ckpt-loading at train start (currently new
+   actor inits randomly).
 
-### 2. Splitbelt-G1: close 25 → ~200 gap
+b. **Belt-speed curriculum**: start v_range=(0.0, 0.1) for first 1M
+   steps, ramp to (0.3, 1.0) by 5M. Linear or avg-epl-based ramp.
+   Standalone fix even without transfer-init.
 
-Bottleneck (per lesson doc): actor obs lacks belt info. Highest leverage:
-
-a. **Add belt_vel to actor obs** (port Go2 splitbelt's `informed` mode).
-   Modify `g1_warp_splitbelt.py` _post_init's `_obs_groups`:
-   ```python
-   ObsTerm("belt_vel", lambda info, **kw: info["splitbelt"]["belt_vel"], 0.0)
-   ```
-   Then retrain G1WarpSplitbelt. Expect substantial jump.
-
-b. **Curriculum on belt speed**: start v_range=(0.1, 0.2), ramp to
-   (0.3, 1.0). Holosoma-style avg-epl-based or simple step-count linear.
-
-c. **Multi-seed**: current is only seed=0. v19-v22 high variance suggests
-   3-5 seeds for stable mean.
+c. **HoloClearance with splitbelt scene** — register a new env that
+   uses the splitbelt XML but cmd_zero (stand on belts) and the
+   clearance reward. Pure-from-scratch but with the proven reward.
 
 ### 3. Per-protocol splitbelt presets (A1/A2/A3/A4)
 
