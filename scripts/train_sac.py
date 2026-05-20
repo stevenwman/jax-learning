@@ -107,6 +107,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--reset-mode", type=str, default=None,
                         choices=["legacy", "per_step"],
                         help="Reset mode: legacy (AutoReset) or per_step (DomainRandWrapper)")
+    parser.add_argument("--buffer-size", type=int, default=None,
+                        help="Replay buffer capacity (default: 4M)")
+    parser.add_argument("--batch-size", type=int, default=None,
+                        help="Batch size (default: 512)")
+    parser.add_argument("--grad-updates-per-step", type=int, default=None,
+                        help="Gradient updates per env step")
     return parser
 
 
