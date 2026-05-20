@@ -33,6 +33,7 @@ from jax_rl.envs.locomotion import splitbelt_schedules as sched
 from jax_rl.envs.locomotion.g1_warp_joystick import (
     G1WarpJoystick,
     default_config_holosoma_soft,
+    default_config_holosoma_clearance,
     get_warp_assets,
 )
 
@@ -68,6 +69,23 @@ def default_config() -> config_dict.ConfigDict:
     cfg.reward_config.scales.treadmill_drift = 5.0
     cfg.reward_config.treadmill_drift_lateral_weight = 2.0
     cfg.reward_config.treadmill_drift_forward_weight = 0.5
+    # If True, append belt_vel (R^2) to the actor's `state` obs. Otherwise
+    # the actor is blind to the schedule (must infer from proprioception).
+    # Per seed_prompt #2: highest leverage to close the 25→200 gap.
+    cfg.informed_actor_obs = False
+    return cfg
+
+
+def default_config_informed() -> config_dict.ConfigDict:
+    """Splitbelt with belt_vel exposed to the actor (R^2 added to `state`).
+
+    Ports Go2 splitbelt's `informed` mode. Diagnostic-baseline config
+    (random_per_episode + drift penalty + HoloSoft rewards) plus the one
+    additional obs term. Expected to close the eval ~25 → 200+ gap.
+    """
+    cfg = default_config()
+    cfg.unlock()
+    cfg.informed_actor_obs = True
     return cfg
 
 
@@ -78,6 +96,47 @@ def default_config_tied() -> config_dict.ConfigDict:
     cfg.unlock()
     cfg.schedule_kind = "tied"
     cfg.schedule_params = config_dict.create(v=0.5)
+    return cfg
+
+
+def default_config_clearance_tied() -> config_dict.ConfigDict:
+    """Splitbelt tied(0.5) + HoloClearance reward set + informed obs.
+
+    Combines the foot-lift breakthrough (`feet_clearance_swing` linear
+    bonus) with the splitbelt scene at the easiest (tied) belt config.
+    Tests whether a real walker survives belt drag much better than the
+    shuffle baselines that fell in 30-67 steps.
+    """
+    cfg = default_config_holosoma_clearance()
+    cfg.unlock()
+    cfg.command_config.a = [0.0, 0.0, 0.0]
+    cfg.command_config.b = [0.0, 0.0, 0.0]
+    cfg.schedule_kind = "tied"
+    cfg.schedule_params = config_dict.create(v=0.5)
+    cfg.belt_layout = config_dict.create(
+        left_y_min=-0.500, left_y_max=0.000,
+        right_y_min=0.000, right_y_max=0.500,
+    )
+    cfg.off_belt_termination = False
+    cfg.reward_config.scales.treadmill_drift = 5.0
+    cfg.reward_config.treadmill_drift_lateral_weight = 2.0
+    cfg.reward_config.treadmill_drift_forward_weight = 0.5
+    cfg.informed_actor_obs = True
+    return cfg
+
+
+def default_config_informed_tied() -> config_dict.ConfigDict:
+    """Tied(v=0.5) + belt_vel exposed to actor. Isolates the obs-add from
+    the belt-distribution-difficulty axis. Diagnostic on
+    `G1WarpSplitbeltInformed` (random_per_episode v∈[0.3,1.0], ratio
+    [0.5,2.0]) showed eval ~20 with mean episode 67 — robot fell before
+    learning to use belt info because vR could reach 2.0 m/s. This
+    preset locks both belts at v=0.5 to test whether informed obs alone
+    helps when the dynamics are tractable.
+    """
+    cfg = default_config_tied()
+    cfg.unlock()
+    cfg.informed_actor_obs = True
     return cfg
 
 
@@ -204,6 +263,20 @@ class G1WarpSplitbeltEnv(G1WarpJoystick):
             "treadmill_drift",
             lambda data, **kw: self._reward_treadmill_drift(data),
         ))
+
+        # Splitbelt obs: belt_vel as R^2 — [vL, vR] commanded for the current
+        # step. Off by default (preserves obs schema of v19-v22 ckpts);
+        # `default_config_informed` flips both flags on for the eval-25→200
+        # gap-closing experiment.
+        if self._config.informed_actor_obs:
+            from jax_rl.envs.obs_spec import ObsTerm
+            belt_vel_term = ObsTerm(
+                "belt_vel",
+                lambda info, **kw: info["splitbelt"]["belt_vel"],
+                noise_scale=0.0,
+            )
+            self._obs_groups["state"].append(belt_vel_term)
+            self._obs_groups["privileged_state"].append(belt_vel_term)
 
     # ── reset / step overrides ────────────────────────────────────────
 

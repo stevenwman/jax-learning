@@ -38,6 +38,25 @@ def make_varied_cmd_fn(period_steps: int = 75, cmd_max=(1.5, 0.8, 1.2)):
     return fn
 
 
+def make_locked_cmd_fn(cmd_vec):
+    """Build a kicks_fn that pins env.info['command'] to a fixed value every step.
+
+    Args:
+        cmd_vec: (3,) array-like — [vx, vy, yaw] to lock. Use 0 for any axis
+            you want disabled, non-zero for the axis to test.
+
+    Returns:
+        kicks_fn(env_state, step_idx, key) -> (env_state, key).
+    """
+    locked = jnp.asarray(cmd_vec, dtype=jnp.float32)
+
+    def fn(env_state, step_idx, key):
+        info = {**env_state.info, "command": locked}
+        return env_state.replace(info=info), key
+
+    return fn
+
+
 def apply_kicks(env_state, step_idx, key, kick_interval=75, kick_strength=1.5):
     """Zero command and apply velocity kicks every kick_interval steps.
 
@@ -89,6 +108,11 @@ def render_command_overlays(renderer, mj_data, cmd, idx, goal_xy=None):
     vx, vy = float(cmd[0]), float(cmd[1])
     speed = np.sqrt(vx**2 + vy**2)
 
+    # Scale arrow size by robot height — Go2 pelvis ~0.3, G1 pelvis ~0.76.
+    # Reference Go2 (pelvis_z 0.3) → scale 1.0; G1 → scale ~2.0.
+    pelvis_z = float(mj_data.qpos[2])
+    scale = max(pelvis_z / 0.30, 1.0)
+
     # ── Green velocity arrow ──────────────────────────────────────────────
     if speed > 0.05:
         # Rotate command from local to world frame using robot's yaw
@@ -101,11 +125,20 @@ def render_command_overlays(renderer, mj_data, cmd, idx, goal_xy=None):
         world_vx = vx * fwd_x + vy * right_x
         world_vy = vx * fwd_y + vy * right_y
 
+        # Anchor at pelvis height + clearance so arrow sits above torso.
+        # Use unit direction × constant display length so arrow stays
+        # legible even with small cmd magnitudes (G1 cmd_a=0.1).
+        # Magnitude visible via shaft thickness modulated by speed.
         base_pos = mj_data.qpos[:3].copy()
-        base_pos[2] = 0.4
+        base_pos[2] = pelvis_z + 0.25 * scale
+        # Cap at cmd_max ~ 1.0 m/s for normalization; if higher, arrow grows.
+        cmd_max = 1.0
+        disp_len = 0.6 * scale * min(speed / cmd_max, 1.0) ** 0.5  # sqrt → small cmd still visible
+        # Floor minimum length so tiny cmd still visible
+        disp_len = max(disp_len, 0.3 * scale)
         end_pos = base_pos.copy()
-        end_pos[0] += world_vx * 0.3
-        end_pos[1] += world_vy * 0.3
+        end_pos[0] += (world_vx / speed) * disp_len
+        end_pos[1] += (world_vy / speed) * disp_len
 
         geom = renderer.scene.geoms[renderer.scene.ngeom]
         mujoco.mjv_initGeom(
@@ -113,19 +146,23 @@ def render_command_overlays(renderer, mj_data, cmd, idx, goal_xy=None):
             np.zeros(3), np.zeros(3), np.zeros(9), np.zeros(4),
         )
         mujoco.mjv_connector(
-            geom, mujoco.mjtGeom.mjGEOM_ARROW, 0.015,
+            geom, mujoco.mjtGeom.mjGEOM_ARROW, 0.022 * scale,
             base_pos.astype(np.float64), end_pos.astype(np.float64),
         )
-        geom.rgba = np.array([0, 1, 0, 0.8], dtype=np.float32)
+        geom.rgba = np.array([0, 1, 0, 0.9], dtype=np.float32)
         renderer.scene.ngeom += 1
 
     # ── Yellow yaw-rate arrow ─────────────────────────────────────────────
     yaw_rate = float(cmd[2])
     if abs(yaw_rate) > 0.05:
         base_pos = mj_data.qpos[:3].copy()
-        base_pos[2] = 0.45
+        base_pos[2] = pelvis_z + 0.35 * scale
+        # Same length-normalization treatment as velocity arrow.
+        yaw_max = 1.0
+        yaw_len = 0.5 * scale * min(abs(yaw_rate) / yaw_max, 1.0) ** 0.5
+        yaw_len = max(yaw_len, 0.25 * scale)
         yaw_end = base_pos.copy()
-        yaw_end[2] += yaw_rate * 0.2
+        yaw_end[2] += np.sign(yaw_rate) * yaw_len
 
         geom = renderer.scene.geoms[renderer.scene.ngeom]
         mujoco.mjv_initGeom(
@@ -133,10 +170,10 @@ def render_command_overlays(renderer, mj_data, cmd, idx, goal_xy=None):
             np.zeros(3), np.zeros(3), np.zeros(9), np.zeros(4),
         )
         mujoco.mjv_connector(
-            geom, mujoco.mjtGeom.mjGEOM_ARROW, 0.012,
+            geom, mujoco.mjtGeom.mjGEOM_ARROW, 0.018 * scale,
             base_pos.astype(np.float64), yaw_end.astype(np.float64),
         )
-        geom.rgba = np.array([1, 0.9, 0, 0.8], dtype=np.float32)
+        geom.rgba = np.array([1, 0.9, 0, 0.9], dtype=np.float32)
         renderer.scene.ngeom += 1
 
     # ── Red target marker floating above goal position (curriculum env) ─

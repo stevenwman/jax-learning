@@ -55,6 +55,19 @@ def _register_custom_envs():
             functools.partial(WarpJoystickNoAccel, task="flat_terrain"),
             warp_default_config,
         )
+    # Prototype: flat-ground PosTrack — delta_xy_yaw obs + Lorentzian reward.
+    # Designed to share parameterization with Go2WarpSplitbeltPosTrack so
+    # cross-deploy is direct. See jax_rl/envs/locomotion/go2_warp_flat_postrack.py.
+    from jax_rl.envs.locomotion.go2_warp_flat_postrack import (
+        WarpFlatPosTrack as WarpFlatPosTrack,
+        default_config as warp_flat_postrack_default_config,
+    )
+    if "Go2WarpFlatPosTrackProto" not in pg_locomotion._envs:
+        pg_locomotion.register_environment(
+            "Go2WarpFlatPosTrackProto",
+            functools.partial(WarpFlatPosTrack, task="flat_terrain"),
+            warp_flat_postrack_default_config,
+        )
     # Hardware-conservative variant: 45d state (no accel) + action_scale=0.25.
     # Named "Unitree" for the parts that are partially aligned with
     # unitree_rl_lab's Go2 deploy contract:
@@ -133,6 +146,34 @@ def _register_custom_envs():
             functools.partial(G1WarpJoystick, task="flat_terrain"),
             g1_joystick_holosoma_soft_config,
         )
+    from jax_rl.envs.locomotion.g1_warp_joystick import default_config_holosoma_wide as g1_joystick_holosoma_wide_config
+    if "G1WarpJoystickHoloWide" not in pg_locomotion._envs:
+        pg_locomotion.register_environment(
+            "G1WarpJoystickHoloWide",
+            functools.partial(G1WarpJoystick, task="flat_terrain"),
+            g1_joystick_holosoma_wide_config,
+        )
+    from jax_rl.envs.locomotion.g1_warp_joystick import default_config_holosoma_lift as g1_joystick_holosoma_lift_config
+    if "G1WarpJoystickHoloLift" not in pg_locomotion._envs:
+        pg_locomotion.register_environment(
+            "G1WarpJoystickHoloLift",
+            functools.partial(G1WarpJoystick, task="flat_terrain"),
+            g1_joystick_holosoma_lift_config,
+        )
+    from jax_rl.envs.locomotion.g1_warp_joystick import default_config_holosoma_clearance as g1_joystick_holosoma_clearance_config
+    if "G1WarpJoystickHoloClearance" not in pg_locomotion._envs:
+        pg_locomotion.register_environment(
+            "G1WarpJoystickHoloClearance",
+            functools.partial(G1WarpJoystick, task="flat_terrain"),
+            g1_joystick_holosoma_clearance_config,
+        )
+    from jax_rl.envs.locomotion.g1_warp_joystick import default_config_holosoma_clearance_wide as g1_joystick_holosoma_clearance_wide_config
+    if "G1WarpJoystickHoloClearanceWide" not in pg_locomotion._envs:
+        pg_locomotion.register_environment(
+            "G1WarpJoystickHoloClearanceWide",
+            functools.partial(G1WarpJoystick, task="flat_terrain"),
+            g1_joystick_holosoma_clearance_wide_config,
+        )
 
     from jax_rl.envs.locomotion.g1_warp_splitbelt import G1WarpSplitbeltEnv
     from jax_rl.envs.locomotion.g1_warp_splitbelt import default_config as g1_splitbelt_default_config
@@ -148,6 +189,27 @@ def _register_custom_envs():
             "G1WarpSplitbeltTied",
             functools.partial(G1WarpSplitbeltEnv, task="splitbelt"),
             g1_splitbelt_tied_config,
+        )
+    from jax_rl.envs.locomotion.g1_warp_splitbelt import default_config_informed as g1_splitbelt_informed_config
+    if "G1WarpSplitbeltInformed" not in pg_locomotion._envs:
+        pg_locomotion.register_environment(
+            "G1WarpSplitbeltInformed",
+            functools.partial(G1WarpSplitbeltEnv, task="splitbelt"),
+            g1_splitbelt_informed_config,
+        )
+    from jax_rl.envs.locomotion.g1_warp_splitbelt import default_config_informed_tied as g1_splitbelt_informed_tied_config
+    if "G1WarpSplitbeltInformedTied" not in pg_locomotion._envs:
+        pg_locomotion.register_environment(
+            "G1WarpSplitbeltInformedTied",
+            functools.partial(G1WarpSplitbeltEnv, task="splitbelt"),
+            g1_splitbelt_informed_tied_config,
+        )
+    from jax_rl.envs.locomotion.g1_warp_splitbelt import default_config_clearance_tied as g1_splitbelt_clearance_tied_config
+    if "G1WarpSplitbeltClearanceTied" not in pg_locomotion._envs:
+        pg_locomotion.register_environment(
+            "G1WarpSplitbeltClearanceTied",
+            functools.partial(G1WarpSplitbeltEnv, task="splitbelt"),
+            g1_splitbelt_clearance_tied_config,
         )
 
     from jax_rl.envs.locomotion.go2_warp_splitbelt import Go2WarpSplitbeltEnv
@@ -195,6 +257,57 @@ def _register_custom_envs():
             "Go2WarpSplitbeltPoseDR",
             functools.partial(Go2WarpSplitbeltEnv, task="splitbelt_pose_dr"),
             _splitbelt_pose_dr_default_config,
+        )
+    # Position-tracking unified variant (2026-05-11). Drops vel tracking and
+    # Gaussian pose_pos_track; uses Lorentzian-kernel position tracking with
+    # a marching target (fixed at origin for splitbelt cmd=0). Heavy-tail
+    # kernel avoids the OOD collapse seen in PoseDR's exp reward. Same belt
+    # DR as PoseDR (random_per_episode v∈[0.3,1.5], ratio∈[0.5,2.0]).
+    def _splitbelt_pos_track_default_config():
+        cfg = splitbelt_default_config()
+        cfg.obs_mode = "pos_track"   # 45d state — matches Go2WarpFlatPosTrackProto
+        cfg.schedule_kind = "random_per_episode"
+        cfg.schedule_params = config_dict.create(
+            v_range=(0.3, 1.5),
+            ratio_range=(0.5, 2.0),
+        )
+        # Unified PosTrack reward — body-frame Lorentzian on delta_xy + cos(d_yaw).
+        # Matches Go2WarpFlatPosTrackProto verbatim so a flat-trained policy is
+        # in-distribution at cross-deploy on this env.
+        cfg.reward_config.scales.tracking_lin_vel = 0.0
+        cfg.reward_config.scales.tracking_ang_vel = 0.0   # subsumed by orient_track_yaw
+        cfg.reward_config.scales.treadmill_drift = 0.0    # subsumed by pos_track_xy
+        cfg.reward_config.scales.pose_pos_track = 0.0     # legacy Gaussian — off
+        cfg.reward_config.scales.pose_orient_track = 0.0  # legacy upvector — off
+        cfg.reward_config.scales.pos_track_unified = 0.0  # legacy 2d term — off
+        cfg.reward_config.scales.pos_track_xy = 10.0      # new principal term
+        cfg.reward_config.scales.orient_track_yaw = 5.0
+        cfg.reward_config.pos_track_lx = 0.5
+        cfg.reward_config.pos_track_ly = 0.3
+        return cfg
+    if "Go2WarpSplitbeltPosTrack" not in pg_locomotion._envs:
+        pg_locomotion.register_environment(
+            "Go2WarpSplitbeltPosTrack",
+            functools.partial(Go2WarpSplitbeltEnv, task="splitbelt_pos_track"),
+            _splitbelt_pos_track_default_config,
+        )
+    # TiedDR ablation (2026-05-12). Same as PosTrack but ratio collapsed to
+    # 1.0 — both belts share the same per-episode-sampled speed (no split
+    # asymmetry during training). Isolates "did belt-speed-magnitude DR help?"
+    # vs "did belt-asymmetry DR help?" axes.
+    def _splitbelt_pos_track_tied_dr_default_config():
+        cfg = _splitbelt_pos_track_default_config()
+        cfg.unlock()
+        cfg.schedule_params = config_dict.create(
+            v_range=(0.3, 1.5),
+            ratio_range=(1.0, 1.0),  # tied — speed-only DR
+        )
+        return cfg
+    if "Go2WarpSplitbeltPosTrackTiedDR" not in pg_locomotion._envs:
+        pg_locomotion.register_environment(
+            "Go2WarpSplitbeltPosTrackTiedDR",
+            functools.partial(Go2WarpSplitbeltEnv, task="splitbelt_pos_track_tied_dr"),
+            _splitbelt_pos_track_tied_dr_default_config,
         )
 
     # (MuJoCo Warp PushEnv removed 2026-04-20 — replaced by vendored pymunk

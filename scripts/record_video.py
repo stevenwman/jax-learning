@@ -49,7 +49,7 @@ from jax_rl.training.env_backends import detect_backend
 from jax_rl.training.env_backends.mjx_backend import maybe_load_custom_env
 from jax_rl.utils.normalization import normalize as norm_normalize
 from jax_rl.utils.rollout import build_ppo_rollout_step, build_offpolicy_rollout_step
-from jax_rl.envs.locomotion.go2_rendering import apply_kicks, make_varied_cmd_fn, render_command_overlays
+from jax_rl.envs.locomotion.go2_rendering import apply_kicks, make_varied_cmd_fn, make_locked_cmd_fn, render_command_overlays
 
 
 ENV_DEFAULTS = {
@@ -284,7 +284,10 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
            force_zero_yaw: bool = False,
            skill_index: int | None = None,
            skill_vector: str | None = None,
-           no_early_term: bool = False):
+           no_early_term: bool = False,
+           lock_cmd: tuple[float, float, float] | None = None,
+           resolution: tuple[int, int] = (640, 480),
+           video_quality: int = 8):
 
     # ── Load checkpoint ───────────────────────────────────────────────────
     algo_type = "ppo"  # default
@@ -444,12 +447,16 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
         norm_state = norm_init(raw_obs_dim)
 
     # ── Build rollout step function ───────────────────────────────────────
-    if kicks and varied_cmds > 0:
-        raise ValueError("--kicks and --varied-cmds are mutually exclusive (both use kicks_fn slot)")
+    active = sum(int(bool(x)) for x in (kicks, varied_cmds > 0, lock_cmd is not None))
+    if active > 1:
+        raise ValueError("--kicks / --varied-cmds / --lock-cmd are mutually exclusive (all use kicks_fn slot)")
     if varied_cmds > 0:
         kicks_fn = make_varied_cmd_fn(period_steps=varied_cmds, cmd_max=cmd_max)
     elif kicks:
         kicks_fn = apply_kicks
+    elif lock_cmd is not None:
+        kicks_fn = make_locked_cmd_fn(lock_cmd)
+        print(f"  [lock_cmd] cmd pinned to {lock_cmd} every step")
     else:
         kicks_fn = None
 
@@ -547,7 +554,8 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
 
     # Render with mujoco.Renderer for better quality + resolution control
     import mujoco
-    renderer = mujoco.Renderer(env.mj_model, width=640, height=480)
+    render_w, render_h = int(resolution[0]), int(resolution[1])
+    renderer = mujoco.Renderer(env.mj_model, width=render_w, height=render_h)
     frames = []
     mj_data = mujoco.MjData(env.mj_model)
 
@@ -593,7 +601,7 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
         video_path = f"{timestamp}_rollout{skill_suffix}.mp4"
 
     print(f"Saving to {video_path}...")
-    imageio.mimsave(video_path, frames, fps=50)  # 50Hz policy = 50fps for real-time
+    imageio.mimsave(video_path, frames, fps=50, quality=video_quality)  # 50Hz policy = 50fps for real-time
     print(f"Done: {video_path}")
 
     # ── Save trajectory .npz for offline analysis ────────────────────────
@@ -724,7 +732,7 @@ def _record_gym(env_name, meta, actor_params, norm_state, actor_batch_stats,
     else:
         video_path = f"{timestamp}_rollout{skill_suffix}.mp4"
     print(f"Saving to {video_path}...")
-    imageio.mimsave(video_path, frames, fps=int(env.metadata.get("render_fps", 30)))
+    imageio.mimsave(video_path, frames, fps=int(env.metadata.get("render_fps", 30)), quality=video_quality)
     print(f"Done: {video_path}")
 
     npz_path = video_path.replace(".mp4", "_traj.npz")
@@ -777,6 +785,19 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Don't break the rollout when env emits done=True. "
                              "Keep rolling so the user can see the failure mode "
                              "(post-fall dynamics, off-belt slide, etc.).")
+    parser.add_argument("--lock-cmd", type=float, nargs=3, default=None,
+                        metavar=("VX", "VY", "YAW"),
+                        help="Pin cmd = [VX, VY, YAW] every step (overrides "
+                             "env's Markov-chain resample). Use to test "
+                             "linear-only (VY=YAW=0), rotation-only (VX=VY=0), "
+                             "or combined. Mutually exclusive with --kicks / --varied-cmds.")
+    parser.add_argument("--resolution", type=int, nargs=2,
+                        default=[640, 480], metavar=("WIDTH", "HEIGHT"),
+                        help="Render resolution. Defaults to 640x480; "
+                             "use 1280 720 for HD, 1920 1080 for full HD.")
+    parser.add_argument("--video-quality", type=int, default=8,
+                        help="imageio video quality (1-10, default 8). "
+                             "Higher = bigger file + sharper, lower = smaller.")
     return parser
 
 
@@ -797,4 +818,7 @@ if __name__ == "__main__":
         skill_index=args.skill_index,
         skill_vector=args.skill_vector,
         no_early_term=args.no_early_term,
+        lock_cmd=tuple(args.lock_cmd) if args.lock_cmd is not None else None,
+        resolution=tuple(args.resolution),
+        video_quality=args.video_quality,
     )

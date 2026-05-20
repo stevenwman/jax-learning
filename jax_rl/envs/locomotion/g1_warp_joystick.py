@@ -6,6 +6,18 @@ also sees ground-truth linvel + angvel + actuator force + foot info.
 
 Mirrors `Go2WarpJoystickFlatNoAccel` semantics (no accelerometer in
 actor obs) so reward set + obs schema patterns transfer cleanly.
+
+TRANSITIONAL FLAGS (2026-05-11) — remove once obs schema stabilizes:
+- `cfg.gait_phase_obs` (default False): when True, appends sin/cos of
+  left/right gait phase to actor `state` obs (matches holosoma's
+  `g1_29dof_loco_single_wolinvel`). Gated to preserve obs schema of
+  legacy ckpts (HoloSoft 292, HoloClearance 266, HoloClearanceWide v1
+  239) that were trained without it. Once we settle on the preferred
+  obs layout, fold this in unconditionally and drop the flag.
+- `cfg.command_config.stand_prob` (default 0.0): probability that a
+  sampled cmd is forced to zero. Same back-compat reason — old
+  presets keep stand_prob=0 so their cmd distribution matches the
+  trained policy's expected input.
 """
 
 from typing import Any, Dict, Optional, Union
@@ -128,6 +140,10 @@ def default_config() -> config_dict.ConfigDict:
                 # preset overrides with real weights.
                 close_feet_xy=0.0,
                 feet_ori=0.0,
+                # Linear feet-clearance bonus during swing — lifts the
+                # reward Pareto for foot lift without saturating like
+                # feet_phase. Off by default; clearance preset enables.
+                feet_clearance_swing=0.0,
             ),
             tracking_sigma=0.25,
             max_foot_height=0.15,
@@ -139,6 +155,7 @@ def default_config() -> config_dict.ConfigDict:
             gait_swing_height=0.08,
             gait_phase_offsets=(0.0, 3.141592653589793),  # [left_offset, right_offset]
             feet_phase_sigma=0.01,
+            swing_clearance_target=0.10,
         ),
         command_config=config_dict.create(
             # Narrow cmd ranges — early policy learns to STAND (cmd ≈ 0)
@@ -147,12 +164,21 @@ def default_config() -> config_dict.ConfigDict:
             # [1.0, 0.5, 0.8] for actual locomotion.
             a=[0.1, 0.1, 0.1],
             b=[0.9, 0.25, 0.5],
+            # Probability that a sampled command is forced to zero (stand
+            # mode). Matches holosoma `stand_prob=0.2` — explicit "hold
+            # still" training. Off by default; enabled by Wide preset.
+            stand_prob=0.0,
         ),
         impl="warp",
         contact_mode="training",
         naconmax=4 * 8192,
         naccdmax=4000,
         njmax=100,
+        # TRANSITIONAL FLAG (2026-05-11): adds sin/cos gait-phase obs to
+        # actor `state` when True. Off by default so legacy ckpts
+        # (HoloSoft / HoloClearance) keep their 96-d actor obs.
+        # Remove flag + always-on once obs schema settles. See top-of-file.
+        gait_phase_obs=False,
     )
 
 
@@ -245,6 +271,99 @@ def default_config_holosoma_soft() -> config_dict.ConfigDict:
     cfg.reward_config.scales.close_feet_xy *= 0.5
     cfg.reward_config.scales.feet_ori *= 0.5
     cfg.reward_config.scales.pose *= 0.5
+    return cfg
+
+
+def default_config_holosoma_clearance() -> config_dict.ConfigDict:
+    """HoloSoft + LINEAR feet-clearance bonus during swing.
+
+    Diagnostic on HoloSoft/HoloWide/HoloLift (2026-05-08) showed all 3
+    converge to foot_z ≈ 0.045 m vs 0.09 m target — single-knob shaping
+    of `feet_phase` doesn't escape the shuffle Pareto-optimum (paying
+    cost on feet_phase rather than spending balance budget to lift).
+
+    `feet_clearance_swing` reward = sum_i min(foot_z_i, target) * (1 -
+    contact_i). Linear in foot_z (no exponential saturation), only paid
+    while foot is OFF the ground. Constant gradient at any height below
+    target → policy can climb out of the low-foot basin.
+
+    Weight chosen so per-step max ≈ 3.0 (target=0.10 × weight=30 × 1
+    foot in swing on average), comparable to feet_phase's max=5×1=5.
+    """
+    cfg = default_config_holosoma_soft()
+    cfg.unlock()
+    cfg.reward_config.scales.feet_clearance_swing = 30.0
+    cfg.reward_config.swing_clearance_target = 0.10
+    return cfg
+
+
+def default_config_holosoma_clearance_wide() -> config_dict.ConfigDict:
+    """HoloClearance + wide cmd ranges (full joystick walker).
+
+    Probes on the v22-eval-266 HoloClearance ckpt showed:
+    - cmd_x tracks within training distribution (cmd_a=0.1 → vx 0.091)
+    - cmd_x=0.5 (OOD) → robot drifts backward, no tracking
+    - cmd_y / cmd_yaw effectively ignored (training range too narrow)
+
+    This preset enables fast forward, strafe, and rotation by widening
+    cmd ranges to match holosoma's `limit_ranges` ([-0.5,1.0] for vx,
+    [-0.3,0.3] for vy, [-0.5,0.5] for yaw). Reward set unchanged from
+    HoloClearance — keeps the linear feet_clearance_swing bonus that
+    fixes shuffle on the slow walker.
+    """
+    cfg = default_config_holosoma_clearance()
+    cfg.unlock()
+    cfg.command_config.a = [0.5, 0.3, 0.5]
+    # 20% stand mode (matches holosoma) — explicit "hold still" training so
+    # the policy learns the cmd=0 attractor as a real mode, not the
+    # frequent low-cmd average.
+    cfg.command_config.stand_prob = 0.2
+    # TRANSITIONAL FLAG (2026-05-11): enable sin/cos gait-phase actor obs
+    # (matches holosoma's wolinvel preset). Gives the actor a stable
+    # temporal clock for stride planning — critical for humanoid cmd
+    # tracking. Old presets keep this False so their ckpts still load.
+    # Once obs schema stabilizes, fold in unconditionally + drop flag.
+    cfg.gait_phase_obs = True
+    return cfg
+
+
+def default_config_holosoma_lift() -> config_dict.ConfigDict:
+    """HoloSoft + STRONGER foot-lift gradient.
+
+    Diagnostic on v22 + HoloWide eval-285 ckpts (1000-step probes) showed
+    foot_z saturates ~0.045 m vs 0.09 m target. feet_phase reward sits at
+    0.79 (not maxed) — gradient is alive but the policy is paying ~20% of
+    max cost rather than spending the action_rate / pose budget needed to
+    fully clear. To shift the Pareto frontier:
+
+    - feet_phase weight 5.0 → 10.0 (double the lift incentive)
+    - feet_phase_sigma 0.008 → 0.005 (sharper — more gradient near 0.09 target)
+
+    Cmd range stays at HoloSoft default [0.1, 0.1, 0.1] (HoloWide test
+    showed wider cmd alone did not improve lift).
+    """
+    cfg = default_config_holosoma_soft()
+    cfg.unlock()
+    cfg.reward_config.scales.feet_phase = 10.0
+    cfg.reward_config.feet_phase_sigma = 0.005
+    return cfg
+
+
+def default_config_holosoma_wide() -> config_dict.ConfigDict:
+    """HoloSoft + WIDER command sample range (matches holosoma `limit_ranges`).
+
+    Diagnostic on the v22 eval-292 ckpt showed: foot_z reaches target swing
+    (0.09 m) only when cmd_x is locked >= 0.5; at training distribution
+    (cmd_a=0.1, so |cmd|<=0.1) the policy shuffles because forward velocity
+    is essentially zero and the policy doesn't need to swing high.
+
+    Bump cmd_a to [0.5, 0.3, 0.5] (≈ holosoma `limit_ranges`
+    [-0.5..1.0, -0.3..0.3, -0.2..0.2] — symmetric since our sampler is
+    `uniform(-a, a)`). Keep all other HoloSoft settings unchanged.
+    """
+    cfg = default_config_holosoma_soft()
+    cfg.unlock()
+    cfg.command_config.a = [0.5, 0.3, 0.5]
     return cfg
 
 
@@ -443,6 +562,20 @@ class G1WarpJoystick(mjx_env.MjxEnv):
                 ObsTerm("xfrc_applied", lambda data, **kw: data.xfrc_applied[self._pelvis_body_id, :3]),
             ],
         }
+        # TRANSITIONAL FLAG (2026-05-11): conditional gait-phase obs. When
+        # `cfg.gait_phase_obs=True`, append sin/cos of left/right phase to
+        # actor `state` (matches holosoma's wolinvel preset). Gated to
+        # preserve obs schema of legacy ckpts. Remove + always-on once obs
+        # schema stabilizes — see top-of-file note.
+        if self._config.gait_phase_obs:
+            self._obs_groups["state"].append(
+                ObsTerm("sin_phase", lambda info, **kw: jp.sin(info["phase"]))
+            )
+            self._obs_groups["state"].append(
+                ObsTerm("cos_phase", lambda info, **kw: jp.cos(info["phase"]))
+            )
+        # privileged_state uses IncludeGroup("state"), so the appended
+        # phase terms flow through automatically.
 
         self._reward_spec = [
             # Tracking
@@ -483,6 +616,8 @@ class G1WarpJoystick(mjx_env.MjxEnv):
                 self._cost_close_feet_xy(data)),
             RewardTerm("feet_ori", lambda data, **kw:
                 self._cost_feet_ori(data)),
+            RewardTerm("feet_clearance_swing", lambda data, contact, **kw:
+                self._reward_feet_clearance_swing(data, contact)),
         ]
 
     # ── Domain randomization ──────────────────────────────────────────
@@ -827,6 +962,20 @@ class G1WarpJoystick(mjx_env.MjxEnv):
         z = data.subtree_com[self._pelvis_body_id][2]
         return jp.square(z - self._config.reward_config.base_height_target)
 
+    def _reward_feet_clearance_swing(self, data, contact):
+        """Linear foot-z bonus during swing.
+
+        Per foot: reward = min(foot_z, target) when NOT in contact, else 0.
+        Linear in foot_z (caps at target, no exp saturation). Sum across
+        both feet. Constant gradient below target → push to lift more.
+        Off-by-default; enabled by `default_config_holosoma_clearance()`.
+        """
+        target = self._config.reward_config.swing_clearance_target
+        foot_pos = data.site_xpos[self._feet_site_id]
+        foot_z = foot_pos[..., -1]
+        swing = 1.0 - contact.astype(jp.float32)
+        return jp.sum(jp.minimum(foot_z, target) * swing)
+
     def _reward_feet_phase(self, data, phase):
         """Cubic-Bezier swing-phase foot height tracking.
 
@@ -845,8 +994,12 @@ class G1WarpJoystick(mjx_env.MjxEnv):
     # ── Command sampling (same Markov-chain pattern as Go2) ─────────────
 
     def sample_command(self, rng, x_k):
-        rng, y_rng, w_rng, z_rng = jax.random.split(rng, 4)
+        rng, y_rng, w_rng, z_rng, s_rng = jax.random.split(rng, 5)
         y = jax.random.uniform(y_rng, (3,), minval=-self._cmd_a, maxval=self._cmd_a)
         z = jax.random.bernoulli(z_rng, self._cmd_b, (3,))
         w = jax.random.bernoulli(w_rng, 0.5, (3,))
-        return x_k - w * (x_k - y * z)
+        cmd = x_k - w * (x_k - y * z)
+        # stand_prob: with this probability, force cmd=0 (explicit "stand
+        # still" training — matches holosoma `stand_prob=0.2`).
+        stand = jax.random.bernoulli(s_rng, self._config.command_config.stand_prob)
+        return jp.where(stand, jp.zeros_like(cmd), cmd)
