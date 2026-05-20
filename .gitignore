@@ -6,6 +6,9 @@ checkpoints/
 wandb/
 *.mp4
 !docs/assets/videos/*.mp4
+*.csv
+*.npz
+*.pkl
 
 MUJOCO_LOG.TXT
 /tmp_videos
