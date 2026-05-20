@@ -21,7 +21,7 @@ from jax_rl.envs.locomotion import splitbelt_schedules as sched
 from jax_rl.envs.obs_spec import ObsTerm, IncludeGroup, compute_obs
 
 
-_VALID_OBS_MODES = ("blind", "informed", "error", "history", "pose_track")
+_VALID_OBS_MODES = ("blind", "informed", "error", "history", "pose_track", "pos_track")
 
 # Shared proprio name list — order matches WarpJoystickNoAccel state group exactly
 # (go2_warp_joystick.py:130-143 minus accelerometer). Lets a joystick-trained
@@ -57,6 +57,12 @@ def obs_term_names(obs_mode: str) -> Dict[str, list[str]]:
         state_names = list(proprio) + [
             "body_pos_world", "body_upvector", "body_forwardvector",
         ]
+    elif obs_mode == "pos_track":
+        # Unified pos-tracking obs — matches Go2WarpFlatPosTrackProto.
+        # Drops `command` (no velocity-cmd input in PosTrack scheme; goal is
+        # encoded via `delta_xy_yaw_body_frame` only).
+        proprio_no_cmd = [n for n in proprio if n != "command"]
+        state_names = proprio_no_cmd + ["delta_xy_yaw_body_frame"]
     else:
         raise AssertionError("unreachable")
     privileged_names = list(proprio) + [
@@ -133,9 +139,24 @@ def default_config() -> config_dict.ConfigDict:
                 # AND sets treadmill_drift=0.0 to swap the position reward.
                 pose_pos_track=0.0,
                 pose_orient_track=0.0,
+                # Unified position-tracking via marching target. cmd_zero env
+                # → target fixed at spawn; joystick-style env → target advances
+                # at cmd*dt per step. Lorentzian kernel: no exp collapse, heavy
+                # tails preserve gradient at large lag. Off by default.
+                pos_track_unified=0.0,
+                # Unified PosTrack — matches Go2WarpFlatPosTrackProto reward
+                # names. `pos_track_xy` uses body-frame Lorentzian on delta
+                # (3-vec obs); `orient_track_yaw` is cos(d_yaw) clamped [0,1].
+                # Off by default; PosTrack preset enables.
+                pos_track_xy=0.0,
+                orient_track_yaw=0.0,
             ),
             tracking_sigma=0.25,
             max_foot_height=0.1,
+            # Lorentzian scale per axis (m). Reward = 1/(1 + (dx/Lx)² + (dy/Ly)²)
+            # → 0.5 at 1L lag, 0.2 at 2L, 0.01 at 10L. Smaller value = stiffer anchor.
+            pos_track_lx=0.5,
+            pos_track_ly=0.3,
         ),
         # MJX/Warp tuning
         naconmax=4 * 8192,
@@ -172,6 +193,10 @@ def build_obs_groups(env: Any) -> Dict[str, list]:
         "body_pos_world":      (lambda data, **kw: data.qpos[:3] - jp.array([0.0, 0.0, 0.275]), 0.0),
         "body_upvector":       (lambda data, **kw: env.get_upvector(data),       0.0),
         "body_forwardvector":  (lambda data, **kw: data.sensordata[env._forwardvector_adr:env._forwardvector_adr+3], 0.0),
+        # Unified pos-track obs — matches Go2WarpFlatPosTrackProto.
+        # 3-vec: (forward_lag_body, lateral_lag_body, signed_d_yaw).
+        "delta_xy_yaw_body_frame": (
+            lambda data, info, **kw: env._compute_delta_body_frame(data, info), 0.0),
     }
 
     def _build(names):
@@ -413,11 +438,21 @@ class Go2WarpSplitbeltEnv(go2_warp_base.Go2WarpEnv):
         # cmd: always-zero by default (S§7.4).
         cmd = jp.zeros(3)
 
+        # Unified pos-track target — matches Go2WarpFlatPosTrackProto layout.
+        # Splitbelt: target stationary (velocity = 0). Init at body's spawn
+        # xy + yaw so first-step delta is zero.
+        target_xy_world = data.qpos[:2]
+        target_yaw_world = self._body_yaw(data.qpos)
+        target_velocity_xy = jp.zeros(2)  # stationary for splitbelt
+
         info = {
             "rng": rng,
             "step_idx": jp.int32(0),
             "belt_schedule": schedule_table,
             "command": cmd,
+            "target_xy_world": target_xy_world,
+            "target_yaw_world": target_yaw_world,
+            "target_velocity_xy": target_velocity_xy,
             "last_act": jp.zeros(self._action_dim),
             "last_last_act": jp.zeros(self._action_dim),
             "feet_air_time": jp.zeros(4),
@@ -525,16 +560,29 @@ class Go2WarpSplitbeltEnv(go2_warp_base.Go2WarpEnv):
             | (sensordata[self._torso_floor_adr] > 0.0)
         )
         is_off_belt = jp.any(foot_in_floor)
+        # Cross-belt: foot grounded on the OPPOSITE belt from its spawn assignment.
+        # FEET_SITES order is [FL, FR, RL, RR]. Robot foot names are body-local;
+        # belt names are world-axis. At spawn (heading=+x), FL foot sits at world
+        # +y, which is the RIGHT belt (id=1, y∈[0,+0.5]). So:
+        #   FL,RL (robot-left) → right-belt (id=1)
+        #   FR,RR (robot-right) → left-belt  (id=0)
+        # Gated on foot z<0.02 so swing-phase overflies don't false-positive.
+        natural_belt = jp.array([1, 0, 1, 0], dtype=jp.int32)
+        foot_grounded = foot_pos_world[..., 2] < 0.02
+        cross_belt = jp.any(
+            (foot_belt_id != natural_belt) & (foot_belt_id != jp.int32(-1)) & foot_grounded
+        )
         # Joystick precedent: flipped = upvector.z < 0 (body z-axis points down).
         # `get_gravity` returns body-frame gravity which is (0,0,-1) when upright,
         # so the previous `gravity[2] < 0.5` check ALWAYS fired. Use upvector.
         upvector_z = self.get_upvector(data)[-1]
         is_tilt = (upvector_z < 0.5) | (base_pos_world[2] < 0.18)
-        done = fall_torso | is_off_belt | is_tilt
+        done = fall_torso | is_off_belt | cross_belt | is_tilt
         term_cause = jp.where(
             fall_torso, jp.int32(1),
             jp.where(is_off_belt, jp.int32(2),
-                     jp.where(is_tilt, jp.int32(3), jp.int32(0))),
+                     jp.where(is_tilt, jp.int32(3),
+                              jp.where(cross_belt, jp.int32(4), jp.int32(0)))),
         )
 
         # Air-time bookkeeping (joystick pattern, but using splitbelt-OR contact).
@@ -543,6 +591,11 @@ class Go2WarpSplitbeltEnv(go2_warp_base.Go2WarpEnv):
         state.info["feet_air_time"] += self.dt
         p_fz = foot_pos_world[..., -1]
         state.info["swing_peak"] = jp.maximum(state.info["swing_peak"], p_fz)
+
+        # Advance unified pos-track target by one step. For splitbelt
+        # `target_velocity_xy = (0, 0)` → target stays put. Done before
+        # reward so reward measures (post-step body) vs (post-step target).
+        new_target_xy_world = state.info["target_xy_world"] + state.info["target_velocity_xy"] * self.dt
 
         # Reward (S§7.1) — full joystick term set + treadmill_drift.
         rewards = {
@@ -566,6 +619,15 @@ class Go2WarpSplitbeltEnv(go2_warp_base.Go2WarpEnv):
             # Pose-track rewards. Targets: pos=(0,0,0.275), orient=identity (upvec=+z).
             "pose_pos_track":    self._reward_pose_pos_track(base_pos_world),
             "pose_orient_track": self._reward_pose_orient_track(self.get_upvector(data)),
+            # Unified position tracking against marching target_xy. Lorentzian
+            # kernel — heavy tails so gradient survives large lag.
+            # NOTE: legacy `pos_track_unified` uses 2d (body_pos_world vs
+            # target_xy in world frame). Kept for any old preset; default 0.
+            "pos_track_unified": self._reward_pos_track_unified(base_pos_world, new_target_xy_world),
+            # Unified PosTrack — matches Go2WarpFlatPosTrackProto. Uses info
+            # post-target-update by writing it first.
+            "pos_track_xy":      self._reward_pos_track_xy(data, {**state.info, "target_xy_world": new_target_xy_world}),
+            "orient_track_yaw":  self._reward_orient_track_yaw(data, state.info),
         }
         rewards = {k: v * self._config.reward_config.scales[k] for k, v in rewards.items()}
         reward = jp.clip(sum(rewards.values()) * self.dt, 0.0, 10000.0)
@@ -575,6 +637,7 @@ class Go2WarpSplitbeltEnv(go2_warp_base.Go2WarpEnv):
         state.info["last_last_act"] = state.info["last_act"]
         state.info["last_act"] = action
         state.info["step_idx"] = step_idx + 1
+        state.info["target_xy_world"] = new_target_xy_world
         state.info["feet_air_time"] *= ~contact
         state.info["last_contact"] = contact
         state.info["swing_peak"] *= ~contact
@@ -702,3 +765,54 @@ class Go2WarpSplitbeltEnv(go2_warp_base.Go2WarpEnv):
     def _reward_pose_orient_track(self, upvector):
         """Cosine similarity with world-up. 1 = perfectly upright, 0 = sideways."""
         return jp.maximum(upvector[2], 0.0)
+
+    def _reward_pos_track_unified(self, base_pos_world, target_xy):
+        """Lorentzian (heavy-tail) position tracking against a moving target.
+
+        reward = 1 / (1 + (dx/Lx)² + (dy/Ly)²)
+
+        Unlike `exp(-||δ||²/σ)`, the gradient does NOT vanish at large lag —
+        crucial when target advances continuously (joystick) so the policy
+        can recover even if briefly knocked off-target. For splitbelt the
+        target is fixed at spawn → reward anchors the policy at origin
+        without the Gaussian's collapse-cliff seen in PoseDR OOD eval.
+        """
+        dx = base_pos_world[0] - target_xy[0]
+        dy = base_pos_world[1] - target_xy[1]
+        Lx = self._config.reward_config.pos_track_lx
+        Ly = self._config.reward_config.pos_track_ly
+        return 1.0 / (1.0 + (dx / Lx) ** 2 + (dy / Ly) ** 2)
+
+    # ── Unified PosTrack (matches Go2WarpFlatPosTrackProto) ───────────────
+
+    def _body_yaw(self, qpos):
+        """Yaw from quaternion qpos[3:7] (w, x, y, z)."""
+        w, x, y, z = qpos[3], qpos[4], qpos[5], qpos[6]
+        return jp.arctan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+
+    def _compute_delta_body_frame(self, data, info):
+        """3-vec: (forward_lag, lateral_lag, signed_d_yaw) in body frame."""
+        dxy_world = data.qpos[:2] - info["target_xy_world"]
+        body_yaw = self._body_yaw(data.qpos)
+        c, s = jp.cos(body_yaw), jp.sin(body_yaw)
+        delta_x_body = c * dxy_world[0] + s * dxy_world[1]
+        delta_y_body = -s * dxy_world[0] + c * dxy_world[1]
+        d_yaw = body_yaw - info["target_yaw_world"]
+        d_yaw = jp.fmod(d_yaw + jp.pi, 2.0 * jp.pi) - jp.pi
+        return jp.array([delta_x_body, delta_y_body, d_yaw])
+
+    def _reward_pos_track_xy(self, data, info):
+        """Lorentzian on body-frame delta_xy magnitude.
+
+        Mirrors Go2WarpFlatPosTrackProto._reward_pos_track_xy verbatim so a
+        flat-trained policy is in-distribution at cross-deploy.
+        """
+        delta = self._compute_delta_body_frame(data, info)
+        Lx = self._config.reward_config.pos_track_lx
+        Ly = self._config.reward_config.pos_track_ly
+        return 1.0 / (1.0 + (delta[0] / Lx) ** 2 + (delta[1] / Ly) ** 2)
+
+    def _reward_orient_track_yaw(self, data, info):
+        """cos(d_yaw) clamped to [0, 1]. Matches Go2WarpFlatPosTrackProto."""
+        d_yaw = self._body_yaw(data.qpos) - info["target_yaw_world"]
+        return jp.maximum(jp.cos(d_yaw), 0.0)

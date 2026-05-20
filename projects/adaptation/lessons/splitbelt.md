@@ -237,6 +237,53 @@ Direction asymmetry compounds the failure: ratio 3× R-faster (0.5, 1.5) → 81%
 
 ---
 
+## Cross-belt detection reveals "tilt" failures were mostly belt-crossover (2026-05-11)
+
+**What happened:** Added a 4th termination cause to `Go2WarpSplitbeltEnv._get_termination`:
+
+```python
+# FL,RL (robot-left, world +y) → right belt (id=1); FR,RR (robot-right) → left belt (id=0)
+natural_belt = jp.array([1, 0, 1, 0], dtype=jp.int32)
+foot_grounded = foot_pos_world[..., 2] < 0.02
+cross_belt = jp.any((foot_belt_id != natural_belt) & (foot_belt_id != -1) & foot_grounded)
+```
+
+Re-evaluated existing PoseDR v2 ckpt (`20260506_195126_fast_sac_go2warpsplitbeltposedr_seed0`) — same actor weights, but env now terminates when any grounded foot lands on the wrong belt. 16 ep × 9 conditions @ episode_length 1250.
+
+Training support: `vL ∈ [0.3, 1.5]`, `ratio ∈ [0.5, 2.0]`.
+
+| # | (vL, vR) | ratio | OOD | term% | fall | off | tilt | cross | surv | finalDx |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | 0.5, 0.5 | 1.0× | in | 0% | 0 | 0 | 0 | 0 | 1250 | -0.02 |
+| 2 | 1.0, 1.0 | 1.0× | in | 0% | 0 | 0 | 0 | 0 | 1250 | -0.07 |
+| 3 | 0.5, 1.0 | 2.0× | in (edge) | 88% | 0 | 0 | 4 | **10** | 549 | -0.17 |
+| 4 | 0.5, 1.5 | 3.0× | ratioOOD | 94% | 0 | 0 | 2 | **13** | 289 | -0.27 |
+| 5 | 0.3, 0.9 | 3.0× | ratioOOD | 100% | 0 | 0 | 2 | **14** | 424 | -0.17 |
+| 6 | 0.3, 1.5 | 5.0× | ratioOOD | 100% | 0 | 0 | 9 | **7** | 209 | -0.85 |
+| 7 | 0.5, 0.2 | 0.4× | absOOD + ratioOOD | 81% | 0 | 0 | **13** | 0 | 944 | -0.38 |
+| 8 | 1.0, 0.3 | 0.3× | ratioOOD | 75% | 0 | 1 | **11** | 0 | 965 | -1.82 |
+| 9 | 1.5, 1.5 | 1.0× | in (edge) | 100% | 0 | 8 | 8 | 0 | 677 | -7.03 |
+
+**Reclassification effects** (vs older 3-cause eval):
+- (3) ratio 2× was logged as "75% tilt-dominated"; **now 88% term, 10/16 cross-belt vs 4 tilt**. The robot was crossing feet first, then tilting — old eval saw only the eventual tilt.
+- (4)–(6) R-faster + ratio OOD: cross-belt dominates (13/16, 14/16, 7/16). Robot dragged rightward, FL/RL feet pulled onto left belt (the originally-right-side feet end up on left belt).
+- (7), (8) L-faster ratios: **zero cross-belt**, all tilt. The policy can't pull right-side feet onto faster left belt — geometry/keyframe bias.
+- (9) high-speed tied 1.5: no cross possible (tied); fails by off-belt drift (8/16) + tilt (8/16) after ~7m backward drag.
+
+**Asymmetry by failure mode**: R-faster scenarios fail by cross-belt; L-faster fail by tilt. Same magnitude differential, opposite failure mode. Spawn keyframe places FL/RL at world +y (right belt id) — policy learns to fight rightward drag by stepping right, but can't fight leftward drag by stepping left because the gait/spawn doesn't expose that solution.
+
+**Why this matters:**
+1. **Old termination scheme was hiding asymmetry.** Without cross-belt termination, R-faster failures looked like generic tilt; failure-mode asymmetry was invisible.
+2. **Termination rates jumped across the board.** Episodes that "survived" by crossing feet onto a single belt now correctly count as failures. (3) went 75% → 88%, (4) 81% → 94%.
+3. **Cross-belt is the more honest biomech failure.** Real splitbelt experiments reject episodes where the subject lands wrong foot on wrong belt. Old env was overcounting "successes" in those cases.
+
+**Lesson:**
+1. **Diagnostic termination causes are load-bearing.** Aggregating distinct failure modes into a single `term_cause=tilt` bucket hides directional asymmetry. Add fine-grained causes (cross-belt, off-belt, knee-contact) and surface the breakdown per OOD condition.
+2. **A policy that "fails by tilt" is doing something specific before tilting** — usually crossing feet, leaning past recovery, etc. Drill into the seconds before termination, not the termination state.
+3. **Eval with stricter termination than training is a cheap diagnostic.** No retrain needed; just changes the env's done-flag wiring. Reveals what failures the policy was "cheating around" during training.
+
+---
+
 ## Pointers
 - Belt-mech / sign-convention: spec §6.3, env file `_step()` substep block
 - Asymmetric AC blindness: this lesson + `.context/lessons/offpolicy.md`

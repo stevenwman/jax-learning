@@ -21,30 +21,36 @@ os.environ.setdefault("MUJOCO_GL", "egl")
 os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
 
 
-def _register_pair(vL: float, vR: float):
+def _register_pair(vL: float, vR: float, base_env: str = "Go2WarpSplitbeltPoseDR"):
     from mujoco_playground import locomotion as pg_locomotion
     from ml_collections import config_dict
     from jax_rl.envs.locomotion.go2_warp_splitbelt import Go2WarpSplitbeltEnv
     import jax_rl.training.env_setup  # noqa: F401
 
-    name = f"Go2WarpSplitbeltPoseDR_split_{vL:g}_{vR:g}"
+    name = f"{base_env}_split_{vL:g}_{vR:g}"
     if name in pg_locomotion._envs:
         return name
 
     def cfg_factory():
-        cfg = pg_locomotion._cfgs["Go2WarpSplitbeltPoseDR"]()
+        cfg = pg_locomotion._cfgs[base_env]()
         cfg.unlock()
         cfg.schedule_kind = "split_constant"
         cfg.schedule_params = config_dict.create(vL=float(vL), vR=float(vR))
         return cfg
 
+    task_map = {
+        "Go2WarpSplitbeltPoseDR":         "splitbelt_pose_dr",
+        "Go2WarpSplitbeltPosTrack":       "splitbelt_pos_track",
+        "Go2WarpSplitbeltPosTrackTiedDR": "splitbelt_pos_track_tied_dr",
+    }
+    task = task_map.get(base_env, "splitbelt_pos_track")
     pg_locomotion.register_environment(
         name,
-        functools.partial(Go2WarpSplitbeltEnv, task="splitbelt_pose_dr"),
+        functools.partial(Go2WarpSplitbeltEnv, task=task),
         cfg_factory,
     )
     from scripts import record_video
-    record_video.ENV_DEFAULTS[name] = ((640, 480), "splitbelt_side_iso")
+    record_video.ENV_DEFAULTS[name] = ((1280, 720), "splitbelt_side_iso")
     return name
 
 
@@ -71,6 +77,13 @@ def main():
     p.add_argument("--max-steps", type=int, default=1250)
     p.add_argument("--camera", default=None,
                    help="default: splitbelt_side_iso")
+    p.add_argument("--resolution", type=int, nargs=2, default=[640, 480],
+                   metavar=("W", "H"),
+                   help="Render resolution. HD=1280 720, FullHD=1920 1080.")
+    p.add_argument("--video-quality", type=int, default=8,
+                   help="imageio quality 1-10 (default 8).")
+    p.add_argument("--base-env", default="Go2WarpSplitbeltPoseDR",
+                   help="Splitbelt env to clone for each pair.")
     args = p.parse_args()
 
     os.makedirs(args.out_dir, exist_ok=True)
@@ -80,7 +93,7 @@ def main():
     print(f"Output: {args.out_dir}/\n")
     for spec in args.pairs:
         vL, vR = (float(x) for x in spec.split(","))
-        env_name = _register_pair(vL, vR)
+        env_name = _register_pair(vL, vR, args.base_env)
         ratio = vR / vL if vL > 0 else float("inf")
         tag = _classify(vL, vR)
         fname = f"vL{vL:.2f}_vR{vR:.2f}_ratio{ratio:.2f}x_{tag}.mp4"
@@ -93,6 +106,8 @@ def main():
             max_steps=args.max_steps,
             camera=args.camera,
             no_early_term=True,
+            resolution=tuple(args.resolution),
+            video_quality=args.video_quality,
         )
         print(f"  → {out_path}")
 

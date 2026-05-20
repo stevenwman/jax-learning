@@ -6,9 +6,10 @@ Reports cold-hard physical metrics per (vL, vR) pair instead of reward:
   - Mean max  |drift_y| (sway)         — peak lateral excursion
   - Termination rate                   — fraction of episodes that died early
   - Failure mode breakdown:
-        term_cause=1 fall_torso (torso contact)
-        term_cause=2 off_belt   (foot left belt span)
-        term_cause=3 tilt       (upvector_z<0.5 or base_z<0.18)
+        term_cause=1 fall_torso  (torso contact)
+        term_cause=2 off_belt    (foot left belt span)
+        term_cause=3 tilt        (upvector_z<0.5 or base_z<0.18)
+        term_cause=4 cross_belt  (grounded foot on opposite belt from spawn)
   - Mean survival steps                — episode length (max=episode_length)
 
 Uses vmap to roll out batch_size envs in parallel for speed.
@@ -49,9 +50,11 @@ def make_env(schedule_kind, schedule_params, base_env_name="Go2WarpSplitbeltPose
     cfg.schedule_kind = schedule_kind
     cfg.schedule_params = config_dict.create(**schedule_params)
     task_map = {
-        "Go2WarpSplitbelt":       "splitbelt",
-        "Go2WarpSplitbeltDR":     "splitbelt_dr",
-        "Go2WarpSplitbeltPoseDR": "splitbelt_pose_dr",
+        "Go2WarpSplitbelt":               "splitbelt",
+        "Go2WarpSplitbeltDR":             "splitbelt_dr",
+        "Go2WarpSplitbeltPoseDR":         "splitbelt_pose_dr",
+        "Go2WarpSplitbeltPosTrack":       "splitbelt_pos_track",
+        "Go2WarpSplitbeltPosTrackTiedDR": "splitbelt_pos_track_tied_dr",
     }
     return Go2WarpSplitbeltEnv(task=task_map[base_env_name], config=cfg)
 
@@ -132,7 +135,7 @@ def main():
     print(f"\nPhysics sweep on {args.base_env}")
     print(f"  episodes/pair: {args.num_episodes}, episode_length: {args.episode_length}")
     print(f"  Train range: vL∈[0.3,1.5], ratio∈[0.5,2.0]\n")
-    print(f"  (vL,vR)        ratio   | term%  fall  off  tilt | "
+    print(f"  (vL,vR)        ratio   | term%  fall  off  tilt  cross | "
           f"surv_steps  finalDrx  maxDrx  maxDry")
     print("-" * 100)
 
@@ -155,10 +158,11 @@ def main():
         cause_at_term = d["term_cause"][first_done_idx, np.arange(B)]
         cause_at_term = np.where(any_done, cause_at_term, 0)
 
-        n_fall = int((cause_at_term == 1).sum())
-        n_off  = int((cause_at_term == 2).sum())
-        n_tilt = int((cause_at_term == 3).sum())
-        n_term = int(any_done.sum())
+        n_fall  = int((cause_at_term == 1).sum())
+        n_off   = int((cause_at_term == 2).sum())
+        n_tilt  = int((cause_at_term == 3).sum())
+        n_cross = int((cause_at_term == 4).sum())
+        n_term  = int(any_done.sum())
         term_pct = 100.0 * n_term / B
 
         # Drift stats: mask inactive steps with NaN, then take per-episode max/last.
@@ -175,7 +179,7 @@ def main():
 
         ratio = vR / vL if vL > 0 else float("inf")
         print(f"  ({vL:.2f}, {vR:.2f})   {ratio:>5.2f}x | "
-              f"{term_pct:>4.0f}%  {n_fall:>3d}  {n_off:>3d}  {n_tilt:>3d}  | "
+              f"{term_pct:>4.0f}%  {n_fall:>3d}  {n_off:>3d}  {n_tilt:>3d}  {n_cross:>3d}  | "
               f"{survival.mean():>9.0f}  {final_dx.mean():>+8.2f}  "
               f"{np.nanmean(max_abs_dx):>6.2f}  {np.nanmean(max_abs_dy):>6.3f}")
 
