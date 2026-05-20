@@ -238,6 +238,50 @@ file matches the spec list.)
 
 ---
 
+## Gym-backend support (PushT, 2026-05-11)
+
+After the 2026-04-26 env-backend refactor, TDMPC2 was extended to drive
+**gym-backend** envs (PushT, gymnasium[mujoco]) in addition to MJX.
+
+Key surface points:
+- `train_tdmpc2.py:462` guard relaxed to allow `backend_kind ∈ {mjx, gym}`.
+- `--env-kwargs '{"block_shape":"tee",...}'` JSON CLI flag plumbs into
+  `dataclasses.replace(train_cfg, env_kwargs=...)`.
+- `runtime.run_eval` dispatches `_rollout_mjx` (lax.scan) vs `_rollout_gym`
+  (Python serial loop over SyncVectorEnv, `env.reset(seed=int)`).
+- World model + MPPI planning remain JIT'd — only collect/eval falls back
+  to Python step.
+
+PushT preset: `make_tdmpc2_config(action_dim=2, episode_length=300,
+task_name="PushT")`. Default horizon=3, action_repeat=2 (gym backend
+fallback in `env_backends/gym_backend.py`).
+
+## Dual-mode eval catches "world model collapse"
+
+`run_eval` returns `{mppi_return, prior_return, mppi_prior_gap}`. The gap
+is decisive when training diverges:
+
+| step | mppi | prior | gap | reading |
+|---|---|---|---|---|
+| 150k | 815 | 645 | +170 | best — model helping |
+| 200k | 775 | 705 | +70 | slight model regress |
+| 250k | **307** | **732** | **-425** | **world model collapsed; policy fine** |
+
+Without the prior baseline, step 250k looks like "the agent forgot how to
+do it." With the prior, we see the *policy* held — the *world model*
+went bad, so MPPI planning made worse decisions than just sampling from
+π_φ directly. Acted on this immediately: killed run, kept the
+step-150k best ckpt, pivoted to 200k-step specialists.
+
+Same pattern observed on tee, l, k:
+- tee best @ step 150k, then degraded
+- l best @ step 150k, then degraded
+- k best @ step 50k, then big regression by 175k (mppi=409, prior=752)
+
+Implication for short-budget TDMPC2 runs: **always log prior_return
+alongside mppi_return, and use the gap to decide whether to extend
+training or stop early.**
+
 ## Don't-do summary
 
 - Don't share buffer storage layout between sequence-sampling algos

@@ -96,6 +96,7 @@ def _make_pusht_factory(cfg: TrainConfig) -> Callable[[], Any]:
         coverage_eps=kwargs.pop("coverage_eps", 0.01),
         block_shape=kwargs.pop("block_shape", "tee"),
         render_mode=kwargs.pop("render_mode", "rgb_array"),
+        success_threshold=kwargs.pop("success_threshold", 0.95),
     )
     # Action_repeat resolution (option C, post-merge with linen 2026-04-26):
     # cfg.action_repeat is the canonical universal field. PushT historic default
