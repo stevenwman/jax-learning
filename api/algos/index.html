@@ -1,0 +1,2129 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="JAX-based reinforcement learning for robot learning">
+      
+      
+      
+        <link rel="canonical" href="https://stevenwman.github.io/jax-learning/api/algos/">
+      
+      
+        <link rel="prev" href="../">
+      
+      
+        <link rel="next" href="../envs/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Algorithms - jax-learning</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../css/timeago.css">
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#algorithms" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="jax-learning" class="md-header__button md-logo" aria-label="jax-learning" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18.41 4 16 6.41v.18L18.41 9H22v2h-4.41L16 9.41V12h-1a2 2 0 0 1-2-2V7.5H9.86c-.09.37-.24.72-.44 1.05L15.18 19H20a2 2 0 0 1 2 2v1H2v-1a2 2 0 0 1 2-2h6.61l-4.69-8.5a4.006 4.006 0 0 1-3.81-3A4 4 0 0 1 5 2.63c2.13-.55 4.31.73 4.86 2.87H13V3a2 2 0 0 1 2-2h1v2.59L17.59 2H22v2zM6 4.5a2 2 0 0 0-2 2 2 2 0 0 0 2 2 2 2 0 0 0 2-2 2 2 0 0 0-2-2"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            jax-learning
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Algorithms
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/stevenwman/jax-learning" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    stevenwman/jax-learning
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../tutorials/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Tutorials
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../reference/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../faq/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  FAQ
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../glossary/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Glossary
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="jax-learning" class="md-nav__button md-logo" aria-label="jax-learning" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18.41 4 16 6.41v.18L18.41 9H22v2h-4.41L16 9.41V12h-1a2 2 0 0 1-2-2V7.5H9.86c-.09.37-.24.72-.44 1.05L15.18 19H20a2 2 0 0 1 2 2v1H2v-1a2 2 0 0 1 2-2h6.61l-4.69-8.5a4.006 4.006 0 0 1-3.81-3A4 4 0 0 1 5 2.63c2.13-.55 4.31.73 4.86 2.87H13V3a2 2 0 0 1 2-2h1v2.59L17.59 2H22v2zM6 4.5a2 2 0 0 0-2 2 2 2 0 0 0 2 2 2 2 0 0 0 2-2 2 2 0 0 0-2-2"/></svg>
+
+    </a>
+    jax-learning
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/stevenwman/jax-learning" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    stevenwman/jax-learning
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../getting-started/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/concepts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../tutorials/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorials
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Tutorials
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/train-locomotion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Train Locomotion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/custom-env/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Custom Environment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/custom-rewards/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Custom Rewards
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/sim2real/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sim-to-Real
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/asymmetric-critic/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Asymmetric Critic
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Algorithms
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Algorithms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#ppo" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PPO
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ppocontraction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PPOContraction
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sac" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SAC
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#td3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TD3
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fastsac" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FastSAC
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fasttd3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FastTD3
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#flashsac" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FlashSAC
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tdmpc2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TDMPC2
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../envs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pusht/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PushT (vendored DP)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../buffers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Buffers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../wrappers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Wrappers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../networks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Networks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli-flags/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Flags
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/env-presets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environment Presets
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/training-loop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Training Loop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/lessons-learned/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lessons Learned
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FAQ
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../glossary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Glossary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#ppo" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PPO
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ppocontraction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PPOContraction
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sac" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SAC
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#td3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TD3
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fastsac" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FastSAC
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fasttd3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FastTD3
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#flashsac" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FlashSAC
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tdmpc2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TDMPC2
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/stevenwman/jax-learning/edit/main/docs/api/algos.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="algorithms">Algorithms<a class="headerlink" href="#algorithms" title="Permanent link">&para;</a></h1>
+<p>Eight RL algorithms, each self-contained with no shared base class.</p>
+<details class="note">
+<summary>Why closures instead of methods?</summary>
+<p>JAX's <a class="gl" href="../../glossary/#jit-just-in-time-compilation">JIT</a> compiler traces Python functions and captures the values they close over. If we used regular methods (<code>self.update</code>), JAX would try to trace <code>self</code>, which is a mutable Python object — this breaks JIT.</p>
+<p>Instead, all algorithms define JIT'd functions as closures inside <code>__init__</code> that capture only JAX-compatible values (networks, configs, constants), then assign them to <code>self._update</code>, <code>self.select_action</code>, etc. This pattern is standard for JAX RL implementations (Brax, PureJaxRL use the same approach).</p>
+</details>
+<hr />
+<table>
+<thead>
+<tr>
+<th>Algorithm</th>
+<th>Type</th>
+<th>Key difference</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="#ppo">PPO</a></td>
+<td><a class="gl" href="../../glossary/#on-policy">On-policy</a></td>
+<td>Clipped surrogate + <a class="gl" href="../../glossary/#gae-generalized-advantage-estimation">GAE</a></td>
+</tr>
+<tr>
+<td><a href="#ppocontraction">PPOContraction</a></td>
+<td>On-<a class="gl" href="../../glossary/#policy">policy</a></td>
+<td>PPO + Lipschitz contraction-metric regularizer (research)</td>
+</tr>
+<tr>
+<td><a href="#sac">SAC</a></td>
+<td><a class="gl" href="../../glossary/#off-policy">Off-policy</a></td>
+<td>Auto-tuned <a class="gl" href="../../glossary/#entropy-in-rl">entropy</a>, Gaussian policy</td>
+</tr>
+<tr>
+<td><a href="#td3">TD3</a></td>
+<td>Off-policy</td>
+<td>Deterministic policy, twin critics, delayed actor</td>
+</tr>
+<tr>
+<td><a href="#fastsac">FastSAC</a></td>
+<td>Off-policy</td>
+<td><a class="gl" href="../../glossary/#c51">C51</a> distributional critics, UTD 8, TD3-style delayed actor (<code>policy_delay=4</code>)</td>
+</tr>
+<tr>
+<td><a href="#fasttd3">FastTD3</a></td>
+<td>Off-policy</td>
+<td>C51 distributional critics, UTD 8</td>
+</tr>
+<tr>
+<td><a href="#flashsac">FlashSAC</a></td>
+<td>Off-policy</td>
+<td>Inverted residual blocks + BatchNorm + adaptive reward scaling</td>
+</tr>
+<tr>
+<td><a href="#tdmpc2">TDMPC2</a></td>
+<td>Model-based</td>
+<td>Learned world model + MPPI planner, two-hot value/reward</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="ppo">PPO<a class="headerlink" href="#ppo" title="Permanent link">&para;</a></h2>
+<div class="language-python highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">jax_rl.algos.ppo</span><span class="w"> </span><span class="kn">import</span> <span class="n">PPO</span>
+</code></pre></div>
+<p>On-policy algorithm with clipped surrogate objective and GAE. The only on-policy algorithm in this framework — simpler to tune, lower sample efficiency than off-policy alternatives.</p>
+<p><strong>Constructor</strong></p>
+<div class="language-python highlight"><pre><span></span><code><span class="n">PPO</span><span class="p">(</span>
+    <span class="n">config</span><span class="p">:</span> <span class="n">PPOConfig</span><span class="p">,</span>
+    <span class="n">obs_dim</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">action_dim</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">actor_optimizer</span><span class="p">:</span> <span class="n">optax</span><span class="o">.</span><span class="n">GradientTransformation</span><span class="p">,</span>
+    <span class="n">critic_optimizer</span><span class="p">:</span> <span class="n">optax</span><span class="o">.</span><span class="n">GradientTransformation</span><span class="p">,</span>
+    <span class="n">critic_obs_dim</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>  <span class="c1"># asymmetric critic</span>
+<span class="p">)</span>
+</code></pre></div>
+<p><strong>Methods</strong></p>
+<dl>
+<dt><code>init(key) → TrainingState</code></dt>
+<dd>Initialize network parameters and optimizer state. Call once before training.</dd>
+<dt><code>select_action(state, obs, key, deterministic=False, critic_obs=None) → (action, log_prob, value)</code></dt>
+<dd>Sample action during rollout collection. Returns all three values needed for GAE computation.</dd>
+<dt><code>select_action_eval(actor_params, obs) → action</code></dt>
+<dd>Deterministic action for evaluation and deployment. Takes only <code>actor_params</code> — no full <code>TrainingState</code> or <code>critic_obs</code> needed.</dd>
+<dt><code>update(state, batch, key, next_obs=None, critic_obs=None, ...) → (TrainingState, metrics)</code></dt>
+<dd>Run one PPO update epoch over the collected rollout batch.</dd>
+</dl>
+<hr />
+<h2 id="ppocontraction">PPOContraction<a class="headerlink" href="#ppocontraction" title="Permanent link">&para;</a></h2>
+<div class="language-python highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">jax_rl.algos.ppo_contraction</span><span class="w"> </span><span class="kn">import</span> <span class="n">PPOContraction</span>
+</code></pre></div>
+<p>PPO + Lipschitz contraction-metric regularizer (Zinage et al.). Adds a learned SPD metric <code>M(x)</code> over a chosen state coordinate <code>c(x)</code> and a reward augmentation that penalizes <code>c̈ + αċ</code> violating contraction. The metric is learned alongside the policy via constraint loss; reward augmentation feeds back into PPO's advantage signal.</p>
+<p><strong>Status: research.</strong> Closed-neutral A/B on <code>Go2BongoHandstand</code> (100M, 5-seed: baseline 38.5 vs contraction 37.8). Different failure-mode seeds suggest a distinct strategy, not a superior one. Code is faithful to the reference; nominal-return parity is the floor — the paper's wind-perturbation robustness claim has not been re-tested in this codebase. See <a href="../../reference/lessons-learned/"><code>lessons-learned.md</code></a> and the closed <code>.superpowers/plans/archive/2026-04-21-contraction-ppo.md</code>.</p>
+<p><strong>Constructor</strong></p>
+<div class="language-python highlight"><pre><span></span><code><span class="n">PPOContraction</span><span class="p">(</span>
+    <span class="n">config</span><span class="p">:</span> <span class="n">PPOConfig</span><span class="p">,</span>
+    <span class="n">obs_dim</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">action_dim</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">actor_optimizer</span><span class="p">:</span> <span class="n">optax</span><span class="o">.</span><span class="n">GradientTransformation</span><span class="p">,</span>
+    <span class="n">critic_optimizer</span><span class="p">:</span> <span class="n">optax</span><span class="o">.</span><span class="n">GradientTransformation</span><span class="p">,</span>
+    <span class="n">critic_obs_dim</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre></div>
+<p>The metric optimizer is built internally from <code>config.contraction.metric_lr</code> rather than passed in. <code>PPOConfig.contraction</code> (<code>ContractionConfig</code>) carries the algorithm-specific knobs: <code>alpha</code> (contraction rate), <code>epsilon</code> (strict-inequality slack), <code>penalty_coef</code>, <code>constraint_coef</code>, <code>metric_hidden</code>, <code>metric_lr</code>. When <code>config.contraction is None</code>, falls back to baseline PPO behavior — bit-identical to <code>PPO</code> for the same inputs.</p>
+<p><strong>Training entry point:</strong> <code>scripts/train_ppo_contraction.py</code>. Bonus contraction-only flags: <code>--alpha</code>, <code>--epsilon</code>, <code>--penalty-coef</code>, <code>--metric-lr</code>, <code>--constraint-coef</code>, <code>--metric-hidden</code>.</p>
+<hr />
+<h2 id="sac">SAC<a class="headerlink" href="#sac" title="Permanent link">&para;</a></h2>
+<div class="language-python highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">jax_rl.algos.sac</span><span class="w"> </span><span class="kn">import</span> <span class="n">SAC</span>
+</code></pre></div>
+<p>Off-policy <a class="gl" href="../../glossary/#actor-critic">actor-critic</a> with auto-tuned temperature and reparameterized Gaussian policy. Standard baseline for continuous control.</p>
+<p><strong>Constructor</strong></p>
+<div class="language-python highlight"><pre><span></span><code><span class="n">SAC</span><span class="p">(</span>
+    <span class="n">config</span><span class="p">:</span> <span class="n">SACConfig</span><span class="p">,</span>
+    <span class="n">obs_dim</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">action_dim</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">optimizer</span><span class="p">:</span> <span class="n">optax</span><span class="o">.</span><span class="n">GradientTransformation</span><span class="p">,</span>
+    <span class="n">alpha_optimizer</span><span class="p">:</span> <span class="n">optax</span><span class="o">.</span><span class="n">GradientTransformation</span><span class="p">,</span>
+    <span class="n">gamma</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.99</span><span class="p">,</span>
+    <span class="n">critic_obs_dim</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre></div>
+<p><strong>Methods</strong></p>
+<dl>
+<dt><code>init(key) → TrainingState</code></dt>
+<dd>Initialize networks, <a class="gl" href="../../glossary/#replay-buffer">replay buffer</a> pointers, and temperature.</dd>
+<dt><code>select_action(actor_params, obs, key, deterministic=False) → action</code></dt>
+<dd>Sample or take the deterministic tanh-squashed action.</dd>
+<dt><code>update(state, batch) → (TrainingState, metrics)</code></dt>
+<dd>One SAC gradient step — updates actor, twin critics, and temperature.</dd>
+<dt><code>get_q_value(state, obs, action, critic_obs=None) → q</code></dt>
+<dd>Query the first Q-network. Useful for debugging <a class="gl" href="../../glossary/#reward-shaping">reward shaping</a>.</dd>
+</dl>
+<hr />
+<h2 id="td3">TD3<a class="headerlink" href="#td3" title="Permanent link">&para;</a></h2>
+<div class="language-python highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">jax_rl.algos.td3</span><span class="w"> </span><span class="kn">import</span> <span class="n">TD3</span>
+</code></pre></div>
+<p>Deterministic off-policy algorithm with twin critics and delayed actor updates. More stable than DDPG; lower variance than SAC on some tasks.</p>
+<p><strong>Constructor</strong></p>
+<div class="language-python highlight"><pre><span></span><code><span class="n">TD3</span><span class="p">(</span>
+    <span class="n">config</span><span class="p">:</span> <span class="n">TD3Config</span><span class="p">,</span>
+    <span class="n">obs_dim</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">action_dim</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">actor_optimizer</span><span class="p">:</span> <span class="n">optax</span><span class="o">.</span><span class="n">GradientTransformation</span><span class="p">,</span>
+    <span class="n">critic_optimizer</span><span class="p">:</span> <span class="n">optax</span><span class="o">.</span><span class="n">GradientTransformation</span><span class="p">,</span>
+    <span class="n">gamma</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.99</span><span class="p">,</span>
+    <span class="n">critic_obs_dim</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre></div>
+<p><strong>Methods</strong></p>
+<dl>
+<dt><code>init(key) → TrainingState</code></dt>
+<dd>Initialize actor, twin critics, and target networks.</dd>
+<dt><code>select_action(actor_params, obs, key, deterministic=False) → action</code></dt>
+<dd>Deterministic action with optional exploration noise.</dd>
+<dt><code>update(state, batch) → (TrainingState, metrics)</code></dt>
+<dd>One TD3 gradient step. Actor updated every <code>policy_delay</code> critic steps.</dd>
+<dt><code>get_q_value(state, obs, action, critic_obs=None) → q</code></dt>
+<dd>Query the first Q-network.</dd>
+</dl>
+<hr />
+<h2 id="fastsac">FastSAC<a class="headerlink" href="#fastsac" title="Permanent link">&para;</a></h2>
+<div class="language-python highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">jax_rl.algos.fast_sac</span><span class="w"> </span><span class="kn">import</span> <span class="n">FastSAC</span>
+</code></pre></div>
+<p>SAC with C51 distributional critics, high UTD ratios (8–20), and TD3-style delayed actor+alpha updates (<code>policy_delay=4</code> by default). The actor, temperature, <em>and Polyak target-Q update</em> are gated by the same <code>jax.lax.cond</code> on <code>update_count</code>, so all three fire only every <code>policy_delay</code> critic steps. This means the <strong>effective per-critic-step target decay is <code>tau / policy_delay</code></strong> — for the default <code>tau=0.125, policy_delay=4</code>, each critic step moves targets by ~0.031, not 0.125. Tune <code>tau</code> with this gating in mind. Better sample efficiency than standard SAC; preferred for off-policy locomotion training.</p>
+<p><strong>Constructor</strong></p>
+<div class="language-python highlight"><pre><span></span><code><span class="n">FastSAC</span><span class="p">(</span>
+    <span class="n">config</span><span class="p">:</span> <span class="n">FastSACConfig</span><span class="p">,</span>
+    <span class="n">obs_dim</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">action_dim</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">optimizer</span><span class="p">:</span> <span class="n">optax</span><span class="o">.</span><span class="n">GradientTransformation</span><span class="p">,</span>
+    <span class="n">alpha_optimizer</span><span class="p">:</span> <span class="n">optax</span><span class="o">.</span><span class="n">GradientTransformation</span><span class="p">,</span>
+    <span class="n">gamma</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.99</span><span class="p">,</span>
+    <span class="n">critic_obs_dim</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre></div>
+<p><strong>Methods</strong></p>
+<dl>
+<dt><code>init(key) → TrainingState</code></dt>
+<dd>Initialize actor, C51 critics, and target networks.</dd>
+<dt><code>select_action(actor_params, obs, key, deterministic=False) → action</code></dt>
+<dd>Same interface as SAC.</dd>
+<dt><code>update(state, batch) → (TrainingState, metrics)</code></dt>
+<dd>One FastSAC update step — runs one critic gradient step per call. The UTD loop (calling <code>update()</code> multiple times per env step) is in <code>jax_rl/training/offpolicy_loop.py</code> via <code>grad_updates_per_step</code>. Actor and alpha are updated only every <code>policy_delay</code> calls (TD3-style delay).</dd>
+<dt><code>get_q_value(state, obs, action, critic_obs=None) → q</code></dt>
+<dd>Expected Q-value from the C51 distributional critics.</dd>
+</dl>
+<hr />
+<h2 id="fasttd3">FastTD3<a class="headerlink" href="#fasttd3" title="Permanent link">&para;</a></h2>
+<div class="language-python highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">jax_rl.algos.fast_td3</span><span class="w"> </span><span class="kn">import</span> <span class="n">FastTD3</span>
+</code></pre></div>
+<p>TD3 with C51 distributional critics and high UTD ratios. Deterministic policy counterpart to FastSAC. The actor and Polyak target-Q update are both gated by <code>policy_delay</code> (default <code>2</code>), so the <strong>effective per-critic-step target decay is <code>tau / policy_delay</code></strong> — for the default <code>tau=0.125, policy_delay=2</code>, each critic step moves targets by ~0.063.</p>
+<p><strong>Constructor</strong></p>
+<div class="language-python highlight"><pre><span></span><code><span class="n">FastTD3</span><span class="p">(</span>
+    <span class="n">config</span><span class="p">:</span> <span class="n">FastTD3Config</span><span class="p">,</span>
+    <span class="n">obs_dim</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">action_dim</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">actor_optimizer</span><span class="p">:</span> <span class="n">optax</span><span class="o">.</span><span class="n">GradientTransformation</span><span class="p">,</span>
+    <span class="n">critic_optimizer</span><span class="p">:</span> <span class="n">optax</span><span class="o">.</span><span class="n">GradientTransformation</span><span class="p">,</span>
+    <span class="n">gamma</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.99</span><span class="p">,</span>
+    <span class="n">critic_obs_dim</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre></div>
+<p><strong>Methods</strong></p>
+<dl>
+<dt><code>init(key) → TrainingState</code></dt>
+<dd>Initialize actor, C51 twin critics, and target networks.</dd>
+<dt><code>select_action(actor_params, obs, key, deterministic=False) → action</code></dt>
+<dd>Deterministic action with optional exploration noise.</dd>
+<dt><code>update(state, batch) → (TrainingState, metrics)</code></dt>
+<dd>One FastTD3 update step with delayed actor updates.</dd>
+<dt><code>get_q_value(state, obs, action, critic_obs=None) → q</code></dt>
+<dd>Expected Q-value from the C51 distributional critics.</dd>
+</dl>
+<hr />
+<h2 id="flashsac">FlashSAC<a class="headerlink" href="#flashsac" title="Permanent link">&para;</a></h2>
+<div class="language-python highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">jax_rl.algos.flash_sac</span><span class="w"> </span><span class="kn">import</span> <span class="n">FlashSAC</span>
+</code></pre></div>
+<p>Recent SAC variant combining inverted residual blocks, BatchNorm, weight normalization, and adaptive reward scaling. Eval <strong>284.5 (single seed, post-<a class="gl" href="../../glossary/#truncation">truncation</a>-fix, default <a class="gl" href="../../glossary/#domain-randomization-dr">DR</a> — <code>train_flashsac.py</code> has no <code>--reset-mode</code> flag)</strong> on Go2 joystick at 10M steps. FastSAC with <code>--reset-mode per_step</code> reaches <strong>283.8 (single seed, post-fix)</strong>; comparison is not strictly DR-mode-matched, and A/B across seeds is not yet established. Requires more tuning than FastSAC.</p>
+<p>See the annotated end-to-end loop in <a href="../../reference/training-loop/">Reference → Training Loop</a> for how these algorithms plug into the off-policy training script.</p>
+<p><strong>Constructor</strong></p>
+<div class="language-python highlight"><pre><span></span><code><span class="n">FlashSAC</span><span class="p">(</span>
+    <span class="n">config</span><span class="p">:</span> <span class="n">FlashSACConfig</span><span class="p">,</span>
+    <span class="n">obs_dim</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">action_dim</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">optimizer</span><span class="p">:</span> <span class="n">optax</span><span class="o">.</span><span class="n">GradientTransformation</span><span class="p">,</span>
+    <span class="n">alpha_optimizer</span><span class="p">:</span> <span class="n">optax</span><span class="o">.</span><span class="n">GradientTransformation</span><span class="p">,</span>
+    <span class="n">gamma</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.99</span><span class="p">,</span>
+    <span class="n">critic_obs_dim</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">num_envs</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>  <span class="c1"># needed for per-env reward scaling</span>
+<span class="p">)</span>
+</code></pre></div>
+<p><strong>Methods</strong></p>
+<dl>
+<dt><code>init(key) → TrainingState</code></dt>
+<dd>Initialize flash networks, batch norm stats, and reward scaling state.</dd>
+<dt><code>select_action(actor_params, obs, key, deterministic=False, actor_batch_stats=None) → action</code></dt>
+<dd>Action selection with BatchNorm statistics (FlashSAC always uses BatchNorm).</dd>
+<dt><code>update(state, batch) → (TrainingState, metrics)</code></dt>
+<dd>One FlashSAC update — includes reward scaling normalization and flash critic updates.</dd>
+<dt><code>get_q_value(state, obs, action, critic_obs=None) → q</code></dt>
+<dd>Expected Q-value from the flash distributional critics.</dd>
+</dl>
+<hr />
+<h2 id="tdmpc2">TDMPC2<a class="headerlink" href="#tdmpc2" title="Permanent link">&para;</a></h2>
+<div class="language-python highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">jax_rl.algos.tdmpc2</span><span class="w"> </span><span class="kn">import</span> <span class="n">TDMPC2State</span><span class="p">,</span> <span class="n">make_update_step</span><span class="p">,</span> <span class="n">make_plan_batched</span>
+</code></pre></div>
+<p>Model-based RL with a learned latent world model and an MPPI planner — structurally different from the actor-critic algorithms above. It learns an encoder, latent dynamics, a reward head, and a Q-ensemble, then selects actions at runtime by Model Predictive Path Integral planning: rolling sampled action sequences through the learned dynamics, scoring each by predicted discounted reward plus a terminal Q bootstrap, and iteratively refining a Gaussian toward the elite trajectories. A learned policy prior seeds the planner (and provides a fast <code>prior</code> collect mode). Reward and value are predicted as two-hot categorical distributions over <code>num_bins=101</code> bins; the latent uses SimNorm. Targets DM Control tasks and PushT — <strong>not</strong> Go2 (no <a class="gl" href="../../glossary/#preset">preset</a>; see <a href="../../reference/env-presets/">Environment Presets</a>).</p>
+<div class="admonition note">
+<p class="admonition-title">Functional API — no class</p>
+<p>Unlike the other algorithms, TDMPC2 has no <code>TDMPC2</code> class or constructor. Its public surface is an immutable <code>TDMPC2State</code> <a class="gl" href="../../glossary/#pytree">pytree</a> plus factory functions that return JIT-compiled closures: build the networks and optimizers, get an <code>update_step</code> and a <code>plan_fn</code>, then thread <code>TDMPC2State</code> through your loop. See <code>scripts/train_tdmpc2.py</code> for the full wiring.</p>
+</div>
+<p><strong>Factory functions</strong></p>
+<dl>
+<dt><code>make_update_step(cfg, wm_optimizer, policy_optimizer, *, encoder, dynamics, reward_net, q_ensemble_net, policy_net) → update_step</code></dt>
+<dd>Returns a JIT'd <code>update_step(state, batch) → (TDMPC2State, metrics)</code>. One call runs: world-model forward/backward → policy forward/backward → Q-scale update → target EMA (on the Q-ensemble only — there is no target encoder/dynamics/reward/policy) → repacked state.</dd>
+<dt><code>make_plan_batched(*, dynamics, reward_net, q_ensemble_net, policy_net) → plan_fn</code></dt>
+<dd>Returns a JIT + <a class="gl" href="../../glossary/#vmap">vmap</a>'d MPPI planner <code>plan_fn(plan_params, z0, prev_mean, t0, cfg, keys, eval_mode) → (actions, new_prev_means)</code>. JIT is load-bearing here (~800 ms cold → &lt;10 ms once warm).</dd>
+<dt><code>build_world_model_optimizer(cfg)</code> / <code>build_policy_optimizer(cfg)</code></dt>
+<dd>Optimizer builders. The world-model optimizer applies a separate LR scale (<code>enc_lr_scale</code>) to the encoder param group via <code>optax.multi_transform</code>.</dd>
+</dl>
+<p><strong>State</strong></p>
+<dl>
+<dt><code>TDMPC2State</code></dt>
+<dd><code>flax.struct.dataclass</code> holding every param group (encoder, dynamics, reward, Q-ensemble + its target, policy), the optimizer states, the Q-scale EMA, the planner warm-start <code>prev_mean</code>, the RNG key, and the step count.</dd>
+</dl>
+<p><strong>Config:</strong> <a href="../configs/#tdmpc2config"><code>TDMPC2Config</code></a> — built per-env via <code>make_tdmpc2_config(action_dim, episode_length, task_name)</code>, which also derives <code>discount</code> from the <a class="gl" href="../../glossary/#episode">episode</a> length.</p>
+<p><strong>Training entry point:</strong> <code>scripts/train_tdmpc2.py</code> (e.g. <code>uv run python scripts/train_tdmpc2.py --env CheetahRun</code>). Helpers: <code>eval_tdmpc2.py</code> (MPPI vs prior eval), <code>record_video_tdmpc2.py</code>, and <code>check_tdmpc2_determinism.py</code>.</p>
+
+
+
+
+
+
+
+  
+    
+  
+  
+    
+  
+
+
+  <aside class="md-source-file">
+    
+      
+  <span class="md-source-file__fact">
+    <span class="md-icon" title="Last update">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
+    </span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="May 23, 2026 20:00:52 UTC"><span class="timeago" datetime="2026-05-23T20:00:52+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="May 23, 2026 20:00:52 UTC">2026-05-23</span>
+  </span>
+
+    
+    
+      
+  <span class="md-source-file__fact">
+    <span class="md-icon" title="Created">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M14.47 15.08 11 13V7h1.5v5.25l3.08 1.83c-.41.28-.79.62-1.11 1m-1.39 4.84c-.36.05-.71.08-1.08.08-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8c0 .37-.03.72-.08 1.08.69.1 1.33.32 1.92.64.1-.56.16-1.13.16-1.72 0-5.5-4.5-10-10-10S2 6.5 2 12s4.47 10 10 10c.59 0 1.16-.06 1.72-.16-.32-.59-.54-1.23-.64-1.92M18 15v3h-3v2h3v3h2v-3h3v-2h-3v-3z"/></svg>
+    </span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="May 23, 2026 20:00:52 UTC"><span class="timeago" datetime="2026-05-23T20:00:52+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="May 23, 2026 20:00:52 UTC">2026-05-23</span>
+  </span>
+
+    
+    
+    
+  </aside>
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../" class="md-footer__link md-footer__link--prev" aria-label="Previous: API Reference">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                API Reference
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../envs/" class="md-footer__link md-footer__link--next" aria-label="Next: Environments">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Environments
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/stevenwman/jax-learning" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.tabs.sticky", "navigation.indexes", "navigation.expand", "navigation.top", "navigation.instant", "navigation.tracking", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate", "content.tabs.link", "content.action.edit", "navigation.footer", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../../js/timeago.min.js"></script>
+      
+        <script src="../../js/timeago_mkdocs_material.js"></script>
+      
+        <script src="../../javascripts/mathjax.js"></script>
+      
+        <script src="https://unpkg.com/mathjax@3.2.2/es5/tex-chtml.js" defer></script>
+      
+    
+  </body>
+</html>

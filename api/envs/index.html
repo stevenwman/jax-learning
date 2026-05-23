@@ -1,0 +1,2203 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="JAX-based reinforcement learning for robot learning">
+      
+      
+      
+        <link rel="canonical" href="https://stevenwman.github.io/jax-learning/api/envs/">
+      
+      
+        <link rel="prev" href="../algos/">
+      
+      
+        <link rel="next" href="../pusht/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Environments - jax-learning</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../css/timeago.css">
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#environments" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="jax-learning" class="md-header__button md-logo" aria-label="jax-learning" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18.41 4 16 6.41v.18L18.41 9H22v2h-4.41L16 9.41V12h-1a2 2 0 0 1-2-2V7.5H9.86c-.09.37-.24.72-.44 1.05L15.18 19H20a2 2 0 0 1 2 2v1H2v-1a2 2 0 0 1 2-2h6.61l-4.69-8.5a4.006 4.006 0 0 1-3.81-3A4 4 0 0 1 5 2.63c2.13-.55 4.31.73 4.86 2.87H13V3a2 2 0 0 1 2-2h1v2.59L17.59 2H22v2zM6 4.5a2 2 0 0 0-2 2 2 2 0 0 0 2 2 2 2 0 0 0 2-2 2 2 0 0 0-2-2"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            jax-learning
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Environments
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/stevenwman/jax-learning" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    stevenwman/jax-learning
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../tutorials/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Tutorials
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../reference/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../faq/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  FAQ
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../glossary/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Glossary
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="jax-learning" class="md-nav__button md-logo" aria-label="jax-learning" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18.41 4 16 6.41v.18L18.41 9H22v2h-4.41L16 9.41V12h-1a2 2 0 0 1-2-2V7.5H9.86c-.09.37-.24.72-.44 1.05L15.18 19H20a2 2 0 0 1 2 2v1H2v-1a2 2 0 0 1 2-2h6.61l-4.69-8.5a4.006 4.006 0 0 1-3.81-3A4 4 0 0 1 5 2.63c2.13-.55 4.31.73 4.86 2.87H13V3a2 2 0 0 1 2-2h1v2.59L17.59 2H22v2zM6 4.5a2 2 0 0 0-2 2 2 2 0 0 0 2 2 2 2 0 0 0 2-2 2 2 0 0 0-2-2"/></svg>
+
+    </a>
+    jax-learning
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/stevenwman/jax-learning" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    stevenwman/jax-learning
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../getting-started/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/concepts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../tutorials/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorials
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Tutorials
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/train-locomotion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Train Locomotion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/custom-env/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Custom Environment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/custom-rewards/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Custom Rewards
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/sim2real/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sim-to-Real
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/asymmetric-critic/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Asymmetric Critic
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../algos/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Algorithms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environments
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#warpjoystick" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WarpJoystick
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="WarpJoystick">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#actuator-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Actuator models
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#warpjoystickcurriculum" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WarpJoystickCurriculum
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#bongohandstand" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BongoHandstand
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reward-spec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reward Spec
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#observation-spec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Observation Spec
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pusht/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PushT (vendored DP)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../buffers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Buffers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../wrappers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Wrappers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../networks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Networks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli-flags/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Flags
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/env-presets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environment Presets
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/training-loop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Training Loop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/lessons-learned/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lessons Learned
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FAQ
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../glossary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Glossary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#warpjoystick" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WarpJoystick
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="WarpJoystick">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#actuator-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Actuator models
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#warpjoystickcurriculum" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WarpJoystickCurriculum
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#bongohandstand" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BongoHandstand
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reward-spec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reward Spec
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#observation-spec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Observation Spec
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/stevenwman/jax-learning/edit/main/docs/api/envs.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="environments">Environments<a class="headerlink" href="#environments" title="Permanent link">&para;</a></h1>
+<p><a class="gl" href="../../glossary/#mujoco">MuJoCo</a>-based environments for quadruped locomotion. All environments use <a class="gl" href="../../glossary/#mujoco-warp">MuJoCo Warp</a> (<code>impl="warp"</code>) for GPU-accelerated physics. For the planar-pushing manipulation benchmark, see <a href="../pusht/">PushT</a>.</p>
+<table>
+<thead>
+<tr>
+<th>Environment</th>
+<th>Task</th>
+<th>Obs (state)</th>
+<th>Obs (privileged)</th>
+<th>Actions</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="#warpjoystick">WarpJoystick</a></td>
+<td>Track velocity command</td>
+<td>48d</td>
+<td>122d</td>
+<td>12 (joint targets)</td>
+</tr>
+<tr>
+<td><a href="#actuator-models">WarpJoystick (+torque-speed)</a></td>
+<td>Same, with motor saturation curve</td>
+<td>48d</td>
+<td>122d</td>
+<td>12 (joint targets)</td>
+</tr>
+<tr>
+<td><a href="#warpjoystickcurriculum">WarpJoystickCurriculum</a></td>
+<td>Goal-directed locomotion on 4-type × 10-level terrain grid</td>
+<td>48d</td>
+<td>122d</td>
+<td>12 (joint targets)</td>
+</tr>
+<tr>
+<td><a href="#warpjoystickcurriculum">WarpJoystickCurriculum (+torque-speed)</a></td>
+<td>Same, with motor saturation curve</td>
+<td>48d</td>
+<td>122d</td>
+<td>12 (joint targets)</td>
+</tr>
+<tr>
+<td><a href="#bongohandstand">BongoHandstand</a></td>
+<td>Handstand on bongo board</td>
+<td>42–46d</td>
+<td>~96d</td>
+<td>12 (joint targets)</td>
+</tr>
+</tbody>
+</table>
+<p>Reward and <a class="gl" href="../../glossary/#observation-obs">observation</a> specs are data-driven — swap terms without touching environment internals.</p>
+<div class="admonition note">
+<p class="admonition-title">Class names vs registered names</p>
+<p>The class <code>WarpJoystick</code> is registered as environment <code>Go2WarpJoystickFlat</code> (flat terrain variant). Use the registered name in CLI flags (<code>--env Go2WarpJoystickFlat</code>) and the class name for imports.</p>
+</div>
+<hr />
+<h2 id="warpjoystick">WarpJoystick<a class="headerlink" href="#warpjoystick" title="Permanent link">&para;</a></h2>
+<div class="language-python highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">jax_rl.envs.locomotion.go2_warp_joystick</span><span class="w"> </span><span class="kn">import</span> <span class="n">WarpJoystick</span>
+</code></pre></div>
+<p>Track a joystick velocity command (vx, vy, yaw rate) with the Unitree Go2. The primary locomotion environment — used for all benchmarks and <a class="gl" href="../../glossary/#sim-to-real">sim-to-real</a> deployment.</p>
+<p><strong>Key properties:</strong></p>
+<ul>
+<li>Velocity command sampled via Bernoulli/Uniform process (changes mid-<a class="gl" href="../../glossary/#episode">episode</a>)</li>
+<li><a class="gl" href="../../glossary/#domain-randomization-dr">Domain randomization</a>: friction, damping, mass, motor strength</li>
+</ul>
+<details class="note" open="open">
+<summary>17 reward terms</summary>
+<table>
+<thead>
+<tr>
+<th>Term</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tracking_lin_vel</code></td>
+<td>Gaussian bonus for matching commanded forward/lateral velocity</td>
+</tr>
+<tr>
+<td><code>tracking_ang_vel</code></td>
+<td>Gaussian bonus for matching commanded yaw rate</td>
+</tr>
+<tr>
+<td><code>lin_vel_z</code></td>
+<td>Penalizes vertical base velocity</td>
+</tr>
+<tr>
+<td><code>ang_vel_xy</code></td>
+<td>Penalizes roll/pitch rotation</td>
+</tr>
+<tr>
+<td><code>orientation</code></td>
+<td>Penalizes body tilt from upright</td>
+</tr>
+<tr>
+<td><code>base_height</code></td>
+<td>Penalizes deviation from target standing height (0.27m)</td>
+</tr>
+<tr>
+<td><code>torques</code></td>
+<td>Penalizes motor effort (L2 + L1)</td>
+</tr>
+<tr>
+<td><code>action_rate</code></td>
+<td>Penalizes consecutive action changes (smoothness)</td>
+</tr>
+<tr>
+<td><code>energy</code></td>
+<td>Penalizes joint velocity × actuator force</td>
+</tr>
+<tr>
+<td><code>dof_pos_limits</code></td>
+<td>Penalizes joint positions near soft limits</td>
+</tr>
+<tr>
+<td><code>pose</code></td>
+<td>Rewards proximity to default stance pose</td>
+</tr>
+<tr>
+<td><code>stand_still</code></td>
+<td>Penalizes pose deviation when command is zero</td>
+</tr>
+<tr>
+<td><code>feet_air_time</code></td>
+<td>Rewards swing phase &gt;0.1s during locomotion</td>
+</tr>
+<tr>
+<td><code>feet_slip</code></td>
+<td>Penalizes foot horizontal velocity during ground contact</td>
+</tr>
+<tr>
+<td><code>feet_clearance</code></td>
+<td>Penalizes deviation from target swing height</td>
+</tr>
+<tr>
+<td><code>feet_height</code></td>
+<td>Penalizes peak foot height error during swing</td>
+</tr>
+<tr>
+<td><code>termination</code></td>
+<td>Fixed penalty on early termination</td>
+</tr>
+</tbody>
+</table>
+<p>Weights are configured separately in the env's reward config — see <a href="../../tutorials/custom-rewards/">Custom Rewards</a>.</p>
+</details>
+<p><strong>Methods</strong></p>
+<dl>
+<dt><code>reset(rng) → State</code></dt>
+<dd>Initialize episode with randomized base position/yaw and sample velocity command.</dd>
+<dt><code>step(state, action) → State</code></dt>
+<dd>Execute one physics step, update command, compute rewards.</dd>
+<dt><code>sample_command(rng, x_k) → command</code></dt>
+<dd>Sample next velocity command (3d: vx, vy, wz).</dd>
+<dt><code>get_domain_randomization_spec() → list[DRSpec]</code></dt>
+<dd>Declare per-episode randomization ranges.</dd>
+</dl>
+<h3 id="actuator-models">Actuator models<a class="headerlink" href="#actuator-models" title="Permanent link">&para;</a></h3>
+<p>By default, WarpJoystick uses <strong>ideal PD control</strong>: <code>τ = Kp(q* − q) − Kd·q̇</code>, clipped by MJCF <code>actuator_ctrlrange</code> at peak torque (23.7 Nm hip/thigh, 45.43 Nm calf). Simple, fast, and sufficient for most training.</p>
+<p>An optional <strong>linear torque-speed curve</strong> is available — the approximation used by MJLab's <code>DcActuator</code> and similar frameworks:</p>
+<div class="arithmatex">\[\tau_\text{limit} = \tau_\text{stall} \cdot \max\!\left(1 - \frac{|\dot{q}|}{\dot{q}_\text{max}},\ 0\right)\]</div>
+<p>Peak torque decreases linearly with joint velocity, reaching zero at the velocity limit (30.1 rad/s hip/thigh, 20.07 rad/s calf — from the Unitree URDF).</p>
+<p>Enable via the registered variant env:</p>
+<div class="language-bash highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>scripts/train_fast_sac.py<span class="w"> </span>--env<span class="w"> </span>Go2WarpJoystickFlatTorqueSpeed<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--reset-mode<span class="w"> </span>per_step<span class="w"> </span>--total-timesteps<span class="w"> </span><span class="m">20000000</span><span class="w"> </span>--wandb
+</code></pre></div>
+<p>The variant uses identical hyperparameters to <code>Go2WarpJoystickFlat</code> — clean A/B comparable.</p>
+<div class="admonition note">
+<p class="admonition-title">When it matters</p>
+<p>Joint velocities during flat-terrain walking at 1 m/s peak around 15 rad/s — well below the 20–30 rad/s limit. The clip is essentially dormant during steady gait (0% saturation in 1000-step rollouts). It activates under sprint commands, jumps, recovery motions, or push-force disturbances. Adopt as default when those regimes are on the menu; skip otherwise.</p>
+<p>Full analysis and quantitative trajectory data: <a href="https://github.com/stevenwman/jax-learning/blob/main/.context/lessons/actuator_models.md">lessons/actuator_models.md</a>.</p>
+</div>
+<hr />
+<h2 id="warpjoystickcurriculum">WarpJoystickCurriculum<a class="headerlink" href="#warpjoystickcurriculum" title="Permanent link">&para;</a></h2>
+<p>Procedurally generated terrain with per-env curriculum advancement. Robot navigates toward a per-episode world-frame goal; curriculum advances when the robot reaches the goal, demotes when the robot falls or fails to make progress.</p>
+<p><strong>Variants:</strong>
+- <code>Go2WarpJoystickCurriculum</code> — default actuator (ideal PD).
+- <code>Go2WarpJoystickCurriculumTorqueSpeed</code> — with linear torque-speed actuator curve.</p>
+<p><strong>Terrain grid:</strong> 10 difficulty levels × 4 terrain types = 40 tiles, each 9.6×9.6m.</p>
+<p><strong>Terrain types:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Description</th>
+<th>Max height</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Rough</td>
+<td>Grid of boxes with per-cell height variation</td>
+<td>0.22m</td>
+</tr>
+<tr>
+<td>PyramidStairs (up)</td>
+<td>Concentric rings rising to center platform</td>
+<td>0.4m step</td>
+</tr>
+<tr>
+<td>InvertedPyramidStairs (bowl)</td>
+<td>Rim at ground, descends to pit</td>
+<td>0.4m step</td>
+</tr>
+<tr>
+<td>TiltedGrid</td>
+<td>Grid of tiles with random tilt</td>
+<td>25°</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Column assignment:</strong> each env is fixed to one terrain type for the entire training run (<code>env_id % 4</code>). Specialization pattern from legged_gym.</p>
+<p><strong>Goal-directed commands:</strong> each episode samples a world-frame goal (opposite edge for rough/tilted, center for pyramid/inverted). Body-frame command is computed per-step from goal + robot pose via P-controller on yaw; <code>target_speed</code> scales linearly with <code>terrain_level</code> (0.5 m/s at level 0 → 1.5 m/s at level 9).</p>
+<p><strong>Curriculum advancement:</strong> at episode end,</p>
+<ul>
+<li><code>reached_goal AND NOT fallen</code> → level += 1</li>
+<li><code>fallen</code> → level -= 1</li>
+<li><code>timeout AND min_distance &gt; 0.5 × initial_distance</code> → level -= 1</li>
+<li>otherwise → stay</li>
+</ul>
+<p>Level clamped to <code>[0, num_rows-1]</code>.</p>
+<p><strong>wandb metrics:</strong> terrain metrics are logged automatically when <code>--wandb</code> is active. Keys: <code>terrain/{type}/mean_level</code>, <code>terrain/{type}/reach_rate</code>, <code>terrain/{type}/fall_rate</code>, <code>terrain/{type}/promote_rate</code>, <code>terrain/{type}/demote_rate</code>, and <code>terrain/global/*</code> aggregates.</p>
+<p><strong>Usage:</strong>
+<div class="language-bash highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>scripts/train_fast_sac.py<span class="w"> </span>--env<span class="w"> </span>Go2WarpJoystickCurriculum<span class="w"> </span>--reset-mode<span class="w"> </span>per_step<span class="w"> </span>--num-envs<span class="w"> </span><span class="m">64</span><span class="w"> </span>--wandb
+</code></pre></div></p>
+<div class="admonition note">
+<p class="admonition-title">VRAM budget</p>
+<p>Curriculum env has ~1500 geoms (vs ~100 for flat) — needs fewer parallel envs than flat. <code>--num-envs 64</code> fits in ~13 GB VRAM.</p>
+</div>
+<p>See <a href="https://github.com/stevenwman/jax-learning/blob/main/.context/lessons/terrain_curriculum.md">lessons/terrain_curriculum.md</a> for design rationale and gotchas.</p>
+<hr />
+<h2 id="bongohandstand">BongoHandstand<a class="headerlink" href="#bongohandstand" title="Permanent link">&para;</a></h2>
+<div class="language-python highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">jax_rl.envs.locomotion.go2_bongo_handstand</span><span class="w"> </span><span class="kn">import</span> <span class="n">BongoHandstand</span>
+</code></pre></div>
+<p>Go2 handstand balance on a bongo board. Applies antagonistic pushes to the robot base and board during training for robustness.</p>
+<details class="note" open="open">
+<summary>10 reward terms</summary>
+<table>
+<thead>
+<tr>
+<th>Term</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>survival</code></td>
+<td>Constant +1.0 per step for staying alive</td>
+</tr>
+<tr>
+<td><code>orientation_cost</code></td>
+<td>Penalizes gravity vector error from inverted stance</td>
+</tr>
+<tr>
+<td><code>board_tilt_cost</code></td>
+<td>Penalizes bongo board tilt magnitude</td>
+</tr>
+<tr>
+<td><code>com_offset_cost</code></td>
+<td>Penalizes COM horizontal distance from board center</td>
+</tr>
+<tr>
+<td><code>height_cost</code></td>
+<td>Penalizes COM height error from target (0.55m)</td>
+</tr>
+<tr>
+<td><code>roller_cost</code></td>
+<td>Penalizes roller slider displacement</td>
+</tr>
+<tr>
+<td><code>torque_cost</code></td>
+<td>Penalizes motor effort relative to max torque</td>
+</tr>
+<tr>
+<td><code>action_rate_cost</code></td>
+<td>Penalizes consecutive action changes</td>
+</tr>
+<tr>
+<td><code>joint_vel_cost</code></td>
+<td>Penalizes joint velocity magnitude</td>
+</tr>
+<tr>
+<td><code>termination</code></td>
+<td>Fixed penalty on early termination</td>
+</tr>
+</tbody>
+</table>
+</details>
+<p><strong>Methods</strong></p>
+<dl>
+<dt><code>reset(rng) → State</code></dt>
+<dd>Initialize from "handstand" keyframe (no position randomization).</dd>
+<dt><code>step(state, action) → State</code></dt>
+<dd>Physics step with perturbation pushes.</dd>
+<dt><code>get_domain_randomization_spec() → list[DRSpec]</code></dt>
+<dd>Randomize friction, mass, torso COM, motor strength, damping, armature.</dd>
+</dl>
+<hr />
+<h2 id="reward-spec">Reward Spec<a class="headerlink" href="#reward-spec" title="Permanent link">&para;</a></h2>
+<div class="language-python highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">jax_rl.envs.reward_spec</span><span class="w"> </span><span class="kn">import</span> <span class="n">RewardTerm</span><span class="p">,</span> <span class="n">compute_rewards</span>
+</code></pre></div>
+<p>Data-driven reward composition. Each environment defines a list of <code>RewardTerm</code>s; weights are applied downstream in <code>step()</code>.</p>
+<p><strong>RewardTerm</strong> (dataclass)</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td><code>str</code></td>
+<td>Unique identifier (e.g., <code>"tracking_lin_vel"</code>)</td>
+</tr>
+<tr>
+<td><code>fn</code></td>
+<td><code>Callable</code></td>
+<td>Receives kwargs (<code>data</code>, <code>action</code>, <code>info</code>, <code>done</code>, ...), returns scalar</td>
+</tr>
+</tbody>
+</table>
+<dl>
+<dt><strong>compute_rewards</strong>(terms, **kwargs) → dict[str, Array]</dt>
+<dd>Evaluate all terms, return <code>{name: unweighted_scalar}</code> dict.</dd>
+</dl>
+<hr />
+<h2 id="observation-spec">Observation Spec<a class="headerlink" href="#observation-spec" title="Permanent link">&para;</a></h2>
+<div class="language-python highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">jax_rl.envs.obs_spec</span><span class="w"> </span><span class="kn">import</span> <span class="n">ObsTerm</span><span class="p">,</span> <span class="n">IncludeGroup</span><span class="p">,</span> <span class="n">compute_obs</span>
+</code></pre></div>
+<p>Data-driven observation composition with per-term noise injection.</p>
+<p><strong>ObsTerm</strong> (dataclass)</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td><code>str</code></td>
+<td>—</td>
+<td>Unique identifier</td>
+</tr>
+<tr>
+<td><code>fn</code></td>
+<td><code>Callable</code></td>
+<td>—</td>
+<td>Receives kwargs (<code>data</code>, <code>info</code>, ...), returns array</td>
+</tr>
+<tr>
+<td><code>noise_scale</code></td>
+<td><code>float</code></td>
+<td><code>0.0</code></td>
+<td>Multiplied by global <code>noise_level</code></td>
+</tr>
+</tbody>
+</table>
+<dl>
+<dt><strong>IncludeGroup</strong> (dataclass)</dt>
+<dd>Reference another group's computed output (e.g., privileged includes state). Field: <code>group_name: str</code>.</dd>
+<dt><strong>compute_obs</strong>(groups, noise_level, rng, **kwargs) → (obs_dict, new_rng)</dt>
+<dd>Compute all observation groups. Groups processed in insertion order; noise is uniform in <code>[-noise_level * scale, +noise_level * scale]</code>.</dd>
+</dl>
+
+
+
+
+
+
+
+  
+    
+  
+  
+    
+  
+
+
+  <aside class="md-source-file">
+    
+      
+  <span class="md-source-file__fact">
+    <span class="md-icon" title="Last update">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
+    </span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="May 23, 2026 20:00:52 UTC"><span class="timeago" datetime="2026-05-23T20:00:52+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="May 23, 2026 20:00:52 UTC">2026-05-23</span>
+  </span>
+
+    
+    
+      
+  <span class="md-source-file__fact">
+    <span class="md-icon" title="Created">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M14.47 15.08 11 13V7h1.5v5.25l3.08 1.83c-.41.28-.79.62-1.11 1m-1.39 4.84c-.36.05-.71.08-1.08.08-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8c0 .37-.03.72-.08 1.08.69.1 1.33.32 1.92.64.1-.56.16-1.13.16-1.72 0-5.5-4.5-10-10-10S2 6.5 2 12s4.47 10 10 10c.59 0 1.16-.06 1.72-.16-.32-.59-.54-1.23-.64-1.92M18 15v3h-3v2h3v3h2v-3h3v-2h-3v-3z"/></svg>
+    </span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="May 23, 2026 20:00:52 UTC"><span class="timeago" datetime="2026-05-23T20:00:52+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="May 23, 2026 20:00:52 UTC">2026-05-23</span>
+  </span>
+
+    
+    
+    
+  </aside>
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../algos/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Algorithms">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Algorithms
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../pusht/" class="md-footer__link md-footer__link--next" aria-label="Next: PushT (vendored DP)">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                PushT (vendored DP)
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/stevenwman/jax-learning" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.tabs.sticky", "navigation.indexes", "navigation.expand", "navigation.top", "navigation.instant", "navigation.tracking", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate", "content.tabs.link", "content.action.edit", "navigation.footer", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../../js/timeago.min.js"></script>
+      
+        <script src="../../js/timeago_mkdocs_material.js"></script>
+      
+        <script src="../../javascripts/mathjax.js"></script>
+      
+        <script src="https://unpkg.com/mathjax@3.2.2/es5/tex-chtml.js" defer></script>
+      
+    
+  </body>
+</html>

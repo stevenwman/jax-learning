@@ -1,0 +1,241 @@
+/* ── Dark mode syntax highlighting (One Dark) ── */
+
+[data-md-color-scheme="slate"] .highlight .k,
+[data-md-color-scheme="slate"] .highlight .kn,
+[data-md-color-scheme="slate"] .highlight .kd { color: #c678dd; font-weight: bold; }
+
+[data-md-color-scheme="slate"] .highlight .nf,
+[data-md-color-scheme="slate"] .highlight .fm { color: #61afef; }
+
+[data-md-color-scheme="slate"] .highlight .nc { color: #e5c07b; }
+
+[data-md-color-scheme="slate"] .highlight .s,
+[data-md-color-scheme="slate"] .highlight .s1,
+[data-md-color-scheme="slate"] .highlight .s2,
+[data-md-color-scheme="slate"] .highlight .sd,
+[data-md-color-scheme="slate"] .highlight .se { color: #98c379; }
+
+[data-md-color-scheme="slate"] .highlight .mi,
+[data-md-color-scheme="slate"] .highlight .mf,
+[data-md-color-scheme="slate"] .highlight .m { color: #d19a66; }
+
+[data-md-color-scheme="slate"] .highlight .nb,
+[data-md-color-scheme="slate"] .highlight .bp { color: #56b6c2; }
+
+[data-md-color-scheme="slate"] .highlight .nd { color: #e5c07b; }
+
+[data-md-color-scheme="slate"] .highlight .o,
+[data-md-color-scheme="slate"] .highlight .ow { color: #c678dd; }
+
+[data-md-color-scheme="slate"] .highlight .c,
+[data-md-color-scheme="slate"] .highlight .c1,
+[data-md-color-scheme="slate"] .highlight .cm { color: #8b9099; font-style: italic; }
+
+/* Distinguish variables from functions (was both #61afef) */
+[data-md-color-scheme="slate"] .highlight .nv { color: #e06c75; }
+
+/* ── Light mode syntax highlighting (One Light) ── */
+
+[data-md-color-scheme="default"] .highlight .k,
+[data-md-color-scheme="default"] .highlight .kn,
+[data-md-color-scheme="default"] .highlight .kd { color: #a626a4; font-weight: bold; }
+
+[data-md-color-scheme="default"] .highlight .nf,
+[data-md-color-scheme="default"] .highlight .fm { color: #4078f2; }
+
+[data-md-color-scheme="default"] .highlight .nc { color: #c18401; }
+
+[data-md-color-scheme="default"] .highlight .s,
+[data-md-color-scheme="default"] .highlight .s1,
+[data-md-color-scheme="default"] .highlight .s2,
+[data-md-color-scheme="default"] .highlight .sd,
+[data-md-color-scheme="default"] .highlight .se { color: #50a14f; }
+
+[data-md-color-scheme="default"] .highlight .mi,
+[data-md-color-scheme="default"] .highlight .mf,
+[data-md-color-scheme="default"] .highlight .m { color: #986801; }
+
+[data-md-color-scheme="default"] .highlight .nb,
+[data-md-color-scheme="default"] .highlight .bp { color: #0184bc; }
+
+[data-md-color-scheme="default"] .highlight .nd { color: #c18401; }
+
+[data-md-color-scheme="default"] .highlight .o,
+[data-md-color-scheme="default"] .highlight .ow { color: #a626a4; }
+
+[data-md-color-scheme="default"] .highlight .c,
+[data-md-color-scheme="default"] .highlight .c1,
+[data-md-color-scheme="default"] .highlight .cm { color: #636871; font-style: italic; }
+
+/* Distinguish variables from functions (was both #4078f2) — amber avoids
+   clashing with error-red; .e45649 red read visually close to error highlights */
+[data-md-color-scheme="default"] .highlight .nv { color: #b76b01; }
+
+/* ── Glossary auto-links — subtle, dotted underline (Wikipedia-style) ── */
+
+.gl {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-decoration-thickness: 1px;
+  text-decoration-color: var(--md-default-fg-color--light);
+  text-underline-offset: 3px;
+  transition: text-decoration-color 0.15s, color 0.15s;
+}
+
+.gl:hover {
+  color: var(--md-primary-fg-color);
+  text-decoration-style: solid;
+  text-decoration-color: var(--md-primary-fg-color);
+}
+
+[data-md-color-scheme="slate"] .gl {
+  text-decoration-color: rgba(255, 255, 255, 0.5);
+}
+
+.gl:visited {
+  text-decoration-color: var(--md-default-fg-color--lighter);
+}
+
+/* ── H2 section borders for long pages ── */
+/* Scoped to article > h2 so admonitions/collapsibles with h2 inside don't get the border */
+
+.md-typeset article > h2 {
+  margin-top: 2.5em;
+  padding-top: 0.6em;
+  border-top: 1px solid var(--md-default-fg-color--lightest);
+}
+
+.md-typeset article > h2:first-of-type {
+  margin-top: 1em;
+  padding-top: 0;
+  border-top: 0;
+}
+
+/* ── Display math (block equations) ── */
+
+.md-typeset div.arithmatex {
+  margin: 0.75em 0;
+  overflow-x: auto;
+}
+
+/* ── Definition list styling (method docs in API pages) ── */
+
+.md-typeset dl dt {
+  margin-top: 1.25em;
+  padding-top: 0.5em;
+  font-weight: 600;
+  border-top: 1px dashed var(--md-default-fg-color--lightest);
+}
+
+.md-typeset dl dt:first-child {
+  border-top: 0;
+  padding-top: 0;
+  margin-top: 0;
+}
+
+.md-typeset dl dt + dd {
+  margin-top: 0.25em;
+}
+
+.md-typeset dl dd {
+  margin-left: 1.5em;
+}
+
+/* ── Video styling ── */
+
+.video-grid {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.video-grid > div {
+  flex: 1 1 280px;
+  min-width: 0;
+  max-width: 640px;
+}
+
+.video-grid video {
+  width: 100%;
+  border-radius: 8px;
+}
+
+.video-grid .caption {
+  text-align: center;
+  font-size: 0.85em;
+  color: var(--md-default-fg-color--light);
+  margin-top: 0.4em;
+}
+
+@media (max-width: 640px) {
+  .video-grid { flex-direction: column; }
+  .video-grid > div { max-width: 100%; }
+}
+
+.tutorial-video {
+  width: 100%;
+  max-width: 640px;
+  border-radius: 8px;
+}
+
+/* ── Table styling ── */
+/* Material already wraps tables in .md-typeset__scrollwrap, so don't fight it
+   with display: block. Use tabular-nums and selective wrapping instead. */
+
+.md-typeset table:not([class]) {
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.md-typeset table:not([class]) th,
+.md-typeset table:not([class]) td {
+  padding: 0.5em 0.75em;
+}
+
+.md-typeset table:not([class]) tbody tr:nth-child(even) {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+/* Allow long descriptions in table cells to wrap on any character */
+.md-typeset table:not([class]) td {
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+
+[data-md-color-scheme="slate"] .md-typeset table:not([class]) tbody tr:nth-child(even) {
+  background-color: rgba(255, 255, 255, 0.055);
+}
+
+/* Reward term tables inside collapsible details should fill width */
+.md-typeset details table:not([class]) {
+  display: table;
+  width: 100%;
+}
+
+/* ── Code block max-height (desktop only) ── */
+/* Cap very long code blocks so they don't dominate the viewport. On mobile,
+   the cap creates a nested-scroll trap (touch-scrolling the code block hijacks
+   page scroll), so only apply at tablet+ widths. */
+@media (min-width: 60em) {
+  .md-typeset .highlight pre > code {
+    max-height: 32rem;
+    overflow-y: auto;
+  }
+}
+
+/* ── Wide-table breakout on content pages ── */
+/* Allow wide tables and code blocks to break out of the prose column if they're
+   wider than Material's default ~56rem. Content width is left to Material's
+   defaults — overriding .md-content stacks poorly with the right-rail TOC at
+   1440px+ and Material's 56rem default is already ergonomic. */
+.md-typeset .md-typeset__scrollwrap,
+.md-typeset .highlight {
+  max-width: 72rem;
+}
+
+/* ── MathJax dark-mode color fix ── */
+[data-md-color-scheme="slate"] .md-typeset mjx-container {
+  color: var(--md-default-fg-color);
+}

@@ -1,0 +1,2169 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="JAX-based reinforcement learning for robot learning">
+      
+      
+      
+        <link rel="canonical" href="https://stevenwman.github.io/jax-learning/tutorials/custom-env/">
+      
+      
+        <link rel="prev" href="../train-locomotion/">
+      
+      
+        <link rel="next" href="../custom-rewards/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Custom Environment - jax-learning</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../css/timeago.css">
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#custom-environment" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="jax-learning" class="md-header__button md-logo" aria-label="jax-learning" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18.41 4 16 6.41v.18L18.41 9H22v2h-4.41L16 9.41V12h-1a2 2 0 0 1-2-2V7.5H9.86c-.09.37-.24.72-.44 1.05L15.18 19H20a2 2 0 0 1 2 2v1H2v-1a2 2 0 0 1 2-2h6.61l-4.69-8.5a4.006 4.006 0 0 1-3.81-3A4 4 0 0 1 5 2.63c2.13-.55 4.31.73 4.86 2.87H13V3a2 2 0 0 1 2-2h1v2.59L17.59 2H22v2zM6 4.5a2 2 0 0 0-2 2 2 2 0 0 0 2 2 2 2 0 0 0 2-2 2 2 0 0 0-2-2"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            jax-learning
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Custom Environment
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/stevenwman/jax-learning" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    stevenwman/jax-learning
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Tutorials
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../api/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../reference/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../faq/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  FAQ
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../glossary/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Glossary
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="jax-learning" class="md-nav__button md-logo" aria-label="jax-learning" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18.41 4 16 6.41v.18L18.41 9H22v2h-4.41L16 9.41V12h-1a2 2 0 0 1-2-2V7.5H9.86c-.09.37-.24.72-.44 1.05L15.18 19H20a2 2 0 0 1 2 2v1H2v-1a2 2 0 0 1 2-2h6.61l-4.69-8.5a4.006 4.006 0 0 1-3.81-3A4 4 0 0 1 5 2.63c2.13-.55 4.31.73 4.86 2.87H13V3a2 2 0 0 1 2-2h1v2.59L17.59 2H22v2zM6 4.5a2 2 0 0 0-2 2 2 2 0 0 0 2 2 2 2 0 0 0 2-2 2 2 0 0 0-2-2"/></svg>
+
+    </a>
+    jax-learning
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/stevenwman/jax-learning" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    stevenwman/jax-learning
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../getting-started/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/concepts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorials
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Tutorials
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../train-locomotion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Train Locomotion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Custom Environment
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Custom Environment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-1-create-the-scene-xml" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 1: Create the Scene XML
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-2-write-the-env-class" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2: Write the Env Class
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 2: Write the Env Class">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#_post_init-observations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        _post_init: Observations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_post_init-rewards" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        _post_init: Rewards
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-physics-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        step: Physics Loop
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-3-register-the-environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 3: Register the Environment
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-4-add-a-config-preset" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 4: Add a Config Preset
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-5-smoke-test" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 5: Smoke Test
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../custom-rewards/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Custom Rewards
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sim2real/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sim-to-Real
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../asymmetric-critic/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Asymmetric Critic
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../api/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/algos/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Algorithms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/envs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/pusht/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PushT (vendored DP)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/configs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/buffers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Buffers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/wrappers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Wrappers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/networks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Networks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli-flags/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Flags
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/env-presets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environment Presets
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/training-loop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Training Loop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/lessons-learned/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lessons Learned
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FAQ
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../glossary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Glossary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-1-create-the-scene-xml" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 1: Create the Scene XML
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-2-write-the-env-class" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2: Write the Env Class
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 2: Write the Env Class">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#_post_init-observations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        _post_init: Observations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_post_init-rewards" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        _post_init: Rewards
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-physics-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        step: Physics Loop
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-3-register-the-environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 3: Register the Environment
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-4-add-a-config-preset" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 4: Add a Config Preset
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-5-smoke-test" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 5: Smoke Test
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/stevenwman/jax-learning/edit/main/docs/tutorials/custom-env.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="custom-environment">Custom Environment<a class="headerlink" href="#custom-environment" title="Permanent link">&para;</a></h1>
+<p><em>Advanced — requires familiarity with Python dataclasses, <a class="gl" href="../../glossary/#mujoco">MuJoCo</a> XML, and JAX basics.</em></p>
+<p>This tutorial walks through adding a new Go2 environment, using the <strong>bongo board handstand</strong> task as a worked example.</p>
+<video class="tutorial-video" autoplay loop muted playsinline preload="metadata">
+  <source src="../../assets/videos/go2_bongo_handstand.mp4" type="video/mp4">
+</video>
+
+<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
+<p>Adding a new environment involves these files:</p>
+<div class="language-text highlight"><pre><span></span><code>jax_rl/envs/locomotion/
+├── xmls/go2_bongo_scene.xml          # 1. Scene XML
+├── go2_bongo_handstand.py            # 2. Env class
+jax_rl/training/env_setup.py          # 3. Registration
+jax_rl/configs/env_presets.py         # 4. Preset config
+</code></pre></div>
+<h2 id="step-1-create-the-scene-xml">Step 1: Create the Scene XML<a class="headerlink" href="#step-1-create-the-scene-xml" title="Permanent link">&para;</a></h2>
+<p>Your scene XML combines the robot MJCF, task objects, and sensors into a single simulation. For the bongo board, this means:</p>
+<ul>
+<li>The Go2 robot (included from vendored <code>unitree_go2/go2.xml</code>)</li>
+<li>A bongo board (flat platform) and cylindrical roller</li>
+<li>Contact sensors for detecting foot-board, body-floor, and board-floor contacts</li>
+<li>A keyframe defining the initial handstand pose</li>
+</ul>
+<p>The scene XML lives at <code>jax_rl/envs/locomotion/xmls/go2_bongo_scene.xml</code>. Key structure:</p>
+<div class="language-xml highlight"><pre><span></span><code><span class="nt">&lt;mujoco</span><span class="w"> </span><span class="na">model=</span><span class="s">&quot;go2_bongo&quot;</span><span class="nt">&gt;</span>
+<span class="w">  </span><span class="cm">&lt;!-- Include the robot model --&gt;</span>
+<span class="w">  </span><span class="nt">&lt;include</span><span class="w"> </span><span class="na">file=</span><span class="s">&quot;unitree_go2/go2.xml&quot;</span><span class="nt">/&gt;</span>
+
+<span class="w">  </span><span class="cm">&lt;!-- Task objects: board + roller --&gt;</span>
+<span class="w">  </span><span class="nt">&lt;body</span><span class="w"> </span><span class="na">name=</span><span class="s">&quot;board&quot;</span><span class="w"> </span><span class="na">pos=</span><span class="s">&quot;0 0 0.34&quot;</span><span class="nt">&gt;</span>
+<span class="w">    </span><span class="nt">&lt;freejoint</span><span class="w"> </span><span class="na">name=</span><span class="s">&quot;board_joint&quot;</span><span class="nt">/&gt;</span>
+<span class="w">    </span><span class="nt">&lt;geom</span><span class="w"> </span><span class="na">name=</span><span class="s">&quot;board_top&quot;</span><span class="w"> </span><span class="na">type=</span><span class="s">&quot;box&quot;</span><span class="w"> </span><span class="na">size=</span><span class="s">&quot;0.25 0.15 0.01&quot;</span><span class="w"> </span><span class="na">mass=</span><span class="s">&quot;1.0&quot;</span><span class="nt">/&gt;</span>
+<span class="w">  </span><span class="nt">&lt;/body&gt;</span>
+<span class="w">  </span><span class="nt">&lt;body</span><span class="w"> </span><span class="na">name=</span><span class="s">&quot;roller&quot;</span><span class="w"> </span><span class="na">pos=</span><span class="s">&quot;0 0 0.05&quot;</span><span class="nt">&gt;</span>
+<span class="w">    </span><span class="nt">&lt;joint</span><span class="w"> </span><span class="na">name=</span><span class="s">&quot;roller_slide&quot;</span><span class="w"> </span><span class="na">type=</span><span class="s">&quot;slide&quot;</span><span class="w"> </span><span class="na">axis=</span><span class="s">&quot;1 0 0&quot;</span><span class="nt">/&gt;</span>
+<span class="w">    </span><span class="nt">&lt;geom</span><span class="w"> </span><span class="na">type=</span><span class="s">&quot;cylinder&quot;</span><span class="w"> </span><span class="na">size=</span><span class="s">&quot;0.05 0.15&quot;</span><span class="nt">/&gt;</span>
+<span class="w">  </span><span class="nt">&lt;/body&gt;</span>
+
+<span class="w">  </span><span class="cm">&lt;!-- Contact sensors (touch detection via MuJoCo sensor API) --&gt;</span>
+<span class="w">  </span><span class="nt">&lt;sensor&gt;</span>
+<span class="w">    </span><span class="nt">&lt;touch</span><span class="w"> </span><span class="na">name=</span><span class="s">&quot;FL_board_found&quot;</span><span class="w"> </span><span class="na">site=</span><span class="s">&quot;FL_foot&quot;</span><span class="nt">/&gt;</span>
+<span class="w">    </span><span class="nt">&lt;touch</span><span class="w"> </span><span class="na">name=</span><span class="s">&quot;board_floor_found&quot;</span><span class="w"> </span><span class="na">site=</span><span class="s">&quot;board_edge&quot;</span><span class="nt">/&gt;</span>
+<span class="w">    </span><span class="cm">&lt;!-- ... more contact sensors ... --&gt;</span>
+<span class="w">  </span><span class="nt">&lt;/sensor&gt;</span>
+
+<span class="w">  </span><span class="cm">&lt;!-- Initial pose keyframe --&gt;</span>
+<span class="w">  </span><span class="nt">&lt;keyframe&gt;</span>
+<span class="w">    </span><span class="nt">&lt;key</span><span class="w"> </span><span class="na">name=</span><span class="s">&quot;handstand&quot;</span><span class="w"> </span><span class="na">qpos=</span><span class="s">&quot;...&quot;</span><span class="nt">/&gt;</span>
+<span class="w">  </span><span class="nt">&lt;/keyframe&gt;</span>
+<span class="nt">&lt;/mujoco&gt;</span>
+</code></pre></div>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>Use MuJoCo's <code>touch</code> sensors for contact detection rather than iterating over <code>data.contact</code>. Sensors are faster in Warp and give you named, stable indices.</p>
+</div>
+<h2 id="step-2-write-the-env-class">Step 2: Write the Env Class<a class="headerlink" href="#step-2-write-the-env-class" title="Permanent link">&para;</a></h2>
+<p>Subclass <code>Go2WarpEnv</code> (from <code>go2_warp_base.py</code>) and implement the core methods. Here's the structure from <code>BongoHandstand</code>:</p>
+<div class="language-python highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">jax_rl.envs.locomotion</span><span class="w"> </span><span class="kn">import</span> <span class="n">go2_warp_base</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">jax_rl.envs.obs_spec</span><span class="w"> </span><span class="kn">import</span> <span class="n">ObsTerm</span><span class="p">,</span> <span class="n">IncludeGroup</span><span class="p">,</span> <span class="n">compute_obs</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">jax_rl.envs.reward_spec</span><span class="w"> </span><span class="kn">import</span> <span class="n">RewardTerm</span><span class="p">,</span> <span class="n">compute_rewards</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">BongoHandstand</span><span class="p">(</span><span class="n">go2_warp_base</span><span class="o">.</span><span class="n">Go2WarpEnv</span><span class="p">):</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">task</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="n">default_config</span><span class="p">(),</span> <span class="n">config_overrides</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span>
+            <span class="n">xml_path</span><span class="o">=</span><span class="n">consts</span><span class="o">.</span><span class="n">BONGO_SCENE_XML</span><span class="o">.</span><span class="n">as_posix</span><span class="p">(),</span>
+            <span class="n">config</span><span class="o">=</span><span class="n">config</span><span class="p">,</span>
+            <span class="n">config_overrides</span><span class="o">=</span><span class="n">config_overrides</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_post_init</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_post_init</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Set up obs groups, reward spec, body IDs, sensor addresses.&quot;&quot;&quot;</span>
+        <span class="o">...</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">rng</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">mjx_env</span><span class="o">.</span><span class="n">State</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initialize qpos/qvel from keyframe, create info dict.&quot;&quot;&quot;</span>
+        <span class="o">...</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">state</span><span class="p">:</span> <span class="n">mjx_env</span><span class="o">.</span><span class="n">State</span><span class="p">,</span> <span class="n">action</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">mjx_env</span><span class="o">.</span><span class="n">State</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;PD control, physics step, compute obs/reward/done.&quot;&quot;&quot;</span>
+        <span class="o">...</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_obs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">info</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Delegate to compute_obs() with self._obs_groups.&quot;&quot;&quot;</span>
+        <span class="o">...</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_termination</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return True if episode should end.&quot;&quot;&quot;</span>
+        <span class="o">...</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_reward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">action</span><span class="p">,</span> <span class="n">info</span><span class="p">,</span> <span class="n">done</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Delegate to compute_rewards() with self._reward_spec.&quot;&quot;&quot;</span>
+        <span class="o">...</span>
+</code></pre></div>
+<h3 id="_post_init-observations">_post_init: Observations<a class="headerlink" href="#_post_init-observations" title="Permanent link">&para;</a></h3>
+<p>Define <a class="gl" href="../../glossary/#observation-obs">observation</a> groups as lists of <code>ObsTerm</code>. Each term has a name, a function that extracts the observation, and an optional noise scale:</p>
+<div class="language-python highlight"><pre><span></span><code><span class="n">noise</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_config</span><span class="o">.</span><span class="n">noise_config</span><span class="o">.</span><span class="n">scales</span>
+<span class="bp">self</span><span class="o">.</span><span class="n">_obs_groups</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;state&quot;</span><span class="p">:</span> <span class="p">[</span>
+        <span class="n">ObsTerm</span><span class="p">(</span><span class="s2">&quot;gyro&quot;</span><span class="p">,</span> <span class="k">lambda</span> <span class="n">data</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_gyro</span><span class="p">(</span><span class="n">data</span><span class="p">),</span>
+                <span class="n">noise_scale</span><span class="o">=</span><span class="n">noise</span><span class="o">.</span><span class="n">gyro</span><span class="p">),</span>
+        <span class="n">ObsTerm</span><span class="p">(</span><span class="s2">&quot;gravity&quot;</span><span class="p">,</span> <span class="k">lambda</span> <span class="n">data</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_gravity</span><span class="p">(</span><span class="n">data</span><span class="p">),</span>
+                <span class="n">noise_scale</span><span class="o">=</span><span class="n">noise</span><span class="o">.</span><span class="n">gravity</span><span class="p">),</span>
+        <span class="n">ObsTerm</span><span class="p">(</span><span class="s2">&quot;joint_pos_offset&quot;</span><span class="p">,</span> <span class="k">lambda</span> <span class="n">data</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">:</span> <span class="n">data</span><span class="o">.</span><span class="n">qpos</span><span class="p">[</span><span class="mi">7</span><span class="p">:</span><span class="mi">19</span><span class="p">]</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">_default_pose</span><span class="p">,</span>
+                <span class="n">noise_scale</span><span class="o">=</span><span class="n">noise</span><span class="o">.</span><span class="n">joint_pos</span><span class="p">),</span>
+        <span class="n">ObsTerm</span><span class="p">(</span><span class="s2">&quot;joint_vel&quot;</span><span class="p">,</span> <span class="k">lambda</span> <span class="n">data</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">:</span> <span class="n">data</span><span class="o">.</span><span class="n">qvel</span><span class="p">[</span><span class="mi">6</span><span class="p">:</span><span class="mi">18</span><span class="p">],</span>
+                <span class="n">noise_scale</span><span class="o">=</span><span class="n">noise</span><span class="o">.</span><span class="n">joint_vel</span><span class="p">),</span>
+        <span class="n">ObsTerm</span><span class="p">(</span><span class="s2">&quot;last_act&quot;</span><span class="p">,</span> <span class="k">lambda</span> <span class="n">info</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">:</span> <span class="n">info</span><span class="p">[</span><span class="s2">&quot;last_act&quot;</span><span class="p">]),</span>
+        <span class="c1"># Task-specific obs: board tilt, roller position/velocity</span>
+        <span class="n">ObsTerm</span><span class="p">(</span><span class="s2">&quot;board_tilt&quot;</span><span class="p">,</span> <span class="k">lambda</span> <span class="n">data</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_board_tilt</span><span class="p">(</span><span class="n">data</span><span class="p">)),</span>
+        <span class="n">ObsTerm</span><span class="p">(</span><span class="s2">&quot;roller_pos&quot;</span><span class="p">,</span> <span class="k">lambda</span> <span class="n">data</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">:</span> <span class="n">data</span><span class="o">.</span><span class="n">qpos</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_roller_slide_qposadr</span><span class="p">]</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="mi">1</span><span class="p">)),</span>
+        <span class="n">ObsTerm</span><span class="p">(</span><span class="s2">&quot;roller_vel&quot;</span><span class="p">,</span> <span class="k">lambda</span> <span class="n">data</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">:</span> <span class="n">data</span><span class="o">.</span><span class="n">qvel</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_roller_slide_dofadr</span><span class="p">]</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="mi">1</span><span class="p">)),</span>
+    <span class="p">],</span>
+    <span class="s2">&quot;privileged_state&quot;</span><span class="p">:</span> <span class="p">[</span>
+        <span class="n">IncludeGroup</span><span class="p">(</span><span class="s2">&quot;state&quot;</span><span class="p">),</span>  <span class="c1"># includes all of &quot;state&quot; automatically</span>
+        <span class="n">ObsTerm</span><span class="p">(</span><span class="s2">&quot;gyro_clean&quot;</span><span class="p">,</span> <span class="k">lambda</span> <span class="n">data</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_gyro</span><span class="p">(</span><span class="n">data</span><span class="p">)),</span>
+        <span class="n">ObsTerm</span><span class="p">(</span><span class="s2">&quot;actuator_force&quot;</span><span class="p">,</span> <span class="k">lambda</span> <span class="n">data</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">:</span> <span class="n">data</span><span class="o">.</span><span class="n">actuator_force</span><span class="p">),</span>
+        <span class="n">ObsTerm</span><span class="p">(</span><span class="s2">&quot;foot_board_contact&quot;</span><span class="p">,</span> <span class="k">lambda</span> <span class="n">data</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">:</span> <span class="o">...</span><span class="p">),</span>
+        <span class="n">ObsTerm</span><span class="p">(</span><span class="s2">&quot;com_rel_board&quot;</span><span class="p">,</span> <span class="k">lambda</span> <span class="n">data</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">:</span>
+            <span class="n">data</span><span class="o">.</span><span class="n">subtree_com</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_torso_body_id</span><span class="p">][:</span><span class="mi">2</span><span class="p">]</span> <span class="o">-</span> <span class="n">data</span><span class="o">.</span><span class="n">xpos</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_board_body_id</span><span class="p">][:</span><span class="mi">2</span><span class="p">]),</span>
+    <span class="p">],</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="_post_init-rewards">_post_init: Rewards<a class="headerlink" href="#_post_init-rewards" title="Permanent link">&para;</a></h3>
+<p>Define reward terms as a list of <code>RewardTerm(name, fn)</code>. The bongo env uses a data-driven approach -- only terms whose names appear in <code>reward_config.scales</code> are included:</p>
+<div class="language-python highlight"><pre><span></span><code><span class="n">all_terms</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;survival&quot;</span><span class="p">:</span> <span class="n">RewardTerm</span><span class="p">(</span><span class="s2">&quot;survival&quot;</span><span class="p">,</span> <span class="k">lambda</span> <span class="o">**</span><span class="n">kw</span><span class="p">:</span> <span class="n">jp</span><span class="o">.</span><span class="n">float32</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)),</span>
+    <span class="s2">&quot;orientation_cost&quot;</span><span class="p">:</span> <span class="n">RewardTerm</span><span class="p">(</span><span class="s2">&quot;orientation_cost&quot;</span><span class="p">,</span> <span class="k">lambda</span> <span class="n">data</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">:</span>
+        <span class="n">jp</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">jp</span><span class="o">.</span><span class="n">sum</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">get_gravity</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="o">-</span> <span class="n">target_gravity</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span> <span class="o">/</span> <span class="mf">4.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)),</span>
+    <span class="s2">&quot;board_tilt_cost&quot;</span><span class="p">:</span> <span class="n">RewardTerm</span><span class="p">(</span><span class="s2">&quot;board_tilt_cost&quot;</span><span class="p">,</span> <span class="k">lambda</span> <span class="n">data</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">:</span>
+        <span class="n">jp</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">jp</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_board_tilt</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span> <span class="o">/</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)),</span>
+    <span class="s2">&quot;termination&quot;</span><span class="p">:</span> <span class="n">RewardTerm</span><span class="p">(</span><span class="s2">&quot;termination&quot;</span><span class="p">,</span> <span class="k">lambda</span> <span class="n">done</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">:</span> <span class="n">done</span><span class="p">),</span>
+    <span class="c1"># ... more terms ...</span>
+<span class="p">}</span>
+
+<span class="c1"># Only include terms that have weights in the config:</span>
+<span class="n">scales</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_config</span><span class="o">.</span><span class="n">reward_config</span><span class="o">.</span><span class="n">scales</span>
+<span class="bp">self</span><span class="o">.</span><span class="n">_reward_spec</span> <span class="o">=</span> <span class="p">[</span><span class="n">all_terms</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">scales</span><span class="o">.</span><span class="n">keys</span><span class="p">()]</span>
+</code></pre></div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><code>compute_rewards()</code> returns <strong>unweighted</strong> values. The <code>step()</code> method applies weights from <code>reward_config.scales</code> afterward.</p>
+</div>
+<h3 id="step-physics-loop">step: Physics Loop<a class="headerlink" href="#step-physics-loop" title="Permanent link">&para;</a></h3>
+<p>The step method follows a standard pattern:</p>
+<ol>
+<li>Compute motor targets from action</li>
+<li>Run PD control at physics rate via <code>jax.lax.scan</code></li>
+<li>Compute observations, termination, and rewards</li>
+<li>Apply reward weights and clip</li>
+</ol>
+<div class="language-python highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">state</span><span class="p">,</span> <span class="n">action</span><span class="p">):</span>
+    <span class="n">motor_targets</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_default_pose</span> <span class="o">+</span> <span class="n">action</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">_config</span><span class="o">.</span><span class="n">action_scale</span>
+
+    <span class="c1"># PD control at physics rate (5 substeps per control step)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">substep</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">_</span><span class="p">):</span>
+        <span class="n">tau</span> <span class="o">=</span> <span class="n">kp</span> <span class="o">*</span> <span class="p">(</span><span class="n">motor_targets</span> <span class="o">-</span> <span class="n">data</span><span class="o">.</span><span class="n">qpos</span><span class="p">[</span><span class="mi">7</span><span class="p">:</span><span class="mi">19</span><span class="p">])</span> <span class="o">+</span> <span class="n">kd</span> <span class="o">*</span> <span class="p">(</span><span class="mf">0.0</span> <span class="o">-</span> <span class="n">data</span><span class="o">.</span><span class="n">qvel</span><span class="p">[</span><span class="mi">6</span><span class="p">:</span><span class="mi">18</span><span class="p">])</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">ctrl</span><span class="o">=</span><span class="n">tau</span><span class="p">[</span><span class="n">a2j</span><span class="p">])</span>  <span class="c1"># remap joint-&gt;actuator order</span>
+        <span class="k">return</span> <span class="n">mjx</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">data</span><span class="p">),</span> <span class="kc">None</span>
+
+    <span class="n">data</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">lax</span><span class="o">.</span><span class="n">scan</span><span class="p">(</span><span class="n">substep</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="p">(),</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_substeps</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="n">obs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_obs</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">state</span><span class="o">.</span><span class="n">info</span><span class="p">)</span>
+    <span class="n">done</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_termination</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+    <span class="n">rewards</span> <span class="o">=</span> <span class="n">compute_rewards</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_reward_spec</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="n">data</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="n">action</span><span class="p">,</span>
+                              <span class="n">info</span><span class="o">=</span><span class="n">state</span><span class="o">.</span><span class="n">info</span><span class="p">,</span> <span class="n">done</span><span class="o">=</span><span class="n">done</span><span class="p">)</span>
+    <span class="n">rewards</span> <span class="o">=</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="n">v</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">_config</span><span class="o">.</span><span class="n">reward_config</span><span class="o">.</span><span class="n">scales</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">rewards</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+    <span class="n">reward</span> <span class="o">=</span> <span class="n">jp</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="nb">sum</span><span class="p">(</span><span class="n">rewards</span><span class="o">.</span><span class="n">values</span><span class="p">())</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">dt</span><span class="p">,</span> <span class="o">-</span><span class="mf">10000.0</span><span class="p">,</span> <span class="mf">10000.0</span><span class="p">)</span>
+    <span class="o">...</span>
+</code></pre></div>
+<h2 id="step-3-register-the-environment">Step 3: Register the Environment<a class="headerlink" href="#step-3-register-the-environment" title="Permanent link">&para;</a></h2>
+<p>Add your env to <code>_register_custom_envs()</code> in <code>jax_rl/training/env_setup.py</code>:</p>
+<div class="language-python highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">jax_rl.envs.locomotion.go2_bongo_handstand</span><span class="w"> </span><span class="kn">import</span> <span class="n">BongoHandstand</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">jax_rl.envs.locomotion.go2_bongo_handstand</span><span class="w"> </span><span class="kn">import</span> <span class="n">default_config</span> <span class="k">as</span> <span class="n">bongo_default_config</span>
+
+<span class="k">if</span> <span class="s2">&quot;Go2BongoHandstand&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">pg_locomotion</span><span class="o">.</span><span class="n">_envs</span><span class="p">:</span>
+    <span class="n">pg_locomotion</span><span class="o">.</span><span class="n">register_environment</span><span class="p">(</span>
+        <span class="s2">&quot;Go2BongoHandstand&quot;</span><span class="p">,</span>
+        <span class="n">functools</span><span class="o">.</span><span class="n">partial</span><span class="p">(</span><span class="n">BongoHandstand</span><span class="p">,</span> <span class="n">task</span><span class="o">=</span><span class="s2">&quot;bongo_handstand&quot;</span><span class="p">),</span>
+        <span class="n">bongo_default_config</span><span class="p">,</span>
+    <span class="p">)</span>
+</code></pre></div>
+<p>This makes the env available to all training scripts via the <code>--env Go2BongoHandstand</code> flag.</p>
+<h2 id="step-4-add-a-config-preset">Step 4: Add a Config Preset<a class="headerlink" href="#step-4-add-a-config-preset" title="Permanent link">&para;</a></h2>
+<p>Add your env's training hyperparameters to <code>jax_rl/configs/env_presets.py</code>. This is optional but saves you from specifying everything on the command line:</p>
+<div class="language-python highlight"><pre><span></span><code><span class="n">FAST_SAC_PRESETS</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">TrainConfig</span><span class="p">,</span> <span class="n">FastSACConfig</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="c1"># ... existing presets ...</span>
+    <span class="s2">&quot;Go2BongoHandstand&quot;</span><span class="p">:</span> <span class="p">(</span>
+        <span class="n">dataclasses</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">_FAST_SAC_BASE_CFG</span><span class="p">,</span> <span class="n">env_name</span><span class="o">=</span><span class="s2">&quot;Go2BongoHandstand&quot;</span><span class="p">),</span>
+        <span class="n">_FAST_SAC_BASE_ALGO</span><span class="p">,</span>
+    <span class="p">),</span>
+<span class="p">}</span>
+</code></pre></div>
+<h2 id="step-5-smoke-test">Step 5: Smoke Test<a class="headerlink" href="#step-5-smoke-test" title="Permanent link">&para;</a></h2>
+<p>Run a short training to verify everything works:</p>
+<div class="language-bash highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>scripts/train_fast_sac.py<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--env<span class="w"> </span>Go2BongoHandstand<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--num-envs<span class="w"> </span><span class="m">64</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--total-timesteps<span class="w"> </span><span class="m">200000</span>
+</code></pre></div>
+<p>You should see:</p>
+<ul>
+<li>No import errors or crashes</li>
+<li>Observations being computed (printed shapes in the first few steps)</li>
+<li>Rewards starting near zero and changing (even if not improving much in 200k steps)</li>
+</ul>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>If you get <code>KeyError</code> on a sensor name, double-check that your scene XML defines all the sensors your env class references. Sensor names must match exactly between the XML and Python code.</p>
+</div>
+<h2 id="summary">Summary<a class="headerlink" href="#summary" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>File</th>
+<th>What to do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>xmls/&lt;scene&gt;.xml</code></td>
+<td>Combine robot MJCF + task objects + sensors</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>go2_&lt;task&gt;.py</code></td>
+<td>Subclass <code>Go2WarpEnv</code>, implement core methods</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>env_setup.py</code></td>
+<td>Register with <code>pg_locomotion.register_environment()</code></td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>env_presets.py</code></td>
+<td>Add training hyperparameter <a class="gl" href="../../glossary/#preset">preset</a></td>
+</tr>
+<tr>
+<td>5</td>
+<td>CLI</td>
+<td>Smoke test with <code>--num-envs 64 --total-timesteps 200000</code></td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+  
+    
+  
+  
+    
+  
+
+
+  <aside class="md-source-file">
+    
+      
+  <span class="md-source-file__fact">
+    <span class="md-icon" title="Last update">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
+    </span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="May 23, 2026 20:00:52 UTC"><span class="timeago" datetime="2026-05-23T20:00:52+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="May 23, 2026 20:00:52 UTC">2026-05-23</span>
+  </span>
+
+    
+    
+      
+  <span class="md-source-file__fact">
+    <span class="md-icon" title="Created">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M14.47 15.08 11 13V7h1.5v5.25l3.08 1.83c-.41.28-.79.62-1.11 1m-1.39 4.84c-.36.05-.71.08-1.08.08-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8c0 .37-.03.72-.08 1.08.69.1 1.33.32 1.92.64.1-.56.16-1.13.16-1.72 0-5.5-4.5-10-10-10S2 6.5 2 12s4.47 10 10 10c.59 0 1.16-.06 1.72-.16-.32-.59-.54-1.23-.64-1.92M18 15v3h-3v2h3v3h2v-3h3v-2h-3v-3z"/></svg>
+    </span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="May 23, 2026 20:00:52 UTC"><span class="timeago" datetime="2026-05-23T20:00:52+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="May 23, 2026 20:00:52 UTC">2026-05-23</span>
+  </span>
+
+    
+    
+    
+  </aside>
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../train-locomotion/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Train Locomotion">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Train Locomotion
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../custom-rewards/" class="md-footer__link md-footer__link--next" aria-label="Next: Custom Rewards">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Custom Rewards
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/stevenwman/jax-learning" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.tabs.sticky", "navigation.indexes", "navigation.expand", "navigation.top", "navigation.instant", "navigation.tracking", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate", "content.tabs.link", "content.action.edit", "navigation.footer", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../../js/timeago.min.js"></script>
+      
+        <script src="../../js/timeago_mkdocs_material.js"></script>
+      
+        <script src="../../javascripts/mathjax.js"></script>
+      
+        <script src="https://unpkg.com/mathjax@3.2.2/es5/tex-chtml.js" defer></script>
+      
+    
+  </body>
+</html>
