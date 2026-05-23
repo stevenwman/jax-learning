@@ -43,12 +43,13 @@ Privileged observations include extra information the real robot can't measure (
 
 ## Algorithms
 
-Seven algorithms, each a self-contained class with no inheritance hierarchy.
+Eight algorithms, each self-contained with no inheritance hierarchy (seven are classes; TDMPC2 is a functional/factory API).
 
 !!! tip "Which should I use?"
     - **New to RL?** Start with **PPO** on `CartpoleBalance` — it's the most forgiving and trains in under a minute.
     - **Training a robot (e.g. Go2 locomotion)?** Use **FastSAC**. It's the current default for Go2 and reaches a working policy in ~8 minutes.
     - **Want maximum sample efficiency at large scale?** Try **FlashSAC** or **FastTD3** (1000+ parallel envs, tens of millions of steps).
+    - **Model-based / DM Control or pushing tasks?** Try **TDMPC2** — it learns a world model and plans with MPPI (DMC + PushT; not Go2).
     - **Everything else** (SAC, TD3) is useful for algorithm comparisons and smaller-scale experiments.
 
 | Algorithm | Type | Key trait |
@@ -59,9 +60,10 @@ Seven algorithms, each a self-contained class with no inheritance hierarchy.
 | **FastSAC** | Off-policy | Distributional C51 critic, large batch training |
 | **FastTD3** | Off-policy | Distributional C51 critic, large batch training |
 | **FlashSAC** | Off-policy | Inverted residual blocks, BatchNorm, weight norm, adaptive reward scaling |
+| **TDMPC2** | Model-based | Learned world model, MPPI planning, two-hot value/reward |
 
 !!! note "On-policy vs off-policy"
-    **On-policy** (PPO) collects fresh experience every iteration and discards it after one update. Simple and stable, but needs many environment steps. **Off-policy** (SAC, TD3, Fast variants) stores experience in a replay buffer and reuses it across many updates — more sample-efficient, but trickier to tune.
+    **On-policy** (PPO) collects fresh experience every iteration and discards it after one update. Simple and stable, but needs many environment steps. **Off-policy** (SAC, TD3, Fast variants) stores experience in a replay buffer and reuses it across many updates — more sample-efficient, but trickier to tune. **Model-based** (TDMPC2) also keeps a replay buffer, but additionally learns a world model and plans through it at action-selection time.
 
 ## Configs
 
@@ -79,6 +81,9 @@ train_cfg, algo_cfg = get_fast_td3_preset("CheetahRun")
 ```
 
 This keeps training scripts short — you pick a preset and override only what you need.
+
+!!! note "TDMPC2 presets differ"
+    TDMPC2's preset is a single `TDMPC2Config` (not a tuple) because it bundles training-loop fields. Access it via `get_tdmpc2_preset(env_name)`.
 
 ## Wrappers
 
@@ -120,6 +125,7 @@ Each environment defines lists of these terms. Weights are applied separately in
 | `train_ppo.py` | On-policy training (PPO) with Python loop — slower, supports non-JIT envs |
 | `train_sac.py`, `train_td3.py`, `train_fast_sac.py`, `train_fast_td3.py` | Off-policy training (per-algorithm scripts) |
 | `train_flashsac.py` | FlashSAC training (standalone script) |
+| `train_tdmpc2.py` | Model-based training (TDMPC2) — world model + MPPI planner |
 | `record_video.py` | Load a checkpoint and render a video |
 
 ## Next steps

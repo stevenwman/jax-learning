@@ -109,6 +109,9 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--action-delay-ms` | int | - | Fixed action delay in ms (e.g., 120 for Go2 sim2real) |
 | `--action-delay-range-ms` | int int | - | Randomized action delay range in ms (e.g., 40 120) |
 | `--reset-mode` | str | - | Reset mode: legacy (AutoReset) or per_step (DomainRandWrapper) |
+| `--buffer-size` | int | - | Replay buffer capacity (default: 4M) |
+| `--batch-size` | int | - | Batch size (default: 512) |
+| `--grad-updates-per-step` | int | - | Gradient updates per env step |
 
 ---
 
@@ -162,6 +165,12 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--action-delay-ms` | int | - | Fixed action delay in ms (e.g., 120 for Go2 sim2real) |
 | `--action-delay-range-ms` | int int | - | Randomized action delay range in ms (e.g., 40 120) |
 | `--reset-mode` | str | - | Reset mode: legacy (AutoReset) or per_step (DomainRandWrapper) |
+| `--v-min` | float | from preset | C51 critic support lower bound (default: from algo config, -20 for FastSAC) |
+| `--v-max` | float | from preset | C51 critic support upper bound (default: from algo config, +20 for FastSAC) |
+| `--num-atoms` | int | from preset | C51 critic atom count (default: from algo config, 101) |
+| `--tau` | float | - | Target network soft-update rate (default: 0.125) |
+| `--gamma` | float | - | Discount factor (default: 0.99) |
+| `--policy-delay` | int | - | Critic updates per actor update (default: 4) |
 
 ---
 
@@ -233,6 +242,7 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--ckpt-dir` | str | - | Checkpoint directory (default: no checkpointing) |
 | `--wandb` | flag | off | Enable W&B experiment tracking |
 | `--wandb-project` | str | `jax-rl-tdmpc2` | W&B project name (default: jax-rl-tdmpc2) |
+| `--env-kwargs` | str | - | JSON dict forwarded to gym env factory. Example: --env-kwargs '{"obs_type":"keypoints","block_shape":"dr"}' |
 
 ---
 
@@ -283,6 +293,12 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--force-zero-yaw` | flag | off | Curriculum: force cmd_yaw_rate=0 for the whole episode (DR sanity check) |
 | `--terrain-level` | int | - | Curriculum env only: force spawn at this level (0-9) |
 | `--terrain-type` | str | - | Curriculum env only: force spawn at this terrain type |
+| `--skill-index` | int | - | Fixed skill index for skill-discovery checkpoints (one-hot) |
+| `--skill-vector` | str | - | Path to .csv/.npy with explicit skill vector |
+| `--no-early-term` | flag | off | Don't break the rollout when env emits done=True. Keep rolling so the user can see the failure mode (post-fall dynamics, off-belt slide, etc.). |
+| `--lock-cmd` | float | - | Pin cmd = [VX, VY, YAW] every step (overrides env's Markov-chain resample). Use to test linear-only (VY=YAW=0), rotation-only (VX=VY=0), or combined. Mutually exclusive with --kicks / --varied-cmds. |
+| `--resolution` | int int | `[640, 480]` | Render resolution. Defaults to 640x480; use 1280 720 for HD, 1920 1080 for full HD. |
+| `--video-quality` | int | `8` | imageio video quality (1-10, default 8). Higher = bigger file + sharper, lower = smaller. |
 
 ---
 

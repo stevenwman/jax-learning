@@ -113,3 +113,19 @@ Select an algorithm tab below to see its presets. Defaults (gamma=0.99, reward_s
 
     FlashSAC algo defaults: `tau=0.01`, `batch_size=2,048`, `grad_updates_per_step=1`, `buffer_size=1M`, `min_buffer_size=10,000`.
 
+
+=== "TDMPC2"
+
+    Used by `train_tdmpc2.py`. Accessed via `get_tdmpc2_preset(env_name)` (raises `KeyError` for unlisted envs — `action_dim` has no safe default).
+
+    | Environment | action_dim | total_steps | num_envs | horizon | batch_size | UTD | discount | Notes |
+    |---|---|---|---|---|---|---|---|---|
+    | CheetahRun | 6 | 1M | 8 | 3 | 256 | 1 | 0.99 |  |
+    | HumanoidRun | 21 | 1M | 8 | 3 | 256 | 1 | 0.99 |  |
+    | HopperHop | 4 | 1M | 8 | 3 | 256 | 1 | 0.99 |  |
+    | AcrobotSwingup | 1 | 1M | 8 | 3 | 256 | 1 | 0.99 |  |
+    | CartpoleSwingup | 1 | 1M | 8 | 3 | 256 | 1 | 0.99 |  |
+    | PushT | 2 | 1M | 8 | 3 | 256 | 1 | 0.983333 |  |
+
+    TDMPC2 algo defaults: `latent_dim=512`, `mlp_dim=512`, `num_q=5`, `num_bins=101`, `num_samples=512`, `num_elites=64`, `mppi_iterations=6`, `tau=0.01`, `lr=3e-04`, `seed_steps=2,500`.
+

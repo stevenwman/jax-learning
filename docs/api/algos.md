@@ -1,6 +1,6 @@
 # Algorithms
 
-Seven RL algorithms, each self-contained with no shared base class.
+Eight RL algorithms, each self-contained with no shared base class.
 
 ??? note "Why closures instead of methods?"
     JAX's JIT compiler traces Python functions and captures the values they close over. If we used regular methods (`self.update`), JAX would try to trace `self`, which is a mutable Python object — this breaks JIT.
@@ -18,6 +18,7 @@ Seven RL algorithms, each self-contained with no shared base class.
 | [FastSAC](#fastsac) | Off-policy | C51 distributional critics, UTD 8, TD3-style delayed actor (`policy_delay=4`) |
 | [FastTD3](#fasttd3) | Off-policy | C51 distributional critics, UTD 8 |
 | [FlashSAC](#flashsac) | Off-policy | Inverted residual blocks + BatchNorm + adaptive reward scaling |
+| [TDMPC2](#tdmpc2) | Model-based | Learned world model + MPPI planner, two-hot value/reward |
 
 ---
 
@@ -277,3 +278,36 @@ FlashSAC(
 
 `get_q_value(state, obs, action, critic_obs=None) → q`
 : Expected Q-value from the flash distributional critics.
+
+---
+
+## TDMPC2
+
+```python
+from jax_rl.algos.tdmpc2 import TDMPC2State, make_update_step, make_plan_batched
+```
+
+Model-based RL with a learned latent world model and an MPPI planner — structurally different from the actor-critic algorithms above. It learns an encoder, latent dynamics, a reward head, and a Q-ensemble, then selects actions at runtime by Model Predictive Path Integral planning: rolling sampled action sequences through the learned dynamics, scoring each by predicted discounted reward plus a terminal Q bootstrap, and iteratively refining a Gaussian toward the elite trajectories. A learned policy prior seeds the planner (and provides a fast `prior` collect mode). Reward and value are predicted as two-hot categorical distributions over `num_bins=101` bins; the latent uses SimNorm. Targets DM Control tasks and PushT — **not** Go2 (no preset; see [Environment Presets](../reference/env-presets.md)).
+
+!!! note "Functional API — no class"
+    Unlike the other algorithms, TDMPC2 has no `TDMPC2` class or constructor. Its public surface is an immutable `TDMPC2State` pytree plus factory functions that return JIT-compiled closures: build the networks and optimizers, get an `update_step` and a `plan_fn`, then thread `TDMPC2State` through your loop. See `scripts/train_tdmpc2.py` for the full wiring.
+
+**Factory functions**
+
+`make_update_step(cfg, wm_optimizer, policy_optimizer, *, encoder, dynamics, reward_net, q_ensemble_net, policy_net) → update_step`
+: Returns a JIT'd `update_step(state, batch) → (TDMPC2State, metrics)`. One call runs: world-model forward/backward → policy forward/backward → Q-scale update → target EMA (on the Q-ensemble only — there is no target encoder/dynamics/reward/policy) → repacked state.
+
+`make_plan_batched(*, dynamics, reward_net, q_ensemble_net, policy_net) → plan_fn`
+: Returns a JIT + vmap'd MPPI planner `plan_fn(plan_params, z0, prev_mean, t0, cfg, keys, eval_mode) → (actions, new_prev_means)`. JIT is load-bearing here (~800 ms cold → <10 ms once warm).
+
+`build_world_model_optimizer(cfg)` / `build_policy_optimizer(cfg)`
+: Optimizer builders. The world-model optimizer applies a separate LR scale (`enc_lr_scale`) to the encoder param group via `optax.multi_transform`.
+
+**State**
+
+`TDMPC2State`
+: `flax.struct.dataclass` holding every param group (encoder, dynamics, reward, Q-ensemble + its target, policy), the optimizer states, the Q-scale EMA, the planner warm-start `prev_mean`, the RNG key, and the step count.
+
+**Config:** [`TDMPC2Config`](configs.md#tdmpc2config) — built per-env via `make_tdmpc2_config(action_dim, episode_length, task_name)`, which also derives `discount` from the episode length.
+
+**Training entry point:** `scripts/train_tdmpc2.py` (e.g. `uv run python scripts/train_tdmpc2.py --env CheetahRun`). Helpers: `eval_tdmpc2.py` (MPPI vs prior eval), `record_video_tdmpc2.py`, and `check_tdmpc2_determinism.py`.

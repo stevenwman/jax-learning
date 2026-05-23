@@ -11,6 +11,7 @@ Dataclass-based configuration system. `TrainConfig` is shared across all algorit
 | [FastSACConfig](#fastsacconfig) | FastSAC |
 | [FastTD3Config](#fasttd3config) | FastTD3 |
 | [FlashSACConfig](#flashsacconfig) | FlashSAC |
+| [TDMPC2Config](#tdmpc2config) | TDMPC2 |
 | [EncoderConfig](#encoderconfig) | Network builders |
 | [PolicyHeadConfig](#policyheadconfig) | Network builders |
 
@@ -238,6 +239,54 @@ Inverted residual blocks + BatchNorm + weight normalization + adaptive reward sc
 | `min_buffer_size` | `int` | `10_000` | Steps before first update |
 | `lr_warmup_frac` | `float` | `1e-6` | LR warmup fraction |
 | `lr_decay_frac` | `float` | `1.0` | LR decay fraction |
+
+---
+
+## TDMPC2Config
+
+```python
+from jax_rl.configs.tdmpc2_config import TDMPC2Config, make_tdmpc2_config
+```
+
+Model-based config for TDMPC2. **Unlike the other algo configs, it also bundles training-loop fields** (`total_steps`, `num_envs`, `eval_every`, `buffer_size`) — so a TDMPC2 preset is a single `TDMPC2Config`, not a `(TrainConfig, AlgoConfig)` tuple. Build it per-env with `make_tdmpc2_config(action_dim, episode_length, task_name)` rather than instantiating directly: the factory sets `action_dim` and derives `discount` from the episode length. Defaults are sourced from the reference TDMPC2 config.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| **World model** | | | |
+| `latent_dim` | `int` | `512` | Latent state dim (SimNorm) |
+| `mlp_dim` | `int` | `512` | Hidden dim for dynamics/reward/Q MLPs |
+| `enc_dim` | `int` | `256` | Encoder hidden dim |
+| `simnorm_dim` | `int` | `8` | SimNorm group size |
+| `num_q` | `int` | `5` | Q-ensemble size |
+| `num_bins` | `int` | `101` | Two-hot value/reward bins |
+| `vmin` / `vmax` | `float` | `-10.0` / `10.0` | Value support range |
+| **Loss** | | | |
+| `consistency_coef` | `float` | `20.0` | Latent consistency weight |
+| `reward_coef` / `value_coef` | `float` | `0.1` / `0.1` | Reward / value loss weights |
+| `rho` | `float` | `0.5` | Per-horizon loss discount |
+| **Optimization** | | | |
+| `lr` | `float` | `3e-4` | Learning rate |
+| `enc_lr_scale` | `float` | `0.3` | Encoder param-group LR multiplier |
+| `tau` | `float` | `0.01` | Target + Q-scale EMA rate |
+| `batch_size` | `int` | `256` | Gradient batch size |
+| `horizon` | `int` | `3` | Latent rollout / planning horizon |
+| `discount` | `float` | `0.99` | Derived from episode length at preset load |
+| **MPPI planner** | | | |
+| `num_samples` | `int` | `512` | Candidate trajectories per iteration |
+| `num_elites` | `int` | `64` | Elite trajectories kept |
+| `num_pi_trajs` | `int` | `24` | Policy-prior seed trajectories |
+| `mppi_iterations` | `int` | `6` | Refinement iterations |
+| `mppi_temperature` | `float` | `0.5` | Elite softmax temperature |
+| **Training loop** | | | |
+| `total_steps` | `int` | `1_000_000` | Total env steps |
+| `seed_steps` | `int` | `2500` | Random-collect warmup |
+| `utd` | `int` | `1` | Update-to-data ratio |
+| `collect_mode` | `str` | `"mppi"` | `"mppi"` or `"prior"` collection |
+| `num_envs` | `int` | `8` | Parallel envs |
+| `buffer_size` | `int` | `1_000_000` | Replay buffer size |
+| **Env spec** | | | |
+| `action_dim` | `int` | *required* | Set by `make_tdmpc2_config` |
+| `action_repeat` | `int` | `2` | Control steps per agent action |
 
 ---
 

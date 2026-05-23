@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from jax_rl.configs.env_presets import (
     PRESETS, SAC_PRESETS, TD3_PRESETS, FAST_TD3_PRESETS, FAST_SAC_PRESETS,
-    FLASH_SAC_PRESETS,
+    FLASH_SAC_PRESETS, TDMPC2_PRESETS,
 )
 from jax_rl.configs.train_config import TrainConfig
 from jax_rl.configs.ppo_config import PPOConfig
@@ -24,6 +24,7 @@ from jax_rl.configs.td3_config import TD3Config
 from jax_rl.configs.fast_td3_config import FastTD3Config
 from jax_rl.configs.fast_sac_config import FastSACConfig
 from jax_rl.configs.flash_sac_config import FlashSACConfig
+from jax_rl.configs.tdmpc2_config import TDMPC2Config
 
 
 def _fmt(v) -> str:
@@ -174,6 +175,49 @@ def render_offpolicy_presets(title: str, getter_name: str,
     return "\n".join(lines)
 
 
+def render_tdmpc2_presets(presets: dict[str, TDMPC2Config]) -> str:
+    """Render the TDMPC2 preset table.
+
+    Unlike the other algos, TDMPC2_PRESETS maps env -> a single TDMPC2Config (not a
+    (TrainConfig, AlgoConfig) tuple), because TDMPC2Config bundles training-loop
+    fields alongside algo hparams. action_dim, discount, and episode length are set
+    per-env by make_tdmpc2_config, so they get dedicated columns instead of polluting
+    the non-default Notes diff.
+    """
+    # Set per-env by make_tdmpc2_config (or shown in their own column) — excluded
+    # from the non-default Notes diff to keep it clean.
+    per_env = {"action_dim", "discount", "total_steps", "num_envs", "horizon",
+               "batch_size", "utd", "episode_lengths", "task_names"}
+    lines = [
+        "## TDMPC2 Presets",
+        "",
+        "Used by `train_tdmpc2.py`. Accessed via `get_tdmpc2_preset(env_name)` "
+        "(raises `KeyError` for unlisted envs — `action_dim` has no safe default).",
+        "",
+        "| Environment | action_dim | total_steps | num_envs | horizon | batch_size | UTD | discount | Notes |",
+        "|---|---|---|---|---|---|---|---|---|",
+    ]
+    for env_name, cfg in presets.items():
+        diff = _diff_from_default(cfg, TDMPC2Config)
+        notes = ", ".join(f"{k}={_fmt(v)}" for k, v in diff.items() if k not in per_env)
+        lines.append(
+            f"| {env_name} | {_fmt(cfg.action_dim)} | {_fmt(cfg.total_steps)} | "
+            f"{_fmt(cfg.num_envs)} | {_fmt(cfg.horizon)} | {_fmt(cfg.batch_size)} | "
+            f"{_fmt(cfg.utd)} | {_fmt(cfg.discount)} | {notes} |"
+        )
+
+    # Algo defaults footer (model-based knobs that don't vary per-env).
+    default = TDMPC2Config()
+    key_fields = ["latent_dim", "mlp_dim", "num_q", "num_bins", "num_samples",
+                  "num_elites", "mppi_iterations", "tau", "lr", "seed_steps"]
+    defaults = ", ".join(f"`{k}={_fmt(getattr(default, k))}`" for k in key_fields
+                         if hasattr(default, k))
+    lines.append("")
+    lines.append(f"TDMPC2 algo defaults: {defaults}.")
+    lines.append("")
+    return "\n".join(lines)
+
+
 def _indent(text: str, prefix: str = "    ") -> str:
     """Indent every line of text with prefix (for pymdownx.tabbed content)."""
     return "\n".join(prefix + line if line else line for line in text.split("\n"))
@@ -215,6 +259,7 @@ Select an algorithm tab below to see its presets. Defaults (gamma=0.99, reward_s
         _as_tab("FastTD3", render_offpolicy_presets("FastTD3 Presets", "get_fast_td3_preset", FAST_TD3_PRESETS, FastTD3Config, "train_fast_td3.py")),
         _as_tab("FastSAC", render_offpolicy_presets("FastSAC Presets", "get_fast_sac_preset", FAST_SAC_PRESETS, FastSACConfig, "train_fast_sac.py")),
         _as_tab("FlashSAC", render_offpolicy_presets("FlashSAC Presets", "get_flash_sac_preset", FLASH_SAC_PRESETS, FlashSACConfig, "train_flashsac.py")),
+        _as_tab("TDMPC2", render_tdmpc2_presets(TDMPC2_PRESETS)),
     ]
     output = header + "\n\n".join(tabs) + "\n"
 
