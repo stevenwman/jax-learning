@@ -113,6 +113,47 @@ PRESETS["Go2WarpJoystickFlatTorqueSpeed"] = dataclasses.replace(
     PRESETS["Go2WarpJoystickFlat"], env_name="Go2WarpJoystickFlatTorqueSpeed"
 )
 
+# Factory PegInsert — MJWarp dict-obs (state=25, privileged=72). Asymmetric AC
+# auto-engages via _extract_obs. Contact budget caps num_envs ~128 on 16GB.
+# v15 phased reward (Phase A above-bore align, Phase B below-bore aligned
+# descent or dead-end penalty, +5 terminal success).
+#
+# Hparams story:
+#   v15a (4 ep, ec=1e-2, squash=True): collapsed Return 1530→66 at iter 28,
+#     KL spikes e6-e9 from tanh-Jacobian overflow when σ shrinks.
+#   v15b (1 ep, ec=2e-2, rew=0.1, squash=True): recovered to Return 1300
+#     by iter 139 then locked into squash-saturated regime (PLoss=1.8
+#     sustained, KL=4e6 stuck) at iter 140-153.
+#   v15c (this): squash=False so log_prob is plain Gaussian (no tanh
+#     Jacobian → no overflow). state_dependent_std lets σ adapt per
+#     state instead of one scalar collapsing to zero. lr=1e-4 for safer
+#     updates. Actions out-of-range handled by env clip_to_bounds.
+PRESETS["FactoryPegInsert"] = TrainConfig(
+    env_name="FactoryPegInsert",
+    total_timesteps=5_000_000,
+    num_envs=128,
+    episode_length=900,
+    gamma=0.99,
+    lr=1e-4,
+    reward_scaling=0.1,
+    reset_mode="per_step",
+    handle_truncation=True,
+    ppo=PPOConfig(
+        num_steps=64,
+        num_minibatches=32,
+        num_updates_per_batch=1,
+        num_epochs=4,
+        entropy_coef=1e-2,
+        clip_eps=0.2,
+        max_grad_norm=0.5,
+        anneal_lr=True,
+        policy_hidden_dim=(256, 256),
+        value_hidden_dim=(256, 256),
+        squash=False,
+        state_dependent_std=False,
+    ),
+)
+
 # Curriculum variants — same hyperparams as Flat + per_step reset mode
 # (required: curriculum logic lives in TerrainCurriculumDRWrapper which
 # env_setup only applies when reset_mode == "per_step").
@@ -216,6 +257,27 @@ SAC_PRESETS: dict[str, tuple[TrainConfig, SACConfig]] = {
         dataclasses.replace(_SAC_BASE_CFG, env_name="PandaPickCube",
                             episode_length=150, total_timesteps=10_000_000),
         _SAC_BASE_ALGO,
+    ),
+    # Factory PegInsert — capsule peg + bore-tile ring substrate. Dict obs
+    # (state=25, privileged_state=~72) → asymmetric AC auto-engages.
+    # Bore-tile contact budget caps num_envs ~256 on 16GB. Phase 1 smoke at 50k.
+    "FactoryPegInsert": (
+        dataclasses.replace(_SAC_BASE_CFG,
+                            env_name="FactoryPegInsert",
+                            num_envs=256,
+                            episode_length=900,
+                            total_timesteps=5_000_000,
+                            reset_mode="per_step",
+                            handle_truncation=True),
+        dataclasses.replace(_SAC_BASE_ALGO,
+                            # target_entropy_scale=1.0 (default). v1..v5
+                            # collapsed not because of entropy/EMA but
+                            # because actuator_mode default was
+                            # "position_pd" — OSC never engaged, actions
+                            # ignored. Fixed by flipping default to "motor".
+                            target_entropy_scale=1.0,
+                            obs_normalization=True,
+                            grad_updates_per_step=2),
     ),
 }
 
@@ -467,6 +529,69 @@ FLASH_SAC_PRESETS["Go2WarpJoystickCurriculum"] = (
 FLASH_SAC_PRESETS["Go2WarpJoystickCurriculumTorqueSpeed"] = (
     dataclasses.replace(_FLASH_SAC_BASE_CFG, env_name="Go2WarpJoystickCurriculumTorqueSpeed", reset_mode="per_step"),
     _FLASH_SAC_BASE_ALGO,
+)
+
+# Factory PegInsert — Warp contact budget caps num_envs ~128. Scale UTD up
+# (16 instead of paper's 8 at 1024 envs) since per-env data rate is 8× lower.
+# sigma_target=0.5 (up from 0.15 default) raises target_entropy ≈ -2.9 → +4.4
+# so alpha doesn't collapse to 0 and the policy keeps exploring instead of
+# locking on a hover attractor (first v15.1 run plateaued at Return 1770 with
+# Alpha=0 and Ent=-2.5 ≈ target).
+FLASH_SAC_PRESETS["FactoryPegInsert"] = (
+    dataclasses.replace(_FLASH_SAC_BASE_CFG,
+                        env_name="FactoryPegInsert",
+                        num_envs=128,
+                        # Insertion completes by ~125 steps; the remaining
+                        # 775 of the original 900 were just "hold the seat."
+                        # 450 = insertion + ~300 hold steps, plenty to learn
+                        # maintain behavior, half the per-episode compute.
+                        episode_length=450,
+                        # 2.5M empirically sufficient: v15.6 hit Return 6545
+                        # at step ~1M (eval 1024 eps) and plateaued 6500-6650
+                        # through step 5M.
+                        total_timesteps=2_500_000,
+                        gamma=0.99,
+                        # 100 eps ≈ every ~57k env steps ≈ 20 ckpts/2M run.
+                        eval_every_n_episodes=100,
+                        reset_mode="per_step"),
+    dataclasses.replace(_FLASH_SAC_BASE_ALGO,
+                        grad_updates_per_step=16,
+                        # alpha_init=0.1 (10× default): keep entropy bonus
+                        # alive through the critical 100-500k warmup. v15.4
+                        # had alpha settle ~3× higher than v15.5 at matched
+                        # steps and was the only run that broke past the
+                        # hover attractor (Return 6150 vs 1700). Alpha gap
+                        # came from GPU-nondeterminism rolling alpha lower
+                        # during early estimates; higher init gives more
+                        # margin before auto-tune crushes it.
+                        alpha_init=0.1,
+                        # PROBE v8: σ=0.30 → target_entropy=+1.29 @ D=6, keeps
+                        # entropy alive for 6-DOF exploration. Pair with DR
+                        # disabled (factory_peg_insert.py PROBE v8 block).
+                        sigma_target=0.30),
+)
+
+# Factory GearMesh — Phase 1 scaffold (smoke-train hyperparams; tune after
+# first 50k-500k results land).
+FLASH_SAC_PRESETS["FactoryGearMesh"] = (
+    dataclasses.replace(_FLASH_SAC_BASE_CFG,
+                        env_name="FactoryGearMesh",
+                        num_envs=64,
+                        episode_length=450,
+                        total_timesteps=2_000_000,
+                        gamma=0.99,
+                        # mjx-Warp leaks ~1.7 MB / eval (JAX-side, unreclaimable).
+                        # Budget = ~14 evals before OOM at step ~798k. Set
+                        # eval_every high enough to stay under that across the
+                        # full run. 2M steps × 64 envs / 450 ep_len ≈ 4500 eps
+                        # total; eval_every=1500 → 3 evals over 2M, safely under
+                        # the OOM cliff. See journal 2026-06-04-mjxwarp-leak.md.
+                        eval_every_n_episodes=1500,
+                        reset_mode="per_step"),
+    dataclasses.replace(_FLASH_SAC_BASE_ALGO,
+                        grad_updates_per_step=16,
+                        alpha_init=0.1,
+                        sigma_target=0.30),
 )
 
 

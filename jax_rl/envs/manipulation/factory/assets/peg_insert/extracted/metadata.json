@@ -1,0 +1,67 @@
+{
+  "peg_8mm": {
+    "source_usd": "factory_peg_8mm.usd",
+    "up_axis": "Y",
+    "meters_per_unit": 0.01,
+    "meters_per_unit_note": "Isaac Factory USDs report meters_per_unit=0.01 but vertex coords are already in meters. Scale NOT applied \u2014 geometry is correct as-is.",
+    "prims": [
+      {
+        "path": "/Root/forge_round_peg_8mm/mesh",
+        "n_verts": 1154,
+        "n_tris": 1152,
+        "mass_info": {},
+        "has_rigid_body_api": false,
+        "has_collision_api": true
+      }
+    ],
+    "combined_n_verts": 1154,
+    "combined_n_tris": 1152,
+    "rigid_body_prims": [
+      "/Root/forge_round_peg_8mm"
+    ],
+    "collision_prims": [
+      "/Root/forge_round_peg_8mm/mesh"
+    ],
+    "mass_prims": [
+      {
+        "path": "/Root/forge_round_peg_8mm",
+        "mass_kg": 0.0,
+        "density": 7000.0
+      }
+    ]
+  },
+  "hole_8mm": {
+    "source_usd": "factory_hole_8mm.usd",
+    "up_axis": "Y",
+    "meters_per_unit": 0.01,
+    "meters_per_unit_note": "Isaac Factory USDs report meters_per_unit=0.01 but vertex coords are already in meters. Scale NOT applied \u2014 geometry is correct as-is.",
+    "prims": [
+      {
+        "path": "/Root/forge_hole_8mm/forge_hole_8mm/mesh",
+        "n_verts": 1897,
+        "n_tris": 3806,
+        "mass_info": {},
+        "has_rigid_body_api": false,
+        "has_collision_api": true
+      }
+    ],
+    "combined_n_verts": 1897,
+    "combined_n_tris": 3806,
+    "rigid_body_prims": [
+      "/Root/forge_hole_8mm/forge_hole_8mm"
+    ],
+    "collision_prims": [
+      "/Root/forge_hole_8mm/forge_hole_8mm/mesh"
+    ],
+    "mass_prims": [
+      {
+        "path": "/Root/forge_hole_8mm/forge_hole_8mm",
+        "mass_kg": 0.0,
+        "density": 0.0
+      }
+    ],
+    "coacd_pieces": 28,
+    "coacd_threshold": 0.08,
+    "coacd_threshold_note": "threshold=0.05 produced 35 pieces > 32 limit; retried with 0.08 -> 28 pieces"
+  }
+}

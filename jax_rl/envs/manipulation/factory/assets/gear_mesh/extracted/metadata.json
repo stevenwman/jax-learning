@@ -1,0 +1,134 @@
+{
+  "gear_base": {
+    "up_axis": "Z",
+    "meters_per_unit": 1.0,
+    "prim_meshes": [
+      {
+        "prim_path": "/factory_gear_base_loose/factory_gear_base_loose/collisions",
+        "n_verts": 14219,
+        "n_tris": 8272
+      }
+    ],
+    "bounds_after_scale_m": [
+      [
+        -0.07500000298023224,
+        -0.03750000149011612,
+        0.0
+      ],
+      [
+        0.07500000298023224,
+        0.03750000149011612,
+        0.02500000037252903
+      ]
+    ],
+    "extents_m": [
+      0.15000000596046448,
+      0.07500000298023224,
+      0.02500000037252903
+    ],
+    "volume_m3": 5.977025650129119e-05,
+    "watertight": true,
+    "n_verts_total": 4130,
+    "n_tris_total": 8272,
+    "obj_path": "jax_rl/envs/manipulation/factory/assets/gear_mesh/extracted/gear_base.obj"
+  },
+  "gear_small": {
+    "up_axis": "Z",
+    "meters_per_unit": 1.0,
+    "prim_meshes": [
+      {
+        "prim_path": "/factory_gear_small/factory_gear_small/collisions",
+        "n_verts": 10592,
+        "n_tris": 10272
+      }
+    ],
+    "bounds_after_scale_m": [
+      [
+        0.03983649984002113,
+        -0.010913499630987644,
+        0.004999999888241291
+      ],
+      [
+        0.06166350096464157,
+        0.010913499630987644,
+        0.029999999329447746
+      ]
+    ],
+    "extents_m": [
+      0.021827001124620438,
+      0.02182699926197529,
+      0.024999999441206455
+    ],
+    "volume_m3": 4.712843696370024e-06,
+    "watertight": true,
+    "n_verts_total": 5136,
+    "n_tris_total": 10272,
+    "obj_path": "jax_rl/envs/manipulation/factory/assets/gear_mesh/extracted/gear_small.obj"
+  },
+  "gear_medium": {
+    "up_axis": "Z",
+    "meters_per_unit": 1.0,
+    "prim_meshes": [
+      {
+        "prim_path": "/factory_gear_medium/factory_gear_medium/collisions",
+        "n_verts": 7184,
+        "n_tris": 6544
+      }
+    ],
+    "bounds_after_scale_m": [
+      [
+        -0.0007116650231182575,
+        -0.02096170000731945,
+        0.004999999888241291
+      ],
+      [
+        0.041211698204278946,
+        0.02096170000731945,
+        0.029999999329447746
+      ]
+    ],
+    "extents_m": [
+      0.0419233632273972,
+      0.0419234000146389,
+      0.024999999441206455
+    ],
+    "volume_m3": 2.1066671125608173e-05,
+    "watertight": true,
+    "n_verts_total": 3272,
+    "n_tris_total": 6544,
+    "obj_path": "jax_rl/envs/manipulation/factory/assets/gear_mesh/extracted/gear_medium.obj"
+  },
+  "gear_large": {
+    "up_axis": "Z",
+    "meters_per_unit": 1.0,
+    "prim_meshes": [
+      {
+        "prim_path": "/factory_gear_large/factory_gear_large/collisions",
+        "n_verts": 21072,
+        "n_tris": 20112
+      }
+    ],
+    "bounds_after_scale_m": [
+      [
+        -0.06122560054063797,
+        -0.030975600704550743,
+        0.004999999888241291
+      ],
+      [
+        0.0007255820091813803,
+        0.030975600704550743,
+        0.029999999329447746
+      ]
+    ],
+    "extents_m": [
+      0.06195118254981935,
+      0.061951201409101486,
+      0.024999999441206455
+    ],
+    "volume_m3": 4.271628847765048e-05,
+    "watertight": true,
+    "n_verts_total": 10056,
+    "n_tris_total": 20112,
+    "obj_path": "jax_rl/envs/manipulation/factory/assets/gear_mesh/extracted/gear_large.obj"
+  }
+}

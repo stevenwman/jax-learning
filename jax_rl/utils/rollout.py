@@ -74,7 +74,8 @@ def build_ppo_rollout_step(algo, training_state, norm_state, env_step,
 
 def build_offpolicy_rollout_step(algo, actor_params, norm_state, env_step,
                                  use_obs_norm, kicks_fn=None,
-                                 n_frame_stack: int = 1):
+                                 n_frame_stack: int = 1,
+                                 deterministic: bool = True):
     """Build an off-policy (SAC/TD3) rollout step for jax.lax.scan.
 
     Args:
@@ -85,6 +86,10 @@ def build_offpolicy_rollout_step(algo, actor_params, norm_state, env_step,
         use_obs_norm: Whether to apply obs normalization.
         kicks_fn: Optional (env_state, step_idx, key) -> (env_state, key).
         n_frame_stack: Env frame-stack depth. >1 routes through normalize_stacked.
+        deterministic: If True (default) use the policy mean; False samples
+            from the policy distribution. Useful when the trained policy is
+            multi-modal — deterministic deploy may land in a low-reward
+            mode whose nearby distribution still scores well.
 
     Returns:
         (rollout_step_fn, init_carry_fn) — caller builds init_carry as
@@ -102,7 +107,7 @@ def build_offpolicy_rollout_step(algo, actor_params, norm_state, env_step,
             obs = _apply_norm(frozen_norm, obs, n_frame_stack)
         key, action_key = jax.random.split(key)
         action = algo.select_action(frozen_params, obs, action_key,
-                                    deterministic=True)
+                                    deterministic=deterministic)
         clipped_action = action.squeeze(0)
         env_state = env_step(env_state, clipped_action)
         return (env_state, key), (env_state, clipped_action)
