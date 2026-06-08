@@ -33,6 +33,20 @@ def _register_custom_envs():
             functools.partial(WarpJoystick, task="flat_terrain"),
             warp_default_config,
         )
+    # Cartesian impedance / OSC variant: the 12-d action is four foot-position
+    # targets (trunk frame) driven by a per-leg operational-space controller
+    # instead of joint PD. Same task / obs / reward as the joint-PD joystick.
+    # See jax_rl/envs/locomotion/go2_warp_osc_joystick.py.
+    from jax_rl.envs.locomotion.go2_warp_osc_joystick import (
+        WarpOscJoystick,
+        default_config as warp_osc_default_config,
+    )
+    if "Go2WarpOscJoystickFlat" not in pg_locomotion._envs:
+        pg_locomotion.register_environment(
+            "Go2WarpOscJoystickFlat",
+            functools.partial(WarpOscJoystick, task="flat_terrain"),
+            warp_osc_default_config,
+        )
     # Variant: linear torque-speed actuator limit (approximates motor saturation).
     # Playground's registry.load passes config_overrides=None by default, which
     # would clobber a partial(..., config_overrides=...). Bake the flag into a

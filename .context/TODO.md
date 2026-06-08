@@ -4,6 +4,22 @@ This file is repo-wide / cross-project only. Per-project TODOs:
 - Adaptation (splitbelt): `projects/adaptation/TODO.md`
 - Skill discovery: `projects/skill-discovery/` (check that folder)
 
+## In progress — Go2 Cartesian-impedance / OSC (started 2026-06-08)
+
+MVP done: `Go2WarpOscJoystickFlat` (foot xyz targets, per-leg OSC, fixed
+impedance, no gravity FF). Trains/walks/tracks (eval 279.6, run mff6ptxj).
+Worktree `go2-osc-impedance`. Spec + journal + lesson written.
+
+- [ ] **Study the jumpy/pogo gait** (22–24% flight phase, feet to 0.30 m, base
+      to 0.46 m) BEFORE tuning. Decide if fixable via reward
+      (`lin_vel_z`/`feet_height` re-weight) or needs controller change
+      (gravity / body-weight feedforward, lower kp). See journal 2026-06-08 +
+      lesson "Pure Cartesian Impedance ... is Inherently Jumpy".
+- [ ] Retune the inherited PD reward terms for the foot-target action space
+      (`action_rate` is computed pre-scale; `feet_clearance`/`energy` 2–4×).
+- [ ] (deferred) Variable impedance: per-foot stiffness in the action space +
+      curriculum. Hold until the fixed-impedance gait is understood.
+
 ## Parked — DrQ-v2 vision RL port (Phase A)
 
 Brainstormed + audited 2026-04-27, set down to focus elsewhere.

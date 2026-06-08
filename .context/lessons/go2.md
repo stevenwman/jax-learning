@@ -205,3 +205,47 @@ Although the PD math is the same, the integration timing differs: training PD is
 **Sensors verified correct:** Different sensor ordering and names, but both read the same physical joints. Our SDK_TO_POLICY remapping handles it. Confirmed by comparing `jointpos joint="FL_hip_joint"` in both XMLs — same joint, different sensordata index.
 
 **Lesson:** When two MuJoCo models produce different dynamics, grep the default class definitions FIRST. That's where global parameters like damping, armature, and frictionloss are set. Don't run sim2sim experiments before reading the 5 lines of XML that define the physics.
+
+---
+
+## Pure Cartesian Impedance / OSC on a Floating Base is Inherently Jumpy (2026-06-08)
+
+**What happened:** Built a Go2 joystick env driven by per-leg Cartesian
+impedance / OSC (foot = end-effector, action = foot xyz targets) instead of
+joint PD, with NO gravity feedforward (pure impedance — the spring bears body
+weight). Trained 5M FastSAC → eval 279.6, tracks commands well (fwd vx
+1.0→1.002; varied-cmd corr vx 0.87 / yaw 0.94). Eval reward looked great.
+
+**But the gait is a pronk/pogo:** trajectory FK showed **22–24% flight phase**
+(all four feet off the ground), mean 1.28/4 feet down, feet flung to 0.30 m,
+base launching 0.27→0.46 m, vertical velocity RMS 0.24–0.32 m/s. Eval reward
+hid all of this — classic "surviving/tracking ≠ walking well."
+
+**Why (the reusable physics):**
+1. Pure impedance with no gravity FF stores energy in the stiff vertical spring
+   and has nothing to bleed it → it pogos. Horizontal momentum converts to
+   vertical pop on a floating base.
+2. OSC's Λ normalizes the foot to ~unit apparent mass, so flinging a foot is
+   "cheap" — the policy exploits big foot motions to track velocity → bounding.
+3. PD-tuned rewards don't suppress the new dynamics: `lin_vel_z` cost was tiny
+   (−0.03/step), `feet_height`/`feet_clearance` were tuned for ~0.1 m PD swings,
+   and `action_rate` penalizes the PRE-scale raw action so foot-target jerk is
+   under-penalized.
+
+**Lessons:**
+- **Characterize gait by flight-phase % + foot-lift + base-z bounce from
+  trajectory FK, never by eval reward.** A high reward with 22% flight is a
+  pogo, not a walk. Save the `_traj.npz` from record_video and compute it.
+- **No-gravity-FF impedance forces high stiffness** (the spring must hold body
+  weight via deflection), and high stiffness + low foot apparent inertia is a
+  recipe for bounce. If you want a calm gait, the levers are: add a gravity /
+  body-weight feedforward (so gains can drop), lower kp, or re-weight
+  `lin_vel_z`/`feet_height` for the OSC swing — study before guessing which.
+- **Tune impedance gains with a zero-action hold probe BEFORE training.** The
+  first default (kp=[800,800,1000]) sagged the base to the 0.18 m termination
+  floor under zero action; [3000,3000,4000] holds 0.27 m. Cost: one 150-step
+  rollout. Catches the collapse before wasting a 30-min train.
+- **Inherited reward specs are silently mis-calibrated for a new action space.**
+  When you reuse a joint-PD env's rewards for a Cartesian-target action,
+  per-term magnitudes shift 2–4× and some penalties (action_rate computed
+  pre-scale) keep the old calibration. Audit term magnitudes vs the old env.

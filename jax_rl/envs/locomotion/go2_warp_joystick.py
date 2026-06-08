@@ -299,24 +299,20 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
         reward, done = jp.zeros(2)
         return mjx_env.State(data, obs, reward, done, metrics, info)
 
-    def step(self, state: mjx_env.State, action: jax.Array) -> mjx_env.State:
+    def _apply_control(
+        self, data: mjx.Data, action: jax.Array
+    ) -> mjx.Data:
+        """Joint-space PD controller, run at physics rate (decimation loop).
+
+        action → joint position targets (offset from default pose) → torque via
+        PD → mjx.step, repeated ``n_substeps`` times. Factored out so subclasses
+        can swap in a different low-level controller (e.g. Cartesian impedance /
+        OSC) without duplicating the rest of ``step``.
+
+        qpos[7:] is in joint order (FL,FR,RL,RR) but ctrl is in actuator order
+        (FR,FL,RR,RL); torques are remapped before writing to ctrl.
+        """
         motor_targets = self._default_pose + action * self._config.action_scale
-
-        # Random velocity kick every ~350 steps (~7s at 50Hz).
-        step_count = state.info["step_count"]
-        push_interval = 350
-        rng, push_key = jax.random.split(state.info["rng"])
-        push_vel = jax.random.uniform(push_key, (2,), minval=-0.75, maxval=0.75)
-        do_push = (step_count > 0) & (step_count % push_interval == 0)
-        data = state.data
-        new_qvel = data.qvel.at[0:2].set(
-            jp.where(do_push, data.qvel[0:2] + push_vel, data.qvel[0:2])
-        )
-        data = data.replace(qvel=new_qvel)
-
-        # External PD at physics rate.
-        # qpos[7:] is in joint order (FL,FR,RL,RR) but ctrl is in actuator
-        # order (FR,FL,RR,RL). Remap torques before writing to ctrl.
         kp = self._kp
         kd = self._kd
         model = self.mjx_model
@@ -331,7 +327,23 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
             data = data.replace(ctrl=tau_act)
             return mjx.step(model, data), None
 
-        data = jax.lax.scan(substep, data, (), self.n_substeps)[0]
+        return jax.lax.scan(substep, data, (), self.n_substeps)[0]
+
+    def step(self, state: mjx_env.State, action: jax.Array) -> mjx_env.State:
+        # Random velocity kick every ~350 steps (~7s at 50Hz).
+        step_count = state.info["step_count"]
+        push_interval = 350
+        rng, push_key = jax.random.split(state.info["rng"])
+        push_vel = jax.random.uniform(push_key, (2,), minval=-0.75, maxval=0.75)
+        do_push = (step_count > 0) & (step_count % push_interval == 0)
+        data = state.data
+        new_qvel = data.qvel.at[0:2].set(
+            jp.where(do_push, data.qvel[0:2] + push_vel, data.qvel[0:2])
+        )
+        data = data.replace(qvel=new_qvel)
+
+        # Low-level controller at physics rate (decimation). Overridable.
+        data = self._apply_control(data, action)
 
         # Foot contact detection.
         contact = jp.array([
