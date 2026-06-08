@@ -51,8 +51,8 @@ def compute_leg_impedance_torque(
     leg_dof_ids,            # (n_legs, 3) int — qvel indices of each leg's 3 joints
     body_id: int,           # trunk body id (targets are in this body's frame)
     target_foot_body,       # (n_legs, 3) desired foot pos in trunk frame
-    kp,                     # (3,) Cartesian stiffness
-    kd,                     # (3,) Cartesian damping
+    kp,                     # (3,) shared OR (n_legs, 3) per-leg Cartesian stiffness
+    kd,                     # (3,) shared OR (n_legs, 3) per-leg Cartesian damping
     torque_limit,           # (3*n_legs,) per-joint symmetric limit, leg/joint order
     use_op_space_inertia: bool = True,
     ridge: float = 1e-4,
@@ -87,7 +87,11 @@ def compute_leg_impedance_torque(
         desired_w = body_pos + R @ target_foot_body[i]   # body-frame tgt → world
         err_w = desired_w - foot_w                 # (3,) world-frame error
 
-        wrench = kp * err_w - kd * v_leg_w         # (3,)
+        # Per-leg gains (variable impedance) when kp/kd are (n_legs, 3); a plain
+        # (3,) is shared across legs (fixed impedance). ndim is static at trace.
+        kp_i = kp[i] if kp.ndim == 2 else kp       # (3,)
+        kd_i = kd[i] if kd.ndim == 2 else kd       # (3,)
+        wrench = kp_i * err_w - kd_i * v_leg_w     # (3,)
 
         if use_op_space_inertia:
             M_leg = M_full[jp.ix_(dofs, dofs)]     # (3, 3)

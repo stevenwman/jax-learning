@@ -88,6 +88,20 @@ def _register_custom_envs():
                 functools.partial(WarpOscJoystick, task="flat_terrain"),
                 _make_osc_kp_config(_scale),
             )
+    # Variable impedance: action grows to 16-d (12 foot targets + 4 per-foot
+    # stiffness scalars); each maps log-spaced to s∈[0.25,2] scaling that foot's
+    # baseline Cartesian gains (kd∝√s). Policy learns to stiffen stance / soften
+    # swing legs. See jax_rl/envs/locomotion/go2_warp_osc_var_impedance.py.
+    from jax_rl.envs.locomotion.go2_warp_osc_var_impedance import (
+        WarpOscVarImpedance,
+        default_config as warp_osc_var_default_config,
+    )
+    if "Go2WarpOscVarImpedanceFlat" not in pg_locomotion._envs:
+        pg_locomotion.register_environment(
+            "Go2WarpOscVarImpedanceFlat",
+            functools.partial(WarpOscVarImpedance, task="flat_terrain"),
+            warp_osc_var_default_config,
+        )
     # Variant: linear torque-speed actuator limit (approximates motor saturation).
     # Playground's registry.load passes config_overrides=None by default, which
     # would clobber a partial(..., config_overrides=...). Bake the flag into a

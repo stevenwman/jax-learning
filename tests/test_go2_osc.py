@@ -162,6 +162,17 @@ def test_velocity_damping_opposes_motion():
     assert float(acc @ v_leg) < 0.0, (acc, v_leg)
 
 
+def test_per_leg_gains_match_shared():
+    """Passing per-leg (n_legs,3) gains == shared (3,) gains for one leg."""
+    mx, d, ids = _setup(_QPOS)
+    err = np.array([0.0, 0.0, 0.03])
+    tgt = jp.asarray(_foot_body_pos(mx, d, ids) + err)[None]
+    args = (mx, d, ids["foot_site"], ids["leg_dofs"], ids["body"], tgt)
+    tau_shared = compute_leg_impedance_torque(*args, _KP, _KD, _BIG_LIMIT)
+    tau_perleg = compute_leg_impedance_torque(*args, _KP[None], _KD[None], _BIG_LIMIT)
+    assert np.allclose(np.asarray(tau_shared), np.asarray(tau_perleg), atol=1e-6)
+
+
 def test_torque_clips_to_limit():
     """A huge target error saturates every joint torque at the limit."""
     mx, d, ids = _setup(_QPOS)

@@ -279,8 +279,12 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
             "rng": rng,
             "command": cmd,
             "steps_until_next_cmd": steps_until_next_cmd,
-            "last_act": jp.zeros(self.mjx_model.nu),
-            "last_last_act": jp.zeros(self.mjx_model.nu),
+            # Sized by action_size (not nu) so subclasses whose policy action is
+            # wider than the actuator count (e.g. variable-impedance adds per-foot
+            # stiffness dims) get a correctly-shaped last_act. Identical to nu for
+            # every fixed-action env.
+            "last_act": jp.zeros(self.action_size),
+            "last_last_act": jp.zeros(self.action_size),
             "feet_air_time": jp.zeros(4),
             "last_contact": jp.zeros(4, dtype=bool),
             "swing_peak": jp.zeros(4),

@@ -132,9 +132,19 @@ class WarpOscJoystick(WarpJoystick):
         """Per-leg Cartesian impedance / OSC controller, run at physics rate.
 
         action (12,) → four foot position deltas (trunk frame) → impedance
-        torque → mjx.step, repeated n_substeps times.
+        torque → mjx.step, repeated n_substeps times. Fixed impedance: the same
+        gains for every leg.
         """
         deltas = action.reshape(4, 3) * self._config.action_scale   # (4,3) metres
+        return self._run_osc(data, deltas, self._osc_kp, self._osc_kd)
+
+    def _run_osc(self, data, deltas, kp, kd):
+        """Decimation loop: drive feet to (nominal + deltas) at gains kp/kd.
+
+        kp/kd are (3,) shared across legs (fixed impedance) or (4,3) per-foot
+        (variable impedance). Factored out so the variable-impedance subclass
+        reuses the exact same loop with per-foot gains.
+        """
         dynamic = self._osc_target_mode == "delta_current"
         base_targets = self._nominal_foot_body + deltas             # used if static
 
@@ -157,7 +167,7 @@ class WarpOscJoystick(WarpJoystick):
             tau_joint = go2_osc.compute_leg_impedance_torque(
                 model, data,
                 self._osc_foot_site_ids, self._leg_dof_ids, self._torso_body_id,
-                targets, self._osc_kp, self._osc_kd, self._osc_torque_limit,
+                targets, kp, kd, self._osc_torque_limit,
                 use_op_space_inertia=self._osc_use_lambda, ridge=self._osc_ridge,
             )
             tau_joint = self._apply_torque_speed_limit(tau_joint, data.qvel[6:])

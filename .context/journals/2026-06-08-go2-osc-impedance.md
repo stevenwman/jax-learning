@@ -106,6 +106,47 @@ Next levers (cheapest first): (a) reward — bump `lin_vel_z`, retighten
 bearing weight via deflection → less stored energy. (a) is a no-controller-change
 test of the reward hypothesis; do it first.
 
+## Update — fixed-stiffness sweep (s = 0.25…4 × baseline kp, kd∝√s)
+
+5 trained runs (`Go2WarpOscJoystickFlat{Kp025,Kp05,—,Kp2,Kp4}`), all 5M, seed 0.
+Eval: s≤1 → ~280; s=2 → 266; s=4 → 246 (over-stiffening hurts). Gait response
+(varied commands, the realistic test):
+
+| s | flight % | max foot-lift | base-z max | yaw corr | energy | fell? |
+|---|---|---|---|---|---|---|
+| 0.25 | 7 | 0.15 | 0.32 | 0.94 | 109 | no |
+| 0.5 | 8 | 0.23 | 0.40 | 0.94 | 166 | no |
+| 1 | 24 | 0.30 | 0.46 | 0.94 | 178 | no |
+| 2 | 21 | 0.39 | 0.49 | 0.71 | 255 | no |
+| 4 | 20 | 0.32 | 0.42 | 0.74 | 278 | no |
+
+Findings: (1) under **varied** commands soft stiffness is dramatically calmer —
+**7–8 % flight at s≤0.5 vs ~22 % at s≥1** — at equal tracking and no falls; a
+forward-lock-only test had hidden this (flat/noisy flight), so don't judge a
+gait from one locked command. (2) Amplitude + effort scale monotonically with
+stiffness (foot-lift, base bounce, energy 109→278). (3) Over-stiffening (s≥2)
+degrades yaw tracking + eval. **Lower stiffness is a free win down to s≈0.25–0.5**
+(calmer, ~60 % energy, equal tracking/robustness). The current default (s=1) is
+too stiff. A residual ~7 % flight persists even at s=0.25 → that floor is the
+reward, not stiffness. Bounce-hypothesis #1 (spring energy drives pogo) is thus
+only partly true: stiffness sets bounce *amplitude/frequency*, but a reward-driven
+flight floor remains.
+
+DR note: training perturbs with a FIXED ±0.75 m/s base kick (in-env, every ~7 s,
+not part of the DR spec) + per-episode physics DR (friction/mass/damping/…).
+Kick magnitude is not randomized, and the audit's pogo-launch threshold is
+≥2 m/s — so the sweep's "all robust" only covers mild pushes.
+
+## Update — variable impedance (per-foot scalar, +4): `Go2WarpOscVarImpedanceFlat`
+
+Action grows 12→16: 12 foot targets + 4 per-foot stiffness scalars. Each
+a∈[-1,1] maps log-spaced to s∈[0.25,2] scaling that foot's baseline gains
+(kp=s·kp_base, kd=√s·kd_base). Controller now takes per-leg gains (3,)-shared or
+(4,3)-per-leg; parent reset sizes last_act by `action_size` (regression-safe,
+action_size==nu for all fixed envs). obs 48→52 / priv 122→126. Tests: per-leg==
+shared-gain equivalence (CPU) + var-env build (GPU). Per-foot-per-axis (+12,
+action→24) is the planned follow-up. Not yet trained.
+
 ## Status / next
 
 MVP done: builds, trains, walks, tracks, all tests green. NOT tuned. Next:
