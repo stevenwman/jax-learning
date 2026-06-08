@@ -10,11 +10,14 @@ MVP done: `Go2WarpOscJoystickFlat` (foot xyz targets, per-leg OSC, fixed
 impedance, no gravity FF). Trains/walks/tracks (eval 279.6, run mff6ptxj).
 Worktree `go2-osc-impedance`. Spec + journal + lesson written.
 
-- [ ] **Study the jumpy/pogo gait** (22–24% flight phase, feet to 0.30 m, base
-      to 0.46 m) BEFORE tuning. Decide if fixable via reward
-      (`lin_vel_z`/`feet_height` re-weight) or needs controller change
-      (gravity / body-weight feedforward, lower kp). See journal 2026-06-08 +
-      lesson "Pure Cartesian Impedance ... is Inherently Jumpy".
+- [x] Λ-OSC vs Jᵀ ablation for the bounce — **NULL** (Jᵀ retrain just as jumpy,
+      flight 22→27%, eval identical). Inertia model is second-order; pogo is
+      reward + pure-impedance dynamics, not Λ. (`Go2WarpOscJoystickFlatJt`.)
+- [ ] **Study the jumpy/pogo gait** — next lever (cheapest): reward retune
+      (bump `lin_vel_z`, retighten `feet_height`/`clearance`, fix pre-scale
+      `action_rate`), retrain, measure flight %. If that doesn't calm it →
+      gravity / body-weight feedforward (foot_weight mode) so the spring stops
+      bearing weight via deflection. See journal 2026-06-08.
 - [ ] Retune the inherited PD reward terms for the foot-target action space
       (`action_rate` is computed pre-scale; `feet_clearance`/`energy` 2–4×).
 - [ ] (deferred) Variable impedance: per-foot stiffness in the action space +

@@ -78,6 +78,34 @@ all verified clean. Findings logged in spec. Behavior-neutral fixes applied:
 (kp=4000 at 50 Hz diverges; 250 Hz substep keeps ρ≈0.8), delta_current
 "can't passively stand" warning, name-based leg-mapping regression test.
 
+## Update — Λ-OSC vs Jᵀ ablation (NULL result)
+
+Hypothesis: OSC's Λ makes feet ~unit-mass → cheap to fling vertically → pogo.
+So Jᵀ mode (no Λ, real anisotropic foot inertia, heavy along the leg) should
+bounce less. Registered `Go2WarpOscJoystickFlatJt` (use_op_space_inertia=False,
+hold-probed N/m gains kp=[1500,1500,2500] kd=[60,60,80]), retrained 5M identical
+config (run on wandb go2-osc-impedance).
+
+**Refuted.** Jᵀ eval 279.9 (Λ 279.6 — identical) and the gait is just as jumpy:
+
+| metric (fwd / varied) | Λ-OSC | Jᵀ |
+|---|---|---|
+| flight phase | 22% / 24% | 27% / 27% |
+| max foot lift | 0.18 / 0.30 m | 0.16 / 0.32 m |
+| base-z max | 0.39 / 0.46 | 0.39 / 0.46 |
+| vert \|vz\| RMS | 0.24 / 0.32 | 0.24 / 0.35 |
+
+The controller's inertia model is **second-order**: the RL policy retrains
+around it to the same bouncy gait. The pogo is driven by the **reward** (doesn't
+penalize bounce) + **pure-impedance dynamics** (no gravity FF → the stiff spring
+stores/releases energy), NOT by Λ. For this task, Λ-OSC vs Jᵀ is a wash.
+
+Next levers (cheapest first): (a) reward — bump `lin_vel_z`, retighten
+`feet_height`/`clearance`, fix pre-scale `action_rate`; retrain, measure flight.
+(b) gravity / body-weight feedforward (foot_weight mode) so the spring stops
+bearing weight via deflection → less stored energy. (a) is a no-controller-change
+test of the reward hypothesis; do it first.
+
 ## Status / next
 
 MVP done: builds, trains, walks, tracks, all tests green. NOT tuned. Next:

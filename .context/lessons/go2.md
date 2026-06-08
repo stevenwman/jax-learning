@@ -225,8 +225,14 @@ hid all of this — classic "surviving/tracking ≠ walking well."
 1. Pure impedance with no gravity FF stores energy in the stiff vertical spring
    and has nothing to bleed it → it pogos. Horizontal momentum converts to
    vertical pop on a floating base.
-2. OSC's Λ normalizes the foot to ~unit apparent mass, so flinging a foot is
-   "cheap" — the policy exploits big foot motions to track velocity → bounding.
+2. ~~OSC's Λ normalizes the foot to ~unit apparent mass, so flinging a foot is
+   "cheap" → bounding.~~ **TESTED AND REFUTED** (2026-06-08): retrained the Jᵀ
+   variant (no Λ, real anisotropic foot inertia, heavy along the leg) — gait was
+   just as jumpy (flight 22%→27%, eval 279.6→279.9, all metrics within noise).
+   The controller's inertia model is second-order; the RL policy retrains around
+   it. Bounce is reward + dynamics, not Λ. Meta-lesson: a controller-level
+   inertia change is easily absorbed by an RL policy — ablate it by *retraining*,
+   not by eyeballing the open-loop controller.
 3. PD-tuned rewards don't suppress the new dynamics: `lin_vel_z` cost was tiny
    (−0.03/step), `feet_height`/`feet_clearance` were tuned for ~0.1 m PD swings,
    and `action_rate` penalizes the PRE-scale raw action so foot-target jerk is

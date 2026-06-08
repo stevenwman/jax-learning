@@ -47,6 +47,23 @@ def _register_custom_envs():
             functools.partial(WarpOscJoystick, task="flat_terrain"),
             warp_osc_default_config,
         )
+    # Jᵀ Cartesian-impedance ablation: use_op_space_inertia=False — no Λ
+    # unit-mass normalization, real N/m gains, feet keep their natural
+    # anisotropic inertia (heavy along the leg). Tests whether Λ's unit-mass
+    # feet are what drive the bounding/pogo gait of the Λ-OSC variant. Gains
+    # hold-probed (N/m, not the acceleration-gains of the Λ variant).
+    def _warp_osc_default_config_jt():
+        cfg = warp_osc_default_config()
+        cfg.osc.use_op_space_inertia = False
+        cfg.osc.kp = [1500.0, 1500.0, 2500.0]
+        cfg.osc.kd = [60.0, 60.0, 80.0]
+        return cfg
+    if "Go2WarpOscJoystickFlatJt" not in pg_locomotion._envs:
+        pg_locomotion.register_environment(
+            "Go2WarpOscJoystickFlatJt",
+            functools.partial(WarpOscJoystick, task="flat_terrain"),
+            _warp_osc_default_config_jt,
+        )
     # Variant: linear torque-speed actuator limit (approximates motor saturation).
     # Playground's registry.load passes config_overrides=None by default, which
     # would clobber a partial(..., config_overrides=...). Bake the flag into a
