@@ -1,0 +1,121 @@
+<mujoco model="factory_peg_insert">
+  <!--
+    Phase 1 scene MJCF for FactoryPegInsert env.
+
+    Composition:
+      - Franka Panda (vendored menagerie, includes fingertip_centered site)
+      - Cylindrical peg attached to gripper hand via <equality><weld/>
+      - Annular hole modeled as bore_tile ring + box bore_floor (Phase 0b)
+
+    Phase 0b findings (see .context/journals/2026-05-27-factory-phase0.md):
+      - Peg uses capsule geom (NOT cylinder, NOT mesh) — Warp does not support
+        cylinder_vs_convex_mesh collision in this build.
+      - Hole uses 32 thin convex bore tiles (NOT CoACD decomp) — convex hulls
+        of arc-sector decomp pieces block the bore throat at 114µm clearance.
+      - Bore floor is a box (NOT cylinder) — capsule_vs_box is a Warp primitive
+        pair, capsule_vs_cylinder misses the flat top face.
+      - Solver: iterations=200, tolerance=1e-10, Newton solver.
+
+    Body naming (menagerie convention, NOT Isaac's `panda_*`):
+      - hand           (corresponds to Isaac's panda_hand)
+      - left_finger    (corresponds to Isaac's panda_leftfinger)
+      - right_finger   (corresponds to Isaac's panda_rightfinger)
+      - fingertip_centered site exists inside `hand` body
+
+    Hole world position: pos="0.6 0 0.05" — 60cm in front of robot base, 5cm
+    above floor (representative bolt height). Bore opening at world z=0.075m
+    (hole body z=0.05 + bore local z=25mm).
+
+    DomainRandWrapper will randomize the hole pose per-episode (±5cm xy, ±5cm z,
+    ±30° yaw around 120° baseline). The wrapper writes to the hole body's
+    qpos slot at reset.
+  -->
+
+  <option timestep="0.002" integrator="implicitfast"
+          iterations="200" tolerance="1e-10" solver="Newton">
+    <flag eulerdamp="enable"/>
+  </option>
+  <compiler angle="radian" autolimits="true"/>
+
+  <!-- Bright global ambient + grey background so the rendered scene isn't
+       black behind translucent panda meshes. headlight overrides MuJoCo's
+       default 0.4 ambient with 0.7 so unlit faces still read. -->
+  <visual>
+    <headlight ambient="0.35 0.35 0.35" diffuse="0.45 0.45 0.45" specular="0.1 0.1 0.1"/>
+    <rgba haze="0.6 0.6 0.65 1"/>
+    <global offwidth="640" offheight="480"/>
+  </visual>
+
+  <!-- Pull in the Franka panda (menagerie MJCF). Its own <compiler meshdir="assets"/>
+       resolves panda mesh paths relative to its own location:
+       jax_rl/envs/manipulation/factory/assets/franka_panda/panda.xml -->
+  <include file="../franka_panda/panda.xml"/>
+
+  <asset>
+    <!-- Bore tile meshes — injected by env loader at construction time.
+         32 tiles arranged in a ring at r=[4.05mm, 5.05mm], z=[-5mm, +35mm].
+         See spike.xml + spike_drop.py:ensure_bore_tiles for the geometry. -->
+    <!-- BORE_TILE_ASSETS -->
+  </asset>
+
+  <worldbody>
+    <!-- Render-only lighting + visual floor. Floor has contype=0/conaffinity=0
+         so it doesn't collide with arm or peg; lights don't affect physics. -->
+    <light name="scene_key"  pos="0.5 -0.5 1.5" dir="0 0 -1" diffuse="0.55 0.55 0.55" specular="0.1 0.1 0.1"/>
+    <light name="scene_fill" pos="0.5  0.5 1.0" dir="0 0 -1" diffuse="0.35 0.35 0.35"/>
+    <geom name="render_floor" type="plane" size="2 2 0.02" pos="0 0 -0.001"
+          rgba="0.85 0.85 0.88 1" contype="0" conaffinity="0"/>
+
+    <!-- Bolt/hole assembly — mocap body. Pose is set externally via
+         data.mocap_pos/data.mocap_quat per reset (cheap, no JIT recompile,
+         no joint, no equality). Mocap bodies are kinematic — they
+         participate in contacts as infinite-mass colliders (peg pushes,
+         hole doesn't budge), but never respond to forces. Fine here since
+         the bore is meant to be rigidly fixtured in the world. -->
+    <body name="hole_base" pos="0.6 0 0.05" mocap="true">
+      <!-- BORE_TILE_GEOMS injected here -->
+      <!-- Bore floor stops peg at hole bottom. type=box (capsule-box primitive
+           pair in Warp, reliable at 114µm clearance). -->
+      <geom name="bore_floor" type="box" pos="0 0 -0.003" size="0.020 0.020 0.001"
+            condim="6" friction="1.0 0.01 0.0001"
+            solref="0.004 1" solimp="0.98 0.995 0.001"/>
+    </body>
+
+    <!-- Peg: freejoint + capsule geom + analytical inertia. The weld equality
+         below constrains it to the gripper hand for the entire episode. -->
+    <body name="peg" pos="0.5 0.0 0.3">
+      <freejoint/>
+      <!-- Solid cylinder inertia, mass=19g, r=3.993mm, h=50mm.
+           Original principal moments: Ixx=Iyy=4.03e-6, Izz=1.51e-7 (cylinder).
+           Sphericalized to Izz=Ixx so constraint solver sees a well-conditioned
+           rotational inertia — narrow-z inertia caused ~7° persistent tilt
+           under weld (see scripts/factory/diag_weld.py). Tradeoff: peg spins
+           slightly slower about its long axis, irrelevant for assembly. -->
+      <inertial pos="0 0 0" mass="0.019" diaginertia="4.03e-6 4.03e-6 4.03e-6"/>
+      <geom name="peg" type="capsule" size="0.003993 0.021007" condim="6"
+            friction="1.0 0.01 0.0001" rgba="0.2 0.6 0.9 1"/>
+    </body>
+  </worldbody>
+
+  <!-- Weld peg to gripper hand. relpose: peg's frame is offset along -z by
+       half-peg-length below the fingertip_centered site so the peg's tip
+       reaches workspace targets naturally. Adjust if grasp geometry changes.
+
+       solref/solimp: default Baumgarte (solref=0.02 1) is too soft under
+       OSC task wrench — peg swings off the hand z-axis by ~3-4cm during
+       lateral pushes (see scripts/factory/diag_weld.py). Stiffen to ~1ms
+       natural frequency and dimp→1 so the weld behaves rigidly. -->
+  <equality>
+    <weld name="grasp" body1="peg" body2="hand"
+          relpose="0 0 -0.130 1 0 0 0" active="true"
+          solref="0.001 1" solimp="0.999 0.9999 0.001"/>
+  </equality>
+
+  <!-- Suppress finger-peg contact noise (peg is welded, fingers don't need
+       to grip mechanically). Without these excludes the weld would fight
+       finger pad contact forces every step. -->
+  <contact>
+    <exclude body1="left_finger" body2="peg"/>
+    <exclude body1="right_finger" body2="peg"/>
+  </contact>
+</mujoco>

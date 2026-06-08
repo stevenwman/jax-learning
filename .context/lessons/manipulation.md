@@ -491,3 +491,100 @@ input geometry is invalid.
 3. **Contact-based obs** — pusher's contact history on the block's current surface (robot-relative, shape-invariant). Similar to what humans use.
 
 **Lesson:** zero-shot transfer from T-only training is the **floor** for cross-shape generalization, not a working baseline. Useful as a sanity check that infrastructure is correct (policy runs, renders, doesn't crash across all shapes), but not as a claim of generalization. Next step: DR training on mixed shapes.
+
+---
+
+## Factory PegInsert: Phased Reward — Untie Always-On Term From Phase Factor (2026-06-01)
+
+**What happened:** Wrote a "Phase A above bore / Phase B below bore" reward
+for FactoryPegInsert:
+
+```python
+phase_above = sigmoid((peg_z - entry_z) * 200)
+phase_below = 1 - phase_above
+r_A = phase_above * 2.0 * (r_xy + r_tilt)         # max 2.0 above bore
+r_B_desc = phase_below * aligned * z_progress     # max 1.0 below bore
+```
+
+SAC plateaued at Return 1770 (hover at start pose, 1.97/step ≈ Phase A
+maxed). Refused to descend.
+
+**Root cause:** Cliff at `entry_z`. Just above gives `r_A ≈ 2.0`, just
+below pays at most `r_B_desc ≈ 1.0`. Policy strictly loses reward by
+crossing the boundary. No incentive to step off.
+
+**Fix:** Untie `r_align` from `phase_above` — pay alignment reward in
+both phases:
+
+```python
+r_align  = 2.0 * (r_xy + r_tilt)                 # always on
+r_B_desc = phase_below * aligned * z_progress    # extra +1.0 in Phase B
+```
+
+Now hover gives 2.0/step, descent aligned gives 2.0 + 1.0 = 3.0/step.
+Descent strictly increases reward. Monotonic gradient.
+
+**Lesson:** When a reward has a "phase gate" multiplying terms by
+`phase_above`/`phase_below`, the *always-desirable* terms (alignment,
+posture, low velocity) must live OUTSIDE the gate. Only terms that
+should *fire only in that phase* (descent-into-hole, contact-with-target)
+belong inside. Otherwise you create a reward cliff at the phase boundary
+and the policy refuses to cross it.
+
+Bonus: anchor `z_progress` at the geometric event you want to reward
+(peg tip crossing bore opening = `entry_z`), not at the gate threshold
+(`hole_top_z`). The latter leaves a dead zone where descent has
+started but `z_progress = 0`.
+
+---
+
+## Factory PegInsert: Off-Policy Alpha Decay Is a Bistable Exploration Attractor (2026-06-01)
+
+**What happened:** Two FlashSAC runs with identical config + seed on
+FactoryPegInsert diverged completely:
+
+| Metric @ step 519k | v15.4 (broke through) | v15.5 (stuck at hover) |
+|---|---|---|
+| Alpha | 0.0003 | 0.0001 |
+| RewScale | 252 | 58 |
+| Q1 × RewScale (abs Q) | 548 | 172 |
+| Eval Return | 6150 | 1700 |
+
+GPU floating-point nondeterminism rolled alpha slightly lower in v15.5
+during early training. Auto-tune (chasing `target_entropy`) then crushed
+it further. Lower alpha → less policy noise → fewer descent excursions
+sampled → no success rollouts in buffer → adaptive `RewScale` stayed low
+→ critic's Q estimates anchored on hover values → actor gradient stayed
+at hover. Bistable.
+
+**Fix:** Bump `alpha_init` 10× (default 0.01 → 0.1). Gives the entropy
+bonus initial margin so auto-tune can't crush it before the buffer
+accumulates a few descent samples. v15.6 broke through to Return 5660
+on its first eval.
+
+**Lesson:** Off-policy entropy-regularized methods (SAC, FlashSAC) have a
+self-reinforcing exploitation attractor when the reward landscape has a
+sharp success region with shallow approach. Once alpha collapses, the
+buffer can't accumulate the diverse samples needed to push Q estimates
+toward the success state. The auto-tune is doing exactly what it's
+designed to do (matching `target_entropy`), but the target is satisfied
+by a degenerate hover policy that has the right marginal entropy without
+exploring the state space.
+
+Mitigations, in increasing-invasiveness order:
+
+1. `alpha_init` up 10× — buys early-training exploration margin.
+2. Reset-state randomization — forces diverse trajectories regardless of
+   policy noise. Necessary for the breakthrough to internalize as the
+   deterministic mean, not just a stochastic-exploration artifact.
+3. `target_entropy` up — only safe if it's reachable (squashed Gaussian
+   on `[-1,1]^N` is entropy-bounded ≈ N). Setting it too high causes
+   alpha runaway (we hit alpha ≈ 1.9M, ActLoss ≈ -8e6 in `sigma_target=0.5`).
+4. Demonstrations / curriculum — last resort.
+
+Also: don't trust stochastic training Return as a signal that the policy
+has learned the task. v15.4 hit training Return 6150 but never produced
+a checkpoint we could test deterministically; once we evaluated v15.5's
+checkpoint with the deterministic policy we got 1700 (hover). For
+sim2real or any deterministic-deploy use, **the eval Return is the
+truth**.

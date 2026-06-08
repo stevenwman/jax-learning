@@ -280,3 +280,103 @@ Multiple hypotheses tested + ruled out as dominant cause:
 5. **Optimizer Adam moments / BN stats / RNG** — usually persisted, but worth grepping if a custom algo adds new state.
 
 If you see a resume drop, walk through `TrainingState` field-by-field against `checkpointing.py:save_checkpoint`, then check the loop for any per-step EMA updates that might shift reference values.
+
+---
+
+## Heterogeneous action dims + scalar entropy = entropy sink (FlashSAC, 2026-06-03)
+
+SAC enforces a **scalar sum** entropy constraint `Σ_dim H(π_d) ≥ target_entropy`. The actor outputs per-dim log_std and is free to distribute variance across dims however it wants. When action dims have **different physical impact magnitudes**, the optimizer dumps variance into the cheapest dims (those that don't hurt reward), leaving useful dims sampled near-deterministically.
+
+**Concrete case (Factory PegInsert 6-DOF).** Action = [pos_xyz; rot_xyz], scaled in env by `pos_threshold=0.02m, rot_threshold=0.01rad` AFTER actor sampling. SAC sees both dim groups in [-1,1] space — log_prob and entropy computed on the squashed action, oblivious to the downstream rot scaling.
+
+- Pos dim noise → fingertip moves ~2cm/step → big reward impact → expensive
+- Rot dim noise → target_quat moves ~0.01rad/step → negligible reward impact → cheap
+- Actor satisfies entropy floor by pumping rot dim log_std, keeping pos dim log_std near zero.
+
+v9 actor probe confirmed: rot abs mean **0.158**, pos abs mean **0.089** at convergence with σ_target=0.30. Rot dims absorbed 64% of action magnitude despite being task-irrelevant. Pos exploration was starved → policy never explored low-z states → critic Q-flat in z → hover trap (Return 880 vs ceiling 3300).
+
+**Fix via env-level action cost.** Adding `r_rot_cost = -0.5 * Σ(ema_rot²)` to the reward (one line in env.step) made rot variance costly. v10 actor stats: rot abs mean **0.421**, pos abs mean **0.518** — pos got the entropy back, exact 6× boost.
+
+**Caveats:**
+- This is a per-env tuning knob. NutThread / GearMesh that genuinely need rotation can't have `r_rot_cost` zeroing out useful rot signal — coefficient must drop or be removed.
+- The entropy sink fix didn't crack the hover trap on its own (v10 still Return 885), because Q was still flat in z. **Distinct from** reward-shape issues like Q-flatness; fixes are orthogonal.
+
+**Diagnostic: probe the actor before tuning entropy params.** Dump action mean + std per dim from a recorded trajectory (`record_video.py` writes `_traj.npz`). Asymmetric stds across dim groups = entropy sink. Took 30 seconds in v9, would have saved 5 probes if done at v3.
+
+---
+
+## Z-invariant rewards → critic Q-flat → policy hover trap (Factory PegInsert, 2026-06-03)
+
+If a shaping term gives equal reward across an action axis at the policy's current state, the critic's Q is **flat in that axis**. SAC's deterministic policy gradient evaluates `∂Q/∂a` at the actor's mean — flat Q means no gradient → policy mean drifts to whatever is easiest to maintain. Exploration noise doesn't break this, because the noise samples symmetric Q values around the mean.
+
+**Factory v15.6 reward had this bug** but 3-DOF accidentally masked it. `r_align = 2.0 * (r_xy + r_tilt)` was z-invariant — hovering at any altitude with good xy/tilt paid 2.0/step. Only `r_B_desc = phase_below * aligned * z_progress` provided altitude-dependent reward, but it requires the **conjunction** `(aligned ∧ low_z)` to fire.
+
+- **3-DOF case:** pos-only exploration occasionally hit `aligned ∧ low_z`. Critic saw high Q at descent → policy descended. Worked at Return 6545.
+- **6-DOF case:** rotation noise broke `aligned` most of the time → `aligned ∧ low_z` almost never observed → critic stayed Q-flat in z → policy never descended (Return 880 across 8 probes with different entropy/algo settings).
+
+**Fix: continuous shaping that monotonically pulls policy toward target state.**
+```python
+# Make r_align z-dependent so descent is strictly higher reward
+altitude_bonus = jp.clip((entry_z + 0.10 - peg_z) / 0.10, 0.0, 1.0)
+r_align = 2.0 * (r_xy + r_tilt) * altitude_bonus
+```
+
+Result: **v11 Return 3120** [3004, 3205] @ 2M (6.93/step, within 5% of v15.6's 7.27/step ceiling, at half episode length, with 6-DOF + altitude reward).
+
+**Rule of thumb.** When designing reward, ask: **for each action axis, does the policy receive a gradient at the spawn state?** If `∂R/∂a_i ≈ 0` at the initial state, the critic can't learn `a_i` matters without exploration finding distant high-reward states via OTHER terms. Conjunction-gated terms (`A ∧ B ∧ C`) are especially fragile — three multiplicands must all be ~1 simultaneously, exponentially unlikely under random exploration.
+
+**Diagnostic: trajectory recording.** Pull `peg_z` from `_traj.npz` after each smoke train. If z is monotonically up or stays put, the reward shape isn't providing descent gradient. Skip entropy tuning and revisit the reward.
+
+---
+
+## mjx-Warp leaks ~1 jax Array per `evaluate()` call (Factory GearMesh, 2026-06-04)
+
+In the off-policy training loop, every call to `jax_rl/utils/eval.py:evaluate()` leaks a JAX array reference that **cannot be reclaimed** via `gc.collect()` or `jax.clear_caches()`. The leak is **deterministic, eval-only, and bypasses every Python-level cleanup primitive.**
+
+**Symptom.** `RuntimeError: Failed to allocate 3072 bytes on device 'cuda:0'` during `env.reset` inside `evaluate()`, at a reproducible step count (Factory GearMesh: step 798k, ~14th eval). Train steps never OOM at the same step. Multi-tenancy ruled out — happens on exclusive GPU. JIT retracing ruled out (`step_cache_len` stays at 1 across 20 calls).
+
+**Decisive probe (`.tmp/cache_probe.py`).** Call `evaluate()` 20 times in isolation with zero-action policy. Dump `jax.live_arrays()` + nvidia-smi per call:
+
+```
+ i  gpu_MB delta  step_cache_len live_arrays
+ 1  12719  +410   1              221
+ 5  12727  +0     1              225
+10  12733  +2     1              230  ← gc.collect() + jax.clear_caches()
+11  12739  +6     1              231  ← cleanup did NOT release
+20  12753  +4     1              240
+```
+
+Pattern: **+1 live_array per call, ~1.7 MB**, unrecoverable. Likely culprit is mjx-Warp's FFI callback / stream-ordered allocator retaining a per-call workspace.
+
+**Empirical budget.** Free margin at FactoryGearMesh train start (num_envs=64): ~1.7 GB. OOM cliff at ~14 evals. Set `eval_every_n_episodes` such that `total_evals < ~12` to leave headroom.
+
+```python
+# FactoryGearMesh preset
+total_timesteps=2_000_000,
+eval_every_n_episodes=1500,   # → ~3 evals over 2M, well under cliff
+```
+
+**Likely affects ANY mjx-Warp env**, just exposed by Factory because:
+- eval scans 450 steps (vs 100ish for locomotion) → bigger per-call workspace
+- env has 392 CoACD geoms → tighter steady-state pool
+
+**Things that DON'T fix it (don't relitigate):**
+- `gc.collect() + jax.clear_caches()` between evals
+- `XLA_PYTHON_CLIENT_MEM_FRACTION` / `PREALLOCATE=false`
+- Tighter naccdmax/naconmax/njmax
+- Mempool trim attempts (introspection API broken in this Warp version)
+
+**Real fixes (none attempted, all in upstream scope):**
+- Patch mjx-Warp FFI to release per-call workspace
+- Subprocess-per-eval (fork→eval→exit→IPC scalars back)
+- Switch to mjx-native backend (no Warp FFI; throughput cost)
+
+**Diagnostic recipe for similar OOMs:**
+1. Look at log: which call is failing (train vs eval)?
+2. Run isolated probe — does it reproduce in 20-30 calls?
+3. Dump `jax.live_arrays()` to confirm leak shape
+4. Try `gc.collect() + jax.clear_caches() + del returned_dict` — if leak persists, it's downstream of Python refs
+5. If steps 1-4 confirm: workaround via eval frequency cap
+
+See `.context/journals/2026-06-04-mjxwarp-eval-leak.md` for full investigation.
+

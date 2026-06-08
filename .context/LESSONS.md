@@ -27,7 +27,7 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **PPO validation summary** — CartpoleBalance PASS, CheetahRun PASS (826), HumanoidRun PASS (matches Brax ~8-10)
 - **Remaining performance gap (RESOLVED)** — fixed by 0.25x value loss scaling + full-batch advantage norm
 
-## [Off-Policy (SAC / TD3)](lessons/offpolicy.md) — 11 lessons
+## [Off-Policy (SAC / TD3)](lessons/offpolicy.md) — 14 lessons
 
 - **Obs normalization: NEVER before buffer storage** — normalize at sample time with `--obs-norm` (Go2: 139 vs 97)
 - **SAC validation results** — WalkerWalk 975, HumanoidRun 426 (vanilla) / 892 (FastSAC)
@@ -42,6 +42,9 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **Staged rewards need longer budgets** — gated rewards (box_target after reached_box) require 10M+ steps to discover full sequence; 2M plateau is stage 1, not convergence
 - **Truncation: mask the loss, zero the bootstrap** — Brax convention (SAC/TD3). `target = r + γ(1-done)V_next`, `loss *= (1 - truncation)`. Fast*/Flash* were missing the mask — teaching Q=r at timeout steps, systematic underestimation on long-horizon.
 - **Q bias is the cleanest diagnostic for truncation handling** — on long-horizon tasks, post-fix Q bias should be near zero. Strongly negative bias = fix isn't applied or wrapper doesn't populate `info["truncation"]`. Add `eval/q_bias` to smoke-test checklist.
+- **Heterogeneous action dims = entropy sink in SAC** — scalar `target_entropy` lets the actor dump variance into low-impact dims (e.g., rot dims scaled small in env). Pos exploration starves. Diagnose via trajectory action mean+std per dim. Fix via per-dim cost in reward.
+- **Z-invariant reward → critic Q-flat → hover trap** — if action axis has no Q gradient at spawn state, exploration noise can't fix it. 3-DOF accidentally worked on Factory PegInsert; 6-DOF broke because rot noise blocked the conjunction `(aligned ∧ low_z)`. Fix: continuous shaping `r_align *= altitude_bonus` — 3 lines beat 8 algo/hyperparam probes.
+- **mjx-Warp leaks ~1 jax Array per evaluate() call** — deterministic, eval-only, unreclaimable via `gc.collect()` or `jax.clear_caches()`. Workaround: cap `eval_every_n_episodes` so total evals < 12 over the run. Empirical OOM cliff at 14 evals for Factory GearMesh (step 798k). See journal 2026-06-04.
 
 ## [Distributional RL (C51 / FastTD3 / FastSAC / FlashSAC)](lessons/distributional.md) — 12 lessons
 
@@ -197,7 +200,7 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **Joint order ≠ actuator order — THE root cause** — unitree qpos is FL-first, ctrl is FR-first. PD applied FL torque to FR actuator. Robot fought itself. Hours of debugging PD/solver/entropy were all red herrings. ALWAYS verify ordering when using third-party MJCFs.
 - **"Stable" PD gains ≠ "trainable" PD gains** — Kp=10/Kd=1.0 holds the robot fine but trains 7x slower than Kp=20/Kd=0.5. Sluggish joint dynamics suppress the leg swings RL needs to find walking. Validate new PD gains with a training run, not a static hold test.
 
-## [Manipulation (Push-T)](lessons/manipulation.md) — 26 lessons
+## [Manipulation (Push-T + Factory PegInsert)](lessons/manipulation.md) — 28 lessons
 
 - **Cylinder-box collisions need Warp** — MJX JAX backend raises `NotImplementedError`. Any manipulation env with cylinder pusher + box target is Warp-only.
 - **Tighten solref for manipulation contacts** — default `solref=0.02` (20ms) gives visible penetration; use `0.004 1` + `solimp="0.98 0.995 ..."` + `iterations=50 ls_iterations=10`.
@@ -225,6 +228,8 @@ JAX/Flax fundamentals in `lessons/learner.md`.
 - **Pymunk shapes: decompose concave letters into annular sectors** — pymunk requires convex `Poly`. Letter S built from 2× 270° fat rings (rot-180 symmetric, overlapping mid-strip, 18 convex wedge quads); letter U from 180° half-ring + 2 rectangles. Bezier-centerline ribbons produce "fins" at tight curvature; ring decomposition gives uniform curvature. Size shapes so `inner_r > pusher_r + margin` for reachable hook interiors.
 - **Shapely MultiPolygon fails on overlapping convex pieces** — `sg.MultiPolygon([s1, s2])` is not "polygon with holes"; overlapping members produce self-intersecting geometry → `GEOSException: TopologyException: side location conflict`. Fix: `unary_union([...]).buffer(0)` heals seams; or catch/stub for vibes-only rollouts. Don't assume pymunk→shapely round-trip yields valid geometry just because pymunk shapes are valid.
 - **Zero-shot cross-shape transfer is a floor, not a working baseline** — T-trained policy on 5d pose-only obs hits 0.12 cov on ellipse/U, 0.025 on triangle, ~0 on S (vs 0.87 on T). 5d obs `(agent_xy, block_xy, yaw)` has no shape info so policy memorizes T-specific approach angles. Cross-shape needs DR training over shape set OR shape-aware obs (keypoints, contact history). Zero-shot only verifies infra correctness.
+- **Phased reward needs always-on terms outside the phase gate** — Factory PegInsert: `r_align * phase_above` made hover (2.0/step above bore) strictly beat descent (1.0/step below) → SAC refused to cross entry. Fix: untie `r_align`, gate only descent-specific terms. Anchor `z_progress` at the geometric event you want to reward, not at the phase threshold.
+- **Off-policy alpha decay is a bistable exploration attractor** — Two identical-config FlashSAC runs on FactoryPegInsert: GPU nondeterminism rolled alpha 3× lower in one, auto-tune crushed it further, RewScale stayed low, buffer never accumulated descent samples, deterministic eval stuck at hover (1700 vs 6650). Mitigation: `alpha_init` ×10 default + reset-state noise. Stochastic training Return is NOT a reliable success signal for deterministic deploy.
 - **Variable-N keypoint obs with zero-padding leaks shape ID** — pusht letter matrix: padding per-shape KPs to MAX=11 with zeros gives each shape a unique number of trailing 0-slots. After NormalizeObsWrapper (low=0, high=512), pad slots become exactly −1.0 — a constant shape one-hot. Policy memorizes "which slots are pad" instead of using positions. Result: off-diagonal cross-shape transfer collapses to ~0%, DR row-mean 32.9% sto. Fix: dense fixed-N=10 KPs sampled by arc-length per shape (no padding) — DR jumps to 73.9% sto, beats 5d-state baseline by 11pp. Also resolved L/K/DR late-training critic collapses (downstream of the leak — multimodal target = "one policy per pad pattern"). Generalization: any "shape-agnostic" obs with per-shape variability (slot counts, dim padding, value-range scaling) creates an implicit shape ID. See `.context/studies/2026-04-22_pusht_letter_matrix.md`.
 
 ## [Bongo Board Handstand](lessons/bongo.md) — 10 lessons

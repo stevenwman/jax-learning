@@ -20,3 +20,5 @@ dist/
 videos/
 projects/*/videos/
 projects/*/artifacts/
+# Scratch/cache dirs
+.tmp/

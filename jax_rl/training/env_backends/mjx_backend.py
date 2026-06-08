@@ -313,6 +313,35 @@ def _register_custom_envs():
     # (MuJoCo Warp PushEnv removed 2026-04-20 — replaced by vendored pymunk
     # gym-pusht (`jax_rl/envs/manipulation/pusht/`) for cross-shape work.)
 
+    # Factory PegInsert (Warp-backed manipulation env).
+    # Panda 7-DoF arm + welded capsule peg + bore-tile-ring hole at 114µm clearance.
+    # SDF substrate explored + retired (see .context/journals/2026-05-27-factory-phase0.md);
+    # bore tiles + capsule_convex narrowphase is the load-bearing physics path.
+    from jax_rl.envs.manipulation.factory.factory_peg_insert import (
+        FactoryPegInsert,
+        default_config as factory_peg_insert_default_config,
+    )
+    if "FactoryPegInsert" not in pg_locomotion._envs:
+        pg_locomotion.register_environment(
+            "FactoryPegInsert",
+            FactoryPegInsert,
+            factory_peg_insert_default_config,
+        )
+
+    # Factory GearMesh (Warp-backed manipulation env).
+    # Panda 7-DoF arm + welded medium gear (CoACD) + flanking gears
+    # (hinge-constrained, CoACD) + plate primitive (box slab + 3 cylinder pegs).
+    from jax_rl.envs.manipulation.factory.factory_gear_mesh import (
+        FactoryGearMesh,
+        default_config as factory_gear_mesh_default_config,
+    )
+    if "FactoryGearMesh" not in pg_locomotion._envs:
+        pg_locomotion.register_environment(
+            "FactoryGearMesh",
+            FactoryGearMesh,
+            factory_gear_mesh_default_config,
+        )
+
 
 _register_custom_envs()
 

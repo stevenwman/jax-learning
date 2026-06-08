@@ -1,0 +1,121 @@
+<mujoco model="factory_gear_mesh">
+  <!--
+    Phase 1 scene MJCF for FactoryGearMesh env.
+
+    Composition:
+      - Franka Panda (vendored menagerie, includes fingertip_centered site)
+      - Plate (mocap body, kinematic) = box slab + 3 cylinder pegs
+        Pegs at IsaacLab offsets:  large  x=-0.0302  medium x=+0.0203  small x=+0.0508
+        Peg geometry: r=0.004m, half-height=0.010m (peg spans plate-top z=0.005 to z=0.025)
+      - Flanking gears (small, large): HINGE-constrained to their pegs, CoACD parts,
+        no peg-bore interaction (constraint is structural). Contact only via teeth
+        for meshing with the held medium gear.
+      - Medium gear (held): freejoint + <equality><weld/> to gripper hand. CoACD parts.
+
+    Body naming (menagerie convention, NOT Isaac's `panda_*`):
+      - hand, left_finger, right_finger
+      - fingertip_centered site inside `hand` body
+
+    Plate world position: pos="0.6 0 0.05" — 60cm in front of robot base.
+
+    DomainRandWrapper will randomize the plate pose per-episode via mocap.
+
+    Asset blocks below (GEAR_SMALL_ASSETS / GEAR_MEDIUM_ASSETS / GEAR_LARGE_ASSETS
+    and GEAR_*_GEOMS) are injected at env construction (see
+    factory_gear_mesh.py:_build_scene_xml).
+  -->
+
+  <option timestep="0.002" integrator="implicitfast"
+          iterations="200" tolerance="1e-10" solver="Newton">
+    <flag eulerdamp="enable"/>
+  </option>
+  <compiler angle="radian" autolimits="true"/>
+
+  <visual>
+    <headlight ambient="0.35 0.35 0.35" diffuse="0.45 0.45 0.45" specular="0.1 0.1 0.1"/>
+    <rgba haze="0.6 0.6 0.65 1"/>
+    <global offwidth="640" offheight="480"/>
+  </visual>
+
+  <include file="../franka_panda/panda.xml"/>
+
+  <asset>
+    <!-- GEAR_SMALL_ASSETS -->
+    <!-- GEAR_MEDIUM_ASSETS -->
+    <!-- GEAR_LARGE_ASSETS -->
+  </asset>
+
+  <worldbody>
+    <light name="scene_key"  pos="0.5 -0.5 1.5" dir="0 0 -1" diffuse="0.55 0.55 0.55" specular="0.1 0.1 0.1"/>
+    <light name="scene_fill" pos="0.5  0.5 1.0" dir="0 0 -1" diffuse="0.35 0.35 0.35"/>
+
+    <!-- Fixed camera looking at the plate (3/4 view, ~45° elevation, ~120° azimuth).
+         Use via record_video --camera plate_view. -->
+    <camera name="plate_view" mode="fixed" pos="0.95 -0.30 0.40" xyaxes="0.5 0.866 0 -0.5 0.29 0.815"/>
+    <!-- Closer 3/4 view (~15cm from plate). -->
+    <camera name="plate_close" mode="fixed" pos="0.72 -0.12 0.18" xyaxes="0.5 0.866 0 -0.5 0.29 0.815"/>
+    <!-- Pure side view: looking along -y, eye at plate height. Use to confirm seated depth. -->
+    <camera name="plate_side" mode="fixed" pos="0.62 -0.18 0.065" xyaxes="1 0 0 0 0 1"/>
+    <geom name="render_floor" type="plane" size="2 2 0.02" pos="0 0 -0.001"
+          rgba="0.85 0.85 0.88 1" contype="0" conaffinity="0"/>
+
+    <!-- Plate (= fixed_asset, mocap-controlled). Origin at plate top center;
+         flanking gears nested below so they follow plate pose under DR. -->
+    <body name="plate_base" pos="0.6 0 0.05" mocap="true">
+      <geom name="slab" type="box" size="0.075 0.0375 0.0025" pos="0 0 0.0025"
+            rgba="0.6 0.6 0.65 1" condim="6" friction="1.0 0.01 0.0001"
+            solref="0.004 1" solimp="0.98 0.995 0.001"/>
+      <geom name="peg_large"  type="cylinder" size="0.004 0.010" pos="-0.0302 0 0.015"
+            rgba="0.55 0.55 0.6 1" condim="6" friction="1.0 0.01 0.0001"
+            solref="0.004 1" solimp="0.98 0.995 0.001"/>
+      <geom name="peg_medium" type="cylinder" size="0.0032 0.010" pos=" 0.0203 0 0.015"
+            rgba="0.55 0.55 0.6 1" condim="6" friction="1.0 0.01 0.0001"
+            solref="0.004 1" solimp="0.98 0.995 0.001"/>
+      <geom name="peg_small"  type="cylinder" size="0.004 0.010" pos=" 0.0508 0 0.015"
+            rgba="0.55 0.55 0.6 1" condim="6" friction="1.0 0.01 0.0001"
+            solref="0.004 1" solimp="0.98 0.995 0.001"/>
+
+      <!-- Visualizer: red sphere at the seated-gear-centroid target. Reward
+           is computed as ||held_pos - fixed_pos|| where fixed_pos = this site
+           in world. If the gear's visual centroid is at this sphere, gear is
+           "seated" per the reward function. -->
+      <site name="reward_target" pos="0.0203 0 0.0147" size="0.003" rgba="1 0 0 1"/>
+
+      <!-- Small gear: hinge around its peg axis. Nested under plate so it
+           follows plate's mocap pose during DR. -->
+      <body name="g_small" pos="0 0 0">
+        <joint name="g_small_hinge" type="hinge" axis="0 0 1" pos="0.0508 0 0" damping="0.5"/>
+        <!-- GEAR_SMALL_GEOMS -->
+      </body>
+
+      <!-- Large gear: hinge around its peg axis. -->
+      <body name="g_large" pos="0 0 0">
+        <joint name="g_large_hinge" type="hinge" axis="0 0 1" pos="-0.0302 0 0" damping="0.5"/>
+        <!-- GEAR_LARGE_GEOMS -->
+      </body>
+    </body>
+
+    <!-- Medium gear (held by gripper). Spawn at "above the plate"; OSC + weld
+         drive it to the medium peg. -->
+    <body name="g_medium" pos="0.6 0 0.3">
+      <freejoint name="g_medium_joint"/>
+      <!-- GEAR_MEDIUM_GEOMS -->
+    </body>
+  </worldbody>
+
+  <!-- Weld medium gear to gripper. relpose puts the body so that the
+       auto-recentered medium gear's centroid lands directly below the hand.
+       Medium OBJ mass-centroid x = +0.0203 (IsaacLab encodes the gear at its
+       plate-frame xy), so relpose x = -0.0203 cancels that and the gear visual
+       sits on the hand's grip line. z=-0.130 mirrors PegInsert's depth. -->
+  <equality>
+    <weld name="grasp" body1="g_medium" body2="hand"
+          relpose="0.0203 0 0.130 0 1 0 0" active="true"
+          solref="0.001 1" solimp="0.999 0.9999 0.001"/>
+  </equality>
+
+  <contact>
+    <exclude body1="left_finger" body2="g_medium"/>
+    <exclude body1="right_finger" body2="g_medium"/>
+  </contact>
+</mujoco>

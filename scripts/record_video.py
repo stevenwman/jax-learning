@@ -66,6 +66,21 @@ ENV_DEFAULTS = {
     "Go2WarpSplitbeltPoseDR": ((640, 480), "splitbelt_side"),
 }
 
+# Per-env free-camera config (used when ENV_DEFAULTS' camera_name is None or
+# unset, and the user doesn't pass --camera). Each entry is a dict with
+# lookat (xyz), distance, azimuth, elevation. Lets envs like Factory ship
+# a sensible view without --cam-distance gymnastics every record_video call.
+ENV_FREE_CAM_DEFAULTS = {
+    "Go2WarpJoystickFlat": dict(
+        lookat=None, distance=6.0, azimuth=135.0, elevation=-30.0,
+        track_body="base_link",
+    ),
+    "FactoryPegInsert": dict(
+        lookat=[0.55, 0.0, 0.15], distance=0.95,
+        azimuth=115.0, elevation=-18.0, track_body=None,
+    ),
+}
+
 
 def _resolve_skill_vector(meta, skill_index, skill_vector_path):
     """Resolve a fixed skill vector z from CLI args + checkpoint meta.
@@ -287,7 +302,8 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
            no_early_term: bool = False,
            lock_cmd: tuple[float, float, float] | None = None,
            resolution: tuple[int, int] = (640, 480),
-           video_quality: int = 8):
+           video_quality: int = 8,
+           stochastic: bool = False):
 
     # ── Load checkpoint ───────────────────────────────────────────────────
     algo_type = "ppo"  # default
@@ -478,66 +494,120 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
     else:
         rollout_step, _ = build_offpolicy_rollout_step(
             rollout_algo, training_state.actor_params, norm_state, env_step,
-            use_obs_norm, kicks_fn=kicks_fn, n_frame_stack=n_fs)
+            use_obs_norm, kicks_fn=kicks_fn, n_frame_stack=n_fs,
+            deterministic=not stochastic)
     init_carry = (env_state, key)
 
-    # ── Phase 1: Python-loop rollout (low peak HBM) ───────────────────────
-    # A jit'd scan would preallocate full-State × max_steps on device (~1 GB
-    # for Go2). Calling the jit'd step in a Python loop reuses one State
-    # buffer and only retains numpy copies of qpos/qvel/action/reward/info
-    # on host. Compile cost: ~one rollout_step trace (5-10s). Dispatch
-    # overhead: ~100ms total across 1000 steps (negligible vs CPU render).
-    jit_rollout_step = jax.jit(rollout_step)
-
+    # ── Phase 1: rollout (scan fast path vs Python loop fallback) ─────────
+    # Fast path: jax.lax.scan over max_steps inside one jit. Only qpos, qvel,
+    # action, reward leave the scan body — full env State is not stacked
+    # (avoids the ~1 GB preallocation that motivated the original Python
+    # loop). One device→host transfer at the end instead of 4 syncs per step.
+    # Saves ~minutes on 900-step single-env rollouts (Factory PegInsert);
+    # nothing changes for envs that need the Python loop (early termination
+    # honoured, per-step info sidecars).
+    #
+    # The fallback Python loop is kept for envs/runs that need:
+    #   - early termination break (done=True → stop)
+    #   - per-step info sidecars (command, goal_xy, reward_components,
+    #     splitbelt) which require .info[*] extraction each step.
     init_qpos = np.asarray(env_state.data.qpos)
     init_qvel = np.asarray(env_state.data.qvel)
+    # Mocap pose is set per-reset (FactoryPegInsert randomizes hole_base via
+    # data.mocap_pos) and stays constant through the episode. Capture once
+    # and restore on the render-side MjData so the rendered scene reflects
+    # the actual physics — without this the renderer falls back to
+    # mj_model.body_pos (nominal scene pose) and shows the hole at (0.6, 0,
+    # 0.05) even if physics had it sampled elsewhere.
+    init_mocap_pos = np.asarray(env_state.data.mocap_pos)
+    init_mocap_quat = np.asarray(env_state.data.mocap_quat)
 
-    qpos_hist, qvel_hist, act_hist, rew_hist = [], [], [], []
     cmd_hist = []
     goal_xy_hist = []
     reward_components_hist: dict[str, list] = {}
-    splitbelt_hist: dict[str, list] = {}        # populated only on splitbelt envs
-    splitbelt_belt_schedule = None              # captured once on first step
+    splitbelt_hist: dict[str, list] = {}
+    splitbelt_belt_schedule = None
 
-    print("JIT-compiling rollout step + running Python loop...")
-    t0 = time.time()
-    carry = init_carry
-    num_frames = max_steps
-    for i in range(max_steps):
-        carry, (state_i, action_i) = jit_rollout_step(carry, i)
-        qpos_hist.append(np.asarray(state_i.data.qpos))
-        qvel_hist.append(np.asarray(state_i.data.qvel))
-        act_hist.append(np.asarray(action_i))
-        rew_hist.append(float(state_i.reward))
-        info = state_i.info
-        if 'command' in info:
-            cmd_hist.append(np.asarray(info['command']))
-        # Only record goal_xy for goal-directed (Class B) tiles — Class A uses
-        # a placeholder goal=spawn that shouldn't be visualized.
-        if 'goal_xy' in info and bool(info.get('is_goal_directed', True)):
-            goal_xy_hist.append(np.asarray(info['goal_xy']))
-        else:
-            goal_xy_hist.append(None)
-        if 'reward_components' in info:
-            for k, v in info['reward_components'].items():
-                reward_components_hist.setdefault(k, []).append(np.asarray(v))
-        # Splitbelt env per-step gait primitives (S§9.2 sidecar emission).
-        if 'splitbelt' in info:
-            for k, v in info['splitbelt'].items():
-                splitbelt_hist.setdefault(k, []).append(np.asarray(v))
-            if splitbelt_belt_schedule is None and 'belt_schedule' in info:
-                splitbelt_belt_schedule = np.asarray(info['belt_schedule'])
-        if float(state_i.done) > 0.5:
-            if no_early_term:
-                # Keep rolling — let the user see HOW it fails (post-failure dynamics
-                # are informative). Auto-reset wrapper will respawn the env.
-                pass
-            else:
-                num_frames = i + 1
+    # Probe the initial info to decide which path to take.
+    init_info = env_state.info
+    has_sidecars = any(k in init_info for k in (
+        'command', 'goal_xy', 'reward_components', 'splitbelt'))
+    use_scan_fast_path = (not has_sidecars) and (not no_early_term or True)
+    # ^ no_early_term gate kept for symmetry; scan handles both (early-term
+    # break loses meaning when we always run max_steps).
+
+    if use_scan_fast_path:
+        def scan_step(carry, step_idx):
+            new_carry, (state_i, action_i) = rollout_step(carry, step_idx)
+            return new_carry, (state_i.data.qpos,
+                               state_i.data.qvel,
+                               action_i,
+                               state_i.reward,
+                               state_i.done)
+
+        @jax.jit
+        def rollout_all(carry):
+            return jax.lax.scan(scan_step, carry,
+                                jnp.arange(max_steps, dtype=jnp.int32))
+
+        print(f"JIT-compiling lax.scan rollout ({max_steps} steps)…")
+        t0 = time.time()
+        carry, (qpos_arr, qvel_arr, act_arr, rew_arr, done_arr) = rollout_all(init_carry)
+        jax.block_until_ready(qpos_arr)
+        t_rollout = time.time() - t0
+        # Single batched transfer.
+        qpos_hist = [np.asarray(q) for q in np.asarray(qpos_arr)]
+        qvel_hist = [np.asarray(q) for q in np.asarray(qvel_arr)]
+        act_hist = [np.asarray(a) for a in np.asarray(act_arr)]
+        rew_hist = list(np.asarray(rew_arr, dtype=np.float32))
+        done_np = np.asarray(done_arr)
+        num_frames = max_steps
+        if not no_early_term:
+            done_idx = np.argmax(done_np > 0.5)
+            if done_np[done_idx] > 0.5:
+                num_frames = int(done_idx) + 1
                 print(f"Episode ended at step {num_frames}")
-                break
-    t_rollout = time.time() - t0
-    print(f"Rollout done: {num_frames} steps in {t_rollout:.2f}s (includes JIT compilation)")
+        print(f"Rollout (scan) done: {num_frames} steps in {t_rollout:.2f}s "
+              f"(includes JIT compilation)")
+    else:
+        # ── Python-loop fallback ──────────────────────────────────────────
+        jit_rollout_step = jax.jit(rollout_step)
+        qpos_hist, qvel_hist, act_hist, rew_hist = [], [], [], []
+        print("JIT-compiling rollout step + running Python loop…")
+        t0 = time.time()
+        carry = init_carry
+        num_frames = max_steps
+        for i in range(max_steps):
+            carry, (state_i, action_i) = jit_rollout_step(carry, i)
+            qpos_hist.append(np.asarray(state_i.data.qpos))
+            qvel_hist.append(np.asarray(state_i.data.qvel))
+            act_hist.append(np.asarray(action_i))
+            rew_hist.append(float(state_i.reward))
+            info = state_i.info
+            if 'command' in info:
+                cmd_hist.append(np.asarray(info['command']))
+            if 'goal_xy' in info and bool(info.get('is_goal_directed', True)):
+                goal_xy_hist.append(np.asarray(info['goal_xy']))
+            else:
+                goal_xy_hist.append(None)
+            if 'reward_components' in info:
+                for k, v in info['reward_components'].items():
+                    reward_components_hist.setdefault(k, []).append(np.asarray(v))
+            if 'splitbelt' in info:
+                for k, v in info['splitbelt'].items():
+                    splitbelt_hist.setdefault(k, []).append(np.asarray(v))
+                if splitbelt_belt_schedule is None and 'belt_schedule' in info:
+                    splitbelt_belt_schedule = np.asarray(info['belt_schedule'])
+            if float(state_i.done) > 0.5:
+                if no_early_term:
+                    pass
+                else:
+                    num_frames = i + 1
+                    print(f"Episode ended at step {num_frames}")
+                    break
+        t_rollout = time.time() - t0
+        print(f"Rollout (python loop) done: {num_frames} steps in {t_rollout:.2f}s "
+              f"(includes JIT compilation)")
 
     total_reward = float(np.sum(rew_hist[:num_frames]))
     print(f"Total reward: {total_reward:.1f}")
@@ -558,6 +628,10 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
     renderer = mujoco.Renderer(env.mj_model, width=render_w, height=render_h)
     frames = []
     mj_data = mujoco.MjData(env.mj_model)
+    # Restore the episode's mocap pose once (constant for the whole episode).
+    if init_mocap_pos.size > 0:
+        mj_data.mocap_pos[:] = init_mocap_pos
+        mj_data.mocap_quat[:] = init_mocap_quat
 
     has_commands = len(cmd_hist) > 0
 
@@ -568,13 +642,29 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
         if camera is not None:
             renderer.update_scene(mj_data, camera=camera)
         else:
-            # Free camera with body tracking
+            # Free camera. Per-env defaults come from ENV_FREE_CAM_DEFAULTS;
+            # CLI --cam-distance still overrides the distance field if the
+            # user passed it (i.e. != the parser's default 6.0).
+            cam_cfg = ENV_FREE_CAM_DEFAULTS.get(env_name, dict(
+                lookat=None, distance=6.0, azimuth=135.0, elevation=-30.0,
+                track_body="base_link",
+            ))
             cam = mujoco.MjvCamera()
-            cam.type = mujoco.mjtCamera.mjCAMERA_TRACKING
-            cam.trackbodyid = 1  # base/base_link (body ID 1 in both models)
-            cam.distance = cam_distance  # tunable via --cam-distance
-            cam.azimuth = 135
-            cam.elevation = -30
+            if cam_cfg.get("track_body") is not None:
+                cam.type = mujoco.mjtCamera.mjCAMERA_TRACKING
+                try:
+                    cam.trackbodyid = env.mj_model.body(cam_cfg["track_body"]).id
+                except KeyError:
+                    cam.trackbodyid = 1  # fallback to legacy default
+            else:
+                cam.type = mujoco.mjtCamera.mjCAMERA_FREE
+            if cam_cfg.get("lookat") is not None:
+                cam.lookat[:] = cam_cfg["lookat"]
+            # CLI distance wins only if user changed it from the parser default.
+            cam.distance = (cam_distance if cam_distance != 6.0
+                            else cam_cfg.get("distance", 6.0))
+            cam.azimuth = cam_cfg.get("azimuth", 135.0)
+            cam.elevation = cam_cfg.get("elevation", -30.0)
             renderer.update_scene(mj_data, camera=cam)
 
         # Add command arrow overlays (Go2-specific)
@@ -611,6 +701,8 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
         "qvel": np.stack(qvel_hist[:num_frames]),
         "actions": np.stack(act_hist[:num_frames]),
         "rewards": np.asarray(rew_hist[:num_frames], dtype=np.float32),
+        "mocap_pos": init_mocap_pos,
+        "mocap_quat": init_mocap_quat,
     }
     for k, vs in reward_components_hist.items():
         traj_data[f"reward_{k}"] = np.stack(vs[:num_frames])
@@ -798,6 +890,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--video-quality", type=int, default=8,
                         help="imageio video quality (1-10, default 8). "
                              "Higher = bigger file + sharper, lower = smaller.")
+    parser.add_argument("--stochastic", action="store_true",
+                        help="Sample from the policy distribution instead of "
+                             "the deterministic mean. Useful when the trained "
+                             "policy is multi-modal and the mean falls in a "
+                             "low-reward valley between modes.")
     return parser
 
 
@@ -821,4 +918,5 @@ if __name__ == "__main__":
         lock_cmd=tuple(args.lock_cmd) if args.lock_cmd is not None else None,
         resolution=tuple(args.resolution),
         video_quality=args.video_quality,
+        stochastic=args.stochastic,
     )
