@@ -64,6 +64,30 @@ def _register_custom_envs():
             functools.partial(WarpOscJoystick, task="flat_terrain"),
             _warp_osc_default_config_jt,
         )
+    # Stiffness sweep (Λ-OSC). Scale the baseline Cartesian gains by s; kd scales
+    # as sqrt(s) so the damping ratio stays ~critical (kd ≈ 2·sqrt(kp)) — this
+    # varies the natural frequency / stiffness while holding ζ≈1. Tests how the
+    # trained-policy gait (bounce, tracking, effort) varies with stiffness, and
+    # whether spring stiffness drives the pogo (stiffer = more stored spring
+    # energy). The open-loop hold-probe showed a static weight-bearing floor near
+    # s≈0.5 (no gravity FF); a trained policy may stand below it via active stance.
+    _OSC_BASE_KP = [3000.0, 3000.0, 4000.0]
+    _OSC_BASE_KD = [110.0, 110.0, 130.0]
+    def _make_osc_kp_config(scale):
+        def factory():
+            cfg = warp_osc_default_config()
+            cfg.osc.kp = [k * scale for k in _OSC_BASE_KP]
+            cfg.osc.kd = [d * scale ** 0.5 for d in _OSC_BASE_KD]
+            return cfg
+        return factory
+    for _scale, _suffix in [(0.25, "Kp025"), (0.5, "Kp05"), (2.0, "Kp2"), (4.0, "Kp4")]:
+        _name = f"Go2WarpOscJoystickFlat{_suffix}"
+        if _name not in pg_locomotion._envs:
+            pg_locomotion.register_environment(
+                _name,
+                functools.partial(WarpOscJoystick, task="flat_terrain"),
+                _make_osc_kp_config(_scale),
+            )
     # Variant: linear torque-speed actuator limit (approximates motor saturation).
     # Playground's registry.load passes config_overrides=None by default, which
     # would clobber a partial(..., config_overrides=...). Bake the flag into a
