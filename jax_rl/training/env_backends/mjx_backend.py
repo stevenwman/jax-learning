@@ -115,10 +115,11 @@ def _register_custom_envs():
     # bound ~ U[0.5, 2.5] m/s (into the ≥2 m/s pure-impedance failure regime),
     # vs the default fixed ±0.75. Tests whether the policy learns to stiffen on
     # demand to reject hard disturbances.
-    # Hard-kick comparison set: identical DR'd kick U[0.5,2.5] m/s applied to a
-    # fixed-impedance control, scalar variable impedance, and per-axis variable
-    # impedance. Tests (a) does stiffness modulation help disturbance rejection
-    # at all (vs fixed), and (b) does per-axis directional stiffening beat scalar.
+    # Hard-kick comparison ladder: identical DR'd kick U[0.5,2.5] m/s applied to
+    # conventional joint-PD, fixed-soft OSC, scalar variable impedance, and
+    # per-axis variable impedance. Each step isolates one factor — (a) does
+    # Cartesian impedance help disturbance rejection at all (vs joint-PD), (b)
+    # does stiffness modulation help (vs fixed), (c) does per-axis beat scalar.
     def _hardkick(base_factory):
         def factory():
             cfg = base_factory()
@@ -127,9 +128,10 @@ def _register_custom_envs():
             return cfg
         return factory
     for _name, _cls, _base in [
+        ("Go2WarpJoystickFlatHardKick", WarpJoystick, warp_default_config),                             # joint-PD control
+        ("Go2WarpOscJoystickFlatKp05HardKick", WarpOscJoystick, _make_osc_kp_config(0.5)),              # fixed-soft OSC control
         ("Go2WarpOscVarImpedanceHardKickFlat", WarpOscVarImpedance, warp_osc_var_default_config),       # scalar +4
         ("Go2WarpOscVarImpedanceAxisHardKickFlat", WarpOscVarImpedance, warp_osc_var_per_axis_config),  # per-axis +12
-        ("Go2WarpOscJoystickFlatKp05HardKick", WarpOscJoystick, _make_osc_kp_config(0.5)),              # fixed-soft control
     ]:
         if _name not in pg_locomotion._envs:
             pg_locomotion.register_environment(
