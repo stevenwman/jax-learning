@@ -543,7 +543,8 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
                                state_i.data.qvel,
                                action_i,
                                state_i.reward,
-                               state_i.done)
+                               state_i.done,
+                               state_i.data.actuator_force)
 
         @jax.jit
         def rollout_all(carry):
@@ -552,7 +553,7 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
 
         print(f"JIT-compiling lax.scan rollout ({max_steps} steps)…")
         t0 = time.time()
-        carry, (qpos_arr, qvel_arr, act_arr, rew_arr, done_arr) = rollout_all(init_carry)
+        carry, (qpos_arr, qvel_arr, act_arr, rew_arr, done_arr, force_arr) = rollout_all(init_carry)
         jax.block_until_ready(qpos_arr)
         t_rollout = time.time() - t0
         # Single batched transfer.
@@ -560,6 +561,7 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
         qvel_hist = [np.asarray(q) for q in np.asarray(qvel_arr)]
         act_hist = [np.asarray(a) for a in np.asarray(act_arr)]
         rew_hist = list(np.asarray(rew_arr, dtype=np.float32))
+        act_force_hist = [np.asarray(f) for f in np.asarray(force_arr)]
         done_np = np.asarray(done_arr)
         num_frames = max_steps
         if not no_early_term:
@@ -572,7 +574,7 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
     else:
         # ── Python-loop fallback ──────────────────────────────────────────
         jit_rollout_step = jax.jit(rollout_step)
-        qpos_hist, qvel_hist, act_hist, rew_hist = [], [], [], []
+        qpos_hist, qvel_hist, act_hist, rew_hist, act_force_hist = [], [], [], [], []
         print("JIT-compiling rollout step + running Python loop…")
         t0 = time.time()
         carry = init_carry
@@ -583,6 +585,7 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
             qvel_hist.append(np.asarray(state_i.data.qvel))
             act_hist.append(np.asarray(action_i))
             rew_hist.append(float(state_i.reward))
+            act_force_hist.append(np.asarray(state_i.data.actuator_force))
             info = state_i.info
             if 'command' in info:
                 cmd_hist.append(np.asarray(info['command']))
@@ -706,6 +709,8 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
         "qpos": np.stack(qpos_hist[:num_frames]),
         "qvel": np.stack(qvel_hist[:num_frames]),
         "actions": np.stack(act_hist[:num_frames]),
+        # Per-joint applied motor torque (Nm), in ACTUATOR order (FR,FL,RR,RL).
+        "actuator_force": np.stack(act_force_hist[:num_frames]),
         "rewards": np.asarray(rew_hist[:num_frames], dtype=np.float32),
         "mocap_pos": init_mocap_pos,
         "mocap_quat": init_mocap_quat,
