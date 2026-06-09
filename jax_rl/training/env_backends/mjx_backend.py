@@ -137,6 +137,24 @@ def _register_custom_envs():
             pg_locomotion.register_environment(
                 _name, functools.partial(_cls, task="flat_terrain"), _hardkick(_base)
             )
+    # OSC / variable-impedance on a ROUGH-only terrain curriculum. Composed via
+    # multiple inheritance (terrain curriculum + OSC controller). Gains match the
+    # flat runs so flat-trained policies can be zero-shot transferred onto rough.
+    from jax_rl.envs.locomotion.go2_warp_osc_curriculum import (
+        RoughCurriculum, WarpOscCurriculum, WarpOscVarImpedanceCurriculum,
+        rough_curriculum_config, osc_rough_soft_config,
+        var_rough_config, var_axis_rough_config,
+    )
+    for _name, _cls, _cfg in [
+        ("Go2WarpRoughCurriculum", RoughCurriculum, rough_curriculum_config),               # joint-PD
+        ("Go2WarpOscRoughCurriculum", WarpOscCurriculum, osc_rough_soft_config),             # fixed-soft
+        ("Go2WarpOscVarRoughCurriculum", WarpOscVarImpedanceCurriculum, var_rough_config),   # scalar +4
+        ("Go2WarpOscVarAxisRoughCurriculum", WarpOscVarImpedanceCurriculum, var_axis_rough_config),  # per-axis +12
+    ]:
+        if _name not in pg_locomotion._envs:
+            pg_locomotion.register_environment(
+                _name, functools.partial(_cls, task="flat_terrain"), _cfg
+            )
     # Variant: linear torque-speed actuator limit (approximates motor saturation).
     # Playground's registry.load passes config_overrides=None by default, which
     # would clobber a partial(..., config_overrides=...). Bake the flag into a

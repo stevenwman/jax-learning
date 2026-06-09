@@ -91,6 +91,10 @@ class WarpJoystickCurriculum(WarpJoystick):
     hardcoded flat-scene path.
     """
 
+    # Terrain grid layout. Subclasses override to select a different mix (e.g.
+    # a rough-only grid for the OSC-impedance terrain experiment).
+    _terrain_grid_cfg = GO2_DEFAULT_CFG
+
     def __init__(
         self,
         task: str = "flat_terrain",
@@ -102,7 +106,7 @@ class WarpJoystickCurriculum(WarpJoystick):
 
         # Generate terrain MJCF fragment + spawn origins.
         seed = int(getattr(config, "terrain_seed", 0))
-        gen = TerrainGenerator(GO2_DEFAULT_CFG)
+        gen = TerrainGenerator(self._terrain_grid_cfg)
         terrain_xml, origins = gen.generate(seed=seed)
 
         # Compose: inject terrain fragment into scene template.
@@ -132,10 +136,10 @@ class WarpJoystickCurriculum(WarpJoystick):
         self._post_init()
 
         # Terrain grid metadata for curriculum logic (Tasks 2.3+).
-        self._terrain_origins = jp.array(origins)   # shape (10, 4, 3)
-        self._num_rows = GO2_DEFAULT_CFG.num_rows    # 10
-        self._num_cols = GO2_DEFAULT_CFG.num_cols    # 4
-        self._tile_size = GO2_DEFAULT_CFG.tile_size  # (9.6, 9.6)
+        self._terrain_origins = jp.array(origins)   # shape (num_rows, num_cols, 3)
+        self._num_rows = self._terrain_grid_cfg.num_rows
+        self._num_cols = self._terrain_grid_cfg.num_cols
+        self._tile_size = self._terrain_grid_cfg.tile_size
 
         # Base-contact sensor for terrain-agnostic fall detection.
         base_contact_sid = self._mj_model.sensor("base_contact").id
