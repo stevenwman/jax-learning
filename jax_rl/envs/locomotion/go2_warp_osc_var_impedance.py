@@ -35,17 +35,71 @@ from jax_rl.envs.locomotion.go2_warp_osc_joystick import (
 _N_STIFFNESS = {"per_foot": 4, "per_axis": 12}
 
 
+def log_action_scale(a: jax.Array, lo: float, hi: float) -> jax.Array:
+    """Map action a∈[-1,1] → [lo,hi] log-spaced (a=0 → geometric mean √(lo·hi))."""
+    u = 0.5 * (jp.clip(a, -1.0, 1.0) + 1.0)
+    return lo * (hi / lo) ** u
+
+
+def var_action_size(granularity: str, damping_action: bool) -> int:
+    """12 foot targets + stiffness (+ damping when enabled), per granularity."""
+    n = _N_STIFFNESS[granularity]
+    return 12 + n * (2 if damping_action else 1)
+
+
+def impedance_gains(action, kp_base, kd_base, *, granularity, s_min, s_max,
+                    damping_action, z_min, z_max):
+    """Decode per-leg Cartesian gains (kp, kd), each (4,3), from the action tail.
+
+        kp = s · kp_base ,   kd = ζ · √s · kd_base
+
+    s from action[12:12+n] (log → [s_min,s_max]). ζ from the next n entries when
+    ``damping_action`` (log → [z_min,z_max]), else ζ=1 (locked critical). Because
+    kd_base = 2√kp_base is already critical, ζ is literally the damping ratio:
+    ζ<1 underdamped/springy, ζ>1 overdamped. per_foot → one value per foot
+    (broadcast over xyz); per_axis → per foot AND axis. ζ touches kd only — kp is
+    independent of the damping action (the decoupling).
+    """
+    n = _N_STIFFNESS[granularity]
+    s = log_action_scale(action[12:12 + n], s_min, s_max)
+    if damping_action:
+        zeta = log_action_scale(action[12 + n:12 + 2 * n], z_min, z_max)
+    else:
+        zeta = jp.ones_like(s)
+    if granularity == "per_foot":
+        s = s[:, None]
+        zeta = zeta[:, None]              # (4,1) — one value per foot
+    else:
+        s = s.reshape(4, 3)
+        zeta = zeta.reshape(4, 3)         # (4,3) — per foot AND axis
+    kp = s * kp_base
+    kd = zeta * jp.sqrt(s) * kd_base
+    return kp, kd
+
+
 def default_config() -> config_dict.ConfigDict:
     cfg = _osc_default_config()
     cfg.osc.var_s_min = 0.25
     cfg.osc.var_s_max = 2.0
     cfg.osc.stiffness_granularity = "per_foot"   # {per_foot (+4), per_axis (+12)}
+    # Decoupled damping: when True the policy ALSO commands ζ (damping ratio,
+    # 1=critical) per the same granularity. Off by default → kd locked critical.
+    cfg.osc.damping_action = False
+    cfg.osc.var_zeta_min = 0.5
+    cfg.osc.var_zeta_max = 2.0
     return cfg
 
 
 def default_config_per_axis() -> config_dict.ConfigDict:
     cfg = default_config()
     cfg.osc.stiffness_granularity = "per_axis"
+    return cfg
+
+
+def default_config_damping() -> config_dict.ConfigDict:
+    """Per-foot stiffness AND damping (action 20) — decoupled K and D."""
+    cfg = default_config()
+    cfg.osc.damping_action = True
     return cfg
 
 
@@ -73,24 +127,22 @@ class WarpOscVarImpedance(WarpOscJoystick):
             )
         self._stiffness_granularity = gran
         self._n_stiffness = _N_STIFFNESS[gran]
+        self._damping_action = bool(getattr(self._config.osc, "damping_action", False))
+        self._var_z_min = float(getattr(self._config.osc, "var_zeta_min", 0.5))
+        self._var_z_max = float(getattr(self._config.osc, "var_zeta_max", 2.0))
 
     @property
     def action_size(self) -> int:
-        # 12 foot-position targets + per-foot (4) or per-foot-per-axis (12).
-        return 12 + self._n_stiffness
-
-    def _stiffness_scale(self, a: jax.Array) -> jax.Array:
-        """Map action a∈[-1,1] → stiffness scale s∈[s_min,s_max] (log), elementwise."""
-        u = 0.5 * (jp.clip(a, -1.0, 1.0) + 1.0)
-        return self._var_s_min * (self._var_s_max / self._var_s_min) ** u
+        # 12 foot targets + stiffness (+ damping when enabled), per granularity.
+        return var_action_size(self._stiffness_granularity, self._damping_action)
 
     def _apply_control(self, data, action: jax.Array):
         deltas = action[:12].reshape(4, 3) * self._config.action_scale   # (4,3)
-        s = self._stiffness_scale(action[12:12 + self._n_stiffness])
-        if self._stiffness_granularity == "per_foot":
-            s = s[:, None]              # (4,1) — one scale per foot, all axes
-        else:                           # per_axis
-            s = s.reshape(4, 3)         # (4,3) — per foot AND axis
-        kp = s * self._osc_kp           # (4,3): broadcasts (4,1|4,3)*(3,)
-        kd = jp.sqrt(s) * self._osc_kd  # (4,3)
+        kp, kd = impedance_gains(
+            action, self._osc_kp, self._osc_kd,
+            granularity=self._stiffness_granularity,
+            s_min=self._var_s_min, s_max=self._var_s_max,
+            damping_action=self._damping_action,
+            z_min=self._var_z_min, z_max=self._var_z_max,
+        )
         return self._run_osc(data, deltas, kp, kd)
