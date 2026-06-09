@@ -71,6 +71,11 @@ def default_config() -> config_dict.ConfigDict:
             a=[1.5, 0.8, 1.2],
             b=[0.9, 0.25, 0.5],
         ),
+        push_config=config_dict.create(
+            interval=350,    # steps between base-velocity kicks (~7s @ 50Hz)
+            vel_min=0.75,    # per-episode kick bound ~ U[vel_min, vel_max];
+            vel_max=0.75,    # vel_min==vel_max reproduces the old fixed ±0.75
+        ),
         impl="warp",
         contact_mode="training",
         naconmax=4 * 8192,
@@ -275,9 +280,19 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
             key2, shape=(3,), minval=-self._cmd_a, maxval=self._cmd_a
         )
 
+        # Per-episode kick magnitude (domain-randomized disturbance strength):
+        # sample the kick-velocity bound once; step() kicks within ±this.
+        rng, push_key = jax.random.split(rng)
+        push_vel_max = jax.random.uniform(
+            push_key,
+            minval=self._config.push_config.vel_min,
+            maxval=self._config.push_config.vel_max,
+        )
+
         info = {
             "rng": rng,
             "command": cmd,
+            "push_vel_max": push_vel_max,
             "steps_until_next_cmd": steps_until_next_cmd,
             # Sized by action_size (not nu) so subclasses whose policy action is
             # wider than the actuator count (e.g. variable-impedance adds per-foot
@@ -334,11 +349,14 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
         return jax.lax.scan(substep, data, (), self.n_substeps)[0]
 
     def step(self, state: mjx_env.State, action: jax.Array) -> mjx_env.State:
-        # Random velocity kick every ~350 steps (~7s at 50Hz).
+        # Random velocity kick every push_interval steps. The magnitude bound is
+        # per-episode (info["push_vel_max"], sampled at reset) so disturbance
+        # strength is domain-randomizable via push_config.vel_{min,max}.
         step_count = state.info["step_count"]
-        push_interval = 350
+        push_interval = self._config.push_config.interval
         rng, push_key = jax.random.split(state.info["rng"])
-        push_vel = jax.random.uniform(push_key, (2,), minval=-0.75, maxval=0.75)
+        pmax = state.info["push_vel_max"]
+        push_vel = jax.random.uniform(push_key, (2,), minval=-pmax, maxval=pmax)
         do_push = (step_count > 0) & (step_count % push_interval == 0)
         data = state.data
         new_qvel = data.qvel.at[0:2].set(
