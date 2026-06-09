@@ -155,6 +155,30 @@ def _register_custom_envs():
             pg_locomotion.register_environment(
                 _name, functools.partial(_cls, task="flat_terrain"), _cfg
             )
+    # Go2 on a rough HEIGHTFIELD floor (real continuous rough, borrowed from
+    # mjlab's noise recipe, vs the box curriculum that left the robot on flat).
+    # Name suffix toggles the profile: A = perlin_hf (rounded foot-scale bumps,
+    # 9 cm), Uni = uniform (jagged, 7 cm). Gains match the flat runs (zero-shot).
+    from jax_rl.envs.locomotion.go2_warp_osc_rough import (
+        WarpRoughHF, WarpOscRoughHF, WarpOscVarRoughHF,
+        joint_rough_config, osc_soft_rough_config,
+        var_rough_config, var_axis_rough_config,
+    )
+    def _bind_rough_cfg(fac, prof, amp):
+        return lambda: fac(prof, amp)
+    for _ctag, _rcls, _rfac in [
+        ("Joint", WarpRoughHF, joint_rough_config),
+        ("Osc", WarpOscRoughHF, osc_soft_rough_config),
+        ("OscVar", WarpOscVarRoughHF, var_rough_config),
+        ("OscVarAxis", WarpOscVarRoughHF, var_axis_rough_config),
+    ]:
+        for _ptag, _prof, _amp in [("A", "perlin_hf", 0.09), ("Uni", "uniform", 0.07)]:
+            _rname = f"Go2Warp{_ctag}Rough{_ptag}"
+            if _rname not in pg_locomotion._envs:
+                pg_locomotion.register_environment(
+                    _rname, functools.partial(_rcls, task="flat_terrain"),
+                    _bind_rough_cfg(_rfac, _prof, _amp),
+                )
     # Variant: linear torque-speed actuator limit (approximates motor saturation).
     # Playground's registry.load passes config_overrides=None by default, which
     # would clobber a partial(..., config_overrides=...). Bake the flag into a

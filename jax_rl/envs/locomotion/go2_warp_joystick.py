@@ -87,6 +87,9 @@ def default_config() -> config_dict.ConfigDict:
 class WarpJoystick(go2_warp_base.Go2WarpEnv):
     """Track a joystick velocity command with Go2 (Warp backend)."""
 
+    # Scene XML to load. Subclasses override (e.g. a rough-heightfield scene).
+    _scene_xml = consts.WARP_SCENE_FLAT_XML
+
     def __init__(
         self,
         task: str = "flat_terrain",
@@ -94,7 +97,7 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
         config_overrides: Optional[Dict[str, Union[str, int, list[Any]]]] = None,
     ):
         super().__init__(
-            xml_path=consts.WARP_SCENE_FLAT_XML.as_posix(),
+            xml_path=self._scene_xml.as_posix(),
             config=config,
             config_overrides=config_overrides,
         )

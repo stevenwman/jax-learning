@@ -95,6 +95,11 @@ class Go2WarpEnv(mjx_env.MjxEnv):
         self._mj_model.vis.global_.offwidth = 3840
         self._mj_model.vis.global_.offheight = 2160
 
+        # Hook to mutate the built MjModel before it's transferred to the mjx
+        # backend (e.g. a rough-heightfield env sets hfield_data here). No-op by
+        # default.
+        self._customize_mj_model()
+
         self._mjx_model = mjx.put_model(self._mj_model, impl=self._config.impl)
         self._xml_path = xml_path
         self._imu_site_id = self._mj_model.site("imu").id
@@ -107,6 +112,10 @@ class Go2WarpEnv(mjx_env.MjxEnv):
 
         # Torso body ID (base_link in unitree XML).
         self._torso_body_id = self._mj_model.body(consts.WARP_ROOT_BODY).id
+
+    def _customize_mj_model(self) -> None:
+        """Mutate self._mj_model after build, before mjx.put_model. No-op by
+        default; rough-heightfield envs override to populate hfield_data."""
 
     # ── Deploy / sim2sim parity metadata ───────────────────────────────
 
