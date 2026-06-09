@@ -95,12 +95,21 @@ def _register_custom_envs():
     from jax_rl.envs.locomotion.go2_warp_osc_var_impedance import (
         WarpOscVarImpedance,
         default_config as warp_osc_var_default_config,
+        default_config_per_axis as warp_osc_var_per_axis_config,
     )
     if "Go2WarpOscVarImpedanceFlat" not in pg_locomotion._envs:
         pg_locomotion.register_environment(
             "Go2WarpOscVarImpedanceFlat",
             functools.partial(WarpOscVarImpedance, task="flat_terrain"),
             warp_osc_var_default_config,
+        )
+    # Per-foot-per-axis stiffness (+12 → action 24): policy picks vertical-stiff /
+    # tangential-soft per leg.
+    if "Go2WarpOscVarImpedanceAxisFlat" not in pg_locomotion._envs:
+        pg_locomotion.register_environment(
+            "Go2WarpOscVarImpedanceAxisFlat",
+            functools.partial(WarpOscVarImpedance, task="flat_terrain"),
+            warp_osc_var_per_axis_config,
         )
     # Variant: linear torque-speed actuator limit (approximates motor saturation).
     # Playground's registry.load passes config_overrides=None by default, which

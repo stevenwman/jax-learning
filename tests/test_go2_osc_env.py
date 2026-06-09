@@ -44,6 +44,20 @@ def test_var_impedance_env_builds_and_steps(env):
     assert not bool(jp.any(jp.isnan(s.data.qpos)))
 
 
+def test_var_impedance_per_axis_builds_and_steps():
+    """Per-axis variant: action 24 (12 targets + 12 stiffness), obs +12."""
+    from jax_rl.envs.locomotion.go2_warp_osc_var_impedance import (
+        WarpOscVarImpedance, default_config_per_axis)
+    venv = WarpOscVarImpedance(task="flat_terrain", config=default_config_per_axis())
+    assert venv.action_size == 24
+    s = venv.reset(jax.random.PRNGKey(0))
+    assert s.obs["state"].shape[-1] == 60        # 48 + 12 stiffness in last_act
+    assert s.obs["privileged_state"].shape[-1] == 134
+    for st in (-1.0, 1.0):
+        s = venv.step(s, jp.concatenate([0.1 * jp.ones(12), st * jp.ones(12)]))
+    assert not bool(jp.isnan(s.reward))
+
+
 def test_leg_dof_block_isolation(env):
     """Each foot's linear Jacobian is nonzero ONLY on its own 3 leg DoFs.
 
