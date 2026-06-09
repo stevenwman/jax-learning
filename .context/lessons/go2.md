@@ -255,3 +255,41 @@ hid all of this — classic "surviving/tracking ≠ walking well."
   When you reuse a joint-PD env's rewards for a Cartesian-target action,
   per-term magnitudes shift 2–4× and some penalties (action_rate computed
   pre-scale) keep the old calibration. Audit term magnitudes vs the old env.
+
+---
+
+## Variable Impedance: Measure the Commanded Stiffness, Not the Reward (2026-06-08)
+
+**What happened:** Added per-foot commanded stiffness to the OSC action space —
+scalar (+4, action 16) and per-foot-per-axis (+12, action 24). Each stiffness
+dim maps log to s∈[0.25,2] scaling that foot/axis baseline gain (kd∝√s). Trained
+5M each on flat Go2 velocity tracking.
+
+**Eval reward was a red herring.** Scalar eval 281.8 (≈ baseline 279.6), per-axis
+276.7 (slightly *lower*). By reward alone, per-axis looks like a regression. But
+extracting the *commanded* stiffness over a rollout told the real story:
+
+- **Per-axis learned vertical-stiff / tangential-soft from reward alone**: mean
+  s_z 0.60 > s_xy 0.51, z/xy > 1 for every foot, AND vertical stiffness ramps up
+  during stance (s_z stance > swing, all feet). That's textbook load-bearing
+  impedance modulation — stiff along the load axis, compliant in shear, phase-
+  gated. The coarser per-foot scalar only showed a weak, leg-heterogeneous
+  version of this.
+- The policy also independently **leaned soft** (mean s≈0.47), landing at the
+  same soft sweet spot the fixed-stiffness sweep found.
+
+**Lessons:**
+- **For variable-impedance / any "extra control DoF" study, measure what the
+  policy *commands*, not just the task reward.** A finer action space can reveal
+  a clean, physically-meaningful strategy while *lowering* reward (extra
+  exploration cost on a task that doesn't need the DoFs). Reward ranks it worse;
+  the commanded-signal analysis ranks it more interpretable.
+- **Flat velocity tracking barely exercises impedance modulation** — the
+  behavior is real but mild. To make stiffness modulation *matter*, use a task
+  that demands it: rough terrain, soft/variable contact, or large/ randomized
+  disturbances (note the training kick is a FIXED ±0.75 m/s, well below the
+  ≥2 m/s pure-impedance failure threshold — randomize/ramp it to stress
+  compliance).
+- **Derive kd from commanded kp** (kd∝√kp, ζ≈1) instead of adding damping action
+  dims — halves the added params and keeps the loop critically damped as the
+  policy varies stiffness.

@@ -147,6 +147,33 @@ action_size==nu for all fixed envs). obs 48→52 / priv 122→126. Tests: per-le
 shared-gain equivalence (CPU) + var-env build (GPU). Per-foot-per-axis (+12,
 action→24) is the planned follow-up. Not yet trained.
 
+## Update — variable impedance TRAINED (scalar +4 and per-axis +12)
+
+Both 5M, seed 0, same config. The question isn't eval — it's whether the policy
+*modulates* stiffness meaningfully. Extracted commanded s from the action over
+rollouts and correlated with gait phase (stance = foot z < 2.5 cm).
+
+**Scalar (+4), eval 281.8** (≈ baseline 279.6, marginally better): uses the DoFs
+(s spans full [0.26, 2.0]), **leans soft** (mean s≈0.47 — independently lands at
+the sweep's soft sweet spot), with **weak, leg-heterogeneous stance-stiffening**
+(Δ(stance−swing) >0 all legs, corr(foot-z, s) <0 on 3/4; clear on RL, faint on FL).
+
+**Per-axis (+12), eval 276.7** (slightly below — harder to train, flat task
+doesn't need it): the CLEAN result. The policy commands **vertical-stiff /
+tangential-soft** — mean s_z 0.60 vs s_xy 0.51, z/xy > 1 for every foot
+(1.06–1.45) — and **ramps vertical stiffness with stance** (s_z stance > swing
+for every foot, FL +0.24/+0.50). Load-bearing impedance modulation, learned from
+reward alone.
+
+Conclusion: variable impedance works and the finer per-axis action reveals the
+physically-meaningful strategy (stiff along the load axis, soft in shear, phase-
+modulated), even though it doesn't improve *flat* velocity-tracking reward. The
+behavior is mild because the task doesn't demand it — rough terrain / large
+disturbances (and the fixed ±0.75 m/s kick → a randomized/larger kick) would
+exercise it harder. **Eval reward would rank per-axis "worse"; the commanded-
+stiffness analysis shows it's doing the most sensible thing — measure the
+stiffness, not just the return.**
+
 ## Status / next
 
 MVP done: builds, trains, walks, tracks, all tests green. NOT tuned. Next:
