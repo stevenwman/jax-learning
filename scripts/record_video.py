@@ -72,7 +72,7 @@ ENV_DEFAULTS = {
 # a sensible view without --cam-distance gymnastics every record_video call.
 ENV_FREE_CAM_DEFAULTS = {
     "Go2WarpJoystickFlat": dict(
-        lookat=None, distance=6.0, azimuth=135.0, elevation=-30.0,
+        lookat=None, distance=2.2, azimuth=135.0, elevation=-20.0,
         track_body="base_link",
     ),
     "FactoryPegInsert": dict(
@@ -645,10 +645,16 @@ def record(env_name: str | None = None, checkpoint: str | None = None,
             # Free camera. Per-env defaults come from ENV_FREE_CAM_DEFAULTS;
             # CLI --cam-distance still overrides the distance field if the
             # user passed it (i.e. != the parser's default 6.0).
-            cam_cfg = ENV_FREE_CAM_DEFAULTS.get(env_name, dict(
-                lookat=None, distance=6.0, azimuth=135.0, elevation=-30.0,
+            # Closer default for the ~0.3 m-tall Go2 so the gait is visible
+            # without passing --cam-distance every call; other envs keep 6.0.
+            _fallback = dict(
+                lookat=None,
+                distance=2.2 if env_name.startswith("Go2Warp") else 6.0,
+                azimuth=135.0,
+                elevation=-20.0 if env_name.startswith("Go2Warp") else -30.0,
                 track_body="base_link",
-            ))
+            )
+            cam_cfg = ENV_FREE_CAM_DEFAULTS.get(env_name, _fallback)
             cam = mujoco.MjvCamera()
             if cam_cfg.get("track_body") is not None:
                 cam.type = mujoco.mjtCamera.mjCAMERA_TRACKING
