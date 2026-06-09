@@ -146,13 +146,14 @@ class Go2WarpEnv(mjx_env.MjxEnv):
         # derating (the curve's flat top sits at the MJCF ctrlrange/stall).
         effort_frac = float(getattr(config, "continuous_effort_frac", 1.0))
         self._effort_limit = self._stall_torque * effort_frac
-        self._torque_speed_model = bool(getattr(config, "torque_speed_model", False))
 
-        # Physical per-joint armature (mjlab-matched): replaces the uniform MJCF
-        # 0.01 with gear-derived rotor inertia (hip/thigh 0.004, knee 0.009).
-        # Mutates dof_armature BEFORE mjx.put_model so the change reaches Λ.
-        if bool(getattr(config, "physical_armature", False)):
-            self._mj_model.dof_armature[:] = physical_armature(self._mj_model)
+        # Actuation component (TorqueOnly | MotorModel), built from the legacy
+        # config flags during the staged composition migration. Owns the per-joint
+        # armature — set here, BEFORE mjx.put_model, so it reaches Λ — and the
+        # per-substep torque-speed clip. See go2_warp_components.
+        from jax_rl.envs.locomotion.go2_warp_components import actuation_from_config
+        self._actuation = actuation_from_config(config)
+        self._actuation.customize_model(self._mj_model)
 
         # Rendering.
         self._mj_model.vis.global_.offwidth = 3840
@@ -287,16 +288,13 @@ class Go2WarpEnv(mjx_env.MjxEnv):
     def _apply_torque_speed_limit(
         self, tau_joint: jax.Array, dq: jax.Array
     ) -> jax.Array:
-        """Clip joint torques by the DC-motor torque-speed curve (4-quadrant).
+        """Apply the Actuation component's torque-speed clip (joint order).
 
-        Delegates to module-level :func:`torque_speed_clip` (mjlab
-        ``_clip_effort`` port) with per-joint stall (MJCF ctrlrange),
-        velocity limit (URDF), and continuous effort limit. No-op when
-        ``config.torque_speed_model`` is False. Both inputs are in joint order.
+        Delegates to ``self._actuation.clip_torque`` — identity for TorqueOnly,
+        the mjlab DC-motor curve for MotorModel. Kept under the old name so the
+        controllers' substep loops call through unchanged.
         """
-        if not self._torque_speed_model:
-            return tau_joint
-        return torque_speed_clip(
+        return self._actuation.clip_torque(
             tau_joint, dq,
             self._stall_torque, self._velocity_limit, self._effort_limit,
         )
