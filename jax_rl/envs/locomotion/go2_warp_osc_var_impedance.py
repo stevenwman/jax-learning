@@ -103,6 +103,13 @@ def default_config_damping() -> config_dict.ConfigDict:
     return cfg
 
 
+def default_config_damping_axis() -> config_dict.ConfigDict:
+    """Per-axis stiffness AND damping (action 36) — decoupled K and D, per foot+axis."""
+    cfg = default_config_per_axis()
+    cfg.osc.damping_action = True
+    return cfg
+
+
 class WarpOscVarImpedance(WarpOscJoystick):
     """OSC joystick where the policy also commands stiffness (per-foot or -axis)."""
 

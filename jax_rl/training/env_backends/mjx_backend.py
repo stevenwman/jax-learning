@@ -97,6 +97,7 @@ def _register_custom_envs():
         default_config as warp_osc_var_default_config,
         default_config_per_axis as warp_osc_var_per_axis_config,
         default_config_damping as warp_osc_var_damping_config,
+        default_config_damping_axis as warp_osc_var_damping_axis_config,
     )
     if "Go2WarpOscVarImpedanceFlat" not in pg_locomotion._envs:
         pg_locomotion.register_environment(
@@ -138,6 +139,7 @@ def _register_custom_envs():
         ("Go2WarpOscVarFlatPhysical", WarpOscVarImpedance, _physical(warp_osc_var_default_config)),   # variable per-foot (locked critical)
         ("Go2WarpOscVarAxisFlatPhysical", WarpOscVarImpedance, _physical(warp_osc_var_per_axis_config)),  # variable per-axis
         ("Go2WarpOscVarDampingFlatPhysical", WarpOscVarImpedance, _physical(warp_osc_var_damping_config)),  # decoupled K+D (per-foot)
+        ("Go2WarpOscVarDampingAxisFlatPhysical", WarpOscVarImpedance, _physical(warp_osc_var_damping_axis_config)),  # decoupled K+D (per-axis)
     ]:
         if _name not in pg_locomotion._envs:
             pg_locomotion.register_environment(
