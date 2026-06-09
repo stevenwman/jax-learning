@@ -30,6 +30,7 @@ def default_config() -> config_dict.ConfigDict:
         Kp=20.0,
         Kd=0.5,
         torque_speed_model=False,
+        physical_armature=False,
         action_repeat=1,
         action_scale=0.5,
         soft_joint_pos_limit_factor=0.95,

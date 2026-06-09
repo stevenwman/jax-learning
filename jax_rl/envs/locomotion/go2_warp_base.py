@@ -31,6 +31,59 @@ def get_warp_assets() -> Dict[str, bytes]:
     return assets
 
 
+def torque_speed_clip(
+    tau: jax.Array,
+    dq: jax.Array,
+    saturation: jax.Array,
+    velocity_limit: jax.Array,
+    effort_limit: jax.Array,
+) -> jax.Array:
+    """Clip joint torque by a linear DC-motor torque-speed curve (4-quadrant).
+
+    Port of mjlab's ``DcMotorActuator._clip_effort``
+    (``src/mjlab/actuator/dc_actuator.py``). All args broadcast per-joint.
+
+      vel_at_eff = velocity_limit * (1 + effort_limit / saturation)
+      v   = clip(dq, ±vel_at_eff)
+      top = saturation * (1 - v / velocity_limit)      # upper envelope
+      bot = saturation * (-1 - v / velocity_limit)     # lower envelope
+      allow ∈ [max(bot, -effort_limit), min(top, effort_limit)]
+
+    Properties (per joint): at dq=0 the cap is ±effort_limit; driving torque
+    decays to 0 at |dq|=velocity_limit (no-load speed) while braking torque
+    stays available; at |dq|≥vel_at_eff the window collapses to full braking,
+    actively decelerating an over-spun joint. ``saturation`` is the stall
+    (peak) torque, ``effort_limit`` the continuous (flat-top) torque ≤ stall.
+    """
+    vel_at_eff = velocity_limit * (1.0 + effort_limit / saturation)
+    v = jp.clip(dq, -vel_at_eff, vel_at_eff)
+    top = saturation * (1.0 - v / velocity_limit)
+    bot = saturation * (-1.0 - v / velocity_limit)
+    max_eff = jp.minimum(top, effort_limit)
+    min_eff = jp.maximum(bot, -effort_limit)
+    return jp.clip(tau, min_eff, max_eff)
+
+
+def physical_armature(mj_model) -> np.ndarray:
+    """Return a copy of ``dof_armature`` with mjlab per-joint rotor inertia set.
+
+    Calf (knee) dofs get :data:`consts.MOTOR_ARMATURE_KNEE` (gear-9 cam), all
+    other actuated leg joints get :data:`consts.MOTOR_ARMATURE_HIP` (gear-6).
+    The 6 freejoint (base) dofs are left untouched. Joints are identified by
+    name (``*_calf_joint``) so the result is independent of dof ordering.
+    """
+    arm = np.array(mj_model.dof_armature, copy=True)
+    for i in range(mj_model.nu):
+        jnt_id = mj_model.actuator_trnid[i, 0]
+        adr = mj_model.jnt_dofadr[jnt_id]
+        name = mj_model.jnt(jnt_id).name
+        arm[adr] = (
+            consts.MOTOR_ARMATURE_KNEE if name.endswith("calf_joint")
+            else consts.MOTOR_ARMATURE_HIP
+        )
+    return arm
+
+
 class Go2WarpEnv(mjx_env.MjxEnv):
     """Base class for Go2 Warp environments using unitree's MJCF."""
 
@@ -89,7 +142,17 @@ class Go2WarpEnv(mjx_env.MjxEnv):
         self._velocity_limit = jp.tile(
             jp.array(consts.MOTOR_VELOCITY_LIMIT_PER_JOINT_TYPE), 4
         )
+        # Continuous (flat-top) torque = stall * frac. frac=1.0 → no thermal
+        # derating (the curve's flat top sits at the MJCF ctrlrange/stall).
+        effort_frac = float(getattr(config, "continuous_effort_frac", 1.0))
+        self._effort_limit = self._stall_torque * effort_frac
         self._torque_speed_model = bool(getattr(config, "torque_speed_model", False))
+
+        # Physical per-joint armature (mjlab-matched): replaces the uniform MJCF
+        # 0.01 with gear-derived rotor inertia (hip/thigh 0.004, knee 0.009).
+        # Mutates dof_armature BEFORE mjx.put_model so the change reaches Λ.
+        if bool(getattr(config, "physical_armature", False)):
+            self._mj_model.dof_armature[:] = physical_armature(self._mj_model)
 
         # Rendering.
         self._mj_model.vis.global_.offwidth = 3840
@@ -224,19 +287,19 @@ class Go2WarpEnv(mjx_env.MjxEnv):
     def _apply_torque_speed_limit(
         self, tau_joint: jax.Array, dq: jax.Array
     ) -> jax.Array:
-        """Clip joint torques by a linear torque-speed curve.
+        """Clip joint torques by the DC-motor torque-speed curve (4-quadrant).
 
-        tau_limit = stall_torque * max(1 - |dq| / velocity_limit, 0)
-
-        No-op when config.torque_speed_model is False. When True, at |dq|=0
-        the limit equals the MJCF ctrlrange (unchanged); at |dq|=velocity_limit
-        the allowance reaches zero. Both inputs are in joint order.
+        Delegates to module-level :func:`torque_speed_clip` (mjlab
+        ``_clip_effort`` port) with per-joint stall (MJCF ctrlrange),
+        velocity limit (URDF), and continuous effort limit. No-op when
+        ``config.torque_speed_model`` is False. Both inputs are in joint order.
         """
         if not self._torque_speed_model:
             return tau_joint
-        scale = jp.maximum(1.0 - jp.abs(dq) / self._velocity_limit, 0.0)
-        tau_limit = self._stall_torque * scale
-        return jp.clip(tau_joint, -tau_limit, tau_limit)
+        return torque_speed_clip(
+            tau_joint, dq,
+            self._stall_torque, self._velocity_limit, self._effort_limit,
+        )
 
     # ── Properties ──────────────────────────────────────────────────────
 

@@ -59,3 +59,12 @@ BONGO_SCENE_XML = ROOT_PATH / "go2_bongo_scene.xml"
 # Stall torques are read from MJCF actuator_ctrlrange at env init (per-joint),
 # so they are not duplicated here.
 MOTOR_VELOCITY_LIMIT_PER_JOINT_TYPE = (30.1, 30.1, 20.07)
+
+# Reflected rotor inertia (joint armature). mjlab go1 values (same motor family
+# as go2): rotor 0.000111842; hip/thigh single-stage gear 6 → rotor·6²; knee
+# carries a 1.5× extra cam reduction (gear 9) → rotor·9². Applied per-joint only
+# when config.physical_armature is set (replaces the uniform MJCF 0.01). Flows
+# into mjx.full_m, so the OSC Λ becomes armature-aware automatically.
+MOTOR_ROTOR_INERTIA = 0.000111842
+MOTOR_ARMATURE_HIP = MOTOR_ROTOR_INERTIA * 6**2   # 0.004026 (hip + thigh)
+MOTOR_ARMATURE_KNEE = MOTOR_ROTOR_INERTIA * 9**2  # 0.009059 (calf / knee cam)

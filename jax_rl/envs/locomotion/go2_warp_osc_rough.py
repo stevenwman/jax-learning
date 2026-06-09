@@ -103,6 +103,13 @@ def _add_rough(cfg, profile, amplitude, seed=0):
     cfg.rough_profile = profile
     cfg.rough_amplitude = amplitude
     cfg.rough_seed = seed
+    # Physical motor model ON for rough/physical envs only (flat envs stay off
+    # for reproducibility). DC-motor torque-speed curve caps the calf at its
+    # 20.07 rad/s no-load speed (torque_speed_model); mjlab per-joint rotor
+    # inertia replaces the uniform 0.01 armature (physical_armature). See
+    # go2_warp_base.torque_speed_clip / physical_armature.
+    cfg.torque_speed_model = True
+    cfg.physical_armature = True
     return cfg
 
 
