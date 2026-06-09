@@ -96,6 +96,7 @@ def _register_custom_envs():
         WarpOscVarImpedance,
         default_config as warp_osc_var_default_config,
         default_config_per_axis as warp_osc_var_per_axis_config,
+        default_config_damping as warp_osc_var_damping_config,
     )
     if "Go2WarpOscVarImpedanceFlat" not in pg_locomotion._envs:
         pg_locomotion.register_environment(
@@ -111,6 +112,37 @@ def _register_custom_envs():
             functools.partial(WarpOscVarImpedance, task="flat_terrain"),
             warp_osc_var_per_axis_config,
         )
+    # ── Flat + PHYSICAL motor model (zero-shot-from-flat experiment) ─────────
+    # Same controllers/gains as the rough-physical eval envs, but on FLAT ground.
+    # Policies train WITH the physical motor model (DC-motor torque-speed curve +
+    # mjlab per-joint armature) then zero-shot transfer onto rough-physical
+    # (Go2Warp*RoughUni). Mirrors the original zero-shot protocol, now with the
+    # motor model held consistent across train + eval.
+    def _physical(base_factory):
+        def factory():
+            cfg = base_factory()
+            cfg.torque_speed_model = True
+            cfg.physical_armature = True
+            return cfg
+        return factory
+    def _osc_soft_physical():   # kp/kd mirror osc_soft_rough_config (s=0.5)
+        cfg = warp_osc_default_config()
+        cfg.osc.kp = [1500.0, 1500.0, 2000.0]
+        cfg.osc.kd = [78.0, 78.0, 92.0]
+        cfg.torque_speed_model = True
+        cfg.physical_armature = True
+        return cfg
+    for _name, _cls, _fac in [
+        ("Go2WarpJoystickFlatPhysical", WarpJoystick, _physical(warp_default_config)),               # joint-PD
+        ("Go2WarpOscFlatSoftPhysical", WarpOscJoystick, _osc_soft_physical),                          # fixed-soft OSC
+        ("Go2WarpOscVarFlatPhysical", WarpOscVarImpedance, _physical(warp_osc_var_default_config)),   # variable per-foot (locked critical)
+        ("Go2WarpOscVarAxisFlatPhysical", WarpOscVarImpedance, _physical(warp_osc_var_per_axis_config)),  # variable per-axis
+        ("Go2WarpOscVarDampingFlatPhysical", WarpOscVarImpedance, _physical(warp_osc_var_damping_config)),  # decoupled K+D (per-foot)
+    ]:
+        if _name not in pg_locomotion._envs:
+            pg_locomotion.register_environment(
+                _name, functools.partial(_cls, task="flat_terrain"), _fac
+            )
     # Variable impedance under DOMAIN-RANDOMIZED kick strength: per-episode kick
     # bound ~ U[0.5, 2.5] m/s (into the ≥2 m/s pure-impedance failure regime),
     # vs the default fixed ±0.75. Tests whether the policy learns to stiffen on
@@ -137,28 +169,14 @@ def _register_custom_envs():
             pg_locomotion.register_environment(
                 _name, functools.partial(_cls, task="flat_terrain"), _hardkick(_base)
             )
-    # OSC / variable-impedance on a ROUGH-only terrain curriculum. Composed via
-    # multiple inheritance (terrain curriculum + OSC controller). Gains match the
-    # flat runs so flat-trained policies can be zero-shot transferred onto rough.
-    from jax_rl.envs.locomotion.go2_warp_osc_curriculum import (
-        RoughCurriculum, WarpOscCurriculum, WarpOscVarImpedanceCurriculum,
-        rough_curriculum_config, osc_rough_soft_config,
-        var_rough_config, var_axis_rough_config,
-    )
-    for _name, _cls, _cfg in [
-        ("Go2WarpRoughCurriculum", RoughCurriculum, rough_curriculum_config),               # joint-PD
-        ("Go2WarpOscRoughCurriculum", WarpOscCurriculum, osc_rough_soft_config),             # fixed-soft
-        ("Go2WarpOscVarRoughCurriculum", WarpOscVarImpedanceCurriculum, var_rough_config),   # scalar +4
-        ("Go2WarpOscVarAxisRoughCurriculum", WarpOscVarImpedanceCurriculum, var_axis_rough_config),  # per-axis +12
-    ]:
-        if _name not in pg_locomotion._envs:
-            pg_locomotion.register_environment(
-                _name, functools.partial(_cls, task="flat_terrain"), _cfg
-            )
+    # (Removed 2026-06-09: the box-terrain "rough curriculum" envs —
+    # Go2Warp{,Osc,OscVar,OscVarAxis}RoughCurriculum — spawned the robot on the
+    # flat border so it never actually saw rough; superseded by the rough
+    # HEIGHTFIELD envs below. File go2_warp_osc_curriculum.py deleted with them.)
+    #
     # Go2 on a rough HEIGHTFIELD floor (real continuous rough, borrowed from
-    # mjlab's noise recipe, vs the box curriculum that left the robot on flat).
-    # Name suffix toggles the profile: A = perlin_hf (rounded foot-scale bumps,
-    # 9 cm), Uni = uniform (jagged, 7 cm). Gains match the flat runs (zero-shot).
+    # mjlab's noise recipe). Uni = uniform (jagged ~7 cm foot-scale). Gains match
+    # the flat runs so flat-trained policies zero-shot transfer (the headline).
     from jax_rl.envs.locomotion.go2_warp_osc_rough import (
         WarpRoughHF, WarpOscRoughHF, WarpOscVarRoughHF,
         joint_rough_config, osc_soft_rough_config,
@@ -172,7 +190,7 @@ def _register_custom_envs():
         ("OscVar", WarpOscVarRoughHF, var_rough_config),
         ("OscVarAxis", WarpOscVarRoughHF, var_axis_rough_config),
     ]:
-        for _ptag, _prof, _amp in [("A", "perlin_hf", 0.09), ("Uni", "uniform", 0.07)]:
+        for _ptag, _prof, _amp in [("Uni", "uniform", 0.07)]:   # perlin "A" dropped (too smooth)
             _rname = f"Go2Warp{_ctag}Rough{_ptag}"
             if _rname not in pg_locomotion._envs:
                 pg_locomotion.register_environment(
