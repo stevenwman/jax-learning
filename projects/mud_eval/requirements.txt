@@ -1,0 +1,13 @@
+# mud_eval dedicated venv — WORKING combo for vendored Newton 0.1.3 + 3-mud MPM.
+# Newton 0.1.3 needs the PRE-per-world-batching mujoco-warp (0.0.2); the 3.x line
+# uses 2D (nworld,ngeom) geom arrays its SolverMuJoCo can't consume. See STATUS.md.
+warp-lang==1.12.0
+mujoco==3.7.0
+mujoco-warp==0.0.2
+torch              # cu128 (Blackwell/5080); install via: uv pip install torch --torch-backend=cu128
+trimesh
+pycollada
+numpy
+pyyaml
+# + jax/jax_rl added at M1 for policy inference
+# newton 0.1.3 is vendored under vendor/newton/ (on sys.path, not pip-installed)
