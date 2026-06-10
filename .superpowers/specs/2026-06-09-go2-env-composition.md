@@ -1,6 +1,24 @@
 # Go2 Warp env composition — host + pluggable Controller / Terrain / Actuation
 
-**Date:** 2026-06-09 · **Status:** DRAFT (awaiting sign-off) · **Branch:** go2-osc-impedance
+**Date:** 2026-06-09 · **Status:** IMPLEMENTED (4 stages, commits 4c5e5fa·8908b3d·0fe5a40·50b78b7) · **Branch:** go2-osc-impedance
+
+> **Implementation notes / deviations from this design:**
+> - **Terrain via MjSpec** (decided after this draft): the base loads the scene
+>   through `mujoco.MjSpec` and `Terrain.apply(spec)` reshapes the floor (no second
+>   scene XML). MjSpec renormalizes hfield `userdata` to [0,1], so `RoughHF` writes
+>   a placeholder in `apply` and re-pokes the EXACT elevation in `customize_model`
+>   post-compile → `hfield_data` bit-identical to the old `_RoughHFMixin`.
+> - **Controller state stays on the env** (not the component): `Controller.setup`
+>   caches the OSC geometry/gains onto `env._…` and the OSC mechanics
+>   (`_run_osc`/`_feet_in_body`/`_compute_nominal_foot_body`) live on the host, so
+>   their white-box tests + record read `env._…` unchanged.
+> - **OSC subclass shims KEPT** (not deleted): `WarpOscJoystick`/`WarpOscVarImpedance`
+>   are now thin config presets (no control logic) — tests/record construct them
+>   directly. The registry uses `partial(WarpJoystick)` + a config factory.
+> - **Verification:** a throwaway sanity harness (`.temp/scripts/refactor_sanity.py`,
+>   36 envs, static contracts exact + dynamics tolerance) ran ALL-PASS after every
+>   stage; within-run trajectory equivalence (`.temp/scripts/controller_traj_equiv.py`,
+>   7 controller decode paths) matched the pre-refactor reference within GPU noise.
 
 ## Problem
 

@@ -27,7 +27,7 @@ Shared helper `Go2WarpEnv._apply_torque_speed_limit(tau_joint, dq)` called from 
 The flag is a Python bool read at env `__init__`, then closed over inside JIT-traced `substep`. Consequence:
 
 - **Safe:** set via config at construction → flows through trace → compiles in the right branch.
-- **Silent foot-gun:** mutating `env._torque_speed_model = True` after construction has **no effect** on an already-traced `step()`. The JIT cache holds the graph compiled with the old value.
+- **Silent foot-gun:** swapping the actuation after construction (`env._actuation = MotorModel()`, or mutating `config.torque_speed_model`) has **no effect** on an already-traced `step()`. The JIT cache holds the graph compiled with the old value. (The actuation is now an `Actuation` component — `env._actuation`, TorqueOnly/MotorModel, built from config at `__init__` by `actuation_from_config`; the old `env._torque_speed_model` bool is gone.)
 
 Rule: toggle via env name (use the registered variant), never by attribute mutation. The registry path is deterministic — two env names produce two distinct compilations.
 

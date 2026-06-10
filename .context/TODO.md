@@ -20,8 +20,22 @@ Worktree `go2-osc-impedance`. Spec + journal + lesson written.
       bearing weight via deflection. See journal 2026-06-08.
 - [ ] Retune the inherited PD reward terms for the foot-target action space
       (`action_rate` is computed pre-scale; `feet_clearance`/`energy` 2–4×).
-- [ ] (deferred) Variable impedance: per-foot stiffness in the action space +
-      curriculum. Hold until the fixed-impedance gait is understood.
+- [ ] Retune the inherited PD reward terms for the foot-target action space
+      (`action_rate` is computed pre-scale; `feet_clearance`/`energy` 2–4×).
+      [still open — the gait-calming lever, not yet pulled]
+- [x] Variable impedance (per-foot +4 / per-axis +12, ±damping) — trained +
+      evaluated. Modulates coherently (per-axis: vertical-stiff/tangential-soft)
+      but NO survival edge over fixed-soft on rough (a wash). Decoupled K+D too.
+- [x] **Rough-heightfield headline** — on a real rough hfield, joint-PD flips
+      while all Cartesian-impedance policies stay upright (zero-shot). The one
+      place the controller scheme matters.
+- [x] **Physical motor model** — mjlab 4-quadrant torque-speed clip + per-joint
+      armature (`Actuation` component). Headline CONFIRMED under physical motors
+      (joint-PD 5/8 falls vs OSC 1/8, K=8). See journal 2026-06-09.
+- [x] **Env composition refactor** — collapsed to host (`WarpJoystick`) + 3
+      config components (Actuation/Terrain on MjSpec/Controller). Commits
+      4c5e5fa·8908b3d·0fe5a40·50b78b7; behaviour-preserving (sanity 36/36 +
+      within-run traj-equiv per stage); names unchanged. Spec status IMPLEMENTED.
 
 ## Parked — DrQ-v2 vision RL port (Phase A)
 

@@ -71,3 +71,36 @@ Eval script `.temp/scripts/eval_rough_physical.py`, per-seed npzs in
 NEXT: commit the (still-uncommitted) motor-model impl + this result. Optional
 follow-ups: multi-seed TRAINING (not just eval) for error bars; the
 "train-on-rough" arm (Option B) if we want inherent-vs-learnable separation.
+
+## Env composition refactor (host + 3 components) — COMPLETE
+
+The science being settled, the Go2 env hierarchy was restructured (pure cleanup,
+behaviour-preserving) per `.superpowers/specs/2026-06-09-go2-env-composition.md`.
+Variation along three orthogonal axes — actuation, terrain, controller — was a
+mix of config flags, a scene-XML mixin, and a 3-class controller inheritance
+chain (combinations multiplied classes). Now it's ONE host (`WarpJoystick`) +
+three config-built strategy components in `go2_warp_components.py`:
+
+- **Actuation** (4c5e5fa): `TorqueOnly` / `MotorModel` (per-joint armature +
+  mjlab 4-quadrant torque-speed clip). `env._torque_speed_model` bool is gone.
+- **Terrain** (8908b3d): `Flat` / `RoughHF`, on `MjSpec`. Base loads the scene
+  via `mujoco.MjSpec`; `RoughHF.apply` adds the hfield + swaps the floor geom in
+  the spec (killed `go2_warp_scene_rough.xml` + `_RoughHFMixin`); `customize_model`
+  re-pokes the exact elevation post-compile (MjSpec renormalizes userdata to
+  [0,1], so the poke restores bit-identity).
+- **Controller** (0fe5a40): `JointPD` / `OSC` / `VarImpedance` +
+  `controller_from_config`. The OSC/var subclasses collapsed to thin config
+  presets; the OSC mechanics moved onto the host.
+- **Registry slim** (50b78b7): `_reg` helper + `partial(WarpJoystick)`; −67 lines
+  in `mjx_backend`.
+
+**Behaviour-preserving proof:** the throwaway sanity harness
+(`.temp/scripts/refactor_sanity.py`, 36 envs, static contracts exact + dynamics
+tolerance) was ALL-PASS after every stage; within-run trajectory equivalence
+(`.temp/scripts/controller_traj_equiv.py`, 7 controller decode paths) matched the
+pre-refactor reference within GPU noise (worst Δqpos 2.8e-5); the GPU Go2 test
+suite is green. All 36 env names unchanged → checkpoints/training/record intact.
+Also fixed 3 stale Stage-1 actuator tests in `test_go2_warp_env.py` (they asserted
+the removed `_torque_speed_model` flag + the old linear "clamp to 0 past vlim";
+the curve is now 4-quadrant full-braking). New permanent test:
+`tests/test_terrain_component.py`.
