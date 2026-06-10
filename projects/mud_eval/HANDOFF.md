@@ -226,7 +226,27 @@ recordings/          PNG/mp4 outputs (gitignored)
    (torch cu128: `uv pip install torch --torch-backend=cu128`). The trailing
    mujoco/mujoco-warp/warp constraints are MANDATORY so the jax install can't bump them.
 
-## M2 OSC plan (the research point) — DESIGN NAILED, not yet built
+## M2 OSC — CORE PORTED + VERIFIED; loop integration remaining
+
+**DONE:** `mud_osc.py` = numpy port of `compute_leg_impedance_torque` (J via
+mj_jacSite, M via mj_fullM, Λ on) + `find_legs` (maps foot sites by body since
+names are dropped: trunk=body1, feet=sites[1,2,3,4] on calf bodies[4,7,10,13]
+FL,FR,RL,RR) + `nominal_foot_body` (home FK) + `sync_mjdata` (Newton→mujoco, quat
+xyzw→wxyz). Verified by `gate_osc_torque.py`: τ(Δ=0)=0.0000 at home (frames
+consistent), τ(foot−2cm) finite/nonzero, 4 distinct foot bodies. PASS.
+
+**REMAINING (the integration):**
+1. Per-substep hook in the co-step loop (mud_costep): each substep sync
+   solver.mj_data ← Newton state, mj_forward, osc_torque(...) → write
+   control.joint_f; zero joint_target_ke/kd (no PD). Policy emits the 12 foot
+   deltas once/frame (held); target = nominal + delta (abs_body).
+2. Apply `_apply_torque_speed_limit` (DC-motor torque-speed clip + armature) on τ
+   to match training (torque_speed_model=True). Port from go2_warp_base.
+3. A MudOscPolicy (or extend MudJaxPolicy) producing deltas; controller dispatch
+   on action meaning (12 joint-PD vs 12 foot-delta — same dim, differ by ckpt).
+4. Verify OSC ckpt stands/walks on mud (visual + numeric), compare vs joint-PD.
+
+## M2 OSC plan (the research point) — design reference
 
 **Action space (verified from meta + code):** OSC ckpt action_dim=12 →
 `action.reshape(4,3) * action_scale(0.12)` = 4 foot-position deltas in the TRUNK
@@ -263,11 +283,17 @@ INSIDE the substep loop (read state → J/M from solver.mj_data → τ → contr
 → solver.step, per sim_dt step). So OSC needs a per-substep hook, NOT the
 once/frame compute_joint_targets interface. Subclass/override the example step loop.
 
-**Soft OSC ckpt gains** (`oscflatsoftphysical`, mjx_backend.py:108
-`_osc_soft_physical`): `osc.kp=[1500,1500,2000]` (Cartesian x,y,z), kd∝√s rule
-(s=0.5, mirrors osc_soft_rough), use_op_space_inertia=default(True) — CONFIRM kd +
-Λ flag by reading mjx_backend.py:83-110. (Jᵀ ablation variant at :58 sets
-use_op_space_inertia=False, kp=[1500,1500,2500] — a DIFFERENT ckpt.)
+**Soft OSC ckpt spec — FULLY PINNED** (`oscflatsoftphysical`, mjx_backend.py:108
+`_osc_soft_physical` + osc defaults in go2_warp_osc_joystick.py:36-50):
+`osc.kp=[1500,1500,2000]`, `osc.kd=[78,78,92]` (Cartesian x,y,z, shared across legs),
+`use_op_space_inertia=True` (Λ/Khatib → needs mj_fullM), `target_mode="abs_body"`
+(target = nominal_foot + action_delta, static — NOT recomputed each substep; only
+the torque is), `gravity_ff="none"` (pure impedance), `ridge=1e-4`,
+`action_scale=0.12`, `torque_speed_model=True` + `physical_armature=True` (apply the
+DC-motor torque-speed clip on τ too, via `_apply_torque_speed_limit` — port from
+go2_warp_base). torque_limit = per-joint stall. (Jᵀ ablation `…FlatJt` at :56 sets
+use_op_space_inertia=False, kp=[1500,1500,2500], kd=[60,60,80] — a DIFFERENT ckpt,
+not retrained physical.)
 
 **M3 (VarImpedance):** action tail decodes kp/kd via `impedance_gains`
 (go2_warp_components.py:230); same _run_osc path with per-foot/per-axis gains.
