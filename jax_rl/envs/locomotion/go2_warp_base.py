@@ -96,9 +96,23 @@ class Go2WarpEnv(mjx_env.MjxEnv):
         super().__init__(config, config_overrides)
 
         self._model_assets = get_warp_assets()
-        self._mj_model = mujoco.MjModel.from_xml_string(
-            epath.Path(xml_path).read_text(), assets=self._model_assets
+
+        # Terrain component (Flat | RoughHF), built from the legacy rough_* config
+        # keys. Loaded via MjSpec so the floor can be reshaped programmatically
+        # (rough heightfield) without a second scene XML: `apply` mutates the spec
+        # before compile (geom type + hfield asset); `customize_model` fills the
+        # exact hfield_data after compile. Flat → pure round-trip (verified
+        # bit-identical to from_xml_string). See go2_warp_components.
+        from jax_rl.envs.locomotion.go2_warp_components import terrain_from_config
+        self._terrain = terrain_from_config(config)
+        spec = mujoco.MjSpec.from_string(
+            epath.Path(xml_path).read_text(), self._model_assets
         )
+        spec.meshdir = ""                       # asset keys are bare filenames
+        for _k, _v in self._model_assets.items():
+            spec.assets[_k] = _v                # from_string doesn't load VFS bytes
+        self._terrain.apply(spec)
+        self._mj_model = spec.compile()
 
         # --- Always-applied overrides ---
         self._mj_model.opt.timestep = self._config.sim_dt
@@ -159,10 +173,10 @@ class Go2WarpEnv(mjx_env.MjxEnv):
         self._mj_model.vis.global_.offwidth = 3840
         self._mj_model.vis.global_.offheight = 2160
 
-        # Hook to mutate the built MjModel before it's transferred to the mjx
-        # backend (e.g. a rough-heightfield env sets hfield_data here). No-op by
-        # default.
-        self._customize_mj_model()
+        # Terrain post-compile data (e.g. rough-heightfield elevation into
+        # hfield_data). No-op for Flat. Runs before mjx.put_model so the data
+        # reaches the backend.
+        self._terrain.customize_model(self._mj_model)
 
         self._mjx_model = mjx.put_model(self._mj_model, impl=self._config.impl)
         self._xml_path = xml_path
@@ -176,10 +190,6 @@ class Go2WarpEnv(mjx_env.MjxEnv):
 
         # Torso body ID (base_link in unitree XML).
         self._torso_body_id = self._mj_model.body(consts.WARP_ROOT_BODY).id
-
-    def _customize_mj_model(self) -> None:
-        """Mutate self._mj_model after build, before mjx.put_model. No-op by
-        default; rough-heightfield envs override to populate hfield_data."""
 
     # ── Deploy / sim2sim parity metadata ───────────────────────────────
 

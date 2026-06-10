@@ -179,18 +179,20 @@ def _register_custom_envs():
     # Go2 on a rough HEIGHTFIELD floor (real continuous rough, borrowed from
     # mjlab's noise recipe). Uni = uniform (jagged ~7 cm foot-scale). Gains match
     # the flat runs so flat-trained policies zero-shot transfer (the headline).
+    # Terrain is config-driven now (RoughHF via terrain_from_config reads the
+    # rough_* keys these factories stamp), so the rough envs are just the plain
+    # controller class + a rough config — no rough mixin/subclass.
     from jax_rl.envs.locomotion.go2_warp_osc_rough import (
-        WarpRoughHF, WarpOscRoughHF, WarpOscVarRoughHF,
         joint_rough_config, osc_soft_rough_config,
         var_rough_config, var_axis_rough_config,
     )
     def _bind_rough_cfg(fac, prof, amp):
         return lambda: fac(prof, amp)
     for _ctag, _rcls, _rfac in [
-        ("Joint", WarpRoughHF, joint_rough_config),
-        ("Osc", WarpOscRoughHF, osc_soft_rough_config),
-        ("OscVar", WarpOscVarRoughHF, var_rough_config),
-        ("OscVarAxis", WarpOscVarRoughHF, var_axis_rough_config),
+        ("Joint", WarpJoystick, joint_rough_config),
+        ("Osc", WarpOscJoystick, osc_soft_rough_config),
+        ("OscVar", WarpOscVarImpedance, var_rough_config),
+        ("OscVarAxis", WarpOscVarImpedance, var_axis_rough_config),
     ]:
         for _ptag, _prof, _amp in [("Uni", "uniform", 0.07)]:   # perlin "A" dropped (too smooth)
             _rname = f"Go2Warp{_ctag}Rough{_ptag}"
