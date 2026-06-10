@@ -8,6 +8,7 @@ subprocess-fork-vs-JAX-threads deadlock that corrupts the mp4 path).
     PYTHONPATH=<worktree> .venv/bin/python record_mud.py <ckpt> <tag> [frames] [fwd|stand]
 writes recordings/<tag>_fNN.png (a few) + recordings/<tag>.mp4 (best effort).
 """
+import json                  # noqa: E402
 import sys
 from pathlib import Path
 HERE = Path(__file__).resolve().parent
@@ -19,6 +20,7 @@ import torch                  # noqa: E402
 import imageio.v2 as iio      # noqa: E402
 import newton.examples        # noqa: E402
 import newton.examples.mpm.mpm_go2_multi.example_mpm_go2_multi as ex  # noqa: E402
+import mud_model              # noqa: E402
 from mud_jax_policy import MudJaxPolicy, patched_config  # noqa: E402
 
 CKPT, TAG = sys.argv[1], sys.argv[2]
@@ -26,9 +28,14 @@ NF = int(sys.argv[3]) if len(sys.argv) > 3 else 40
 CMD = sys.argv[4] if len(sys.argv) > 4 else "fwd"
 OUTDIR = HERE / "recordings"; OUTDIR.mkdir(exist_ok=True)
 
+# load OUR trained go2.xml (add_mjcf seam) instead of the example URDF
+_meta = json.load(open(Path(CKPT) / "meta.json"))
+mud_model.set_home_pose(_meta["control"]["default_pose_policy"])
+mud_model.enable()
 ex.Go2Policy = MudJaxPolicy
 cfg = patched_config(CKPT, HERE / "vendor/newton/examples/mpm/mpm_go2_multi/config.yaml",
-                     "/tmp/mud_cfg_patched.yaml")
+                     "/tmp/mud_cfg_patched.yaml",
+                     mjcf_model=str(HERE / "models/unitree_go2/go2.xml"))
 sys.argv = ["record", "--viewer", "gl", "--headless", "--num-frames", str(NF),
             "--policy-path", CKPT, "--config", cfg,
             "--voxel-size", "0.05", "--max-iterations", "8"]

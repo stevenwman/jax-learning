@@ -63,17 +63,27 @@ def _build_fast_sac_policy(ckpt_dir: Path):
     return select, params, norm, meta
 
 
-def patched_config(ckpt_dir, base_config_path, out_path) -> str:
+def patched_config(ckpt_dir, base_config_path, out_path, mjcf_model: str | None = None) -> str:
     """Write a config.yaml override so the Newton robot spawns at the POLICY's
     default pose and uses its training PD gains (Kp/Kd) — otherwise the policy
-    sees a non-zero joint_pos_offset at spawn and a stiffer-than-trained PD."""
+    sees a non-zero joint_pos_offset at spawn and a stiffer-than-trained PD.
+
+    mjcf_model: if given, load this MJCF (abs path) instead of the example URDF
+    (pathlib: here/<abs> == <abs>). The example's posing loop uses the buggy
+    `joint_key.index(key)+6` idiom that overflows on go2.xml's 0-dof *_foot_joint,
+    so we EMPTY initial_joint_q here and let mud_model's add_mjcf dispatch set the
+    home pose directly (see mud_model.set_home_pose)."""
     import yaml
     cfg = yaml.safe_load(open(base_config_path))
     meta = json.load(open(Path(ckpt_dir) / "meta.json"))
     ctrl = meta["control"]
     names = ctrl["policy_joint_names"]
     pose = ctrl["default_pose_policy"]
-    cfg["policy"]["initial_joint_q"] = {n: float(v) for n, v in zip(names, pose)}
+    if mjcf_model is not None:
+        cfg["robot"]["urdf_relative_path"] = str(mjcf_model)   # abs MJCF path
+        cfg["policy"]["initial_joint_q"] = {}                   # skip the buggy loop
+    else:
+        cfg["policy"]["initial_joint_q"] = {n: float(v) for n, v in zip(names, pose)}
     cfg["policy"]["pd_gains_ke"] = float(ctrl["Kp"])
     cfg["policy"]["pd_gains_kd"] = float(ctrl["Kd"])
     cfg["policy"]["action_scale"] = float(ctrl["action_scale"])

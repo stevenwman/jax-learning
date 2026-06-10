@@ -21,9 +21,9 @@ Self-sufficient: vendored Newton + dedicated venv; no dependency on the
 | M0 physics smoke (robot + 3-mud MPM, headless) | ✅ DONE |
 | Visual gate (headless GL → PNG I can read + mp4) | ✅ DONE |
 | M1 joint-PD policy eval (real jax_rl policy + obs adapter) | ✅ WORKS — stand/hold stable on mud; forward gait unstable (zero-shot) |
-| **OPEN DECISION: redirect robot model URDF → go2.xml** | ⏳ awaiting user (see below) |
+| **Migrate robot URDF → trained go2.xml (add_mjcf seam)** | ✅ DONE — couples with MPM, stands z~0.15 (gate PASS) |
 | M1 clean traversal (orient down mud long-axis) | pending |
-| M2 OSC controller (mjData Jacobian → Jᵀ·Λ·F torque injection) | pending |
+| M2 OSC controller (mjData Jacobian → Jᵀ·Λ·F torque injection) | pending — now natively wired to go2.xml |
 | M3 variable-impedance (stiffness-tail decode) | pending |
 
 ---
@@ -120,23 +120,34 @@ to render colliders / frame the robot (see `inspect_collision.py`).
 
 ---
 
-## OPEN DECISION — redirect robot model (URDF → trained go2.xml)
+## ROBOT MODEL MIGRATION — URDF → trained go2.xml (DONE)
 
-The example loads `go2_description.urdf` — **NOT** the `unitree_go2/go2.xml` the
-policy trained on. Extra model-mismatch confound. **Newton has `add_mjcf`** (its
-rigid solver IS mujoco_warp) + `go2.xml` is self-contained (robot + meshes +
-keyframe "home" qpos=`…0.27…0 0.9 -1.8 ×4`). Estimate ~1–3 hrs; it *removes*
-hacks (joint order/pose/limits/armature auto-match) + makes M2 (OSC) clean (foot
-sites + mass matrix match the mjx model). **Risk:** whether go2.xml's collision
-geoms couple with the MPM mud.
+The example loaded `go2_description.urdf`, NOT the `go2.xml` the policy trained on.
+Migrated to go2.xml because: (1) OSC is wired natively for the in-house go2 (foot
+sites + Jacobian + mass matrix come from OUR mjModel) — go2.xml makes M2 match;
+(2) an MJCF loader = a morphology seam (new robot = new XML, not a new port).
 
-Current (URDF) collision = **all primitives**, 28 shapes: box torso, cylinder
-hips, box thighs, cylinder shins, **sphere feet (r=0.022)**. See
-`recordings/collision_collision.png`. go2.xml likely uses similar primitive
-collision (base.py: "Full collision geometry (cylinders + boxes)"), so the
-redirect's value is mostly matched inertials/masses/limits, not collision type.
-**NEXT if approved:** render go2.xml's colliders in isolation (cheap add_mjcf
-load) for side-by-side before the full swap.
+**Seam = `mud_model.py`:** monkeypatch `newton.ModelBuilder.add_urdf` to dispatch
+`.xml` paths to `add_mjcf` with `collider_classes=("collision","foot")` (feet are
+class "foot" — missed by the default!), then set the home pose directly on
+`joint_q[7:19]` (the example's `joint_key.index(key)+6` posing idiom OVERFLOWS on
+go2.xml's 0-dof `*_foot_joint`). `patched_config(..., mjcf_model=abs_path)` points
+the config at the model + EMPTIES `initial_joint_q` (so the buggy loop no-ops).
+`record_mud.py` enables the seam by default. Model vendored at
+`models/unitree_go2/` (go2.xml + assets, 28M).
+
+**GATE (`gate_mjcf_coupling.py`):** hold-pose smoke → go2.xml stands on the mud
+(z 0.84→0.15, finite) = MJCF colliders couple with the MPM. PASS.
+
+**Collision compared (go2xml vs URDF):** feet IDENTICAL (SPHERE r=0.022 — the only
+mud-contact shape); hips/thighs identical; URDF has 1 extra calf cylinder; go2.xml
+torso richer (box+cyl+sphere vs box). So contact ~equivalent; migration's value is
+the OTHER matched params + native OSC. Renders: `recordings/go2xml_collision.png`,
+`collision_collision.png` (URDF), `mjcf_stand_f30.png` (go2.xml on mud).
+
+**Caveat:** spawn z reads 0.84 at frame 0 (config says 0.40) — go2.xml base origin
+differs from the URDF; robot still falls + catches on the mud fine, but for a clean
+eval the spawn height could be retuned to ~0.2 (drop is currently ~0.7 m).
 
 ---
 
@@ -159,21 +170,27 @@ action_scale/default_pose_policy/policy_joint_names; fast_sac_config: hidden_dim
 ## FILE MAP (projects/mud_eval/)
 
 ```
-mud_jax_policy.py    MudJaxPolicy (drop-in) + obs adapter + patched_config + NumpyActor(unused)
+mud_jax_policy.py    MudJaxPolicy (drop-in) + obs adapter + patched_config(mjcf_model=)
+mud_model.py         add_mjcf loader SEAM (URDF->go2.xml dispatch + home-pose set)
 run_mud_eval.py      eval/rollout w/ per-frame z+|act| logging; cmds: fwd | stand | hold
-record_mud.py        visual gate: headless GL → PNG (+mp4)
-inspect_collision.py collision-shape summary + collider/visual render
+record_mud.py        visual gate: headless GL → PNG (+mp4); enables the go2.xml seam
+gate_mjcf_coupling.py GATE: go2.xml-on-mud hold-pose coupling smoke
+inspect_collision.py URDF collision-shape summary + collider/visual render
+inspect_go2xml.py    go2.xml collision-shape summary + render (standalone add_mjcf)
 m0_smoke.py          M0 hold-pose physics smoke
 mud_diag.py          frame-0 obs/quat/gains/joint-order diagnostic
 requirements.txt     the pinned WORKING combo
+models/unitree_go2/  VENDORED trained go2.xml + assets (the migration target)
 README.md            overview · STATUS.md · HANDOFF.md (this)
 vendor/newton/       vendored Newton 0.1.3 (lib + mpm_go2_multi example + go2_description, NO recordings/policies)
 recordings/          PNG/mp4 outputs (gitignored)
 .venv/               dedicated venv (gitignored)
 ```
 
-## SETUP FROM SCRATCH (vendor/ + .venv/ are gitignored — reproducible)
+## SETUP FROM SCRATCH (vendor/ + models/ + .venv/ are gitignored — reproducible)
 
+0. **Vendor the trained model:**
+   `cp -r ../../jax_rl/envs/locomotion/xmls/unitree_go2 models/`  (go2.xml + assets, 28M)
 1. **Vendor Newton** (33M, no big artifacts):
    `rsync -a --exclude='recordings' --exclude='policies' --exclude='*.mp4' --exclude='*.pt' --exclude='__pycache__' /home/stevenman/Desktop/Work/Research/Newton_stuff/newton/ vendor/newton/`
 2. **venv:** `uv venv --python 3.13 .venv` then
