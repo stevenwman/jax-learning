@@ -13,7 +13,10 @@ change — only where the code lives.
 """
 from __future__ import annotations
 
+import jax
+import jax.numpy as jp
 import mujoco
+from mujoco import mjx
 import numpy as np
 from scipy import ndimage
 
@@ -204,3 +207,196 @@ def terrain_from_config(config) -> Terrain:
         amplitude=float(getattr(config, "rough_amplitude", 0.07)),
         seed=int(getattr(config, "rough_seed", 0)),
     )
+
+
+# ── Controller ───────────────────────────────────────────────────────────────
+# Variable-impedance action decoding (moved verbatim from go2_warp_osc_var_
+# impedance; re-exported there for backward-compatible import paths).
+_N_STIFFNESS = {"per_foot": 4, "per_axis": 12}
+
+
+def log_action_scale(a: jax.Array, lo: float, hi: float) -> jax.Array:
+    """Map action a∈[-1,1] → [lo,hi] log-spaced (a=0 → geometric mean √(lo·hi))."""
+    u = 0.5 * (jp.clip(a, -1.0, 1.0) + 1.0)
+    return lo * (hi / lo) ** u
+
+
+def var_action_size(granularity: str, damping_action: bool) -> int:
+    """12 foot targets + stiffness (+ damping when enabled), per granularity."""
+    n = _N_STIFFNESS[granularity]
+    return 12 + n * (2 if damping_action else 1)
+
+
+def impedance_gains(action, kp_base, kd_base, *, granularity, s_min, s_max,
+                    damping_action, z_min, z_max):
+    """Decode per-leg Cartesian gains (kp, kd), each (4,3), from the action tail.
+
+        kp = s · kp_base ,   kd = ζ · √s · kd_base
+
+    s from action[12:12+n] (log → [s_min,s_max]). ζ from the next n entries when
+    ``damping_action`` (log → [z_min,z_max]), else ζ=1 (locked critical). Because
+    kd_base = 2√kp_base is already critical, ζ is literally the damping ratio:
+    ζ<1 underdamped/springy, ζ>1 overdamped. per_foot → one value per foot
+    (broadcast over xyz); per_axis → per foot AND axis. ζ touches kd only — kp is
+    independent of the damping action (the decoupling).
+    """
+    n = _N_STIFFNESS[granularity]
+    s = log_action_scale(action[12:12 + n], s_min, s_max)
+    if damping_action:
+        zeta = log_action_scale(action[12 + n:12 + 2 * n], z_min, z_max)
+    else:
+        zeta = jp.ones_like(s)
+    if granularity == "per_foot":
+        s = s[:, None]
+        zeta = zeta[:, None]              # (4,1) — one value per foot
+    else:
+        s = s.reshape(4, 3)
+        zeta = zeta.reshape(4, 3)         # (4,3) — per foot AND axis
+    kp = s * kp_base
+    kd = zeta * jp.sqrt(s) * kd_base
+    return kp, kd
+
+
+class Controller:
+    """Low-level control strategy: turns the policy action into joint torques
+    each physics substep. ``action_size`` is the policy action dim; ``setup``
+    caches controller geometry/gains (run once, after the host's task setup);
+    ``apply`` runs the decimation loop. The host owns the OSC mechanics
+    (`_run_osc` / `_feet_in_body` / `_compute_nominal_foot_body`) so they stay
+    callable as ``env._…`` (their tests + the dynamic-target path)."""
+
+    def action_size(self, env) -> int:  # pragma: no cover - interface
+        raise NotImplementedError
+
+    def setup(self, env) -> None:  # pragma: no cover - interface
+        raise NotImplementedError
+
+    def apply(self, env, data, action):  # pragma: no cover - interface
+        raise NotImplementedError
+
+
+class JointPD(Controller):
+    """Joint-space PD at physics rate (the original WarpJoystick controller).
+
+    action → joint position targets (offset from default pose) → PD torque →
+    mjx.step, repeated n_substeps. qpos[7:] is joint order (FL,FR,RL,RR), ctrl is
+    actuator order (FR,FL,RR,RL); torques are remapped before writing to ctrl."""
+
+    def action_size(self, env) -> int:
+        return env.mjx_model.nu
+
+    def setup(self, env) -> None:
+        pass
+
+    def apply(self, env, data, action):
+        motor_targets = env._default_pose + action * env._config.action_scale
+        kp = env._kp
+        kd = env._kd
+        model = env.mjx_model
+        a2j = env._act_to_joint
+
+        def substep(data, _):
+            current_q = data.qpos[7:]   # joint order (FL,FR,RL,RR)
+            current_dq = data.qvel[6:]  # joint order
+            tau_joint = kp * (motor_targets - current_q) + kd * (0.0 - current_dq)
+            tau_joint = env._apply_torque_speed_limit(tau_joint, current_dq)
+            tau_act = tau_joint[a2j]     # ctrl[a] = tau_joint[act_to_joint[a]]
+            data = data.replace(ctrl=tau_act)
+            return mjx.step(model, data), None
+
+        return jax.lax.scan(substep, data, (), env.n_substeps)[0]
+
+
+class OSC(Controller):
+    """Per-leg Cartesian impedance / OSC controller (fixed gains).
+
+    action (12,) → four foot position deltas (trunk frame) → impedance torque via
+    the host's ``_run_osc`` decimation loop. ``setup`` caches the OSC gains, leg
+    DoF map, foot sites and nominal foot positions ONTO the env (so the OSC
+    mechanics + their white-box tests read them as ``env._…``)."""
+
+    def action_size(self, env) -> int:
+        return env.mjx_model.nu
+
+    def setup(self, env) -> None:
+        osc = env._config.osc
+        if str(osc.gravity_ff) != "none":
+            raise NotImplementedError(
+                f"gravity_ff={osc.gravity_ff!r} not implemented in the MVP; "
+                "only 'none' (pure impedance) is supported."
+            )
+        if str(osc.target_mode) not in ("abs_body", "delta_current"):
+            raise ValueError(f"unknown target_mode {osc.target_mode!r}")
+
+        env._osc_kp = jp.array(osc.kp)
+        env._osc_kd = jp.array(osc.kd)
+        env._osc_use_lambda = bool(osc.use_op_space_inertia)
+        env._osc_ridge = float(osc.ridge)
+        env._osc_target_mode = str(osc.target_mode)
+
+        # Per-leg qvel DoF indices. qpos[7:]/qvel[6:] are joint order
+        # FL,FR,RL,RR (hip,thigh,calf), and FEET_SITES is the same leg order,
+        # so foot i is driven by qvel dofs [6+3i, 6+3i+1, 6+3i+2].
+        env._leg_dof_ids = np.array(
+            [[6 + 3 * i + j for j in range(3)] for i in range(4)]
+        )
+        env._osc_foot_site_ids = np.asarray(env._feet_site_id)  # (4,) FL,FR,RL,RR
+        # Per-joint symmetric torque limit, joint order (base stores stall torque).
+        env._osc_torque_limit = env._stall_torque
+        # Nominal foot positions in the trunk frame at the home keyframe.
+        env._nominal_foot_body = jp.array(env._compute_nominal_foot_body())
+
+    def apply(self, env, data, action):
+        deltas = action.reshape(4, 3) * env._config.action_scale   # (4,3) metres
+        return env._run_osc(data, deltas, env._osc_kp, env._osc_kd)
+
+
+class VarImpedance(OSC):
+    """OSC where the policy also commands stiffness (per-foot or per-axis) and,
+    optionally, damping ratio. Action tail decoded by :func:`impedance_gains`."""
+
+    def action_size(self, env) -> int:
+        osc = env._config.osc
+        return var_action_size(
+            str(getattr(osc, "stiffness_granularity", "per_foot")),
+            bool(getattr(osc, "damping_action", False)),
+        )
+
+    def setup(self, env) -> None:
+        super().setup(env)
+        osc = env._config.osc
+        env._var_s_min = float(osc.var_s_min)
+        env._var_s_max = float(osc.var_s_max)
+        gran = str(getattr(osc, "stiffness_granularity", "per_foot"))
+        if gran not in _N_STIFFNESS:
+            raise ValueError(
+                f"stiffness_granularity={gran!r} not in {list(_N_STIFFNESS)}"
+            )
+        env._stiffness_granularity = gran
+        env._n_stiffness = _N_STIFFNESS[gran]
+        env._damping_action = bool(getattr(osc, "damping_action", False))
+        env._var_z_min = float(getattr(osc, "var_zeta_min", 0.5))
+        env._var_z_max = float(getattr(osc, "var_zeta_max", 2.0))
+
+    def apply(self, env, data, action):
+        deltas = action[:12].reshape(4, 3) * env._config.action_scale   # (4,3)
+        kp, kd = impedance_gains(
+            action, env._osc_kp, env._osc_kd,
+            granularity=env._stiffness_granularity,
+            s_min=env._var_s_min, s_max=env._var_s_max,
+            damping_action=env._damping_action,
+            z_min=env._var_z_min, z_max=env._var_z_max,
+        )
+        return env._run_osc(data, deltas, kp, kd)
+
+
+def controller_from_config(config) -> Controller:
+    """Pick the controller from the config shape (legacy bridge): no ``osc``
+    block → JointPD; ``osc`` without ``stiffness_granularity`` → OSC; with it →
+    VarImpedance."""
+    osc = getattr(config, "osc", None)
+    if osc is None:
+        return JointPD()
+    if getattr(osc, "stiffness_granularity", None) is None:
+        return OSC()
+    return VarImpedance()

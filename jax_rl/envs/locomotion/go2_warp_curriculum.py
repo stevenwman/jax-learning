@@ -132,6 +132,11 @@ class WarpJoystickCurriculum(WarpJoystick):
             config=config,
             config_overrides=config_overrides,
         )
+        # Build the controller (as WarpJoystick.__init__ does — skipped above):
+        # curriculum config has no `osc` block → JointPD. Must precede _post_init,
+        # which calls controller.setup(self).
+        from jax_rl.envs.locomotion.go2_warp_components import controller_from_config
+        self._controller = controller_from_config(self._config)
         # _post_init sets _init_q, joint limits, obs spec, reward spec, etc.
         self._post_init()
 

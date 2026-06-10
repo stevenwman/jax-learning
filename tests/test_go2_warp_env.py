@@ -132,16 +132,17 @@ class TestWarpBatched:
 
 
 class TestTorqueSpeedModel:
-    """Optional linear torque-speed actuator limit.
+    """Optional DC-motor torque-speed actuator limit (mjlab 4-quadrant).
 
-    tau_limit = stall_torque * max(1 - |dq| / velocity_limit, 0)
-
-    Disabled by default: the MJCF actuator_ctrlrange is the only clip.
-    Enabled via config.torque_speed_model: adds velocity-dependent dropoff.
+    Now an Actuation component (env._actuation): TorqueOnly by default (MJCF
+    ctrlrange is the only clip), MotorModel when config.torque_speed_model is on
+    (adds the velocity-dependent dropoff + over-speed braking). The clip math is
+    unit-tested in test_torque_speed_model.py; here we pin the env wiring.
     """
 
     def test_default_flag_is_off(self, env):
-        assert env._torque_speed_model is False
+        from jax_rl.envs.locomotion.go2_warp_components import TorqueOnly
+        assert isinstance(env._actuation, TorqueOnly)
 
     def test_stall_torque_from_mjcf(self, env):
         # Joint order (qpos[7:]) is body-tree: (FL, FR, RL, RR) × (hip, thigh, calf).
@@ -163,9 +164,11 @@ class TestTorqueSpeedModel:
         assert jnp.array_equal(out, tau)
 
     def test_enabled_via_override(self):
+        from jax_rl.envs.locomotion.go2_warp_components import MotorModel
         env = WarpJoystick(task="flat_terrain",
                            config_overrides={"torque_speed_model": True})
-        assert env._torque_speed_model is True
+        assert isinstance(env._actuation, MotorModel)
+        assert env._actuation.torque_speed is True
 
     def test_clip_at_zero_velocity(self):
         """At dq=0, limit equals stall_torque (MJCF ctrlrange equivalent)."""
@@ -186,14 +189,18 @@ class TestTorqueSpeedModel:
         out = env._apply_torque_speed_limit(tau, dq)
         assert jnp.allclose(out, 0.0, atol=1e-5)
 
-    def test_clip_beyond_velocity_limit_stays_zero(self):
-        """Beyond the limit, scale is clamped to 0 (no negative allowance)."""
+    def test_clip_beyond_velocity_limit_forces_braking(self):
+        """Beyond the no-load speed the 4-quadrant curve FORCES full braking
+        (−stall), actively decelerating the over-spun joint — the old linear
+        model clamped to 0. dq = 2·vlim == vel_at_eff (effort==stall), where the
+        allowed window collapses to {−stall}. (See test_torque_speed_model.py::
+        test_overspeed_forces_full_braking.)"""
         env = WarpJoystick(task="flat_terrain",
                            config_overrides={"torque_speed_model": True})
         dq = env._velocity_limit * 2.0
         tau = jnp.ones(12) * 100.0
         out = env._apply_torque_speed_limit(tau, dq)
-        assert jnp.allclose(out, 0.0, atol=1e-5)
+        assert jnp.allclose(out, -env._stall_torque, atol=1e-4)
 
     def test_clip_at_half_velocity(self):
         """At |dq|=0.5 * velocity_limit, tau_limit = 0.5 * stall."""
