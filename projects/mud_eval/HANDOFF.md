@@ -199,12 +199,49 @@ recordings/          PNG/mp4 outputs (gitignored)
    (torch cu128: `uv pip install torch --torch-backend=cu128`). The trailing
    mujoco/mujoco-warp/warp constraints are MANDATORY so the jax install can't bump them.
 
-## M2 OSC plan (the research point)
-The OSC policies emit foot-position targets (trunk frame), not joint targets, and
-need the OSC controller (Jᵀ·Λ·F). Plan: in MudJaxPolicy.apply, decode action →
-foot deltas, compute the torque from the **mjData Jacobian + mj_fullM** of the
-underlying mujoco model (Newton's SolverMuJoCo wraps mujoco_warp), and **inject
-joint torques** (set ke=0 + use joint_target as force, or a joint_f path) instead
-of position targets. Decided: get the Jacobian from mjData (user's call), not a
-shadow-mjx. Reuse jax-learning's `impedance_gains` for M3's stiffness decode.
+## M2 OSC plan (the research point) — DESIGN NAILED, not yet built
+
+**Action space (verified from meta + code):** OSC ckpt action_dim=12 →
+`action.reshape(4,3) * action_scale(0.12)` = 4 foot-position deltas in the TRUNK
+frame (metres). Not joint offsets. obs still the same 48-d.
+
+**The math = `jax_rl/envs/locomotion/go2_osc.py::compute_leg_impedance_torque`**
+(port to numpy verbatim). Per leg: J = foot-site linear Jacobian (3×3, leg dofs);
+v=J·q̇; err_w = (trunk_pos + R·target_body) − foot_w; wrench = kp·err − kd·v; if
+use_op_space_inertia: Λ=(J M⁻¹ Jᵀ + ridge·I)⁻¹, F=Λ·wrench else F=wrench; τ=Jᵀ·F;
+clip to ±stall. target_mode: "abs_body" (nominal+delta, static) or "delta_current"
+(current+delta, recomputed each substep). nominal foot = `_compute_nominal_foot_body`
+(FK at home keyframe).
+
+**J + M source — NO SHADOW (gate_osc_jac.py proved it):** Newton's SolverMuJoCo
+(`example.solver`) ALWAYS builds + keeps its OWN cpu mujoco — `solver.mj_model`
+(nq=19, nv=18) + `solver.mj_data` (built `spec.compile()` @ solver_mujoco.py:1435).
+The warp/GPU side (mujoco_warp 0.0.2) exposes only crb/factor_m/solve_m/rne — NO
+full_m, NO site jac — so cpu-side is the path: sync live qpos/qvel into
+solver.mj_data (newton joint_q quat xyzw → mujoco qpos wxyz), mj_forward,
+**mj_jacSite** (J) + **mj_fullM** (M). Same model the sim runs.
+
+**GOTCHA (gate-caught):** site NAMES don't survive Newton→mjModel conversion
+(nsite=5 present — imu+4feet — but mj_name2id("FL_foot")=-1). Map foot sites by
+BODY (`*_calf`) or by matching nominal foot position, NOT by name.
+
+**Injection:** Newton `control.joint_f` (generalized joint force) exists. Write τ
+there; zero joint_target_ke/kd (no PD). Example currently writes
+`control.joint_target_pos` once/frame via apply_control (joystick.py:455).
+
+**INTEGRATION CHALLENGE (the real rough edge):** OSC torque is STABILITY-CRITICAL
+recomputed every PHYSICS substep (250 Hz); held at 50 Hz it DIVERGES (ρ≈2.8, see
+_run_osc docstring). The example applies control once/frame → must recompute τ
+INSIDE the substep loop (read state → J/M from solver.mj_data → τ → control.joint_f
+→ solver.step, per sim_dt step). So OSC needs a per-substep hook, NOT the
+once/frame compute_joint_targets interface. Subclass/override the example step loop.
+
+**Soft OSC ckpt gains** (`oscflatsoftphysical`, mjx_backend.py:108
+`_osc_soft_physical`): `osc.kp=[1500,1500,2000]` (Cartesian x,y,z), kd∝√s rule
+(s=0.5, mirrors osc_soft_rough), use_op_space_inertia=default(True) — CONFIRM kd +
+Λ flag by reading mjx_backend.py:83-110. (Jᵀ ablation variant at :58 sets
+use_op_space_inertia=False, kp=[1500,1500,2500] — a DIFFERENT ckpt.)
+
+**M3 (VarImpedance):** action tail decodes kp/kd via `impedance_gains`
+(go2_warp_components.py:230); same _run_osc path with per-foot/per-axis gains.
 ```
