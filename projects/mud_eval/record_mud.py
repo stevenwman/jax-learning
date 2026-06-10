@@ -21,6 +21,7 @@ import imageio.v2 as iio      # noqa: E402
 import newton.examples        # noqa: E402
 import newton.examples.mpm.mpm_go2_multi.example_mpm_go2_multi as ex  # noqa: E402
 import mud_model              # noqa: E402
+import mud_costep             # noqa: E402
 from mud_jax_policy import MudJaxPolicy, patched_config  # noqa: E402
 
 CKPT, TAG = sys.argv[1], sys.argv[2]
@@ -32,6 +33,7 @@ OUTDIR = HERE / "recordings"; OUTDIR.mkdir(exist_ok=True)
 _meta = json.load(open(Path(CKPT) / "meta.json"))
 mud_model.set_home_pose(_meta["control"]["default_pose_policy"])
 mud_model.enable()
+mud_costep.enable(sim_substeps=5)        # robot+mud co-step at 250 Hz
 ex.Go2Policy = MudJaxPolicy
 cfg = patched_config(CKPT, HERE / "vendor/newton/examples/mpm/mpm_go2_multi/config.yaml",
                      "/tmp/mud_cfg_patched.yaml",
@@ -54,6 +56,7 @@ parser.add_argument("--plot-forces-mode", choices=["magnitude", "xyz"], default=
 viewer, args = newton.examples.init(parser)
 
 example = ex.Example(viewer, args)
+mud_costep.apply(example)                # eager + co-step rate
 example._auto_forward = (CMD == "fwd")
 print(f"[REC] {Path(CKPT).name} cmd={CMD} frames={NF}", flush=True)
 

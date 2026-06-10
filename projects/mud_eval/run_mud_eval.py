@@ -14,18 +14,26 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE / "vendor"))   # vendored newton
 
+import json                       # noqa: E402
 import numpy as np                # noqa: E402
 import warp as wp                 # noqa: E402
 import torch                      # noqa: E402  (vendored scene-build interop)
 import newton.examples            # noqa: E402
 import newton.examples.mpm.mpm_go2_multi.example_mpm_go2_multi as ex  # noqa: E402
+import mud_model                  # noqa: E402
+import mud_costep                 # noqa: E402
 from mud_jax_policy import MudJaxPolicy, patched_config   # noqa: E402
 
 
 def main(ckpt, num_frames=60, voxel_size=0.05, mpm_iters=10, command="fwd"):
+    meta = json.load(open(Path(ckpt) / "meta.json"))
+    mud_model.set_home_pose(meta["control"]["default_pose_policy"])
+    mud_model.enable()                     # load OUR go2.xml via add_mjcf
+    mud_costep.enable(sim_substeps=5)      # robot+mud co-step at sim_dt (250 Hz)
     ex.Go2Policy = MudJaxPolicy            # drop-in: real jax_rl policy + obs adapter
     cfg = patched_config(ckpt, HERE / "vendor/newton/examples/mpm/mpm_go2_multi/config.yaml",
-                         "/tmp/mud_cfg_patched.yaml")   # spawn @ policy default pose + Kp/Kd
+                         "/tmp/mud_cfg_patched.yaml",
+                         mjcf_model=str(HERE / "models/unitree_go2/go2.xml"))
 
     sys.argv = [
         "run_mud_eval", "--viewer", "null", "--num-frames", str(num_frames),
@@ -49,6 +57,7 @@ def main(ckpt, num_frames=60, voxel_size=0.05, mpm_iters=10, command="fwd"):
     viewer, args = newton.examples.init(parser)
 
     example = ex.Example(viewer, args)
+    mud_costep.apply(example)              # eager + co-step rate
     fwd = (command == "fwd")
     example._auto_forward = fwd            # fwd: command=[1,0,0]; else [0,0,0]
     if command == "hold":

@@ -22,6 +22,7 @@ Self-sufficient: vendored Newton + dedicated venv; no dependency on the
 | Visual gate (headless GL → PNG I can read + mp4) | ✅ DONE |
 | M1 joint-PD policy eval (real jax_rl policy + obs adapter) | ✅ WORKS — stand/hold stable on mud; forward gait unstable (zero-shot) |
 | **Migrate robot URDF → trained go2.xml (add_mjcf seam)** | ✅ DONE — couples with MPM, stands z~0.15 (gate PASS) |
+| **Co-step robot+MPM at sim_dt (250 Hz), per-substep coupling** | ✅ DONE — M1 re-verified stands z~0.21 (mud_costep.py) |
 | M1 clean traversal (orient down mud long-axis) | pending |
 | M2 OSC controller (mjData Jacobian → Jᵀ·Λ·F torque injection) | pending — now natively wired to go2.xml |
 | M3 variable-impedance (stiffness-tail decode) | pending |
@@ -151,6 +152,31 @@ eval the spawn height could be retuned to ~0.2 (drop is currently ~0.7 m).
 
 ---
 
+## CO-STEPPING — robot + MPM at the controller rate (DONE)
+
+The example DECIMATES the coupling: robot 4 substeps @200 Hz but the mud force is
+HELD across them, and the MPM integrates ONCE per 20 ms frame (50 Hz). Since the
+foot–mud interaction IS what this eval measures, that under-resolves the coupling.
+
+**`mud_costep.py`:** folds the MPM step INTO simulate_robot's substep loop so robot
+AND mud co-step at sim_dt, exchanging forces every substep; simulate_sand → no-op;
+`sim_substeps=5` → sim_dt 0.004 = **250 Hz** (matches training physics_dt). Force
+kernels (`compute_body_forces`/`subtract_body_force`) rescaled frame_dt→sim_dt.
+`enable()` before build (also no-ops `capture()`), `apply(example)` after.
+
+**GOTCHA:** the example graph-captures simulate_robot on CUDA (`capture()`,
+example:444). With MPM now inside, the nanovdb grid build can't run during capture
+→ `CUDA error 900 ... stream is capturing`. Fix: `_no_capture` (run everything
+eager; MPM cost dominates so the robot-substep graph saved little).
+
+**RESULT:** M1 (joint-PD stand) re-verified — settles z~0.21 (vs ~0.15 decimated):
+finer coupling → less sinking (mud pushes back continuously, not a frozen 50 Hz
+snapshot). Stable, finite. Cost ~0.44 s/frame (implicit MPM converges faster at
+finer dt — not the feared 5×). `recordings/cs_stand_f43.png`.
+
+**M2 OSC slots into this same per-substep loop** — recompute τ each substep (read
+state → J/M from solver.mj_data → τ → control.joint_f) right before solver.step.
+
 ## CHECKPOINTS to eval (worktree `checkpoints/`, 2026-06-09 physical-motor retrains)
 
 ```
@@ -172,6 +198,7 @@ action_scale/default_pose_policy/policy_joint_names; fast_sac_config: hidden_dim
 ```
 mud_jax_policy.py    MudJaxPolicy (drop-in) + obs adapter + patched_config(mjcf_model=)
 mud_model.py         add_mjcf loader SEAM (URDF->go2.xml dispatch + home-pose set)
+mud_costep.py        co-step SEAM: robot+MPM at sim_dt (250 Hz), per-substep coupling
 run_mud_eval.py      eval/rollout w/ per-frame z+|act| logging; cmds: fwd | stand | hold
 record_mud.py        visual gate: headless GL → PNG (+mp4); enables the go2.xml seam
 gate_mjcf_coupling.py GATE: go2.xml-on-mud hold-pose coupling smoke
