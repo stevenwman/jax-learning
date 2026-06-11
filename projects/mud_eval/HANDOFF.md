@@ -23,7 +23,7 @@ Self-sufficient: vendored Newton + dedicated venv; no dependency on the
 | M1 joint-PD policy eval (real jax_rl policy + obs adapter) | ✅ WORKS — stand/hold stable on mud; forward gait unstable (zero-shot) |
 | **Migrate robot URDF → trained go2.xml (add_mjcf seam)** | ✅ DONE — couples with MPM, stands z~0.15 (gate PASS) |
 | **Co-step robot+MPM at sim_dt (250 Hz), per-substep coupling** | ✅ DONE — M1 re-verified stands z~0.21 (mud_costep.py) |
-| M1 clean traversal (orient down mud long-axis) | pending |
+| **Walkable ground (use_mujoco_cpu) + flat-ground→mud traversal VIDEO** | ✅ DONE — joint-PD walks ground, BOGS at thick-mud edge (record_traverse.py) |
 | M2 OSC controller (mjData Jacobian → Jᵀ·Λ·F torque injection) | pending — now natively wired to go2.xml |
 | M3 variable-impedance (stiffness-tail decode) | pending |
 
