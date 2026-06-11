@@ -80,7 +80,8 @@ def actuation_from_config(config) -> Actuation:
 
 
 # ── Terrain ──────────────────────────────────────────────────────────────────
-# Heightfield noise generators (moved verbatim from go2_warp_osc_rough._*).
+# Heightfield noise generators (moved verbatim from the deleted rough-config
+# module's private helpers).
 def _norm01(a):
     return (a - a.min()) / (a.max() - a.min() + 1e-12)
 

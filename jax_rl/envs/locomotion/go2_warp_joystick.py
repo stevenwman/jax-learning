@@ -25,66 +25,9 @@ from jax_rl.envs.reward_spec import RewardTerm, compute_rewards
 
 
 def default_config() -> config_dict.ConfigDict:
-    return config_dict.create(
-        ctrl_dt=0.02,
-        sim_dt=0.004,
-        episode_length=1000,
-        Kp=20.0,
-        Kd=0.5,
-        torque_speed_model=False,
-        physical_armature=False,
-        action_repeat=1,
-        action_scale=0.5,
-        soft_joint_pos_limit_factor=0.95,
-        noise_config=config_dict.create(
-            level=1.0,
-            scales=config_dict.create(
-                joint_pos=0.03,
-                joint_vel=1.5,
-                gyro=0.2,
-                gravity=0.05,
-                linvel=0.1,
-                accelerometer=0.1,
-            ),
-        ),
-        reward_config=config_dict.create(
-            scales=config_dict.create(
-                tracking_lin_vel=10.0,
-                tracking_ang_vel=5.0,
-                lin_vel_z=-0.5,
-                ang_vel_xy=-0.05,
-                orientation=-5.0,
-                torques=-0.0002,
-                action_rate=-0.01,
-                energy=-0.001,
-                dof_pos_limits=-1.0,
-                feet_air_time=0.1,
-                feet_slip=-0.1,
-                feet_clearance=-2.0,
-                feet_height=-0.2,
-                termination=-1.0,
-                stand_still=-1.0,
-                pose=0.5,
-                base_height=-5.0,
-            ),
-            tracking_sigma=0.25,
-            max_foot_height=0.1,
-        ),
-        command_config=config_dict.create(
-            a=[1.5, 0.8, 1.2],
-            b=[0.9, 0.25, 0.5],
-        ),
-        push_config=config_dict.create(
-            interval=350,    # steps between base-velocity kicks (~7s @ 50Hz)
-            vel_min=0.75,    # per-episode kick bound ~ U[vel_min, vel_max];
-            vel_max=0.75,    # vel_min==vel_max reproduces the old fixed ±0.75
-        ),
-        impl="warp",
-        contact_mode="training",
-        naconmax=4 * 8192,
-        naccdmax=4000,
-        njmax=100,
-    )
+    """Default joint-PD joystick config. Canonical builder: go2_config()."""
+    from jax_rl.envs.locomotion.go2_warp_variants import go2_config
+    return go2_config()
 
 
 class WarpJoystick(go2_warp_base.Go2WarpEnv):

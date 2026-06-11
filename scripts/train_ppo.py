@@ -394,7 +394,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--log-interval", type=int, default=None,
                         help="Print training stats every N iterations")
     parser.add_argument("--eval-every", type=int, default=None,
-                        help="Evaluate every N episodes (default: every 512 episodes)")
+                        help="Evaluate every N episodes (default: every 5000 episodes; Go2 OSC/physical presets set 500)")
     parser.add_argument("--wandb", action="store_true",
                         help="Enable W&B experiment tracking")
     parser.add_argument("--wandb-project", type=str, default="jax-rl",

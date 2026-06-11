@@ -1,0 +1,2361 @@
+{
+ "Go2WarpFlatPosTrackProto": {
+  "Kd": 0.5,
+  "Kp": 20.0,
+  "action_repeat": 1,
+  "action_scale": 0.5,
+  "command_config": {
+   "a": [
+    1.5,
+    0.8,
+    1.2
+   ],
+   "b": [
+    0.9,
+    0.25,
+    0.5
+   ]
+  },
+  "contact_mode": "training",
+  "ctrl_dt": 0.02,
+  "episode_length": 1000,
+  "impl": "warp",
+  "naccdmax": 4000,
+  "naconmax": 32768,
+  "njmax": 100,
+  "noise_config": {
+   "level": 1.0,
+   "scales": {
+    "accelerometer": 0.1,
+    "gravity": 0.05,
+    "gyro": 0.2,
+    "joint_pos": 0.03,
+    "joint_vel": 1.5,
+    "linvel": 0.1
+   }
+  },
+  "nominal_vx_range": [
+   0.3,
+   1.5
+  ],
+  "nominal_yaw_rate": 0.0,
+  "physical_armature": false,
+  "push_config": {
+   "interval": 350,
+   "vel_max": 0.75,
+   "vel_min": 0.75
+  },
+  "reward_config": {
+   "max_foot_height": 0.1,
+   "pos_track_lx": 0.5,
+   "pos_track_ly": 0.3,
+   "scales": {
+    "action_rate": -0.01,
+    "ang_vel_xy": -0.05,
+    "base_height": -5.0,
+    "dof_pos_limits": -1.0,
+    "energy": -0.001,
+    "feet_air_time": 0.1,
+    "feet_clearance": -2.0,
+    "feet_height": -0.2,
+    "feet_slip": -0.1,
+    "lin_vel_z": -0.5,
+    "orient_track_yaw": 5.0,
+    "orientation": -5.0,
+    "pos_track_xy": 10.0,
+    "pose": 0.5,
+    "stand_still": 0.0,
+    "termination": -1.0,
+    "torques": -0.0002,
+    "tracking_ang_vel": 0.0,
+    "tracking_lin_vel": 0.0
+   },
+   "tracking_sigma": 0.25
+  },
+  "sim_dt": 0.004,
+  "soft_joint_pos_limit_factor": 0.95,
+  "torque_speed_model": false
+ },
+ "Go2WarpJointRoughUni": {
+  "Kd": 0.5,
+  "Kp": 20.0,
+  "action_repeat": 1,
+  "action_scale": 0.5,
+  "command_config": {
+   "a": [
+    1.5,
+    0.8,
+    1.2
+   ],
+   "b": [
+    0.9,
+    0.25,
+    0.5
+   ]
+  },
+  "contact_mode": "training",
+  "ctrl_dt": 0.02,
+  "episode_length": 1000,
+  "impl": "warp",
+  "naccdmax": 4000,
+  "naconmax": 32768,
+  "njmax": 100,
+  "noise_config": {
+   "level": 1.0,
+   "scales": {
+    "accelerometer": 0.1,
+    "gravity": 0.05,
+    "gyro": 0.2,
+    "joint_pos": 0.03,
+    "joint_vel": 1.5,
+    "linvel": 0.1
+   }
+  },
+  "physical_armature": true,
+  "push_config": {
+   "interval": 350,
+   "vel_max": 0.75,
+   "vel_min": 0.75
+  },
+  "reward_config": {
+   "max_foot_height": 0.1,
+   "scales": {
+    "action_rate": -0.01,
+    "ang_vel_xy": -0.05,
+    "base_height": -5.0,
+    "dof_pos_limits": -1.0,
+    "energy": -0.001,
+    "feet_air_time": 0.1,
+    "feet_clearance": -2.0,
+    "feet_height": -0.2,
+    "feet_slip": -0.1,
+    "lin_vel_z": -0.5,
+    "orientation": -5.0,
+    "pose": 0.5,
+    "stand_still": -1.0,
+    "termination": -1.0,
+    "torques": -0.0002,
+    "tracking_ang_vel": 5.0,
+    "tracking_lin_vel": 10.0
+   },
+   "tracking_sigma": 0.25
+  },
+  "rough_amplitude": 0.07,
+  "rough_profile": "uniform",
+  "rough_seed": 0,
+  "sim_dt": 0.004,
+  "soft_joint_pos_limit_factor": 0.95,
+  "torque_speed_model": true
+ },
+ "Go2WarpJoystickCurriculum": {
+  "Kd": 0.5,
+  "Kp": 20.0,
+  "action_repeat": 1,
+  "action_scale": 0.5,
+  "command_config": {
+   "a": [
+    1.5,
+    0.8,
+    1.2
+   ],
+   "b": [
+    0.9,
+    0.25,
+    0.5
+   ]
+  },
+  "contact_mode": "training",
+  "ctrl_dt": 0.02,
+  "episode_length": 1000,
+  "impl": "warp",
+  "naccdmax": 4000,
+  "naconmax": 32768,
+  "njmax": 100,
+  "noise_config": {
+   "level": 1.0,
+   "scales": {
+    "accelerometer": 0.1,
+    "gravity": 0.05,
+    "gyro": 0.2,
+    "joint_pos": 0.03,
+    "joint_vel": 1.5,
+    "linvel": 0.1
+   }
+  },
+  "physical_armature": false,
+  "push_config": {
+   "interval": 350,
+   "vel_max": 0.75,
+   "vel_min": 0.75
+  },
+  "reward_config": {
+   "max_foot_height": 0.1,
+   "scales": {
+    "action_rate": -0.05,
+    "ang_vel_xy": -0.05,
+    "base_height": -20.0,
+    "dof_pos_limits": -1.0,
+    "energy": -0.001,
+    "feet_air_time": 0.1,
+    "feet_clearance": 0.0,
+    "feet_height": 0.0,
+    "feet_slip": -0.1,
+    "lin_vel_z": -0.5,
+    "orientation": -1.0,
+    "pose": 0.5,
+    "stand_still": -1.0,
+    "termination": -1.0,
+    "torques": -0.0002,
+    "tracking_ang_vel": 5.0,
+    "tracking_lin_vel": 10.0
+   },
+   "tracking_sigma": 0.25
+  },
+  "sim_dt": 0.004,
+  "soft_joint_pos_limit_factor": 0.95,
+  "terrain_seed": 0,
+  "torque_speed_model": false
+ },
+ "Go2WarpJoystickCurriculumTorqueSpeed": {
+  "Kd": 0.5,
+  "Kp": 20.0,
+  "action_repeat": 1,
+  "action_scale": 0.5,
+  "command_config": {
+   "a": [
+    1.5,
+    0.8,
+    1.2
+   ],
+   "b": [
+    0.9,
+    0.25,
+    0.5
+   ]
+  },
+  "contact_mode": "training",
+  "ctrl_dt": 0.02,
+  "episode_length": 1000,
+  "impl": "warp",
+  "naccdmax": 4000,
+  "naconmax": 32768,
+  "njmax": 100,
+  "noise_config": {
+   "level": 1.0,
+   "scales": {
+    "accelerometer": 0.1,
+    "gravity": 0.05,
+    "gyro": 0.2,
+    "joint_pos": 0.03,
+    "joint_vel": 1.5,
+    "linvel": 0.1
+   }
+  },
+  "physical_armature": false,
+  "push_config": {
+   "interval": 350,
+   "vel_max": 0.75,
+   "vel_min": 0.75
+  },
+  "reward_config": {
+   "max_foot_height": 0.1,
+   "scales": {
+    "action_rate": -0.05,
+    "ang_vel_xy": -0.05,
+    "base_height": -20.0,
+    "dof_pos_limits": -1.0,
+    "energy": -0.001,
+    "feet_air_time": 0.1,
+    "feet_clearance": 0.0,
+    "feet_height": 0.0,
+    "feet_slip": -0.1,
+    "lin_vel_z": -0.5,
+    "orientation": -1.0,
+    "pose": 0.5,
+    "stand_still": -1.0,
+    "termination": -1.0,
+    "torques": -0.0002,
+    "tracking_ang_vel": 5.0,
+    "tracking_lin_vel": 10.0
+   },
+   "tracking_sigma": 0.25
+  },
+  "sim_dt": 0.004,
+  "soft_joint_pos_limit_factor": 0.95,
+  "terrain_seed": 0,
+  "torque_speed_model": true
+ },
+ "Go2WarpJoystickFlat": {
+  "Kd": 0.5,
+  "Kp": 20.0,
+  "action_repeat": 1,
+  "action_scale": 0.5,
+  "command_config": {
+   "a": [
+    1.5,
+    0.8,
+    1.2
+   ],
+   "b": [
+    0.9,
+    0.25,
+    0.5
+   ]
+  },
+  "contact_mode": "training",
+  "ctrl_dt": 0.02,
+  "episode_length": 1000,
+  "impl": "warp",
+  "naccdmax": 4000,
+  "naconmax": 32768,
+  "njmax": 100,
+  "noise_config": {
+   "level": 1.0,
+   "scales": {
+    "accelerometer": 0.1,
+    "gravity": 0.05,
+    "gyro": 0.2,
+    "joint_pos": 0.03,
+    "joint_vel": 1.5,
+    "linvel": 0.1
+   }
+  },
+  "physical_armature": false,
+  "push_config": {
+   "interval": 350,
+   "vel_max": 0.75,
+   "vel_min": 0.75
+  },
+  "reward_config": {
+   "max_foot_height": 0.1,
+   "scales": {
+    "action_rate": -0.01,
+    "ang_vel_xy": -0.05,
+    "base_height": -5.0,
+    "dof_pos_limits": -1.0,
+    "energy": -0.001,
+    "feet_air_time": 0.1,
+    "feet_clearance": -2.0,
+    "feet_height": -0.2,
+    "feet_slip": -0.1,
+    "lin_vel_z": -0.5,
+    "orientation": -5.0,
+    "pose": 0.5,
+    "stand_still": -1.0,
+    "termination": -1.0,
+    "torques": -0.0002,
+    "tracking_ang_vel": 5.0,
+    "tracking_lin_vel": 10.0
+   },
+   "tracking_sigma": 0.25
+  },
+  "sim_dt": 0.004,
+  "soft_joint_pos_limit_factor": 0.95,
+  "torque_speed_model": false
+ },
+ "Go2WarpJoystickFlatHardKick": {
+  "Kd": 0.5,
+  "Kp": 20.0,
+  "action_repeat": 1,
+  "action_scale": 0.5,
+  "command_config": {
+   "a": [
+    1.5,
+    0.8,
+    1.2
+   ],
+   "b": [
+    0.9,
+    0.25,
+    0.5
+   ]
+  },
+  "contact_mode": "training",
+  "ctrl_dt": 0.02,
+  "episode_length": 1000,
+  "impl": "warp",
+  "naccdmax": 4000,
+  "naconmax": 32768,
+  "njmax": 100,
+  "noise_config": {
+   "level": 1.0,
+   "scales": {
+    "accelerometer": 0.1,
+    "gravity": 0.05,
+    "gyro": 0.2,
+    "joint_pos": 0.03,
+    "joint_vel": 1.5,
+    "linvel": 0.1
+   }
+  },
+  "physical_armature": false,
+  "push_config": {
+   "interval": 350,
+   "vel_max": 2.5,
+   "vel_min": 0.5
+  },
+  "reward_config": {
+   "max_foot_height": 0.1,
+   "scales": {
+    "action_rate": -0.01,
+    "ang_vel_xy": -0.05,
+    "base_height": -5.0,
+    "dof_pos_limits": -1.0,
+    "energy": -0.001,
+    "feet_air_time": 0.1,
+    "feet_clearance": -2.0,
+    "feet_height": -0.2,
+    "feet_slip": -0.1,
+    "lin_vel_z": -0.5,
+    "orientation": -5.0,
+    "pose": 0.5,
+    "stand_still": -1.0,
+    "termination": -1.0,
+    "torques": -0.0002,
+    "tracking_ang_vel": 5.0,
+    "tracking_lin_vel": 10.0
+   },
+   "tracking_sigma": 0.25
+  },
+  "sim_dt": 0.004,
+  "soft_joint_pos_limit_factor": 0.95,
+  "torque_speed_model": false
+ },
+ "Go2WarpJoystickFlatNoAccel": {
+  "Kd": 0.5,
+  "Kp": 20.0,
+  "action_repeat": 1,
+  "action_scale": 0.5,
+  "command_config": {
+   "a": [
+    1.5,
+    0.8,
+    1.2
+   ],
+   "b": [
+    0.9,
+    0.25,
+    0.5
+   ]
+  },
+  "contact_mode": "training",
+  "ctrl_dt": 0.02,
+  "episode_length": 1000,
+  "impl": "warp",
+  "naccdmax": 4000,
+  "naconmax": 32768,
+  "njmax": 100,
+  "noise_config": {
+   "level": 1.0,
+   "scales": {
+    "accelerometer": 0.1,
+    "gravity": 0.05,
+    "gyro": 0.2,
+    "joint_pos": 0.03,
+    "joint_vel": 1.5,
+    "linvel": 0.1
+   }
+  },
+  "physical_armature": false,
+  "push_config": {
+   "interval": 350,
+   "vel_max": 0.75,
+   "vel_min": 0.75
+  },
+  "reward_config": {
+   "max_foot_height": 0.1,
+   "scales": {
+    "action_rate": -0.01,
+    "ang_vel_xy": -0.05,
+    "base_height": -5.0,
+    "dof_pos_limits": -1.0,
+    "energy": -0.001,
+    "feet_air_time": 0.1,
+    "feet_clearance": -2.0,
+    "feet_height": -0.2,
+    "feet_slip": -0.1,
+    "lin_vel_z": -0.5,
+    "orientation": -5.0,
+    "pose": 0.5,
+    "stand_still": -1.0,
+    "termination": -1.0,
+    "torques": -0.0002,
+    "tracking_ang_vel": 5.0,
+    "tracking_lin_vel": 10.0
+   },
+   "tracking_sigma": 0.25
+  },
+  "sim_dt": 0.004,
+  "soft_joint_pos_limit_factor": 0.95,
+  "torque_speed_model": false
+ },
+ "Go2WarpJoystickFlatPhysical": {
+  "Kd": 0.5,
+  "Kp": 20.0,
+  "action_repeat": 1,
+  "action_scale": 0.5,
+  "command_config": {
+   "a": [
+    1.5,
+    0.8,
+    1.2
+   ],
+   "b": [
+    0.9,
+    0.25,
+    0.5
+   ]
+  },
+  "contact_mode": "training",
+  "ctrl_dt": 0.02,
+  "episode_length": 1000,
+  "impl": "warp",
+  "naccdmax": 4000,
+  "naconmax": 32768,
+  "njmax": 100,
+  "noise_config": {
+   "level": 1.0,
+   "scales": {
+    "accelerometer": 0.1,
+    "gravity": 0.05,
+    "gyro": 0.2,
+    "joint_pos": 0.03,
+    "joint_vel": 1.5,
+    "linvel": 0.1
+   }
+  },
+  "physical_armature": true,
+  "push_config": {
+   "interval": 350,
+   "vel_max": 0.75,
+   "vel_min": 0.75
+  },
+  "reward_config": {
+   "max_foot_height": 0.1,
+   "scales": {
+    "action_rate": -0.01,
+    "ang_vel_xy": -0.05,
+    "base_height": -5.0,
+    "dof_pos_limits": -1.0,
+    "energy": -0.001,
+    "feet_air_time": 0.1,
+    "feet_clearance": -2.0,
+    "feet_height": -0.2,
+    "feet_slip": -0.1,
+    "lin_vel_z": -0.5,
+    "orientation": -5.0,
+    "pose": 0.5,
+    "stand_still": -1.0,
+    "termination": -1.0,
+    "torques": -0.0002,
+    "tracking_ang_vel": 5.0,
+    "tracking_lin_vel": 10.0
+   },
+   "tracking_sigma": 0.25
+  },
+  "sim_dt": 0.004,
+  "soft_joint_pos_limit_factor": 0.95,
+  "torque_speed_model": true
+ },
+ "Go2WarpJoystickFlatTorqueSpeed": {
+  "Kd": 0.5,
+  "Kp": 20.0,
+  "action_repeat": 1,
+  "action_scale": 0.5,
+  "command_config": {
+   "a": [
+    1.5,
+    0.8,
+    1.2
+   ],
+   "b": [
+    0.9,
+    0.25,
+    0.5
+   ]
+  },
+  "contact_mode": "training",
+  "ctrl_dt": 0.02,
+  "episode_length": 1000,
+  "impl": "warp",
+  "naccdmax": 4000,
+  "naconmax": 32768,
+  "njmax": 100,
+  "noise_config": {
+   "level": 1.0,
+   "scales": {
+    "accelerometer": 0.1,
+    "gravity": 0.05,
+    "gyro": 0.2,
+    "joint_pos": 0.03,
+    "joint_vel": 1.5,
+    "linvel": 0.1
+   }
+  },
+  "physical_armature": false,
+  "push_config": {
+   "interval": 350,
+   "vel_max": 0.75,
+   "vel_min": 0.75
+  },
+  "reward_config": {
+   "max_foot_height": 0.1,
+   "scales": {
+    "action_rate": -0.01,
+    "ang_vel_xy": -0.05,
+    "base_height": -5.0,
+    "dof_pos_limits": -1.0,
+    "energy": -0.001,
+    "feet_air_time": 0.1,
+    "feet_clearance": -2.0,
+    "feet_height": -0.2,
+    "feet_slip": -0.1,
+    "lin_vel_z": -0.5,
+    "orientation": -5.0,
+    "pose": 0.5,
+    "stand_still": -1.0,
+    "termination": -1.0,
+    "torques": -0.0002,
+    "tracking_ang_vel": 5.0,
+    "tracking_lin_vel": 10.0
+   },
+   "tracking_sigma": 0.25
+  },
+  "sim_dt": 0.004,
+  "soft_joint_pos_limit_factor": 0.95,
+  "torque_speed_model": true
+ },
+ "Go2WarpJoystickUnitree": {
+  "Kd": 0.5,
+  "Kp": 20.0,
+  "action_repeat": 1,
+  "action_scale": 0.25,
+  "command_config": {
+   "a": [
+    1.5,
+    0.8,
+    1.2
+   ],
+   "b": [
+    0.9,
+    0.25,
+    0.5
+   ]
+  },
+  "contact_mode": "training",
+  "ctrl_dt": 0.02,
+  "episode_length": 1000,
+  "impl": "warp",
+  "naccdmax": 4000,
+  "naconmax": 32768,
+  "njmax": 100,
+  "noise_config": {
+   "level": 1.0,
+   "scales": {
+    "accelerometer": 0.1,
+    "gravity": 0.05,
+    "gyro": 0.2,
+    "joint_pos": 0.03,
+    "joint_vel": 1.5,
+    "linvel": 0.1
+   }
+  },
+  "physical_armature": false,
+  "push_config": {
+   "interval": 350,
+   "vel_max": 0.75,
+   "vel_min": 0.75
+  },
+  "reward_config": {
+   "max_foot_height": 0.1,
+   "scales": {
+    "action_rate": -0.01,
+    "ang_vel_xy": -0.05,
+    "base_height": -5.0,
+    "dof_pos_limits": -1.0,
+    "energy": -0.001,
+    "feet_air_time": 0.1,
+    "feet_clearance": -2.0,
+    "feet_height": -0.2,
+    "feet_slip": -0.1,
+    "lin_vel_z": -0.5,
+    "orientation": -5.0,
+    "pose": 0.5,
+    "stand_still": -1.0,
+    "termination": -1.0,
+    "torques": -0.0002,
+    "tracking_ang_vel": 5.0,
+    "tracking_lin_vel": 10.0
+   },
+   "tracking_sigma": 0.25
+  },
+  "sim_dt": 0.004,
+  "soft_joint_pos_limit_factor": 0.95,
+  "torque_speed_model": false
+ },
+ "Go2WarpOscFlatSoftPhysical": {
+  "Kd": 0.5,
+  "Kp": 20.0,
+  "action_repeat": 1,
+  "action_scale": 0.12,
+  "command_config": {
+   "a": [
+    1.5,
+    0.8,
+    1.2
+   ],
+   "b": [
+    0.9,
+    0.25,
+    0.5
+   ]
+  },
+  "contact_mode": "training",
+  "ctrl_dt": 0.02,
+  "episode_length": 1000,
+  "impl": "warp",
+  "naccdmax": 4000,
+  "naconmax": 32768,
+  "njmax": 100,
+  "noise_config": {
+   "level": 1.0,
+   "scales": {
+    "accelerometer": 0.1,
+    "gravity": 0.05,
+    "gyro": 0.2,
+    "joint_pos": 0.03,
+    "joint_vel": 1.5,
+    "linvel": 0.1
+   }
+  },
+  "osc": {
+   "gravity_ff": "none",
+   "kd": [
+    78.0,
+    78.0,
+    92.0
+   ],
+   "kp": [
+    1500.0,
+    1500.0,
+    2000.0
+   ],
+   "ridge": 0.0001,
+   "target_mode": "abs_body",
+   "use_op_space_inertia": true
+  },
+  "physical_armature": true,
+  "push_config": {
+   "interval": 350,
+   "vel_max": 0.75,
+   "vel_min": 0.75
+  },
+  "reward_config": {
+   "max_foot_height": 0.1,
+   "scales": {
+    "action_rate": -0.01,
+    "ang_vel_xy": -0.05,
+    "base_height": -5.0,
+    "dof_pos_limits": -1.0,
+    "energy": -0.001,
+    "feet_air_time": 0.1,
+    "feet_clearance": -2.0,
+    "feet_height": -0.2,
+    "feet_slip": -0.1,
+    "lin_vel_z": -0.5,
+    "orientation": -5.0,
+    "pose": 0.5,
+    "stand_still": -1.0,
+    "termination": -1.0,
+    "torques": -0.0002,
+    "tracking_ang_vel": 5.0,
+    "tracking_lin_vel": 10.0
+   },
+   "tracking_sigma": 0.25
+  },
+  "sim_dt": 0.004,
+  "soft_joint_pos_limit_factor": 0.95,
+  "torque_speed_model": true
+ },
+ "Go2WarpOscJoystickFlat": {
+  "Kd": 0.5,
+  "Kp": 20.0,
+  "action_repeat": 1,
+  "action_scale": 0.12,
+  "command_config": {
+   "a": [
+    1.5,
+    0.8,
+    1.2
+   ],
+   "b": [
+    0.9,
+    0.25,
+    0.5
+   ]
+  },
+  "contact_mode": "training",
+  "ctrl_dt": 0.02,
+  "episode_length": 1000,
+  "impl": "warp",
+  "naccdmax": 4000,
+  "naconmax": 32768,
+  "njmax": 100,
+  "noise_config": {
+   "level": 1.0,
+   "scales": {
+    "accelerometer": 0.1,
+    "gravity": 0.05,
+    "gyro": 0.2,
+    "joint_pos": 0.03,
+    "joint_vel": 1.5,
+    "linvel": 0.1
+   }
+  },
+  "osc": {
+   "gravity_ff": "none",
+   "kd": [
+    110.0,
+    110.0,
+    130.0
+   ],
+   "kp": [
+    3000.0,
+    3000.0,
+    4000.0
+   ],
+   "ridge": 0.0001,
+   "target_mode": "abs_body",
+   "use_op_space_inertia": true
+  },
+  "physical_armature": false,
+  "push_config": {
+   "interval": 350,
+   "vel_max": 0.75,
+   "vel_min": 0.75
+  },
+  "reward_config": {
+   "max_foot_height": 0.1,
+   "scales": {
+    "action_rate": -0.01,
+    "ang_vel_xy": -0.05,
+    "base_height": -5.0,
+    "dof_pos_limits": -1.0,
+    "energy": -0.001,
+    "feet_air_time": 0.1,
+    "feet_clearance": -2.0,
+    "feet_height": -0.2,
+    "feet_slip": -0.1,
+    "lin_vel_z": -0.5,
+    "orientation": -5.0,
+    "pose": 0.5,
+    "stand_still": -1.0,
+    "termination": -1.0,
+    "torques": -0.0002,
+    "tracking_ang_vel": 5.0,
+    "tracking_lin_vel": 10.0
+   },
+   "tracking_sigma": 0.25
+  },
+  "sim_dt": 0.004,
+  "soft_joint_pos_limit_factor": 0.95,
+  "torque_speed_model": false
+ },
+ "Go2WarpOscJoystickFlatJt": {
+  "Kd": 0.5,
+  "Kp": 20.0,
+  "action_repeat": 1,
+  "action_scale": 0.12,
+  "command_config": {
+   "a": [
+    1.5,
+    0.8,
+    1.2
+   ],
+   "b": [
+    0.9,
+    0.25,
+    0.5
+   ]
+  },
+  "contact_mode": "training",
+  "ctrl_dt": 0.02,
+  "episode_length": 1000,
+  "impl": "warp",
+  "naccdmax": 4000,
+  "naconmax": 32768,
+  "njmax": 100,
+  "noise_config": {
+   "level": 1.0,
+   "scales": {
+    "accelerometer": 0.1,
+    "gravity": 0.05,
+    "gyro": 0.2,
+    "joint_pos": 0.03,
+    "joint_vel": 1.5,
+    "linvel": 0.1
+   }
+  },
+  "osc": {
+   "gravity_ff": "none",
+   "kd": [
+    60.0,
+    60.0,
+    80.0
+   ],
+   "kp": [
+    1500.0,
+    1500.0,
+    2500.0
+   ],
+   "ridge": 0.0001,
+   "target_mode": "abs_body",
+   "use_op_space_inertia": false
+  },
+  "physical_armature": false,
+  "push_config": {
+   "interval": 350,
+   "vel_max": 0.75,
+   "vel_min": 0.75
+  },
+  "reward_config": {
+   "max_foot_height": 0.1,
+   "scales": {
+    "action_rate": -0.01,
+    "ang_vel_xy": -0.05,
+    "base_height": -5.0,
+    "dof_pos_limits": -1.0,
+    "energy": -0.001,
+    "feet_air_time": 0.1,
+    "feet_clearance": -2.0,
+    "feet_height": -0.2,
+    "feet_slip": -0.1,
+    "lin_vel_z": -0.5,
+    "orientation": -5.0,
+    "pose": 0.5,
+    "stand_still": -1.0,
+    "termination": -1.0,
+    "torques": -0.0002,
+    "tracking_ang_vel": 5.0,
+    "tracking_lin_vel": 10.0
+   },
+   "tracking_sigma": 0.25
+  },
+  "sim_dt": 0.004,
+  "soft_joint_pos_limit_factor": 0.95,
+  "torque_speed_model": false
+ },
+ "Go2WarpOscJoystickFlatKp025": {
+  "Kd": 0.5,
+  "Kp": 20.0,
+  "action_repeat": 1,
+  "action_scale": 0.12,
+  "command_config": {
+   "a": [
+    1.5,
+    0.8,
+    1.2
+   ],
+   "b": [
+    0.9,
+    0.25,
+    0.5
+   ]
+  },
+  "contact_mode": "training",
+  "ctrl_dt": 0.02,
+  "episode_length": 1000,
+  "impl": "warp",
+  "naccdmax": 4000,
+  "naconmax": 32768,
+  "njmax": 100,
+  "noise_config": {
+   "level": 1.0,
+   "scales": {
+    "accelerometer": 0.1,
+    "gravity": 0.05,
+    "gyro": 0.2,
+    "joint_pos": 0.03,
+    "joint_vel": 1.5,
+    "linvel": 0.1
+   }
+  },
+  "osc": {
+   "gravity_ff": "none",
+   "kd": [
+    55.0,
+    55.0,
+    65.0
+   ],
+   "kp": [
+    750.0,
+    750.0,
+    1000.0
+   ],
+   "ridge": 0.0001,
+   "target_mode": "abs_body",
+   "use_op_space_inertia": true
+  },
+  "physical_armature": false,
+  "push_config": {
+   "interval": 350,
+   "vel_max": 0.75,
+   "vel_min": 0.75
+  },
+  "reward_config": {
+   "max_foot_height": 0.1,
+   "scales": {
+    "action_rate": -0.01,
+    "ang_vel_xy": -0.05,
+    "base_height": -5.0,
+    "dof_pos_limits": -1.0,
+    "energy": -0.001,
+    "feet_air_time": 0.1,
+    "feet_clearance": -2.0,
+    "feet_height": -0.2,
+    "feet_slip": -0.1,
+    "lin_vel_z": -0.5,
+    "orientation": -5.0,
+    "pose": 0.5,
+    "stand_still": -1.0,
+    "termination": -1.0,
+    "torques": -0.0002,
+    "tracking_ang_vel": 5.0,
+    "tracking_lin_vel": 10.0
+   },
+   "tracking_sigma": 0.25
+  },
+  "sim_dt": 0.004,
+  "soft_joint_pos_limit_factor": 0.95,
+  "torque_speed_model": false
+ },
+ "Go2WarpOscJoystickFlatKp05": {
+  "Kd": 0.5,
+  "Kp": 20.0,
+  "action_repeat": 1,
+  "action_scale": 0.12,
+  "command_config": {
+   "a": [
+    1.5,
+    0.8,
+    1.2
+   ],
+   "b": [
+    0.9,
+    0.25,
+    0.5
+   ]
+  },
+  "contact_mode": "training",
+  "ctrl_dt": 0.02,
+  "episode_length": 1000,
+  "impl": "warp",
+  "naccdmax": 4000,
+  "naconmax": 32768,
+  "njmax": 100,
+  "noise_config": {
+   "level": 1.0,
+   "scales": {
+    "accelerometer": 0.1,
+    "gravity": 0.05,
+    "gyro": 0.2,
+    "joint_pos": 0.03,
+    "joint_vel": 1.5,
+    "linvel": 0.1
+   }
+  },
+  "osc": {
+   "gravity_ff": "none",
+   "kd": [
+    77.78174593052023,
+    77.78174593052023,
+    91.92388155425118
+   ],
+   "kp": [
+    1500.0,
+    1500.0,
+    2000.0
+   ],
+   "ridge": 0.0001,
+   "target_mode": "abs_body",
+   "use_op_space_inertia": true
+  },
+  "physical_armature": false,
+  "push_config": {
+   "interval": 350,
+   "vel_max": 0.75,
+   "vel_min": 0.75
+  },
+  "reward_config": {
+   "max_foot_height": 0.1,
+   "scales": {
+    "action_rate": -0.01,
+    "ang_vel_xy": -0.05,
+    "base_height": -5.0,
+    "dof_pos_limits": -1.0,
+    "energy": -0.001,
+    "feet_air_time": 0.1,
+    "feet_clearance": -2.0,
+    "feet_height": -0.2,
+    "feet_slip": -0.1,
+    "lin_vel_z": -0.5,
+    "orientation": -5.0,
+    "pose": 0.5,
+    "stand_still": -1.0,
+    "termination": -1.0,
+    "torques": -0.0002,
+    "tracking_ang_vel": 5.0,
+    "tracking_lin_vel": 10.0
+   },
+   "tracking_sigma": 0.25
+  },
+  "sim_dt": 0.004,
+  "soft_joint_pos_limit_factor": 0.95,
+  "torque_speed_model": false
+ },
+ "Go2WarpOscJoystickFlatKp05HardKick": {
+  "Kd": 0.5,
+  "Kp": 20.0,
+  "action_repeat": 1,
+  "action_scale": 0.12,
+  "command_config": {
+   "a": [
+    1.5,
+    0.8,
+    1.2
+   ],
+   "b": [
+    0.9,
+    0.25,
+    0.5
+   ]
+  },
+  "contact_mode": "training",
+  "ctrl_dt": 0.02,
+  "episode_length": 1000,
+  "impl": "warp",
+  "naccdmax": 4000,
+  "naconmax": 32768,
+  "njmax": 100,
+  "noise_config": {
+   "level": 1.0,
+   "scales": {
+    "accelerometer": 0.1,
+    "gravity": 0.05,
+    "gyro": 0.2,
+    "joint_pos": 0.03,
+    "joint_vel": 1.5,
+    "linvel": 0.1
+   }
+  },
+  "osc": {
+   "gravity_ff": "none",
+   "kd": [
+    77.78174593052023,
+    77.78174593052023,
+    91.92388155425118
+   ],
+   "kp": [
+    1500.0,
+    1500.0,
+    2000.0
+   ],
+   "ridge": 0.0001,
+   "target_mode": "abs_body",
+   "use_op_space_inertia": true
+  },
+  "physical_armature": false,
+  "push_config": {
+   "interval": 350,
+   "vel_max": 2.5,
+   "vel_min": 0.5
+  },
+  "reward_config": {
+   "max_foot_height": 0.1,
+   "scales": {
+    "action_rate": -0.01,
+    "ang_vel_xy": -0.05,
+    "base_height": -5.0,
+    "dof_pos_limits": -1.0,
+    "energy": -0.001,
+    "feet_air_time": 0.1,
+    "feet_clearance": -2.0,
+    "feet_height": -0.2,
+    "feet_slip": -0.1,
+    "lin_vel_z": -0.5,
+    "orientation": -5.0,
+    "pose": 0.5,
+    "stand_still": -1.0,
+    "termination": -1.0,
+    "torques": -0.0002,
+    "tracking_ang_vel": 5.0,
+    "tracking_lin_vel": 10.0
+   },
+   "tracking_sigma": 0.25
+  },
+  "sim_dt": 0.004,
+  "soft_joint_pos_limit_factor": 0.95,
+  "torque_speed_model": false
+ },
+ "Go2WarpOscJoystickFlatKp2": {
+  "Kd": 0.5,
+  "Kp": 20.0,
+  "action_repeat": 1,
+  "action_scale": 0.12,
+  "command_config": {
+   "a": [
+    1.5,
+    0.8,
+    1.2
+   ],
+   "b": [
+    0.9,
+    0.25,
+    0.5
+   ]
+  },
+  "contact_mode": "training",
+  "ctrl_dt": 0.02,
+  "episode_length": 1000,
+  "impl": "warp",
+  "naccdmax": 4000,
+  "naconmax": 32768,
+  "njmax": 100,
+  "noise_config": {
+   "level": 1.0,
+   "scales": {
+    "accelerometer": 0.1,
+    "gravity": 0.05,
+    "gyro": 0.2,
+    "joint_pos": 0.03,
+    "joint_vel": 1.5,
+    "linvel": 0.1
+   }
+  },
+  "osc": {
+   "gravity_ff": "none",
+   "kd": [
+    155.56349186104046,
+    155.56349186104046,
+    183.84776310850236
+   ],
+   "kp": [
+    6000.0,
+    6000.0,
+    8000.0
+   ],
+   "ridge": 0.0001,
+   "target_mode": "abs_body",
+   "use_op_space_inertia": true
+  },
+  "physical_armature": false,
+  "push_config": {
+   "interval": 350,
+   "vel_max": 0.75,
+   "vel_min": 0.75
+  },
+  "reward_config": {
+   "max_foot_height": 0.1,
+   "scales": {
+    "action_rate": -0.01,
+    "ang_vel_xy": -0.05,
+    "base_height": -5.0,
+    "dof_pos_limits": -1.0,
+    "energy": -0.001,
+    "feet_air_time": 0.1,
+    "feet_clearance": -2.0,
+    "feet_height": -0.2,
+    "feet_slip": -0.1,
+    "lin_vel_z": -0.5,
+    "orientation": -5.0,
+    "pose": 0.5,
+    "stand_still": -1.0,
+    "termination": -1.0,
+    "torques": -0.0002,
+    "tracking_ang_vel": 5.0,
+    "tracking_lin_vel": 10.0
+   },
+   "tracking_sigma": 0.25
+  },
+  "sim_dt": 0.004,
+  "soft_joint_pos_limit_factor": 0.95,
+  "torque_speed_model": false
+ },
+ "Go2WarpOscJoystickFlatKp4": {
+  "Kd": 0.5,
+  "Kp": 20.0,
+  "action_repeat": 1,
+  "action_scale": 0.12,
+  "command_config": {
+   "a": [
+    1.5,
+    0.8,
+    1.2
+   ],
+   "b": [
+    0.9,
+    0.25,
+    0.5
+   ]
+  },
+  "contact_mode": "training",
+  "ctrl_dt": 0.02,
+  "episode_length": 1000,
+  "impl": "warp",
+  "naccdmax": 4000,
+  "naconmax": 32768,
+  "njmax": 100,
+  "noise_config": {
+   "level": 1.0,
+   "scales": {
+    "accelerometer": 0.1,
+    "gravity": 0.05,
+    "gyro": 0.2,
+    "joint_pos": 0.03,
+    "joint_vel": 1.5,
+    "linvel": 0.1
+   }
+  },
+  "osc": {
+   "gravity_ff": "none",
+   "kd": [
+    220.0,
+    220.0,
+    260.0
+   ],
+   "kp": [
+    12000.0,
+    12000.0,
+    16000.0
+   ],
+   "ridge": 0.0001,
+   "target_mode": "abs_body",
+   "use_op_space_inertia": true
+  },
+  "physical_armature": false,
+  "push_config": {
+   "interval": 350,
+   "vel_max": 0.75,
+   "vel_min": 0.75
+  },
+  "reward_config": {
+   "max_foot_height": 0.1,
+   "scales": {
+    "action_rate": -0.01,
+    "ang_vel_xy": -0.05,
+    "base_height": -5.0,
+    "dof_pos_limits": -1.0,
+    "energy": -0.001,
+    "feet_air_time": 0.1,
+    "feet_clearance": -2.0,
+    "feet_height": -0.2,
+    "feet_slip": -0.1,
+    "lin_vel_z": -0.5,
+    "orientation": -5.0,
+    "pose": 0.5,
+    "stand_still": -1.0,
+    "termination": -1.0,
+    "torques": -0.0002,
+    "tracking_ang_vel": 5.0,
+    "tracking_lin_vel": 10.0
+   },
+   "tracking_sigma": 0.25
+  },
+  "sim_dt": 0.004,
+  "soft_joint_pos_limit_factor": 0.95,
+  "torque_speed_model": false
+ },
+ "Go2WarpOscRoughUni": {
+  "Kd": 0.5,
+  "Kp": 20.0,
+  "action_repeat": 1,
+  "action_scale": 0.12,
+  "command_config": {
+   "a": [
+    1.5,
+    0.8,
+    1.2
+   ],
+   "b": [
+    0.9,
+    0.25,
+    0.5
+   ]
+  },
+  "contact_mode": "training",
+  "ctrl_dt": 0.02,
+  "episode_length": 1000,
+  "impl": "warp",
+  "naccdmax": 4000,
+  "naconmax": 32768,
+  "njmax": 100,
+  "noise_config": {
+   "level": 1.0,
+   "scales": {
+    "accelerometer": 0.1,
+    "gravity": 0.05,
+    "gyro": 0.2,
+    "joint_pos": 0.03,
+    "joint_vel": 1.5,
+    "linvel": 0.1
+   }
+  },
+  "osc": {
+   "gravity_ff": "none",
+   "kd": [
+    78.0,
+    78.0,
+    92.0
+   ],
+   "kp": [
+    1500.0,
+    1500.0,
+    2000.0
+   ],
+   "ridge": 0.0001,
+   "target_mode": "abs_body",
+   "use_op_space_inertia": true
+  },
+  "physical_armature": true,
+  "push_config": {
+   "interval": 350,
+   "vel_max": 0.75,
+   "vel_min": 0.75
+  },
+  "reward_config": {
+   "max_foot_height": 0.1,
+   "scales": {
+    "action_rate": -0.01,
+    "ang_vel_xy": -0.05,
+    "base_height": -5.0,
+    "dof_pos_limits": -1.0,
+    "energy": -0.001,
+    "feet_air_time": 0.1,
+    "feet_clearance": -2.0,
+    "feet_height": -0.2,
+    "feet_slip": -0.1,
+    "lin_vel_z": -0.5,
+    "orientation": -5.0,
+    "pose": 0.5,
+    "stand_still": -1.0,
+    "termination": -1.0,
+    "torques": -0.0002,
+    "tracking_ang_vel": 5.0,
+    "tracking_lin_vel": 10.0
+   },
+   "tracking_sigma": 0.25
+  },
+  "rough_amplitude": 0.07,
+  "rough_profile": "uniform",
+  "rough_seed": 0,
+  "sim_dt": 0.004,
+  "soft_joint_pos_limit_factor": 0.95,
+  "torque_speed_model": true
+ },
+ "Go2WarpOscVarAxisFlatPhysical": {
+  "Kd": 0.5,
+  "Kp": 20.0,
+  "action_repeat": 1,
+  "action_scale": 0.12,
+  "command_config": {
+   "a": [
+    1.5,
+    0.8,
+    1.2
+   ],
+   "b": [
+    0.9,
+    0.25,
+    0.5
+   ]
+  },
+  "contact_mode": "training",
+  "ctrl_dt": 0.02,
+  "episode_length": 1000,
+  "impl": "warp",
+  "naccdmax": 4000,
+  "naconmax": 32768,
+  "njmax": 100,
+  "noise_config": {
+   "level": 1.0,
+   "scales": {
+    "accelerometer": 0.1,
+    "gravity": 0.05,
+    "gyro": 0.2,
+    "joint_pos": 0.03,
+    "joint_vel": 1.5,
+    "linvel": 0.1
+   }
+  },
+  "osc": {
+   "damping_action": false,
+   "gravity_ff": "none",
+   "kd": [
+    110.0,
+    110.0,
+    130.0
+   ],
+   "kp": [
+    3000.0,
+    3000.0,
+    4000.0
+   ],
+   "ridge": 0.0001,
+   "stiffness_granularity": "per_axis",
+   "target_mode": "abs_body",
+   "use_op_space_inertia": true,
+   "var_s_max": 2.0,
+   "var_s_min": 0.25,
+   "var_zeta_max": 2.0,
+   "var_zeta_min": 0.5
+  },
+  "physical_armature": true,
+  "push_config": {
+   "interval": 350,
+   "vel_max": 0.75,
+   "vel_min": 0.75
+  },
+  "reward_config": {
+   "max_foot_height": 0.1,
+   "scales": {
+    "action_rate": -0.01,
+    "ang_vel_xy": -0.05,
+    "base_height": -5.0,
+    "dof_pos_limits": -1.0,
+    "energy": -0.001,
+    "feet_air_time": 0.1,
+    "feet_clearance": -2.0,
+    "feet_height": -0.2,
+    "feet_slip": -0.1,
+    "lin_vel_z": -0.5,
+    "orientation": -5.0,
+    "pose": 0.5,
+    "stand_still": -1.0,
+    "termination": -1.0,
+    "torques": -0.0002,
+    "tracking_ang_vel": 5.0,
+    "tracking_lin_vel": 10.0
+   },
+   "tracking_sigma": 0.25
+  },
+  "sim_dt": 0.004,
+  "soft_joint_pos_limit_factor": 0.95,
+  "torque_speed_model": true
+ },
+ "Go2WarpOscVarAxisRoughUni": {
+  "Kd": 0.5,
+  "Kp": 20.0,
+  "action_repeat": 1,
+  "action_scale": 0.12,
+  "command_config": {
+   "a": [
+    1.5,
+    0.8,
+    1.2
+   ],
+   "b": [
+    0.9,
+    0.25,
+    0.5
+   ]
+  },
+  "contact_mode": "training",
+  "ctrl_dt": 0.02,
+  "episode_length": 1000,
+  "impl": "warp",
+  "naccdmax": 4000,
+  "naconmax": 32768,
+  "njmax": 100,
+  "noise_config": {
+   "level": 1.0,
+   "scales": {
+    "accelerometer": 0.1,
+    "gravity": 0.05,
+    "gyro": 0.2,
+    "joint_pos": 0.03,
+    "joint_vel": 1.5,
+    "linvel": 0.1
+   }
+  },
+  "osc": {
+   "damping_action": false,
+   "gravity_ff": "none",
+   "kd": [
+    110.0,
+    110.0,
+    130.0
+   ],
+   "kp": [
+    3000.0,
+    3000.0,
+    4000.0
+   ],
+   "ridge": 0.0001,
+   "stiffness_granularity": "per_axis",
+   "target_mode": "abs_body",
+   "use_op_space_inertia": true,
+   "var_s_max": 2.0,
+   "var_s_min": 0.25,
+   "var_zeta_max": 2.0,
+   "var_zeta_min": 0.5
+  },
+  "physical_armature": true,
+  "push_config": {
+   "interval": 350,
+   "vel_max": 0.75,
+   "vel_min": 0.75
+  },
+  "reward_config": {
+   "max_foot_height": 0.1,
+   "scales": {
+    "action_rate": -0.01,
+    "ang_vel_xy": -0.05,
+    "base_height": -5.0,
+    "dof_pos_limits": -1.0,
+    "energy": -0.001,
+    "feet_air_time": 0.1,
+    "feet_clearance": -2.0,
+    "feet_height": -0.2,
+    "feet_slip": -0.1,
+    "lin_vel_z": -0.5,
+    "orientation": -5.0,
+    "pose": 0.5,
+    "stand_still": -1.0,
+    "termination": -1.0,
+    "torques": -0.0002,
+    "tracking_ang_vel": 5.0,
+    "tracking_lin_vel": 10.0
+   },
+   "tracking_sigma": 0.25
+  },
+  "rough_amplitude": 0.07,
+  "rough_profile": "uniform",
+  "rough_seed": 0,
+  "sim_dt": 0.004,
+  "soft_joint_pos_limit_factor": 0.95,
+  "torque_speed_model": true
+ },
+ "Go2WarpOscVarDampingAxisFlatPhysical": {
+  "Kd": 0.5,
+  "Kp": 20.0,
+  "action_repeat": 1,
+  "action_scale": 0.12,
+  "command_config": {
+   "a": [
+    1.5,
+    0.8,
+    1.2
+   ],
+   "b": [
+    0.9,
+    0.25,
+    0.5
+   ]
+  },
+  "contact_mode": "training",
+  "ctrl_dt": 0.02,
+  "episode_length": 1000,
+  "impl": "warp",
+  "naccdmax": 4000,
+  "naconmax": 32768,
+  "njmax": 100,
+  "noise_config": {
+   "level": 1.0,
+   "scales": {
+    "accelerometer": 0.1,
+    "gravity": 0.05,
+    "gyro": 0.2,
+    "joint_pos": 0.03,
+    "joint_vel": 1.5,
+    "linvel": 0.1
+   }
+  },
+  "osc": {
+   "damping_action": true,
+   "gravity_ff": "none",
+   "kd": [
+    110.0,
+    110.0,
+    130.0
+   ],
+   "kp": [
+    3000.0,
+    3000.0,
+    4000.0
+   ],
+   "ridge": 0.0001,
+   "stiffness_granularity": "per_axis",
+   "target_mode": "abs_body",
+   "use_op_space_inertia": true,
+   "var_s_max": 2.0,
+   "var_s_min": 0.25,
+   "var_zeta_max": 2.0,
+   "var_zeta_min": 0.5
+  },
+  "physical_armature": true,
+  "push_config": {
+   "interval": 350,
+   "vel_max": 0.75,
+   "vel_min": 0.75
+  },
+  "reward_config": {
+   "max_foot_height": 0.1,
+   "scales": {
+    "action_rate": -0.01,
+    "ang_vel_xy": -0.05,
+    "base_height": -5.0,
+    "dof_pos_limits": -1.0,
+    "energy": -0.001,
+    "feet_air_time": 0.1,
+    "feet_clearance": -2.0,
+    "feet_height": -0.2,
+    "feet_slip": -0.1,
+    "lin_vel_z": -0.5,
+    "orientation": -5.0,
+    "pose": 0.5,
+    "stand_still": -1.0,
+    "termination": -1.0,
+    "torques": -0.0002,
+    "tracking_ang_vel": 5.0,
+    "tracking_lin_vel": 10.0
+   },
+   "tracking_sigma": 0.25
+  },
+  "sim_dt": 0.004,
+  "soft_joint_pos_limit_factor": 0.95,
+  "torque_speed_model": true
+ },
+ "Go2WarpOscVarDampingFlatPhysical": {
+  "Kd": 0.5,
+  "Kp": 20.0,
+  "action_repeat": 1,
+  "action_scale": 0.12,
+  "command_config": {
+   "a": [
+    1.5,
+    0.8,
+    1.2
+   ],
+   "b": [
+    0.9,
+    0.25,
+    0.5
+   ]
+  },
+  "contact_mode": "training",
+  "ctrl_dt": 0.02,
+  "episode_length": 1000,
+  "impl": "warp",
+  "naccdmax": 4000,
+  "naconmax": 32768,
+  "njmax": 100,
+  "noise_config": {
+   "level": 1.0,
+   "scales": {
+    "accelerometer": 0.1,
+    "gravity": 0.05,
+    "gyro": 0.2,
+    "joint_pos": 0.03,
+    "joint_vel": 1.5,
+    "linvel": 0.1
+   }
+  },
+  "osc": {
+   "damping_action": true,
+   "gravity_ff": "none",
+   "kd": [
+    110.0,
+    110.0,
+    130.0
+   ],
+   "kp": [
+    3000.0,
+    3000.0,
+    4000.0
+   ],
+   "ridge": 0.0001,
+   "stiffness_granularity": "per_foot",
+   "target_mode": "abs_body",
+   "use_op_space_inertia": true,
+   "var_s_max": 2.0,
+   "var_s_min": 0.25,
+   "var_zeta_max": 2.0,
+   "var_zeta_min": 0.5
+  },
+  "physical_armature": true,
+  "push_config": {
+   "interval": 350,
+   "vel_max": 0.75,
+   "vel_min": 0.75
+  },
+  "reward_config": {
+   "max_foot_height": 0.1,
+   "scales": {
+    "action_rate": -0.01,
+    "ang_vel_xy": -0.05,
+    "base_height": -5.0,
+    "dof_pos_limits": -1.0,
+    "energy": -0.001,
+    "feet_air_time": 0.1,
+    "feet_clearance": -2.0,
+    "feet_height": -0.2,
+    "feet_slip": -0.1,
+    "lin_vel_z": -0.5,
+    "orientation": -5.0,
+    "pose": 0.5,
+    "stand_still": -1.0,
+    "termination": -1.0,
+    "torques": -0.0002,
+    "tracking_ang_vel": 5.0,
+    "tracking_lin_vel": 10.0
+   },
+   "tracking_sigma": 0.25
+  },
+  "sim_dt": 0.004,
+  "soft_joint_pos_limit_factor": 0.95,
+  "torque_speed_model": true
+ },
+ "Go2WarpOscVarFlatPhysical": {
+  "Kd": 0.5,
+  "Kp": 20.0,
+  "action_repeat": 1,
+  "action_scale": 0.12,
+  "command_config": {
+   "a": [
+    1.5,
+    0.8,
+    1.2
+   ],
+   "b": [
+    0.9,
+    0.25,
+    0.5
+   ]
+  },
+  "contact_mode": "training",
+  "ctrl_dt": 0.02,
+  "episode_length": 1000,
+  "impl": "warp",
+  "naccdmax": 4000,
+  "naconmax": 32768,
+  "njmax": 100,
+  "noise_config": {
+   "level": 1.0,
+   "scales": {
+    "accelerometer": 0.1,
+    "gravity": 0.05,
+    "gyro": 0.2,
+    "joint_pos": 0.03,
+    "joint_vel": 1.5,
+    "linvel": 0.1
+   }
+  },
+  "osc": {
+   "damping_action": false,
+   "gravity_ff": "none",
+   "kd": [
+    110.0,
+    110.0,
+    130.0
+   ],
+   "kp": [
+    3000.0,
+    3000.0,
+    4000.0
+   ],
+   "ridge": 0.0001,
+   "stiffness_granularity": "per_foot",
+   "target_mode": "abs_body",
+   "use_op_space_inertia": true,
+   "var_s_max": 2.0,
+   "var_s_min": 0.25,
+   "var_zeta_max": 2.0,
+   "var_zeta_min": 0.5
+  },
+  "physical_armature": true,
+  "push_config": {
+   "interval": 350,
+   "vel_max": 0.75,
+   "vel_min": 0.75
+  },
+  "reward_config": {
+   "max_foot_height": 0.1,
+   "scales": {
+    "action_rate": -0.01,
+    "ang_vel_xy": -0.05,
+    "base_height": -5.0,
+    "dof_pos_limits": -1.0,
+    "energy": -0.001,
+    "feet_air_time": 0.1,
+    "feet_clearance": -2.0,
+    "feet_height": -0.2,
+    "feet_slip": -0.1,
+    "lin_vel_z": -0.5,
+    "orientation": -5.0,
+    "pose": 0.5,
+    "stand_still": -1.0,
+    "termination": -1.0,
+    "torques": -0.0002,
+    "tracking_ang_vel": 5.0,
+    "tracking_lin_vel": 10.0
+   },
+   "tracking_sigma": 0.25
+  },
+  "sim_dt": 0.004,
+  "soft_joint_pos_limit_factor": 0.95,
+  "torque_speed_model": true
+ },
+ "Go2WarpOscVarImpedanceAxisFlat": {
+  "Kd": 0.5,
+  "Kp": 20.0,
+  "action_repeat": 1,
+  "action_scale": 0.12,
+  "command_config": {
+   "a": [
+    1.5,
+    0.8,
+    1.2
+   ],
+   "b": [
+    0.9,
+    0.25,
+    0.5
+   ]
+  },
+  "contact_mode": "training",
+  "ctrl_dt": 0.02,
+  "episode_length": 1000,
+  "impl": "warp",
+  "naccdmax": 4000,
+  "naconmax": 32768,
+  "njmax": 100,
+  "noise_config": {
+   "level": 1.0,
+   "scales": {
+    "accelerometer": 0.1,
+    "gravity": 0.05,
+    "gyro": 0.2,
+    "joint_pos": 0.03,
+    "joint_vel": 1.5,
+    "linvel": 0.1
+   }
+  },
+  "osc": {
+   "damping_action": false,
+   "gravity_ff": "none",
+   "kd": [
+    110.0,
+    110.0,
+    130.0
+   ],
+   "kp": [
+    3000.0,
+    3000.0,
+    4000.0
+   ],
+   "ridge": 0.0001,
+   "stiffness_granularity": "per_axis",
+   "target_mode": "abs_body",
+   "use_op_space_inertia": true,
+   "var_s_max": 2.0,
+   "var_s_min": 0.25,
+   "var_zeta_max": 2.0,
+   "var_zeta_min": 0.5
+  },
+  "physical_armature": false,
+  "push_config": {
+   "interval": 350,
+   "vel_max": 0.75,
+   "vel_min": 0.75
+  },
+  "reward_config": {
+   "max_foot_height": 0.1,
+   "scales": {
+    "action_rate": -0.01,
+    "ang_vel_xy": -0.05,
+    "base_height": -5.0,
+    "dof_pos_limits": -1.0,
+    "energy": -0.001,
+    "feet_air_time": 0.1,
+    "feet_clearance": -2.0,
+    "feet_height": -0.2,
+    "feet_slip": -0.1,
+    "lin_vel_z": -0.5,
+    "orientation": -5.0,
+    "pose": 0.5,
+    "stand_still": -1.0,
+    "termination": -1.0,
+    "torques": -0.0002,
+    "tracking_ang_vel": 5.0,
+    "tracking_lin_vel": 10.0
+   },
+   "tracking_sigma": 0.25
+  },
+  "sim_dt": 0.004,
+  "soft_joint_pos_limit_factor": 0.95,
+  "torque_speed_model": false
+ },
+ "Go2WarpOscVarImpedanceAxisHardKickFlat": {
+  "Kd": 0.5,
+  "Kp": 20.0,
+  "action_repeat": 1,
+  "action_scale": 0.12,
+  "command_config": {
+   "a": [
+    1.5,
+    0.8,
+    1.2
+   ],
+   "b": [
+    0.9,
+    0.25,
+    0.5
+   ]
+  },
+  "contact_mode": "training",
+  "ctrl_dt": 0.02,
+  "episode_length": 1000,
+  "impl": "warp",
+  "naccdmax": 4000,
+  "naconmax": 32768,
+  "njmax": 100,
+  "noise_config": {
+   "level": 1.0,
+   "scales": {
+    "accelerometer": 0.1,
+    "gravity": 0.05,
+    "gyro": 0.2,
+    "joint_pos": 0.03,
+    "joint_vel": 1.5,
+    "linvel": 0.1
+   }
+  },
+  "osc": {
+   "damping_action": false,
+   "gravity_ff": "none",
+   "kd": [
+    110.0,
+    110.0,
+    130.0
+   ],
+   "kp": [
+    3000.0,
+    3000.0,
+    4000.0
+   ],
+   "ridge": 0.0001,
+   "stiffness_granularity": "per_axis",
+   "target_mode": "abs_body",
+   "use_op_space_inertia": true,
+   "var_s_max": 2.0,
+   "var_s_min": 0.25,
+   "var_zeta_max": 2.0,
+   "var_zeta_min": 0.5
+  },
+  "physical_armature": false,
+  "push_config": {
+   "interval": 350,
+   "vel_max": 2.5,
+   "vel_min": 0.5
+  },
+  "reward_config": {
+   "max_foot_height": 0.1,
+   "scales": {
+    "action_rate": -0.01,
+    "ang_vel_xy": -0.05,
+    "base_height": -5.0,
+    "dof_pos_limits": -1.0,
+    "energy": -0.001,
+    "feet_air_time": 0.1,
+    "feet_clearance": -2.0,
+    "feet_height": -0.2,
+    "feet_slip": -0.1,
+    "lin_vel_z": -0.5,
+    "orientation": -5.0,
+    "pose": 0.5,
+    "stand_still": -1.0,
+    "termination": -1.0,
+    "torques": -0.0002,
+    "tracking_ang_vel": 5.0,
+    "tracking_lin_vel": 10.0
+   },
+   "tracking_sigma": 0.25
+  },
+  "sim_dt": 0.004,
+  "soft_joint_pos_limit_factor": 0.95,
+  "torque_speed_model": false
+ },
+ "Go2WarpOscVarImpedanceFlat": {
+  "Kd": 0.5,
+  "Kp": 20.0,
+  "action_repeat": 1,
+  "action_scale": 0.12,
+  "command_config": {
+   "a": [
+    1.5,
+    0.8,
+    1.2
+   ],
+   "b": [
+    0.9,
+    0.25,
+    0.5
+   ]
+  },
+  "contact_mode": "training",
+  "ctrl_dt": 0.02,
+  "episode_length": 1000,
+  "impl": "warp",
+  "naccdmax": 4000,
+  "naconmax": 32768,
+  "njmax": 100,
+  "noise_config": {
+   "level": 1.0,
+   "scales": {
+    "accelerometer": 0.1,
+    "gravity": 0.05,
+    "gyro": 0.2,
+    "joint_pos": 0.03,
+    "joint_vel": 1.5,
+    "linvel": 0.1
+   }
+  },
+  "osc": {
+   "damping_action": false,
+   "gravity_ff": "none",
+   "kd": [
+    110.0,
+    110.0,
+    130.0
+   ],
+   "kp": [
+    3000.0,
+    3000.0,
+    4000.0
+   ],
+   "ridge": 0.0001,
+   "stiffness_granularity": "per_foot",
+   "target_mode": "abs_body",
+   "use_op_space_inertia": true,
+   "var_s_max": 2.0,
+   "var_s_min": 0.25,
+   "var_zeta_max": 2.0,
+   "var_zeta_min": 0.5
+  },
+  "physical_armature": false,
+  "push_config": {
+   "interval": 350,
+   "vel_max": 0.75,
+   "vel_min": 0.75
+  },
+  "reward_config": {
+   "max_foot_height": 0.1,
+   "scales": {
+    "action_rate": -0.01,
+    "ang_vel_xy": -0.05,
+    "base_height": -5.0,
+    "dof_pos_limits": -1.0,
+    "energy": -0.001,
+    "feet_air_time": 0.1,
+    "feet_clearance": -2.0,
+    "feet_height": -0.2,
+    "feet_slip": -0.1,
+    "lin_vel_z": -0.5,
+    "orientation": -5.0,
+    "pose": 0.5,
+    "stand_still": -1.0,
+    "termination": -1.0,
+    "torques": -0.0002,
+    "tracking_ang_vel": 5.0,
+    "tracking_lin_vel": 10.0
+   },
+   "tracking_sigma": 0.25
+  },
+  "sim_dt": 0.004,
+  "soft_joint_pos_limit_factor": 0.95,
+  "torque_speed_model": false
+ },
+ "Go2WarpOscVarImpedanceHardKickFlat": {
+  "Kd": 0.5,
+  "Kp": 20.0,
+  "action_repeat": 1,
+  "action_scale": 0.12,
+  "command_config": {
+   "a": [
+    1.5,
+    0.8,
+    1.2
+   ],
+   "b": [
+    0.9,
+    0.25,
+    0.5
+   ]
+  },
+  "contact_mode": "training",
+  "ctrl_dt": 0.02,
+  "episode_length": 1000,
+  "impl": "warp",
+  "naccdmax": 4000,
+  "naconmax": 32768,
+  "njmax": 100,
+  "noise_config": {
+   "level": 1.0,
+   "scales": {
+    "accelerometer": 0.1,
+    "gravity": 0.05,
+    "gyro": 0.2,
+    "joint_pos": 0.03,
+    "joint_vel": 1.5,
+    "linvel": 0.1
+   }
+  },
+  "osc": {
+   "damping_action": false,
+   "gravity_ff": "none",
+   "kd": [
+    110.0,
+    110.0,
+    130.0
+   ],
+   "kp": [
+    3000.0,
+    3000.0,
+    4000.0
+   ],
+   "ridge": 0.0001,
+   "stiffness_granularity": "per_foot",
+   "target_mode": "abs_body",
+   "use_op_space_inertia": true,
+   "var_s_max": 2.0,
+   "var_s_min": 0.25,
+   "var_zeta_max": 2.0,
+   "var_zeta_min": 0.5
+  },
+  "physical_armature": false,
+  "push_config": {
+   "interval": 350,
+   "vel_max": 2.5,
+   "vel_min": 0.5
+  },
+  "reward_config": {
+   "max_foot_height": 0.1,
+   "scales": {
+    "action_rate": -0.01,
+    "ang_vel_xy": -0.05,
+    "base_height": -5.0,
+    "dof_pos_limits": -1.0,
+    "energy": -0.001,
+    "feet_air_time": 0.1,
+    "feet_clearance": -2.0,
+    "feet_height": -0.2,
+    "feet_slip": -0.1,
+    "lin_vel_z": -0.5,
+    "orientation": -5.0,
+    "pose": 0.5,
+    "stand_still": -1.0,
+    "termination": -1.0,
+    "torques": -0.0002,
+    "tracking_ang_vel": 5.0,
+    "tracking_lin_vel": 10.0
+   },
+   "tracking_sigma": 0.25
+  },
+  "sim_dt": 0.004,
+  "soft_joint_pos_limit_factor": 0.95,
+  "torque_speed_model": false
+ },
+ "Go2WarpOscVarRoughUni": {
+  "Kd": 0.5,
+  "Kp": 20.0,
+  "action_repeat": 1,
+  "action_scale": 0.12,
+  "command_config": {
+   "a": [
+    1.5,
+    0.8,
+    1.2
+   ],
+   "b": [
+    0.9,
+    0.25,
+    0.5
+   ]
+  },
+  "contact_mode": "training",
+  "ctrl_dt": 0.02,
+  "episode_length": 1000,
+  "impl": "warp",
+  "naccdmax": 4000,
+  "naconmax": 32768,
+  "njmax": 100,
+  "noise_config": {
+   "level": 1.0,
+   "scales": {
+    "accelerometer": 0.1,
+    "gravity": 0.05,
+    "gyro": 0.2,
+    "joint_pos": 0.03,
+    "joint_vel": 1.5,
+    "linvel": 0.1
+   }
+  },
+  "osc": {
+   "damping_action": false,
+   "gravity_ff": "none",
+   "kd": [
+    110.0,
+    110.0,
+    130.0
+   ],
+   "kp": [
+    3000.0,
+    3000.0,
+    4000.0
+   ],
+   "ridge": 0.0001,
+   "stiffness_granularity": "per_foot",
+   "target_mode": "abs_body",
+   "use_op_space_inertia": true,
+   "var_s_max": 2.0,
+   "var_s_min": 0.25,
+   "var_zeta_max": 2.0,
+   "var_zeta_min": 0.5
+  },
+  "physical_armature": true,
+  "push_config": {
+   "interval": 350,
+   "vel_max": 0.75,
+   "vel_min": 0.75
+  },
+  "reward_config": {
+   "max_foot_height": 0.1,
+   "scales": {
+    "action_rate": -0.01,
+    "ang_vel_xy": -0.05,
+    "base_height": -5.0,
+    "dof_pos_limits": -1.0,
+    "energy": -0.001,
+    "feet_air_time": 0.1,
+    "feet_clearance": -2.0,
+    "feet_height": -0.2,
+    "feet_slip": -0.1,
+    "lin_vel_z": -0.5,
+    "orientation": -5.0,
+    "pose": 0.5,
+    "stand_still": -1.0,
+    "termination": -1.0,
+    "torques": -0.0002,
+    "tracking_ang_vel": 5.0,
+    "tracking_lin_vel": 10.0
+   },
+   "tracking_sigma": 0.25
+  },
+  "rough_amplitude": 0.07,
+  "rough_profile": "uniform",
+  "rough_seed": 0,
+  "sim_dt": 0.004,
+  "soft_joint_pos_limit_factor": 0.95,
+  "torque_speed_model": true
+ }
+}

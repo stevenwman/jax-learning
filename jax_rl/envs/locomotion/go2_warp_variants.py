@@ -258,6 +258,7 @@ GO2_WARP_VARIANTS = {
     # (trunk frame) driven by a per-leg operational-space controller instead of
     # joint PD. Same task / obs / reward as the joint-PD joystick — the
     # controller is picked FROM the config (osc block present), not the class.
+    # Design notes: .superpowers/specs/2026-06-08-go2-osc-impedance-design.md
     "Go2WarpOscJoystickFlat": EnvVariant(
         config=_cfg(controller="osc"), train=_DR_TRAIN),
     # Jᵀ Cartesian-impedance ablation: use_op_space_inertia=False — no Λ

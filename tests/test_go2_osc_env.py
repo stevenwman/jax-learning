@@ -12,12 +12,13 @@ from mujoco import mjx
 
 pytestmark = [pytest.mark.gpu, pytest.mark.warp, pytest.mark.go2]
 
-from jax_rl.envs.locomotion.go2_warp_osc_joystick import WarpOscJoystick
+from jax_rl.envs.locomotion.go2_warp_joystick import WarpJoystick
+from jax_rl.envs.locomotion.go2_warp_variants import go2_config
 
 
 @pytest.fixture(scope="module")
 def env():
-    return WarpOscJoystick(task="flat_terrain")
+    return WarpJoystick(task="flat_terrain", config=go2_config(controller="osc"))
 
 
 def test_builds_and_steps_without_nan(env):
@@ -32,8 +33,8 @@ def test_builds_and_steps_without_nan(env):
 
 def test_var_impedance_env_builds_and_steps(env):
     """Variable-impedance env: action 16 (12 targets + 4 stiffness), obs +4."""
-    from jax_rl.envs.locomotion.go2_warp_osc_var_impedance import WarpOscVarImpedance
-    venv = WarpOscVarImpedance(task="flat_terrain")
+    venv = WarpJoystick(task="flat_terrain",
+                        config=go2_config(controller="var_impedance"))
     assert venv.action_size == 16
     s = venv.reset(jax.random.PRNGKey(0))
     assert s.obs["state"].shape[-1] == 52        # 48 + 4 stiffness in last_act
@@ -46,9 +47,10 @@ def test_var_impedance_env_builds_and_steps(env):
 
 def test_var_impedance_per_axis_builds_and_steps():
     """Per-axis variant: action 24 (12 targets + 12 stiffness), obs +12."""
-    from jax_rl.envs.locomotion.go2_warp_osc_var_impedance import (
-        WarpOscVarImpedance, default_config_per_axis)
-    venv = WarpOscVarImpedance(task="flat_terrain", config=default_config_per_axis())
+    venv = WarpJoystick(
+        task="flat_terrain",
+        config=go2_config(controller="var_impedance",
+                          stiffness_granularity="per_axis"))
     assert venv.action_size == 24
     s = venv.reset(jax.random.PRNGKey(0))
     assert s.obs["state"].shape[-1] == 60        # 48 + 12 stiffness in last_act

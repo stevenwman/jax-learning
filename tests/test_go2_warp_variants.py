@@ -4,8 +4,12 @@ import pytest
 
 
 def _deep_eq(a, b, path=""):
-    """ConfigDict-aware deep equality with float tolerance 0 (exact)."""
-    da, db = a.to_dict(), b.to_dict()
+    """Deep equality (exact values) for ConfigDicts or plain dicts.
+
+    int/float cross-type compares by value (so 1 == 1.0 — and bool, being an
+    int subclass, lets True == 1 slip through; acceptable for now)."""
+    da = a.to_dict() if hasattr(a, "to_dict") else a
+    db = b.to_dict() if hasattr(b, "to_dict") else b
     def rec(x, y, p):
         assert type(x) == type(y) or (isinstance(x, (int, float)) and isinstance(y, (int, float))), f"{p}: {x!r} vs {y!r}"
         if isinstance(x, dict):
@@ -19,25 +23,39 @@ def _deep_eq(a, b, path=""):
     rec(da, db, path)
 
 
-def test_variant_configs_match_legacy_registration():
-    """TRANSITIONAL: every variant's config == the legacy-registered config.
+def test_variant_configs_match_snapshot():
+    """Every variant's config == the frozen snapshot (regression pin).
 
-    Relies on mjx_backend's legacy closures still being registered. After
-    Task 5 this test is REPLACED by the snapshot test."""
-    from mujoco_playground import registry as pg_registry
-    import jax_rl.training.env_backends.mjx_backend  # noqa: F401  (registers legacy)
+    The snapshot was generated from the variants table the moment it was
+    proven equal to the legacy per-env config factories (since deleted).
+    On an INTENTIONAL config change, regenerate with:
+
+        uv run python -c "
+        import json
+        from jax_rl.envs.locomotion.go2_warp_variants import GO2_WARP_VARIANTS
+        snap = {n: v.config().to_dict() for n, v in GO2_WARP_VARIANTS.items()}
+        json.dump(snap, open('tests/data/go2_warp_variants_snapshot.json', 'w'),
+                  indent=1, sort_keys=True, default=list)"
+
+    Both sides are JSON-round-tripped so tuples normalize to lists.
+    """
+    import json
+    import pathlib
     from jax_rl.envs.locomotion.go2_warp_variants import GO2_WARP_VARIANTS
+    snap_path = (pathlib.Path(__file__).parent / "data"
+                 / "go2_warp_variants_snapshot.json")
+    snapshot = json.loads(snap_path.read_text())
+    assert snapshot.keys() == GO2_WARP_VARIANTS.keys()
     for name, v in GO2_WARP_VARIANTS.items():
-        legacy = pg_registry.get_default_config(name)
-        new = v.config()
-        _deep_eq(legacy, new, path=name)
+        live = json.loads(json.dumps(v.config().to_dict(), default=list))
+        _deep_eq(snapshot[name], live, path=name)
 
 
 def test_registry_uses_variant_cls():
     from mujoco_playground import registry as pg_registry
     import jax_rl.training.env_backends.mjx_backend  # noqa: F401
     from jax_rl.envs.locomotion.go2_warp_variants import GO2_WARP_VARIANTS
-    # construction-only; pick the 6 non-default-cls + 2 default-cls names to keep runtime sane
+    # construction-only; pick the 5 non-default-cls + 2 default-cls names to keep runtime sane
     check = {n: v for n, v in GO2_WARP_VARIANTS.items()
              if v.cls != "WarpJoystick"} | {
         "Go2WarpJoystickFlat": GO2_WARP_VARIANTS["Go2WarpJoystickFlat"],

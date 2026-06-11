@@ -17,7 +17,7 @@ import jax.numpy as jp
 import numpy as np
 import pytest
 
-from jax_rl.envs.locomotion.go2_warp_osc_var_impedance import (
+from jax_rl.envs.locomotion.go2_warp_components import (
     impedance_gains, var_action_size,
 )
 

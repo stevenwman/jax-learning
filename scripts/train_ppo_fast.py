@@ -479,7 +479,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--entropy-coef", type=float, default=None,
                         help="Entropy bonus coefficient (higher = more exploration)")
     parser.add_argument("--eval-every", type=int, default=None,
-                        help="Evaluate every N episodes (default: every 512 episodes)")
+                        help="Evaluate every N episodes (default: every 5000 episodes; Go2 OSC/physical presets set 500)")
     parser.add_argument("--reward-scaling", type=float, default=None,
                         help="Multiply rewards by this factor (default: 1.0)")
     parser.add_argument("--episode-length", type=int, default=None,
