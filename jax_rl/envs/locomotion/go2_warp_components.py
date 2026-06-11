@@ -213,8 +213,8 @@ def terrain_from_config(config) -> Terrain:
 
 
 # ── Controller ───────────────────────────────────────────────────────────────
-# Variable-impedance action decoding (moved verbatim from go2_warp_osc_var_
-# impedance; re-exported there for backward-compatible import paths).
+# Variable-impedance action decoding (moved verbatim from the former
+# go2_warp_osc_var_impedance).
 _N_STIFFNESS = {"per_foot": 4, "per_axis": 12}
 
 
@@ -264,7 +264,14 @@ class Controller:
     """Low-level control strategy: turns the policy action into joint torques
     each physics substep. ``action_size`` is the policy action dim; ``setup``
     caches controller geometry/gains on the controller itself (run once, after
-    the host's task setup); ``apply`` runs the decimation loop."""
+    the host's task setup); ``apply`` runs the decimation loop.
+
+    Methods take ``(self, env, ...)`` and treat env as READ-ONLY — they may read
+    the model handles (``mjx_model``, ``_mj_model``, ``n_substeps``, ``_config``)
+    and host-cached geometry/gains (``_torso_body_id``, ``_feet_site_id``,
+    ``_act_to_joint``, ``_default_pose``, ``_stall_torque``, ``_kp``/``_kd``)
+    and call ``env._apply_torque_speed_limit``; all controller state lives on
+    ``self`` (set in ``setup``)."""
 
     def action_size(self, env) -> int:  # pragma: no cover - interface
         raise NotImplementedError
@@ -328,6 +335,8 @@ class OSC(Controller):
         if str(osc.target_mode) not in ("abs_body", "delta_current"):
             raise ValueError(f"unknown target_mode {osc.target_mode!r}")
 
+        # Cartesian impedance gains (3,) — distinct from the host's joint-PD
+        # env._kp/env._kd used by JointPD.
         self._kp = jp.array(osc.kp)
         self._kd = jp.array(osc.kd)
         self._use_lambda = bool(osc.use_op_space_inertia)
