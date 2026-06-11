@@ -33,12 +33,16 @@ def _resolve_go2_variant(env_name, base_cfg, base_algo, algo_name):
             )
         return None
     cfg = dataclasses.replace(base_cfg, env_name=env_name, **v.train)
-    algo_overrides = dict(v.algo.get(algo_name, {}))
+    raw_overrides = v.algo.get(algo_name, {})
     train_fields = {f.name for f in dataclasses.fields(base_cfg)}
-    cfg_overrides = {k: algo_overrides.pop(k) for k in list(algo_overrides)
-                     if k in train_fields}
+    cfg_overrides = {k: x for k, x in raw_overrides.items() if k in train_fields}
+    algo_overrides = {k: x for k, x in raw_overrides.items() if k not in train_fields}
     if cfg_overrides:
         cfg = dataclasses.replace(cfg, **cfg_overrides)
+    if base_algo is None and algo_overrides:
+        raise ValueError(
+            f"{env_name!r} carries {algo_name} algo-level overrides "
+            f"{sorted(algo_overrides)}, but this getter has no algo config")
     algo = dataclasses.replace(base_algo, **algo_overrides) if algo_overrides else base_algo
     return cfg, algo
 
