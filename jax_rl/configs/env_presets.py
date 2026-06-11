@@ -9,6 +9,39 @@ from jax_rl.configs.fast_td3_config import FastTD3Config
 from jax_rl.configs.fast_sac_config import FastSACConfig
 from jax_rl.configs.flash_sac_config import FlashSACConfig
 from jax_rl.configs.train_config import TrainConfig
+from jax_rl.envs.locomotion.go2_warp_variants import GO2_WARP_VARIANTS
+
+
+def _resolve_go2_variant(env_name, base_cfg, base_algo, algo_name):
+    """Resolve a Go2 Warp env preset from GO2_WARP_VARIANTS.
+
+    Returns None for non-Go2 names and the excluded splitbelt family (caller
+    falls through to its preset table / silent default). Raises ValueError for
+    unknown ``Go2Warp*`` names — no silent fallback for the Go2 family.
+
+    Override precedence: ``v.train`` (algo-agnostic TrainConfig deltas) first,
+    then ``v.algo[algo_name]`` (algo-specific wins). Keys in ``v.algo[algo_name]``
+    that are TrainConfig fields apply to the TrainConfig, the rest to the algo
+    config — so a variant can carry per-algo train deltas without polluting
+    ``train``.
+    """
+    v = GO2_WARP_VARIANTS.get(env_name)
+    if v is None:
+        if env_name.startswith("Go2Warp") and not env_name.startswith("Go2WarpSplitbelt"):
+            raise ValueError(
+                f"unknown Go2 Warp env {env_name!r}; known: {sorted(GO2_WARP_VARIANTS)}"
+            )
+        return None
+    cfg = dataclasses.replace(base_cfg, env_name=env_name, **v.train)
+    algo_overrides = dict(v.algo.get(algo_name, {}))
+    train_fields = {f.name for f in dataclasses.fields(base_cfg)}
+    cfg_overrides = {k: algo_overrides.pop(k) for k in list(algo_overrides)
+                     if k in train_fields}
+    if cfg_overrides:
+        cfg = dataclasses.replace(cfg, **cfg_overrides)
+    algo = dataclasses.replace(base_algo, **algo_overrides) if algo_overrides else base_algo
+    return cfg, algo
+
 
 PRESETS: dict[str, TrainConfig] = {
     "CartpoleBalance": TrainConfig(
@@ -87,30 +120,29 @@ PRESETS: dict[str, TrainConfig] = {
         ppo=PPOConfig(num_steps=480, anneal_lr=False, entropy_coef=1e-2, num_epochs=16,
                       policy_hidden_dim=(128, 128, 128, 128), state_dependent_std=True),
     ),
-    # Go2 Warp locomotion — same PPO recipe, unitree MJCF via Warp backend.
-    # PPO hit 132 (entropy collapse); FastSAC preferred (see FAST_SAC_PRESETS).
-    "Go2WarpJoystickFlat": TrainConfig(
-        env_name="Go2WarpJoystickFlat",
-        total_timesteps=100_000_000,
-        num_envs=4096,
-        gamma=0.97,
-        lr=3e-4,
-        reward_scaling=1.0,
-        episode_length=1000,
-        ppo=PPOConfig(
-            num_steps=20,
-            num_minibatches=32,
-            num_updates_per_batch=4,
-            num_epochs=4,
-            entropy_coef=1e-2,
-            max_grad_norm=1.0,
-            policy_hidden_dim=(512, 256, 128),
-            value_hidden_dim=(512, 256, 128),
-        ),
-    ),
 }
-PRESETS["Go2WarpJoystickFlatTorqueSpeed"] = dataclasses.replace(
-    PRESETS["Go2WarpJoystickFlat"], env_name="Go2WarpJoystickFlatTorqueSpeed"
+
+# Go2 Warp PPO recipe — same hyperparams the legacy Go2Warp* PPO entries used.
+# Go2 PPO presets resolve as this base + the variant's `train` overrides
+# (see _resolve_go2_variant / GO2_WARP_VARIANTS).
+# PPO hit 132 (entropy collapse); FastSAC preferred (see FAST_SAC_PRESETS).
+_GO2_PPO_BASE_CFG = TrainConfig(
+    total_timesteps=100_000_000,
+    num_envs=4096,
+    gamma=0.97,
+    lr=3e-4,
+    reward_scaling=1.0,
+    episode_length=1000,
+    ppo=PPOConfig(
+        num_steps=20,
+        num_minibatches=32,
+        num_updates_per_batch=4,
+        num_epochs=4,
+        entropy_coef=1e-2,
+        max_grad_norm=1.0,
+        policy_hidden_dim=(512, 256, 128),
+        value_hidden_dim=(512, 256, 128),
+    ),
 )
 
 # Factory PegInsert — MJWarp dict-obs (state=25, privileged=72). Asymmetric AC
@@ -154,20 +186,6 @@ PRESETS["FactoryPegInsert"] = TrainConfig(
     ),
 )
 
-# Curriculum variants — same hyperparams as Flat + per_step reset mode
-# (required: curriculum logic lives in TerrainCurriculumDRWrapper which
-# env_setup only applies when reset_mode == "per_step").
-PRESETS["Go2WarpJoystickCurriculum"] = dataclasses.replace(
-    PRESETS["Go2WarpJoystickFlat"],
-    env_name="Go2WarpJoystickCurriculum",
-    reset_mode="per_step",
-)
-PRESETS["Go2WarpJoystickCurriculumTorqueSpeed"] = dataclasses.replace(
-    PRESETS["Go2WarpJoystickFlat"],
-    env_name="Go2WarpJoystickCurriculumTorqueSpeed",
-    reset_mode="per_step",
-)
-
 # Bongo handstand — matches PPO4 config from 2026-04-03 (eval 46.9 @ 80M, FS=3).
 # Source: checkpoints/20260403_094124_ppo_go2bongohandstand_seed0/meta.json.
 PRESETS["Go2BongoHandstand"] = TrainConfig(
@@ -207,7 +225,7 @@ PRESETS["Go2BongoHandstandContraction"] = dataclasses.replace(
 # in Task 5.1 to validate algo-agnosticism. PPO entropy-collapse is a documented
 # risk (zero-clip on negative-return steps); see spec §11.X caveat.
 PRESETS["Go2WarpSplitbelt"] = dataclasses.replace(
-    PRESETS["Go2WarpJoystickFlat"],
+    _GO2_PPO_BASE_CFG,
     env_name="Go2WarpSplitbelt",
     episode_length=1250,
     reset_mode="per_step",
@@ -284,6 +302,9 @@ SAC_PRESETS: dict[str, tuple[TrainConfig, SACConfig]] = {
 
 def get_sac_preset(env_name: str) -> tuple[TrainConfig, SACConfig]:
     """Return SAC preset (TrainConfig, SACConfig) for env, or a default."""
+    resolved = _resolve_go2_variant(env_name, _SAC_BASE_CFG, _SAC_BASE_ALGO, "sac")
+    if resolved is not None:
+        return resolved
     if env_name in SAC_PRESETS:
         return SAC_PRESETS[env_name]
     return dataclasses.replace(_SAC_BASE_CFG, env_name=env_name), _SAC_BASE_ALGO
@@ -323,6 +344,9 @@ TD3_PRESETS: dict[str, tuple[TrainConfig, TD3Config]] = {
 
 def get_td3_preset(env_name: str) -> tuple[TrainConfig, TD3Config]:
     """Return TD3 preset (TrainConfig, TD3Config) for env, or a default."""
+    resolved = _resolve_go2_variant(env_name, _TD3_BASE_CFG, _TD3_BASE_ALGO, "td3")
+    if resolved is not None:
+        return resolved
     if env_name in TD3_PRESETS:
         return TD3_PRESETS[env_name]
     return dataclasses.replace(_TD3_BASE_CFG, env_name=env_name), _TD3_BASE_ALGO
@@ -365,6 +389,9 @@ FAST_TD3_PRESETS: dict[str, tuple[TrainConfig, FastTD3Config]] = {
 
 def get_fast_td3_preset(env_name: str) -> tuple[TrainConfig, FastTD3Config]:
     """Return FastTD3 preset (TrainConfig, FastTD3Config) for env, or a default."""
+    resolved = _resolve_go2_variant(env_name, _FAST_TD3_BASE_CFG, _FAST_TD3_BASE_ALGO, "fast_td3")
+    if resolved is not None:
+        return resolved
     if env_name in FAST_TD3_PRESETS:
         return FAST_TD3_PRESETS[env_name]
     return dataclasses.replace(_FAST_TD3_BASE_CFG, env_name=env_name), _FAST_TD3_BASE_ALGO
@@ -414,39 +441,10 @@ FAST_SAC_PRESETS: dict[str, tuple[TrainConfig, FastSACConfig]] = {
         dataclasses.replace(_FAST_SAC_BASE_CFG, env_name="HumanoidRun"),
         _FAST_SAC_BASE_ALGO,
     ),
-    # Go2 Warp — eval 276.5 @ 18M steps (seed 6001). Preferred over PPO for Go2.
-    "Go2WarpJoystickFlat": (
-        dataclasses.replace(_FAST_SAC_BASE_CFG, env_name="Go2WarpJoystickFlat"),
-        _FAST_SAC_BASE_ALGO,
-    ),
 }
-FAST_SAC_PRESETS["Go2WarpJoystickFlatTorqueSpeed"] = (
-    dataclasses.replace(_FAST_SAC_BASE_CFG, env_name="Go2WarpJoystickFlatTorqueSpeed"),
-    _FAST_SAC_BASE_ALGO,
-)
-# No-accel ablation with default action_scale=0.5 — mirrors historical FastSAC
-# Go2 runs (peak ~280) but with the 45d Unitree-style obs (no accelerometer).
-FAST_SAC_PRESETS["Go2WarpJoystickFlatNoAccel"] = (
-    dataclasses.replace(_FAST_SAC_BASE_CFG, env_name="Go2WarpJoystickFlatNoAccel"),
-    _FAST_SAC_BASE_ALGO,
-)
-# Hardware-conservative preset: 45d state (no accel) + action_scale=0.25.
-# Partially aligned with unitree_rl_lab Go2 deploy contract — see the
-# Go2WarpJoystickUnitree entry in go2_warp_variants.py for the
-# matched/unmatched delta. Reduces
-# sim2real surface area but is NOT bitwise Unitree parity.
-FAST_SAC_PRESETS["Go2WarpJoystickUnitree"] = (
-    dataclasses.replace(_FAST_SAC_BASE_CFG, env_name="Go2WarpJoystickUnitree"),
-    _FAST_SAC_BASE_ALGO,
-)
-FAST_SAC_PRESETS["Go2WarpJoystickCurriculum"] = (
-    dataclasses.replace(_FAST_SAC_BASE_CFG, env_name="Go2WarpJoystickCurriculum", reset_mode="per_step"),
-    _FAST_SAC_BASE_ALGO,
-)
-FAST_SAC_PRESETS["Go2WarpJoystickCurriculumTorqueSpeed"] = (
-    dataclasses.replace(_FAST_SAC_BASE_CFG, env_name="Go2WarpJoystickCurriculumTorqueSpeed", reset_mode="per_step"),
-    _FAST_SAC_BASE_ALGO,
-)
+# Go2 Warp (non-splitbelt) presets resolve from GO2_WARP_VARIANTS via
+# _resolve_go2_variant — FastSAC preferred over PPO for Go2 (eval 276.5 @ 18M,
+# seed 6001, Go2WarpJoystickFlat).
 
 # Splitbelt env (S§5.6) — FastSAC preset clones joystick base + bumps episode_length
 # to 1250 to match splitbelt env default. per_step reset mode required for
@@ -474,6 +472,9 @@ FAST_SAC_PRESETS["Go2WarpSplitbeltPoseDR"] = (
 
 def get_fast_sac_preset(env_name: str) -> tuple[TrainConfig, FastSACConfig]:
     """Return FastSAC preset (TrainConfig, FastSACConfig) for env, or a default."""
+    resolved = _resolve_go2_variant(env_name, _FAST_SAC_BASE_CFG, _FAST_SAC_BASE_ALGO, "fast_sac")
+    if resolved is not None:
+        return resolved
     if env_name in FAST_SAC_PRESETS:
         return FAST_SAC_PRESETS[env_name]
     return dataclasses.replace(_FAST_SAC_BASE_CFG, env_name=env_name), _FAST_SAC_BASE_ALGO
@@ -514,23 +515,7 @@ FLASH_SAC_PRESETS: dict[str, tuple[TrainConfig, FlashSACConfig]] = {
         dataclasses.replace(_FLASH_SAC_BASE_CFG, env_name="HumanoidRun", gamma=0.99),
         _FLASH_SAC_BASE_ALGO,
     ),
-    "Go2WarpJoystickFlat": (
-        dataclasses.replace(_FLASH_SAC_BASE_CFG, env_name="Go2WarpJoystickFlat"),
-        _FLASH_SAC_BASE_ALGO,
-    ),
 }
-FLASH_SAC_PRESETS["Go2WarpJoystickFlatTorqueSpeed"] = (
-    dataclasses.replace(_FLASH_SAC_BASE_CFG, env_name="Go2WarpJoystickFlatTorqueSpeed"),
-    _FLASH_SAC_BASE_ALGO,
-)
-FLASH_SAC_PRESETS["Go2WarpJoystickCurriculum"] = (
-    dataclasses.replace(_FLASH_SAC_BASE_CFG, env_name="Go2WarpJoystickCurriculum", reset_mode="per_step"),
-    _FLASH_SAC_BASE_ALGO,
-)
-FLASH_SAC_PRESETS["Go2WarpJoystickCurriculumTorqueSpeed"] = (
-    dataclasses.replace(_FLASH_SAC_BASE_CFG, env_name="Go2WarpJoystickCurriculumTorqueSpeed", reset_mode="per_step"),
-    _FLASH_SAC_BASE_ALGO,
-)
 
 # Factory PegInsert — Warp contact budget caps num_envs ~128. Scale UTD up
 # (16 instead of paper's 8 at 1024 envs) since per-env data rate is 8× lower.
@@ -598,13 +583,24 @@ FLASH_SAC_PRESETS["FactoryGearMesh"] = (
 
 def get_flash_sac_preset(env_name: str) -> tuple[TrainConfig, FlashSACConfig]:
     """Return FlashSAC preset (TrainConfig, FlashSACConfig) for env, or a default."""
+    resolved = _resolve_go2_variant(env_name, _FLASH_SAC_BASE_CFG, _FLASH_SAC_BASE_ALGO, "flash_sac")
+    if resolved is not None:
+        return resolved
     if env_name in FLASH_SAC_PRESETS:
         return FLASH_SAC_PRESETS[env_name]
     return dataclasses.replace(_FLASH_SAC_BASE_CFG, env_name=env_name), _FLASH_SAC_BASE_ALGO
 
 
 def get_preset(env_name: str) -> TrainConfig:
-    """Return preset config for env, or a default with env_name set."""
+    """Return preset config for env, or a default with env_name set.
+
+    NOTE: returns a BARE TrainConfig (no algo tuple) — train_ppo.py callers
+    depend on this signature. Go2 names resolve from GO2_WARP_VARIANTS using
+    only the cfg half (PPO hparams live in _GO2_PPO_BASE_CFG.ppo).
+    """
+    resolved = _resolve_go2_variant(env_name, _GO2_PPO_BASE_CFG, None, "ppo")
+    if resolved is not None:
+        return resolved[0]
     if env_name in PRESETS:
         return PRESETS[env_name]
     return TrainConfig(env_name=env_name, total_timesteps=3_000_000)

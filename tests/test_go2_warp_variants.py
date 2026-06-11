@@ -47,6 +47,47 @@ def test_registry_uses_variant_cls():
         assert type(env).__name__ == v.cls, f"{name}: {type(env).__name__} != {v.cls}"
 
 
+def test_go2_presets_resolve_and_unknown_raises():
+    from jax_rl.configs import env_presets as ep
+    from jax_rl.envs.locomotion.go2_warp_variants import GO2_WARP_VARIANTS
+    getters = [("fast_sac", ep.get_fast_sac_preset), ("flash_sac", ep.get_flash_sac_preset),
+               ("fast_td3", ep.get_fast_td3_preset), ("sac", ep.get_sac_preset),
+               ("td3", ep.get_td3_preset)]
+    for name in GO2_WARP_VARIANTS:
+        for algo_name, g in getters:
+            cfg, algo_cfg = g(name)
+            assert cfg.env_name == name
+        ppo_cfg = ep.get_preset(name)        # PPO getter returns a BARE TrainConfig (no tuple)
+        assert ppo_cfg.env_name == name
+    with pytest.raises(ValueError):
+        ep.get_preset("Go2WarpNopeDoesNotExist")
+    for _, g in getters:
+        with pytest.raises(ValueError):
+            g("Go2WarpNopeDoesNotExist")
+    # splitbelt names must NOT raise (excluded family)
+    ep.get_fast_sac_preset("Go2WarpSplitbelt")
+
+
+def test_go2_preset_migrated_train_overrides():
+    """Explicit expected values for the train deltas migrated out of the
+    legacy preset tables (curriculum reset_mode; PPO Go2 recipe → base)."""
+    from jax_rl.configs import env_presets as ep
+    # Curriculum entries carried reset_mode="per_step" in every legacy table.
+    for name in ("Go2WarpJoystickCurriculum", "Go2WarpJoystickCurriculumTorqueSpeed"):
+        assert ep.get_fast_sac_preset(name)[0].reset_mode == "per_step"
+        assert ep.get_flash_sac_preset(name)[0].reset_mode == "per_step"
+        assert ep.get_preset(name).reset_mode == "per_step"
+    # Non-curriculum variants keep base defaults at this stage (Task 4 changes some).
+    cfg, _ = ep.get_fast_sac_preset("Go2WarpJoystickFlat")
+    assert cfg.reset_mode == "legacy" and cfg.eval_every_n_episodes == 5000
+    # PPO Go2 recipe moved verbatim into _GO2_PPO_BASE_CFG — pin headline fields.
+    ppo_cfg = ep.get_preset("Go2WarpJoystickFlat")
+    assert ppo_cfg.total_timesteps == 100_000_000
+    assert ppo_cfg.num_envs == 4096
+    assert ppo_cfg.gamma == 0.97
+    assert ppo_cfg.ppo.policy_hidden_dim == (512, 256, 128)
+
+
 def test_joint_pd_rejects_cartesian_knobs():
     from jax_rl.envs.locomotion.go2_warp_variants import go2_config
     with pytest.raises(ValueError, match="cartesian controller"):
