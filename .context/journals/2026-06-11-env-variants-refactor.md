@@ -144,3 +144,43 @@ needs memory budgeting.
 Ckpt: `checkpoints/20260611_121135_fast_sac_go2warposcvardampingaxisflatphysical_seed0`
 (wandb 4me6cddf). NOTE: a 2026-06-09 ckpt of the same env exists from the
 pre-DR era — do not confuse them; the new one supersedes for DR-era comparisons.
+
+## Newton force probe — the analytic mud is the WRONG physics for the bog
+
+Question (from the mud previews): how does the force the robot feels in the analytic
+field compare to Newton MPM? Built `projects/mud_eval/probe_forces.py` (read-only tap
+of `body_sand_forces`, the MPM→rigid coupling force = impulse/sim_dt, on the calf
+bodies; physics untouched). Ran the VarDampingAxis DR ckpt spawned in thick mud (90
+frames, co-step 250 Hz). Gating video `recordings/probe_forces.mp4`.
+
+**Result — Newton bogs the robot with ~100× LESS force than the analytic field:**
+
+| field | total leg force | % bodyweight (150 N) | robot |
+|---|---|---|---|
+| analytic 1× (Isaac default) | 50 N | 34% | walks fine |
+| analytic 8× (my "bog" probe) | 438 N | 294% | bogs |
+| **Newton thick mud** | **3.4 N mean / 9.2 N peak** | **2% / 6%** | **bogs** |
+
+Per calf: 0.5–1.2 N mean. The robot stands at z≈0.27 (normal height — dense ρ2000 mud
+SUPPORTS it near the surface, calves only shallowly submerged) and is stuck at y≈0.59
+the whole run despite a forward command.
+
+**Mechanism — the two fields fail the robot in OPPOSITE ways:**
+- Analytic (my port): mud = SOLID MJX floor + an added opposing foot force. The floor
+  still gives full normal reaction + friction, so push-off always works; to bog the
+  robot I had to crank resistance to ~3× bodyweight (brute force).
+- Newton MPM: mud IS the substrate. The robot bogs not from large force but from
+  TRACTION/PROPULSION LOSS — pushing off a yielding granular medium displaces mud
+  instead of generating thrust (sand-treadmill). Force stays tiny; the robot just
+  can't get purchase.
+
+**Implication for train-on-mud:** matching the analytic field's force magnitude to
+Newton is the WRONG calibration target — the analytic field models "overcome
+resistance," Newton's bog is "loss of foothold." A force-coefficient sweep can never
+make the analytic proxy reproduce the Newton bog. To proxy the real phenomenon you'd
+model the SUBSTRATE yielding (reduce effective ground friction / normal-reaction /
+add foot sink under the foot ∝ mud depth), NOT add an opposing wrench. The analytic
+field still trains a real (different) skill — disturbance rejection — but it is NOT a
+mud-traversal proxy. Newton MPM stays the only valid mud test. (Caveat: single ckpt,
+single depth, quasi-static-ish; the force during a successful dynamic stride could be
+higher — but this policy never achieves one in thick mud, which is itself the point.)
