@@ -24,6 +24,7 @@ Trained Go2 policies walked from flat ground (use_mujoco_cpu) into the thick mud
 | joint-PD (baseline) | 0.226 | 0.23 | bogs at the thick-mud edge |
 | OSC soft (fixed kp[1500,1500,2000]) | 0.222 | 0.27 | same penetration, higher/springier posture |
 | **var-impedance per-foot** (kp up to [6000,6000,8000]) | **0.322** | **0.29** | **~45% deeper, still advancing — adaptive stiffening WINS** |
+| **var-impedance per-axis** (24-d action) | **0.341** | 0.28 | marginally deeper than per-foot |
 
 The variable-impedance policy (commands per-foot stiffness s∈[0.25,2]× base) pushes
 ~0.1 m further into the thick mud than joint-PD / soft-OSC and holds the highest
