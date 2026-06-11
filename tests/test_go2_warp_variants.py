@@ -1,15 +1,12 @@
 """tests/test_go2_warp_variants.py — variants-as-data registry tests."""
-import numpy as np
 import pytest
 
 
 def _deep_eq(a, b, path=""):
-    """Deep equality (exact values) for ConfigDicts or plain dicts.
+    """Deep equality (exact values) for plain dicts/lists/scalars.
 
     int/float cross-type compares by value (so 1 == 1.0 — and bool, being an
     int subclass, lets True == 1 slip through; acceptable for now)."""
-    da = a.to_dict() if hasattr(a, "to_dict") else a
-    db = b.to_dict() if hasattr(b, "to_dict") else b
     def rec(x, y, p):
         assert type(x) == type(y) or (isinstance(x, (int, float)) and isinstance(y, (int, float))), f"{p}: {x!r} vs {y!r}"
         if isinstance(x, dict):
@@ -20,22 +17,17 @@ def _deep_eq(a, b, path=""):
             for i, (xi, yi) in enumerate(zip(x, y)): rec(xi, yi, f"{p}[{i}]")
         else:
             assert x == y, f"{p}: {x!r} != {y!r}"
-    rec(da, db, path)
+    rec(a, b, path)
 
 
 def test_variant_configs_match_snapshot():
-    """Every variant's config == the frozen snapshot (regression pin).
+    r"""Every variant's config == the frozen snapshot (regression pin).
 
     The snapshot was generated from the variants table the moment it was
     proven equal to the legacy per-env config factories (since deleted).
     On an INTENTIONAL config change, regenerate with:
 
-        uv run python -c "
-        import json
-        from jax_rl.envs.locomotion.go2_warp_variants import GO2_WARP_VARIANTS
-        snap = {n: v.config().to_dict() for n, v in GO2_WARP_VARIANTS.items()}
-        json.dump(snap, open('tests/data/go2_warp_variants_snapshot.json', 'w'),
-                  indent=1, sort_keys=True, default=list)"
+        uv run python -c "import json; from jax_rl.envs.locomotion.go2_warp_variants import GO2_WARP_VARIANTS; open('tests/data/go2_warp_variants_snapshot.json', 'w').write(json.dumps({n: v.config().to_dict() for n, v in GO2_WARP_VARIANTS.items()}, indent=1, sort_keys=True, default=list) + '\n')"
 
     Both sides are JSON-round-tripped so tuples normalize to lists.
     """
