@@ -37,6 +37,12 @@ def _with_go2(presets: dict, getter) -> dict:
     they resolve from GO2_WARP_VARIANTS inside each getter — so the docs must
     resolve them the same way to list them.
     """
+    stale = set(presets) & set(GO2_WARP_VARIANTS)
+    assert not stale, (
+        f"static preset entries shadow GO2_WARP_VARIANTS names: {sorted(stale)} "
+        "— Go2 Warp presets must resolve from the variants table, delete the "
+        "static entries"
+    )
     return {**presets, **{name: getter(name) for name in sorted(GO2_WARP_VARIANTS)}}
 
 
@@ -165,11 +171,11 @@ def render_offpolicy_presets(title: str, getter_name: str,
                 notes_parts.append(f"{k}={_fmt(v)}")
 
         # TrainConfig diffs beyond the table columns (mirrors the PPO renderer).
-        # num_eval_episodes / handle_truncation are baked into every off-policy
-        # base cfg — skipped to keep Notes signal-only.
+        # num_eval_episodes is baked into every off-policy base cfg — skipped
+        # to keep Notes signal-only.
         cfg_diff = _diff_from_default(cfg, TrainConfig)
         cfg_skip = {"env_name", "ppo", "episode_length", "gamma", "reward_scaling",
-                    "num_eval_episodes", "handle_truncation",
+                    "num_eval_episodes",
                     "num_envs", "total_timesteps", "lr"}
         for k, v in cfg_diff.items():
             if k not in cfg_skip:
