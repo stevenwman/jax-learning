@@ -367,6 +367,18 @@ GO2_WARP_VARIANTS = {
         train=_DR_TRAIN,
         notes="randomized mud depth U[0.03,0.22] — the trainable variant; "
               "train-on-analytic, Newton MPM held out"),
+    "Go2WarpOscVarDampingAxisFlatPhysicalMud22Heavy": EnvVariant(
+        config=_cfg(controller="var_impedance", stiffness_granularity="per_axis",
+                    damping_action=True, motor="physical",
+                    mud=dict(depth_range=(0.22, 0.22),
+                             f_range=(116.0, 116.0),    # 8× Isaac default suction/resist
+                             c1_range=(76.0, 76.0),     # 8× shear viscous
+                             c2_range=(52.0, 52.0))),   # 8× shear yield
+        train=_DR_TRAIN,
+        notes="EVAL PROBE (not a calibrated training target): 8× coeffs — the "
+              "regime where the frozen DR ckpt BOGS (upright, ~0 net progress, "
+              "lin-track err ≈ commanded speed). Coeff sweep 2026-06-11: upright "
+              "through 8×, falls at 12×+. Magnitudes uncalibrated vs Newton MPM."),
     # ── Hard-kick comparison ladder ──────────────────────────────────────
     # DOMAIN-RANDOMIZED kick strength: per-episode kick bound ~ U[0.5, 2.5] m/s
     # (into the ≥2 m/s pure-impedance failure regime), vs the default fixed
