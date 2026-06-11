@@ -129,3 +129,18 @@ instead of the worktree (no `cd` prefix; cwd does not reliably persist between
 shell calls) and died with `Env not found` — masquerading as extra OOM data
 points until the traceback was actually read. The `feedback_worktree_cwd`
 memory rule exists for exactly this; `cd` EVERY command in worktrees.
+
+## VarDampingAxis DR-era retrain: COMPLETE
+
+5M steps in 23.5 min (~3,500 sps — the earlier 650-sps smoke estimate was
+eval-cadence-bound, not compute-bound). **Best/final eval 280.5 ± 5.9** with
+per_step DR active — matches the historical no-DR Go2 FastSAC range (~280),
+i.e. the 8-axis model DR cost essentially nothing in final performance for
+this variant. Eval curve: 97 → 91 → 166 → 255 → 262 → 267 → 275 → 270 → 273 →
+277 → 280.5 (monotone-ish after 1k eps, tight ±4-10 variance from 2k eps).
+No per-eval GPU memory drift (12,748 → 12,750 MiB across evals 5→8) — the
+`--xla_gpu_enable_command_buffer=` mitigation holds; eval cadence no longer
+needs memory budgeting.
+Ckpt: `checkpoints/20260611_121135_fast_sac_go2warposcvardampingaxisflatphysical_seed0`
+(wandb 4me6cddf). NOTE: a 2026-06-09 ckpt of the same env exists from the
+pre-DR era — do not confuse them; the new one supersedes for DR-era comparisons.

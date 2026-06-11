@@ -68,8 +68,13 @@ Worktree `go2-osc-impedance`. Spec + journal + lesson written.
       action + per_step DR wrapper OOMs on 16GB at ANY mem fraction
       (0.55/0.65/0.75 all fail at init). Use the same buffer for ALL ladder
       rungs so HPs stay comparable.
-      - [ ] `Go2WarpOscVarDampingAxisFlatPhysical` 5M/256envs/seed0 — RUNNING
-            (first eval 97.2±48.3 @ 500 eps; log `.temp/logs/retrain_vardampaxis_5M_seed0.log`)
+      - [x] `Go2WarpOscVarDampingAxisFlatPhysical` 5M/256envs/seed0 — DONE 2026-06-11.
+            **Best eval 280.5 ± 5.9** (final, @6002 eps) — matches the historical
+            no-DR FastSAC Go2 range (~280) WITH per_step DR active. 23.5 min wall
+            (~3,500 sps), no eval gmem drift (12,748→12,750 MiB over 3 evals;
+            command-buffer fix holds). Ckpt
+            `checkpoints/20260611_121135_fast_sac_go2warposcvardampingaxisflatphysical_seed0`
+            wandb 4me6cddf.
       - [ ] remaining ladder (Steven decides when): JoystickFlatPhysical,
             OscFlatSoftPhysical, OscVarFlatPhysical, OscVarAxisFlatPhysical
       - [ ] ladder DR asymmetry: `Go2WarpJoystickFlatHardKick` (joint-PD rung)
