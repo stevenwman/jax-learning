@@ -141,7 +141,7 @@ def test_osc_physical_variants_default_per_step_dr():
     targets = [n for n in GO2_WARP_VARIANTS
                if ("Osc" in n or n.endswith("Physical") or n.endswith("RoughUni"))
                and "Curriculum" not in n]
-    assert len(targets) == 22, sorted(targets)
+    assert len(targets) == 26, sorted(targets)
     for name in targets:
         cfg, _ = ep.get_fast_sac_preset(name)
         assert cfg.reset_mode == "per_step", name
@@ -182,3 +182,77 @@ def test_variants_file_is_import_light():
         capture_output=True, text=True)
     assert out.returncode == 0, out.stderr
     assert out.stdout.strip() == "", f"heavy imports leaked: {out.stdout}"
+
+
+# ── Mud force field (analytic foot wrench) ───────────────────────────────────
+def test_mud_foot_force_signs_and_gating():
+    """Pure-math unit tests for the mud foot force (no env needed)."""
+    import jax.numpy as jp
+    import numpy as np
+    from jax_rl.envs.locomotion.go2_warp_components import mud_foot_force
+    kw = dict(mud_height=jp.array(0.22), coeff=jp.array(14.5),
+              m=jp.array(9.5), b=jp.array(6.5), circ=jp.array(0.12))
+    # foot submerged, moving UP -> suction (z force DOWN, < 0)
+    F_up = mud_foot_force(jp.array(0.0), jp.array([0., 0., 0.5]), **kw)
+    assert float(F_up[2]) < 0.0
+    # foot submerged, moving DOWN -> resistance (z force UP, > 0)
+    F_dn = mud_foot_force(jp.array(0.0), jp.array([0., 0., -0.5]), **kw)
+    assert float(F_dn[2]) > 0.0
+    # above the mud surface -> no force at all
+    F_above = mud_foot_force(jp.array(0.5), jp.array([0., 0., -0.5]), **kw)
+    assert np.allclose(np.asarray(F_above), 0.0)
+    # shear opposes horizontal motion: foot sliding +x (fast) -> shear -x
+    F_slide = mud_foot_force(jp.array(0.0), jp.array([1.0, 0., 0.]), **kw)
+    assert float(F_slide[0]) < 0.0
+    # yield offset b only kicks in above the 0.3 m/s horizontal threshold:
+    # slow slide (0.1 m/s) has strictly smaller |shear_x| than the 0.3+ regime
+    F_slow = mud_foot_force(jp.array(0.0), jp.array([0.1, 0., 0.]), **kw)
+    F_fast = mud_foot_force(jp.array(0.0), jp.array([0.31, 0., 0.]), **kw)
+    assert abs(float(F_fast[0])) > abs(float(F_slow[0]))
+    # finite at v=0 (log(|v|+1e-3) guarded)
+    F_zero = mud_foot_force(jp.array(0.0), jp.array([0., 0., 0.]), **kw)
+    assert np.all(np.isfinite(np.asarray(F_zero)))
+
+
+def test_field_from_config_dispatch():
+    from ml_collections import config_dict
+    from jax_rl.envs.locomotion.go2_warp_components import (
+        field_from_config, NoField, MudField)
+    from jax_rl.envs.locomotion.go2_warp_variants import go2_config
+    assert isinstance(field_from_config(go2_config()), NoField)
+    assert isinstance(field_from_config(go2_config(
+        controller="var_impedance", stiffness_granularity="per_axis",
+        damping_action=True, motor="physical",
+        mud=dict(depth_range=(0.22, 0.22)))), MudField)
+
+
+import pytest as _pytest
+
+
+@_pytest.mark.gpu
+def test_mud_field_applies_force_and_nofield_identity():
+    """GPU: a mud env writes nonzero xfrc on submerged feet and steps NaN-free;
+    the matching NoField env keeps xfrc_applied at exactly zero (bit-identity of
+    the force path)."""
+    import jax, jax.numpy as jp
+    import numpy as np
+    from jax_rl.envs.locomotion.go2_warp_joystick import WarpJoystick
+    from jax_rl.envs.locomotion.go2_warp_variants import go2_config
+    base = dict(controller="var_impedance", stiffness_granularity="per_axis",
+                damping_action=True, motor="physical")
+    mud_env = WarpJoystick(task="flat_terrain",
+                           config=go2_config(mud=dict(depth_range=(0.22, 0.22)), **base))
+    st = mud_env.reset(jax.random.PRNGKey(0))
+    a = jp.zeros(mud_env.action_size)
+    for _ in range(3):
+        st = mud_env.step(st, a)
+    fb = mud_env._force_field._foot_body_ids
+    foot_xfrc = np.asarray(st.data.xfrc_applied[fb, :3])
+    assert np.abs(foot_xfrc).max() > 1.0          # mud pushes the feet
+    assert not np.isnan(np.asarray(st.obs["state"])).any()
+
+    no_env = WarpJoystick(task="flat_terrain", config=go2_config(**base))
+    st2 = no_env.reset(jax.random.PRNGKey(0))
+    for _ in range(3):
+        st2 = no_env.step(st2, jp.zeros(no_env.action_size))
+    assert float(np.abs(np.asarray(st2.data.xfrc_applied)).max()) == 0.0

@@ -37,6 +37,7 @@ def go2_config(
     terrain: Union[str, tuple] = "flat",   # "flat" | (profile, amplitude)
     push=(0.75, 0.75),
     action_scale: Union[float, None] = None,  # default 0.5 joint_pd / 0.12 cartesian
+    mud=None,                              # None | dict of mud DR ranges (analytic foot force field)
 ) -> config_dict.ConfigDict:
     """Build a complete Go2 Warp joystick config from knobs.
 
@@ -162,6 +163,19 @@ def go2_config(
         cfg.rough_profile = profile
         cfg.rough_amplitude = amplitude
         cfg.rough_seed = 0
+
+    if mud is not None:
+        # Analytic mud foot-force field (MudField). Per-episode DR ranges; a
+        # fixed depth is depth_range=(d, d). Coeff ranges default to the Isaac
+        # `mud` source values; c1/c2 now ACTUALLY randomize across the range
+        # (the source quirk read only the first tuple element — fixed here).
+        cfg.mud = config_dict.create(
+            depth_range=tuple(mud.get("depth_range", (0.10, 0.10))),
+            f_range=tuple(mud.get("f_range", (14.0, 15.0))),       # suction/resist coeff
+            c1_range=tuple(mud.get("c1_range", (9.0, 10.0))),      # shear viscous
+            c2_range=tuple(mud.get("c2_range", (6.0, 7.0))),       # shear yield offset
+            area_range=tuple(mud.get("area_range", (0.1, 0.14))),  # leg circumference
+        )
 
     return cfg
 
@@ -324,6 +338,35 @@ GO2_WARP_VARIANTS = {
                     damping_action=True, motor="physical"),
         train=_DR_TRAIN,
         notes="decoupled K+D (per-axis)"),
+    # ── Mud force-field variants (analytic foot-wrench OOD probe) ─────────
+    # Same controller/motor as Go2WarpOscVarDampingAxisFlatPhysical + an analytic
+    # mud foot-force field (MudField; see go2_warp_components.mud_foot_force and
+    # .context/references/mud_force_port_handoff.md). The MudNN previews pin a
+    # fixed mud surface height for eval recording; MudDR randomizes depth per
+    # episode for TRAINING. Newton MPM (projects/mud_eval/) stays the held-out
+    # transfer test — never tune these coeffs against it.
+    "Go2WarpOscVarDampingAxisFlatPhysicalMud05": EnvVariant(
+        config=_cfg(controller="var_impedance", stiffness_granularity="per_axis",
+                    damping_action=True, motor="physical",
+                    mud=dict(depth_range=(0.05, 0.05))),
+        train=_DR_TRAIN, notes="fixed 0.05 m mud preview (eval OOD probe)"),
+    "Go2WarpOscVarDampingAxisFlatPhysicalMud10": EnvVariant(
+        config=_cfg(controller="var_impedance", stiffness_granularity="per_axis",
+                    damping_action=True, motor="physical",
+                    mud=dict(depth_range=(0.10, 0.10))),
+        train=_DR_TRAIN, notes="fixed 0.10 m mud preview (eval OOD probe)"),
+    "Go2WarpOscVarDampingAxisFlatPhysicalMud22": EnvVariant(
+        config=_cfg(controller="var_impedance", stiffness_granularity="per_axis",
+                    damping_action=True, motor="physical",
+                    mud=dict(depth_range=(0.22, 0.22))),
+        train=_DR_TRAIN, notes="fixed 0.22 m mud preview (Isaac default; calves submerged)"),
+    "Go2WarpOscVarDampingAxisFlatPhysicalMudDR": EnvVariant(
+        config=_cfg(controller="var_impedance", stiffness_granularity="per_axis",
+                    damping_action=True, motor="physical",
+                    mud=dict(depth_range=(0.03, 0.22))),
+        train=_DR_TRAIN,
+        notes="randomized mud depth U[0.03,0.22] — the trainable variant; "
+              "train-on-analytic, Newton MPM held out"),
     # ── Hard-kick comparison ladder ──────────────────────────────────────
     # DOMAIN-RANDOMIZED kick strength: per-episode kick bound ~ U[0.5, 2.5] m/s
     # (into the ≥2 m/s pure-impedance failure regime), vs the default fixed

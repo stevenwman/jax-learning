@@ -160,6 +160,12 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
         # leg DoFs, foot sites, nominal foot positions, gains — see components).
         self._controller.setup(self)
 
+        # Environmental force field (NoField unless config has a `mud` block).
+        # Applied inside the controller's substep scan; NoField = identity.
+        from jax_rl.envs.locomotion.go2_warp_components import field_from_config
+        self._force_field = field_from_config(self._config)
+        self._force_field.setup(self)
+
     # ── Domain Randomization ─────────────────────────────────────────────
 
     def get_domain_randomization_spec(self):
@@ -269,6 +275,10 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
             },
         }
 
+        # Per-episode force-field params (mud depth/coeffs &c). NoField returns {}
+        # WITHOUT consuming rng → reset stays bit-identical for non-mud envs.
+        info.update(self._force_field.sample(self, rng))
+
         metrics = {}
         for k in self._config.reward_config.scales.keys():
             metrics[f"reward/{k}"] = jp.zeros(())
@@ -279,12 +289,15 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
         return mjx_env.State(data, obs, reward, done, metrics, info)
 
     def _apply_control(
-        self, data: mjx.Data, action: jax.Array
+        self, data: mjx.Data, action: jax.Array, info: dict | None = None
     ) -> mjx.Data:
         """Low-level controller at physics rate (decimation), delegated to the
         Controller component (JointPD / OSC / VarImpedance) chosen from config.
-        The OSC mechanics live on the controller (see go2_warp_components)."""
-        return self._controller.apply(self, data, action)
+        The OSC mechanics live on the controller (see go2_warp_components).
+        ``info`` carries per-episode force-field params (mud &c) into the
+        substep scan; None for callers that don't thread it (force field is
+        then NoField/identity)."""
+        return self._controller.apply(self, data, action, info)
 
     def step(self, state: mjx_env.State, action: jax.Array) -> mjx_env.State:
         # Random velocity kick every push_interval steps. The magnitude bound is
@@ -303,7 +316,8 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
         data = data.replace(qvel=new_qvel)
 
         # Low-level controller at physics rate (decimation). Overridable.
-        data = self._apply_control(data, action)
+        # Pass info so per-episode force-field params (mud &c) reach the substep.
+        data = self._apply_control(data, action, state.info)
 
         # Foot contact detection.
         contact = jp.array([
