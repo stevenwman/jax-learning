@@ -56,8 +56,8 @@ Names migrating (29 — the list below is exhaustive): the `WarpJoystick`-host f
 `Go2WarpOscVarImpedance{Flat,AxisFlat}`, `Go2WarpOscVar{,Axis,Damping,DampingAxis}FlatPhysical`,
 `Go2WarpOscVarImpedance{,Axis}HardKickFlat`,
 `Go2Warp{Joint,Osc,OscVar,OscVarAxis}RoughUni`,
-`Go2WarpJoystickCurriculum`, `...CurriculumTorqueSpeed` (cls `WarpJoystickCurriculum`),
-`Go2WarpFlatPosTrackProto` (cls `WarpFlatPosTrack`).
+`Go2WarpJoystickCurriculum` (cls `WarpJoystickCurriculum`), `...CurriculumTorqueSpeed` (cls `WarpJoystickCurriculum`),
+`Go2WarpFlatPosTrackProto` (cls `WarpFlatPosTrack`; its ~9 config deltas vs the joystick base are small one-offs — set them as literal ConfigDict fields at the declaration site, do NOT grow `go2_config` axes for it).
 Excluded: `Go2WarpSplitbelt*` (own host class, own file — out of scope), `Go2BongoHandstand*`, G1, factory, DMC/gym.
 
 #### One config builder
@@ -94,7 +94,7 @@ for _name, _v in GO2_WARP_VARIANTS.items():
     _reg(_name, _v.config, cls=_resolve_cls(_v.cls))
 ```
 
-`_resolve_cls` maps class names to classes via local imports (keeps heavy imports out of the variants file). G1/splitbelt/bongo/factory registration blocks are untouched.
+`_resolve_cls` maps class names to classes via local imports (keeps heavy imports out of the variants file). Resolution imports `WarpJoystick`/`WarpJoystickNoAccel` from `go2_warp_joystick`, `WarpJoystickCurriculum` from `go2_warp_curriculum`, `WarpFlatPosTrack` from `go2_warp_flat_postrack` — NOT from `go2_warp_flat_postrack_prototype.py`, which forks same-named classes. G1/splitbelt/bongo/factory registration blocks are untouched.
 
 #### Preset resolution
 
@@ -112,7 +112,7 @@ def _resolve_go2_variant(env_name, base_cfg, base_algo, algo_name):
     return cfg, algo
 ```
 
-- Wired into `get_fast_sac_preset`, `get_flash_sac_preset`, `get_fast_td3_preset`, `get_sac_preset`, `get_td3_preset` (and the PPO preset getter if one exists for Go2).
+- Wired into `get_fast_sac_preset`, `get_flash_sac_preset`, `get_fast_td3_preset`, `get_sac_preset`, `get_td3_preset`, and `get_preset` (PPO — its `PRESETS` dict contains Go2 entries). `get_tdmpc2_preset` already raises on unknown names; leave it.
 - Existing hand-written Go2 entries in `FAST_SAC_PRESETS` / `FLASH_SAC_PRESETS` / etc. migrate into the variants' `train` dicts and the old entries delete. Per-algo-only deltas (e.g. FlashSAC `grad_updates_per_step`) go in `algo`.
 - DMC/gym names keep today's silent fallback — legitimate there.
 
@@ -120,7 +120,7 @@ def _resolve_go2_variant(env_name, base_cfg, base_algo, algo_name):
 
 - All OSC, var-impedance, and `*Physical` variants declare `train={"reset_mode": "per_step", "eval_every_n_episodes": 500}`.
 - Variants that already had explicit preset entries (`Go2WarpJoystickFlat` benchmark family, curriculum) keep their exact current values — benchmark history stays comparable.
-- Fix the stale `--eval-every` help text in the off-policy train scripts ("default: every 512 episodes" → actual default 5000).
+- Fix the stale `--eval-every` help text in ALL off-policy train scripts including `train_flashsac.py` ("default: every 512 episodes" → actual default 5000).
 
 ### PR 2 — finish the OSC controller extraction (behavior-identical)
 
@@ -145,7 +145,7 @@ Ordering: PR 1 first (it rewrites the config factories PR 2's file deletion depe
 
 1. **Config-equality transitional test:** before deleting the legacy factories, a test builds every migrated name's ConfigDict via the old patch-chain AND the new builder and asserts deep equality (pure python, no GPU). Legacy factories delete in the same PR after the test passes; the test then pins the new builder against a frozen snapshot of the dicts (committed as JSON) so future edits to the builder are intentional.
 2. **No-fallback test:** every name in `GO2_WARP_VARIANTS` resolves a preset for each off-policy algo; a made-up `Go2WarpNope` raises.
-3. **Registration test:** every variant name loads via `pg_registry` (construction only, no stepping; CPU).
+3. **Registration test:** every variant name loads via `pg_registry` (construction only, no stepping; CPU) AND asserts `type(env).__name__ == variant.cls` — closes the silent-wrong-class hole for the six non-default-cls variants.
 4. **Existing suite green:** `uv run python -m pytest tests/` — `test_env_presets.py`, `test_go2_warp_env.py`, `test_go2_warp_curriculum_env.py` likely need updates for the new resolution path; `test_go2_osc_env.py` is rewritten by PR 2 (see above).
 5. **Smoke run:** 200k steps of `train_fast_sac.py --env Go2WarpOscFlatSoftPhysical` (now with DR + eval cadence) before any real training jobs. Per project convention, no cross-run bit-identity gating (GPU nondeterminism); within-run sanity only.
 
