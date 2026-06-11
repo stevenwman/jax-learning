@@ -465,7 +465,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-weight-norm", action="store_true",
                         help="Disable weight normalization after optimizer steps")
     parser.add_argument("--eval-every", type=int, default=None,
-                        help="Evaluate every N episodes")
+                        help="Evaluate every N episodes (default: every 5000 episodes; "
+                             "Go2 OSC/physical presets set 500)")
     parser.add_argument("--reset-mode", type=str, default=None,
                         choices=[None, "legacy", "per_step"],
                         help="'per_step' enables DomainRandWrapper / TerrainCurriculumDRWrapper")

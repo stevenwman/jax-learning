@@ -49,23 +49,55 @@ def test_registry_uses_variant_cls():
 
 def test_go2_presets_resolve_and_unknown_raises():
     from jax_rl.configs import env_presets as ep
+    from jax_rl.configs.fast_sac_config import FastSACConfig
+    from jax_rl.configs.flash_sac_config import FlashSACConfig
+    from jax_rl.configs.fast_td3_config import FastTD3Config
+    from jax_rl.configs.sac_config import SACConfig
+    from jax_rl.configs.td3_config import TD3Config
+    from jax_rl.configs.train_config import TrainConfig
     from jax_rl.envs.locomotion.go2_warp_variants import GO2_WARP_VARIANTS
-    getters = [("fast_sac", ep.get_fast_sac_preset), ("flash_sac", ep.get_flash_sac_preset),
-               ("fast_td3", ep.get_fast_td3_preset), ("sac", ep.get_sac_preset),
-               ("td3", ep.get_td3_preset)]
+    getters = [("fast_sac", ep.get_fast_sac_preset, FastSACConfig),
+               ("flash_sac", ep.get_flash_sac_preset, FlashSACConfig),
+               ("fast_td3", ep.get_fast_td3_preset, FastTD3Config),
+               ("sac", ep.get_sac_preset, SACConfig),
+               ("td3", ep.get_td3_preset, TD3Config)]
     for name in GO2_WARP_VARIANTS:
-        for algo_name, g in getters:
+        for algo_name, g, algo_cls in getters:
             cfg, algo_cfg = g(name)
             assert cfg.env_name == name
+            assert type(algo_cfg) is algo_cls, f"{name}/{algo_name}: {type(algo_cfg)}"
         ppo_cfg = ep.get_preset(name)        # PPO getter returns a BARE TrainConfig (no tuple)
         assert ppo_cfg.env_name == name
+        assert type(ppo_cfg) is TrainConfig
     with pytest.raises(ValueError):
         ep.get_preset("Go2WarpNopeDoesNotExist")
-    for _, g in getters:
+    for _, g, _cls in getters:
         with pytest.raises(ValueError):
             g("Go2WarpNopeDoesNotExist")
     # splitbelt names must NOT raise (excluded family)
     ep.get_fast_sac_preset("Go2WarpSplitbelt")
+
+
+def test_resolve_go2_variant_routes_algo_overrides(monkeypatch):
+    """Direct unit test of the algo-override split in _resolve_go2_variant:
+    TrainConfig-field keys land on the TrainConfig, the rest on the algo
+    config; a getter without an algo config (PPO) raises on leftover
+    algo-level keys instead of crashing on replace(None, ...)."""
+    from jax_rl.configs import env_presets as ep
+    from jax_rl.envs.locomotion.go2_warp_variants import (
+        GO2_WARP_VARIANTS, EnvVariant, go2_config)
+    monkeypatch.setitem(
+        GO2_WARP_VARIANTS, "Go2WarpSyntheticSplit",
+        EnvVariant(config=go2_config,
+                   algo={"fast_sac": {"batch_size": 1024, "episode_length": 777}}))
+    cfg, algo_cfg = ep.get_fast_sac_preset("Go2WarpSyntheticSplit")
+    assert cfg.episode_length == 777        # TrainConfig field → cfg
+    assert algo_cfg.batch_size == 1024      # algo field → algo config
+    monkeypatch.setitem(
+        GO2_WARP_VARIANTS, "Go2WarpSyntheticPpoAlgo",
+        EnvVariant(config=go2_config, algo={"ppo": {"batch_size": 1024}}))
+    with pytest.raises(ValueError, match="no algo config"):
+        ep.get_preset("Go2WarpSyntheticPpoAlgo")
 
 
 def test_go2_preset_migrated_train_overrides():
@@ -77,7 +109,8 @@ def test_go2_preset_migrated_train_overrides():
         assert ep.get_fast_sac_preset(name)[0].reset_mode == "per_step"
         assert ep.get_flash_sac_preset(name)[0].reset_mode == "per_step"
         assert ep.get_preset(name).reset_mode == "per_step"
-    # Non-curriculum variants keep base defaults at this stage (Task 4 changes some).
+    # Benchmark joint-PD family keeps base defaults (OSC/physical variants
+    # switched to per_step/500 — see test_osc_physical_variants_default_per_step_dr).
     cfg, _ = ep.get_fast_sac_preset("Go2WarpJoystickFlat")
     assert cfg.reset_mode == "legacy" and cfg.eval_every_n_episodes == 5000
     # PPO Go2 recipe moved verbatim into _GO2_PPO_BASE_CFG — pin headline fields.
@@ -86,6 +119,26 @@ def test_go2_preset_migrated_train_overrides():
     assert ppo_cfg.num_envs == 4096
     assert ppo_cfg.gamma == 0.97
     assert ppo_cfg.ppo.policy_hidden_dim == (512, 256, 128)
+
+
+def test_osc_physical_variants_default_per_step_dr():
+    """Task 4 behavior change: every OSC / physical-motor / rough-terrain
+    variant trains with per-step DR + eval every 500 episodes by default.
+    EXCEPTION: the two Curriculum variants keep their historical train dict
+    (per_step only, no eval_every key)."""
+    from jax_rl.configs import env_presets as ep
+    from jax_rl.envs.locomotion.go2_warp_variants import GO2_WARP_VARIANTS
+    targets = [n for n in GO2_WARP_VARIANTS
+               if ("Osc" in n or n.endswith("Physical") or n.endswith("RoughUni"))
+               and "Curriculum" not in n]
+    assert len(targets) == 21, sorted(targets)
+    for name in targets:
+        cfg, _ = ep.get_fast_sac_preset(name)
+        assert cfg.reset_mode == "per_step", name
+        assert cfg.eval_every_n_episodes == 500, name
+    # Curriculum keeps its existing train verbatim — no eval_every key added.
+    for name in ("Go2WarpJoystickCurriculum", "Go2WarpJoystickCurriculumTorqueSpeed"):
+        assert GO2_WARP_VARIANTS[name].train == {"reset_mode": "per_step"}, name
 
 
 def test_joint_pd_rejects_cartesian_knobs():

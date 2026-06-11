@@ -97,7 +97,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--buffer-size", type=int, default=None,
                         help="Replay buffer capacity (default: from algo config)")
     parser.add_argument("--eval-every", type=int, default=None,
-                        help="Evaluate every N episodes (default: every 512 episodes)")
+                        help="Evaluate every N episodes (default: every 5000 episodes; "
+                             "Go2 OSC/physical presets set 500)")
     parser.add_argument("--obs-norm", action="store_true",
                         help="Enable sample-time obs normalization (recommended for humanoid tasks)")
     parser.add_argument("--wandb", action="store_true",

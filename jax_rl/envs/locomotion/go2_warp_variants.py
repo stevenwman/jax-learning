@@ -216,6 +216,13 @@ _SOFT_OSC_GAINS = dict(            # s=0.5 sweep gains ROUNDED — literal by de
     osc_kd=[78.0, 78.0, 92.0],
 )
 
+# Train defaults for the OSC/physical/rough experiment family: per-step domain
+# randomization + frequent eval (500 episodes ≈ every ~500k steps @ 1k envs).
+# ONE decision shared BY REFERENCE across all entries below — the frozen
+# EnvVariant only holds it, never mutates it. If a variant ever needs to
+# differ, give it its own dict(_DR_TRAIN)-copy instead of editing this one.
+_DR_TRAIN = {"reset_mode": "per_step", "eval_every_n_episodes": 500}
+
 def _cfg(**knobs):
     """Bind go2_config knobs into a zero-arg config callable.
 
@@ -251,7 +258,8 @@ GO2_WARP_VARIANTS = {
     # (trunk frame) driven by a per-leg operational-space controller instead of
     # joint PD. Same task / obs / reward as the joint-PD joystick — the
     # controller is picked FROM the config (osc block present), not the class.
-    "Go2WarpOscJoystickFlat": EnvVariant(config=_cfg(controller="osc")),
+    "Go2WarpOscJoystickFlat": EnvVariant(
+        config=_cfg(controller="osc"), train=_DR_TRAIN),
     # Jᵀ Cartesian-impedance ablation: use_op_space_inertia=False — no Λ
     # unit-mass normalization, real N/m gains, feet keep their natural
     # anisotropic inertia (heavy along the leg). Tests whether Λ's unit-mass
@@ -260,23 +268,26 @@ GO2_WARP_VARIANTS = {
     "Go2WarpOscJoystickFlatJt": EnvVariant(
         config=_cfg(controller="osc", use_op_space_inertia=False,
                     osc_kp=[1500.0, 1500.0, 2500.0], osc_kd=[60.0, 60.0, 80.0]),
+        train=_DR_TRAIN,
         notes="Jᵀ-impedance ablation: real N/m gains, no Λ"),
     # Stiffness sweep (Λ-OSC): see _kp_sweep_gains for the design rationale.
     "Go2WarpOscJoystickFlatKp025": EnvVariant(
-        config=_cfg(controller="osc", **_kp_sweep_gains(0.25))),
+        config=_cfg(controller="osc", **_kp_sweep_gains(0.25)), train=_DR_TRAIN),
     "Go2WarpOscJoystickFlatKp05": EnvVariant(
-        config=_cfg(controller="osc", **_kp_sweep_gains(0.5))),
+        config=_cfg(controller="osc", **_kp_sweep_gains(0.5)), train=_DR_TRAIN),
     "Go2WarpOscJoystickFlatKp2": EnvVariant(
-        config=_cfg(controller="osc", **_kp_sweep_gains(2.0))),
+        config=_cfg(controller="osc", **_kp_sweep_gains(2.0)), train=_DR_TRAIN),
     "Go2WarpOscJoystickFlatKp4": EnvVariant(
-        config=_cfg(controller="osc", **_kp_sweep_gains(4.0))),
+        config=_cfg(controller="osc", **_kp_sweep_gains(4.0)), train=_DR_TRAIN),
     # ── Variable-impedance family ────────────────────────────────────────
     # Action grows to 16-d (12 foot targets + 4 per-foot stiffness scalars);
     # each maps log-spaced to s∈[0.25,2] scaling that foot's baseline Cartesian
     # gains (kd∝√s). Policy learns to stiffen stance / soften swing legs.
-    "Go2WarpOscVarImpedanceFlat": EnvVariant(config=_cfg(controller="var_impedance")),
+    "Go2WarpOscVarImpedanceFlat": EnvVariant(
+        config=_cfg(controller="var_impedance"), train=_DR_TRAIN),
     "Go2WarpOscVarImpedanceAxisFlat": EnvVariant(
         config=_cfg(controller="var_impedance", stiffness_granularity="per_axis"),
+        train=_DR_TRAIN,
         notes="per-foot-per-axis stiffness (+12 → action 24): policy picks "
               "vertical-stiff / tangential-soft per leg"),
     # ── Flat + PHYSICAL motor model (zero-shot-from-flat experiment) ─────
@@ -286,24 +297,29 @@ GO2_WARP_VARIANTS = {
     # onto rough-physical (Go2Warp*RoughUni). Mirrors the original zero-shot
     # protocol, now with the motor model held consistent across train + eval.
     "Go2WarpJoystickFlatPhysical": EnvVariant(
-        config=_cfg(motor="physical"), notes="joint-PD"),
+        config=_cfg(motor="physical"), train=_DR_TRAIN, notes="joint-PD"),
     "Go2WarpOscFlatSoftPhysical": EnvVariant(
         config=_cfg(controller="osc", motor="physical", **_SOFT_OSC_GAINS),
+        train=_DR_TRAIN,
         notes="fixed-soft OSC (kp/kd mirror the rough soft gains, s=0.5)"),
     "Go2WarpOscVarFlatPhysical": EnvVariant(
         config=_cfg(controller="var_impedance", motor="physical"),
+        train=_DR_TRAIN,
         notes="variable per-foot (locked critical)"),
     "Go2WarpOscVarAxisFlatPhysical": EnvVariant(
         config=_cfg(controller="var_impedance", stiffness_granularity="per_axis",
                     motor="physical"),
+        train=_DR_TRAIN,
         notes="variable per-axis"),
     "Go2WarpOscVarDampingFlatPhysical": EnvVariant(
         config=_cfg(controller="var_impedance", damping_action=True,
                     motor="physical"),
+        train=_DR_TRAIN,
         notes="decoupled K+D (per-foot)"),
     "Go2WarpOscVarDampingAxisFlatPhysical": EnvVariant(
         config=_cfg(controller="var_impedance", stiffness_granularity="per_axis",
                     damping_action=True, motor="physical"),
+        train=_DR_TRAIN,
         notes="decoupled K+D (per-axis)"),
     # ── Hard-kick comparison ladder ──────────────────────────────────────
     # DOMAIN-RANDOMIZED kick strength: per-episode kick bound ~ U[0.5, 2.5] m/s
@@ -318,13 +334,16 @@ GO2_WARP_VARIANTS = {
         config=_cfg(push=(0.5, 2.5)), notes="joint-PD control"),
     "Go2WarpOscJoystickFlatKp05HardKick": EnvVariant(
         config=_cfg(controller="osc", push=(0.5, 2.5), **_kp_sweep_gains(0.5)),
+        train=_DR_TRAIN,
         notes="fixed-soft OSC control"),
     "Go2WarpOscVarImpedanceHardKickFlat": EnvVariant(
         config=_cfg(controller="var_impedance", push=(0.5, 2.5)),
+        train=_DR_TRAIN,
         notes="scalar +4"),
     "Go2WarpOscVarImpedanceAxisHardKickFlat": EnvVariant(
         config=_cfg(controller="var_impedance", stiffness_granularity="per_axis",
                     push=(0.5, 2.5)),
+        train=_DR_TRAIN,
         notes="per-axis +12"),
     # ── Rough HEIGHTFIELD floor ──────────────────────────────────────────
     # Real continuous rough, borrowed from mjlab's noise recipe. Uni = uniform
@@ -336,16 +355,20 @@ GO2_WARP_VARIANTS = {
     # curriculum" envs were removed 2026-06-09: they spawned the robot on the
     # flat border so it never actually saw rough; superseded by these.)
     "Go2WarpJointRoughUni": EnvVariant(
-        config=_cfg(motor="physical", terrain=("uniform", 0.07))),
+        config=_cfg(motor="physical", terrain=("uniform", 0.07)),
+        train=_DR_TRAIN),
     "Go2WarpOscRoughUni": EnvVariant(
         config=_cfg(controller="osc", motor="physical",
-                    terrain=("uniform", 0.07), **_SOFT_OSC_GAINS)),
+                    terrain=("uniform", 0.07), **_SOFT_OSC_GAINS),
+        train=_DR_TRAIN),
     "Go2WarpOscVarRoughUni": EnvVariant(
         config=_cfg(controller="var_impedance", motor="physical",
-                    terrain=("uniform", 0.07))),
+                    terrain=("uniform", 0.07)),
+        train=_DR_TRAIN),
     "Go2WarpOscVarAxisRoughUni": EnvVariant(
         config=_cfg(controller="var_impedance", stiffness_granularity="per_axis",
-                    motor="physical", terrain=("uniform", 0.07))),
+                    motor="physical", terrain=("uniform", 0.07)),
+        train=_DR_TRAIN),
     # ── Env-module configs (lazy imports) ────────────────────────────────
     "Go2WarpJoystickCurriculum": EnvVariant(
         config=_curriculum_config, cls="WarpJoystickCurriculum",
