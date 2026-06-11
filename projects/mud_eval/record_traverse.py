@@ -21,6 +21,7 @@ import newton.examples.mpm.mpm_go2_multi.example_mpm_go2_multi as ex  # noqa: E4
 import mud_model              # noqa: E402
 import mud_costep             # noqa: E402
 import mud_cpu                # noqa: E402
+import mud_osc                # noqa: E402
 from mud_jax_policy import MudJaxPolicy, patched_config  # noqa: E402
 
 CKPT = sys.argv[1]
@@ -29,6 +30,10 @@ SPAWN_Y = float(sys.argv[3]) if len(sys.argv) > 3 else -1.0
 SPAWN_Z = float(sys.argv[4]) if len(sys.argv) > 4 else 0.10
 YAW = float(sys.argv[5]) if len(sys.argv) > 5 else 0.5   # 0.5=face +Y (thick-first); -0.5=face -Y (thin-first)
 TAG = sys.argv[6] if len(sys.argv) > 6 else "traverse"
+OSC = (len(sys.argv) > 7 and sys.argv[7].lower() == "osc")   # OSC controller vs joint-PD
+# soft-OSC ckpt gains (mjx_backend _osc_soft_physical); other OSC ckpts differ
+OSC_KP = np.array([1500.0, 1500.0, 2000.0]); OSC_KD = np.array([78.0, 78.0, 92.0])
+OSC_TLIM = np.array([23.7, 23.7, 45.43] * 4)
 OUT = HERE / "recordings"; OUT.mkdir(exist_ok=True)
 
 _meta = json.load(open(Path(CKPT) / "meta.json"))
@@ -39,7 +44,7 @@ mud_cpu.enable()                          # CPU backend -> walkable ground
 ex.Go2Policy = MudJaxPolicy
 cfg = patched_config(CKPT, HERE / "vendor/newton/examples/mpm/mpm_go2_multi/config.yaml",
                      "/tmp/mud_cfg_trav.yaml", mjcf_model=str(HERE / "models/unitree_go2/go2.xml"),
-                     spawn_xyz=(0.0, SPAWN_Y, SPAWN_Z), yaw_pi_mult=YAW)
+                     spawn_xyz=(0.0, SPAWN_Y, SPAWN_Z), yaw_pi_mult=YAW, osc_mode=OSC)
 sys.argv = ["trav", "--viewer", "gl", "--headless", "--num-frames", str(NF),
             "--policy-path", CKPT, "--config", cfg, "--voxel-size", "0.05", "--max-iterations", "8"]
 parser = newton.examples.create_parser()
@@ -57,6 +62,16 @@ parser.add_argument("--plot-forces-mode", choices=["magnitude", "xyz"], default=
 viewer, args = newton.examples.init(parser)
 example = ex.Example(viewer, args)
 mud_costep.apply(example)
+if OSC:                                     # wire the operational-space controller (PD zeroed in config)
+    example.control.joint_f = wp.zeros(int(example.model.joint_dof_count), dtype=wp.float32,
+                                       device=example.model.device)
+    _ctrl = mud_osc.MudOscController(example.solver, OSC_KP, OSC_KD, OSC_TLIM,
+                                     use_op_space_inertia=True, ridge=1e-4,
+                                     home_joints=_meta["control"]["default_pose_policy"])
+    example.policy.osc_mode = True
+    mud_costep.set_substep_control(lambda exmp: exmp.control.joint_f.assign(
+        _ctrl.compute_joint_f(exmp.state_0, exmp.policy.last_deltas)))
+    print("[TRAV] OSC controller wired (per-substep joint_f, PD off)", flush=True)
 example._auto_forward = True               # forward command (body +X)
 # wide side camera framing the whole strip (mud y[0,3], runway either end); robot walks along Y
 viewer.set_camera(wp.vec3(5.5, 1.5, 2.1), -26.0, 180.0)

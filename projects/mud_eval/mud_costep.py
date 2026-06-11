@@ -29,12 +29,21 @@ from newton.examples.mpm.mpm_go2_multi.twoway_coupling_go2 import (
 )
 
 _CFG = {"sim_substeps": 5}
+_SUBSTEP_FN = {"fn": None}   # optional per-substep control hook fn(example) -> sets control.joint_f (OSC)
+
+
+def set_substep_control(fn):
+    """Register a callback run each substep BEFORE solver.step (M2 OSC: compute the
+    operational-space torque from the live state + write control.joint_f). None = off."""
+    _SUBSTEP_FN["fn"] = fn
 
 
 def _costep_simulate_robot(self):
     """Robot + mud co-stepped at sim_dt, two-way force exchange every substep."""
     for _ in range(self.sim_substeps):
         self.state_0.clear_forces()
+        if _SUBSTEP_FN["fn"] is not None:
+            _SUBSTEP_FN["fn"](self)            # OSC: recompute tau -> control.joint_f at substep rate
         # mud -> body force (this substep's impulses; force = impulse / sim_dt)
         wp.launch(
             compute_body_forces,

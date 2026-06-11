@@ -64,7 +64,8 @@ def _build_fast_sac_policy(ckpt_dir: Path):
 
 
 def patched_config(ckpt_dir, base_config_path, out_path, mjcf_model: str | None = None,
-                   spawn_xyz=(0.0, 1.5, 0.40), yaw_pi_mult: float = 0.0) -> str:
+                   spawn_xyz=(0.0, 1.5, 0.40), yaw_pi_mult: float = 0.0,
+                   osc_mode: bool = False) -> str:
     """Write a config.yaml override so the Newton robot spawns at the POLICY's
     default pose and uses its training PD gains (Kp/Kd) — otherwise the policy
     sees a non-zero joint_pos_offset at spawn and a stiffer-than-trained PD.
@@ -85,8 +86,10 @@ def patched_config(ckpt_dir, base_config_path, out_path, mjcf_model: str | None 
         cfg["policy"]["initial_joint_q"] = {}                   # skip the buggy loop
     else:
         cfg["policy"]["initial_joint_q"] = {n: float(v) for n, v in zip(names, pose)}
-    cfg["policy"]["pd_gains_ke"] = float(ctrl["Kp"])
-    cfg["policy"]["pd_gains_kd"] = float(ctrl["Kd"])
+    # OSC mode: zero the joint PD so the operational-space joint_f is the only
+    # actuation (matches training, where OSC torque replaces joint PD entirely).
+    cfg["policy"]["pd_gains_ke"] = 0.0 if osc_mode else float(ctrl["Kp"])
+    cfg["policy"]["pd_gains_kd"] = 0.0 if osc_mode else float(ctrl["Kd"])
     cfg["policy"]["action_scale"] = float(ctrl["action_scale"])
     # Spawn UPRIGHT about +Z (example tilts via a non-z yaw axis). yaw_pi_mult
     # rotates about +Z: 0.5 => +90deg so body +X (the policy's "forward") points
@@ -135,6 +138,8 @@ class MudJaxPolicy:
         self.act_dim = int(meta["action_dim"])
 
         self.hold = False                      # if True: hold default pose (action=0) — for isolating spawn/contact from the policy
+        self.osc_mode = False                  # if True: the 12-d action is foot-position deltas (trunk frame), stored for the OSC controller
+        self.last_deltas = np.zeros((4, 3), np.float32)
         self.last_act = np.zeros(self.act_dim, np.float32)
         self._prev_linvel_w = None
         self._g_world = np.array([0.0, 0.0, -9.81], np.float32)
@@ -179,6 +184,11 @@ class MudJaxPolicy:
         else:
             action = np.asarray(self._select(self._params, jnp.asarray(_normalize(obs, self._norm))))
         self.last_act = action.astype(np.float32)
+        if self.osc_mode:
+            # 12-d action = 4 foot-position deltas (trunk frame); held for the OSC
+            # controller, which recomputes torque each substep. joint_target_pos
+            # below is unused (PD gains are zeroed in OSC mode).
+            self.last_deltas = (action[:12].reshape(4, 3) * self.action_scale).astype(np.float32)
         targets = self.default_pose + action * self.action_scale   # joint order FL,FR,RL,RR
         padded = np.concatenate([np.zeros(6, np.float32), targets]).astype(np.float32)
         return wp.from_numpy(padded, dtype=wp.float32, device=self._wp_device)

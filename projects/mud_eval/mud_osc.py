@@ -57,6 +57,43 @@ def sync_mjdata(mj_data, joint_q, joint_qd):
     mj_data.qvel[6:6 + 12] = jqd[6:18]
 
 
+class MudOscController:
+    """Per-substep operational-space controller for the Newton co-step loop. Holds
+    the OSC setup (foot sites, leg dofs, nominal foot, gains) and, given the live
+    Newton state + the policy's held foot deltas, computes the generalized joint
+    force (control.joint_f) by reading J/M from the solver's OWN cpu mujoco.
+    Requires use_mujoco_cpu (solver.mj_data is the actively-stepped data)."""
+
+    def __init__(self, solver, kp, kd, torque_limit, use_op_space_inertia=True,
+                 ridge=1e-4, home_joints=None):
+        self.m = solver.mj_model
+        self.d = solver.mj_data
+        self.foot_sites, self.trunk, self.leg_dofs = find_legs(self.m)
+        self.nv = int(self.m.nv)
+        hj = list(home_joints) if home_joints is not None else [0.0, 0.9, -1.8] * 4
+        home_qpos = np.zeros(self.m.nq)
+        home_qpos[2] = 0.3; home_qpos[3] = 1.0          # base z + quat w (trunk-frame, pose-invariant)
+        home_qpos[7:7 + 12] = hj
+        self.nominal = nominal_foot_body(self.m, self.foot_sites, self.trunk, home_qpos)
+        self.kp = np.asarray(kp, float); self.kd = np.asarray(kd, float)
+        self.torque_limit = np.asarray(torque_limit, float)
+        self.use_lambda = bool(use_op_space_inertia); self.ridge = float(ridge)
+
+    def compute_joint_f(self, state, deltas) -> np.ndarray:
+        """deltas: (4,3) foot-position deltas in the trunk frame (metres). Returns
+        the (nv,) generalized joint force, OSC torque in the 12 actuated dofs."""
+        jq = np.asarray(state.joint_q.numpy()); jqd = np.asarray(state.joint_qd.numpy())
+        sync_mjdata(self.d, jq, jqd)
+        mujoco.mj_forward(self.m, self.d)
+        targets = self.nominal + np.asarray(deltas).reshape(4, 3)
+        tau = osc_torque(self.m, self.d, self.foot_sites, self.leg_dofs, self.trunk,
+                         targets, self.kp, self.kd, self.torque_limit,
+                         use_op_space_inertia=self.use_lambda, ridge=self.ridge)
+        jf = np.zeros(self.nv, np.float32)
+        jf[6:6 + 12] = tau                              # 12 actuated dofs (FL,FR,RL,RR)
+        return jf
+
+
 def osc_torque(mj_model, mj_data, foot_site_ids, leg_dof_ids, trunk_body_id,
                target_foot_body, kp, kd, torque_limit,
                use_op_space_inertia=True, ridge=1e-4):
