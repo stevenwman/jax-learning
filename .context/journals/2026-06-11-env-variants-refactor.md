@@ -103,3 +103,29 @@ PRE-EXISTING, not from this work:
    `add_collision_handler` API drift / `gym_pusht` import).
 
 Filed in `.context/TODO.md`.
+
+## Afternoon: first DR-era retrain (VarDampingAxis) + OOM saga
+
+Steven picked `Go2WarpOscVarDampingAxisFlatPhysical` as the first retrain under
+the new per_step-DR defaults (5M steps, 256 envs, seed 0, FastSAC).
+
+**OOM at paper config.** The 4.19M-slot buffer (36-d action → ~6.4GB with dual
+critic obs) + per_step DR wrapper + Warp does NOT fit on the 16GB GPU at any
+`XLA_CLIENT_MEM_FRACTION` (0.75 default fails allocating 2.28GiB, 0.55 fails at
+1.12GiB, 0.65 at 576MiB — all at init, 0 steps). Fraction tuning exhausted →
+config change required.
+
+**Decision (Steven): `--buffer-size 2097152` (2M) is the DR-era retrain
+standard**, keeping 256 envs; launch with `XLA_CLIENT_MEM_FRACTION=0.65`. All
+future ladder rungs use the same buffer for HP comparability. 2M still covers
+40% of a 5M-step run's experience.
+
+**Run healthy**: obs 72-d (last_act grows to 36), buffer 2,097,152 confirmed in
+banner, first eval **97.2 ± 48.3 @ 500 eps**, wandb `go2-osc-impedance`.
+Log: `.temp/logs/retrain_vardampaxis_5M_seed0.log`.
+
+**Process note (cwd trap, again):** two launch attempts ran in the MAIN repo
+instead of the worktree (no `cd` prefix; cwd does not reliably persist between
+shell calls) and died with `Env not found` — masquerading as extra OOM data
+points until the traceback was actually read. The `feedback_worktree_cwd`
+memory rule exists for exactly this; `cd` EVERY command in worktrees.

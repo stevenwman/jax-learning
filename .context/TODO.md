@@ -59,10 +59,22 @@ Worktree `go2-osc-impedance`. Spec + journal + lesson written.
 - [ ] **Migrate G1/splitbelt/bongo/factory to the variants pattern** if it
       proves out on Go2 — same EnvVariant table + raise-on-unknown preset
       resolution per env family.
-- [ ] **Consider retraining OSC baselines under the new DR defaults** —
+- [ ] **Retrain OSC baselines under the new DR defaults** (IN PROGRESS 2026-06-11) —
       anything OSC trained pre-2026-06-11 (incl. the headline rough/physical
       comparisons and mud-eval ckpts) trained without DR; comparisons against
       new-default runs need refreshed baselines.
+      **DR-era retrain standard (Steven's call): `--buffer-size 2097152` +
+      `XLA_CLIENT_MEM_FRACTION=0.65`** — the paper-config 4.19M buffer + 36-d
+      action + per_step DR wrapper OOMs on 16GB at ANY mem fraction
+      (0.55/0.65/0.75 all fail at init). Use the same buffer for ALL ladder
+      rungs so HPs stay comparable.
+      - [ ] `Go2WarpOscVarDampingAxisFlatPhysical` 5M/256envs/seed0 — RUNNING
+            (first eval 97.2±48.3 @ 500 eps; log `.temp/logs/retrain_vardampaxis_5M_seed0.log`)
+      - [ ] remaining ladder (Steven decides when): JoystickFlatPhysical,
+            OscFlatSoftPhysical, OscVarFlatPhysical, OscVarAxisFlatPhysical
+      - [ ] ladder DR asymmetry: `Go2WarpJoystickFlatHardKick` (joint-PD rung)
+            still legacy/no-DR while OSC hardkick rungs got per_step — align
+            before rerunning the hard-kick comparison.
 - [x] **Newton MPM mud eval (zero-shot soft terrain)** — built `projects/mud_eval/`
       (self-contained: vendored Newton 0.1.3 + dedicated venv; real jax_rl actor
       drop-in + obs adapter). Migrated to the trained go2.xml (add_mjcf), co-stepped
