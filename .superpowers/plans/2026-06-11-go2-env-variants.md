@@ -233,11 +233,15 @@ def test_go2_presets_resolve_and_unknown_raises():
     from jax_rl.envs.locomotion.go2_warp_variants import GO2_WARP_VARIANTS
     getters = [("fast_sac", ep.get_fast_sac_preset), ("flash_sac", ep.get_flash_sac_preset),
                ("fast_td3", ep.get_fast_td3_preset), ("sac", ep.get_sac_preset),
-               ("td3", ep.get_td3_preset), ("ppo", ep.get_preset)]
+               ("td3", ep.get_td3_preset)]
     for name in GO2_WARP_VARIANTS:
         for algo_name, g in getters:
             cfg, algo_cfg = g(name)
             assert cfg.env_name == name
+        ppo_cfg = ep.get_preset(name)        # PPO getter returns a BARE TrainConfig (no tuple)
+        assert ppo_cfg.env_name == name
+    with pytest.raises(ValueError):
+        ep.get_preset("Go2WarpNopeDoesNotExist")
     for _, g in getters:
         with pytest.raises(ValueError):
             g("Go2WarpNopeDoesNotExist")
@@ -247,7 +251,7 @@ def test_go2_presets_resolve_and_unknown_raises():
 
 Plus a TRANSITIONAL check (delete in Step 3.5): before removing legacy dict entries, for every Go2 name present in each legacy `*_PRESETS` table, assert old-entry tuple == new resolution output (dataclass equality). Write it inline as a script-style assertion in the test, run once, then convert: after deletion the test keeps only explicit expected-value asserts for the migrated `train` deltas (curriculum/splitbelt-era values): e.g. `get_fast_sac_preset("Go2WarpJoystickCurriculum")[0].reset_mode == "per_step"`.
 
-- [ ] **Step 3.2: Implement `_resolve_go2_variant` in `env_presets.py`** (per spec — returns None for non-Go2 and `Go2WarpSplitbelt*`/excluded; raises for unknown `Go2Warp*`). Wire as the FIRST branch of all 6 getters. Transcribe existing Go2 entries from each preset table into variant `train`/`algo` dicts: read every `*_PRESETS["Go2Warp..."]` entry in `env_presets.py` (fast_sac: Flat/TorqueSpeed/NoAccel/Unitree/Curriculum/CurriculumTS; flash_sac: Flat/TorqueSpeed/Curriculum/CurriculumTS; fast_td3/sac/td3/ppo: grep) and diff each against its algo base — the diffs (e.g. `reset_mode="per_step"`, `episode_length`) go into `train` if TrainConfig-level and algo-agnostic, into `algo[algo_name]` if algo-specific. Splitbelt entries STAY in the tables (excluded family).
+- [ ] **Step 3.2: Implement `_resolve_go2_variant` in `env_presets.py`** (per spec — returns None for non-Go2 and `Go2WarpSplitbelt*`/excluded; raises for unknown `Go2Warp*`). Wire as the FIRST branch of all 6 getters. **PPO caveat:** `get_preset` (line ~605) returns a bare `TrainConfig`, not a tuple — in that getter use only the cfg half of the resolution (apply `v.train` overrides to the PPO base TrainConfig; `v.algo` has no "ppo" entries today). Do NOT change `get_preset`'s return signature (train_ppo.py callers depend on it). Transcribe existing Go2 entries from each preset table into variant `train`/`algo` dicts: read every `*_PRESETS["Go2Warp..."]` entry in `env_presets.py` (fast_sac: Flat/TorqueSpeed/NoAccel/Unitree/Curriculum/CurriculumTS; flash_sac: Flat/TorqueSpeed/Curriculum/CurriculumTS; fast_td3/sac/td3/ppo: grep) and diff each against its algo base — the diffs (e.g. `reset_mode="per_step"`, `episode_length`) go into `train` if TrainConfig-level and algo-agnostic, into `algo[algo_name]` if algo-specific. Splitbelt entries STAY in the tables (excluded family).
 - [ ] **Step 3.3: Run transitional equality once** → green, then delete the legacy Go2 (non-splitbelt) entries from all preset tables.
 - [ ] **Step 3.4: Run full preset tests** `uv run python -m pytest tests/test_go2_warp_variants.py tests/test_env_presets.py tests/test_algo_configs.py tests/test_tdmpc2_presets.py -x -q` → green (update `test_env_presets.py` if it asserts fallback behavior for Go2 names).
 - [ ] **Step 3.5: Commit** — `refactor(configs): Go2 presets resolve from variants table; unknown Go2Warp names raise`
@@ -256,7 +260,7 @@ Plus a TRANSITIONAL check (delete in Step 3.5): before removing legacy dict entr
 
 - [ ] **Step 4.1: Failing test:** every variant whose name contains `Osc` or ends in `Physical` or `RoughUni` has `train["reset_mode"]=="per_step"` and `train["eval_every_n_episodes"]==500`; assert via `get_fast_sac_preset` output. EXCEPTIONS: names already migrated with explicit historical values keep them (curriculum keeps per_step + its existing eval default — do not add eval_every to curriculum).
 - [ ] **Step 4.2: Add `{"reset_mode": "per_step", "eval_every_n_episodes": 500}` to the `train` dict of:** all 8 Osc* flat/JT/Kp-sweep/hardkick variants, all var-impedance variants, SoftPhysical, the 4 *FlatPhysical, JoystickFlatPhysical, the 4 RoughUni. (`Go2WarpJoystickFlat` benchmark family, NoAccel, Unitree, TorqueSpeed, HardKick-joint, PosTrackProto: UNCHANGED.)
-- [ ] **Step 4.3: Fix `--eval-every` help text** in `scripts/train_sac.py`, `train_td3.py`, `train_fast_sac.py`, `train_fast_td3.py`, `train_flashsac.py`: "every 512 episodes" → "every 5000 episodes; Go2 OSC/physical presets set 500".
+- [ ] **Step 4.3: Fix `--eval-every` help text** in `scripts/train_sac.py`, `train_td3.py`, `train_fast_sac.py`, `train_fast_td3.py`: replace the stale "every 512 episodes" with "every 5000 episodes; Go2 OSC/physical presets set 500". `train_flashsac.py` (line ~467) has NO stale string — its help is just "Evaluate every N episodes"; append the same default note there.
 - [ ] **Step 4.4: Run + commit** — `feat(go2): OSC/physical variants default to per_step DR + eval every 500 episodes`
 
 ### Task 5: snapshot pin + legacy factory deletion
