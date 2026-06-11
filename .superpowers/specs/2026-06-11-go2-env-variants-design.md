@@ -11,7 +11,7 @@ Audit (2026-06-10) found four structural problems on the env side:
 1. **Patch-chain configs.** A named env like `Go2WarpOscFlatSoftPhysical` is defined as a closure in `jax_rl/training/env_backends/mjx_backend.py` that patches the output of `go2_warp_osc_joystick.default_config()`, which itself patches `go2_warp_joystick.default_config()`. No single place shows the final config; answering "what is this env" requires replaying mutations across 3 files.
 2. **Science in infra.** `_register_custom_envs` in `mjx_backend.py` is ~420 lines of experiment definitions (gains, kick DR, motor models) inside a backend plumbing file.
 3. **Two registries, silent fallback.** The same env-name string keys both the Playground registration (env physics) and `env_presets.py` (training HPs). `get_fast_sac_preset` silently returns base defaults for unknown names — the OSC envs therefore train with `reset_mode="legacy"` (no domain randomization) and `eval_every_n_episodes=5000` (≈ zero mid-run evals on a 5M-step run) without any indication.
-4. **Half-finished controller extraction.** `OSC.setup()` (in `go2_warp_components.py`) plants `env._osc_kp`, `env._osc_foot_site_ids`, etc. onto the host env; the OSC math (`_run_osc`, `_feet_in_body`, `_compute_nominal_foot_body`) stayed in `go2_warp_joystick.py` and reads those planted attributes back. The justifying comment cites white-box tests that do not exist (verified: no Go2 OSC tests in `tests/`; the factory OSC tests target a separate controller module). `WarpOscJoystick` in `go2_warp_osc_joystick.py` is an empty subclass with zero external references.
+4. **Half-finished controller extraction.** `OSC.setup()` (in `go2_warp_components.py`) plants `env._osc_kp`, `env._osc_foot_site_ids`, etc. onto the host env; the OSC math (`_run_osc`, `_feet_in_body`, `_compute_nominal_foot_body`) stayed in `go2_warp_joystick.py` and reads those planted attributes back. The white-box consumers are `tests/test_go2_osc_env.py` (constructs `WarpOscJoystick`/`WarpOscVarImpedance` directly, reads `env._osc_foot_site_ids`, calls `env._feet_in_body`) — PR 2 must migrate that test to the new surfaces. `WarpOscJoystick` is an otherwise-empty subclass whose only dependents are that test and `WarpOscVarImpedance` (which inherits from it).
 
 ## Goals
 
@@ -48,8 +48,8 @@ class EnvVariant:
 GO2_WARP_VARIANTS: dict[str, EnvVariant] = { ... }
 ```
 
-Names migrating (~25): the `WarpJoystick`-host family —
-`Go2WarpJoystickFlat`, `...FlatTorqueSpeed`, `...FlatNoAccel`, `...Unitree`,
+Names migrating (29 — the list below is exhaustive): the `WarpJoystick`-host family —
+`Go2WarpJoystickFlat`, `...FlatTorqueSpeed`, `...FlatNoAccel` (cls `WarpJoystickNoAccel`), `...Unitree` (cls `WarpJoystickNoAccel`),
 `...FlatPhysical`, `...FlatHardKick`,
 `Go2WarpOscJoystickFlat`, `...FlatJt`, `...FlatKp{025,05,2,4}`, `...FlatKp05HardKick`,
 `Go2WarpOscFlatSoftPhysical`,
@@ -129,7 +129,9 @@ In `go2_warp_components.py`:
 - Controller state moves onto the controller: `self._kp`, `self._kd`, `self._use_lambda`, `self._ridge`, `self._target_mode`, `self._foot_site_ids`, `self._leg_dof_ids`, `self._torque_limit`, `self._nominal_foot_body`. `OSC.setup(env)` reads what it needs from the env (sites, stall torque, model) but writes nothing onto it.
 - The stability-critical comment on the 250 Hz substep recomputation moves with `_run_osc` verbatim.
 - `WarpJoystick._apply_control` delegation is unchanged; the host loses the "OSC mechanics" section entirely.
-- Delete the `WarpOscJoystick` class (zero references); keep `go2_warp_osc_joystick.py` only if its `default_config` is still imported during the PR-1 transition, otherwise delete the file.
+- Delete `WarpOscJoystick` AND `WarpOscVarImpedance` (which inherits from it) — after PR 1, both are config presets over `WarpJoystick`; their files survive only while `default_config*` factories are still imported during the PR-1 transition, then delete.
+- **Update `tests/test_go2_osc_env.py`:** construct envs as `WarpJoystick(config=go2_config(controller="osc", ...))` (or via registry name), and read controller state from `env._controller` (e.g. `env._controller._foot_site_ids`, `env._controller._feet_in_body(...)`) instead of planted `env._osc_*` attrs. Test intent (FK parity, hold probe, action-size checks) is preserved — only the access path changes.
+- `tests/test_go2_osc.py` (synthetic-leg math on `go2_osc.compute_leg_impedance_torque`) is untouched by both PRs and must stay green as-is.
 
 Ordering: PR 1 first (it rewrites the config factories PR 2's file deletion depends on). PR 2 is independent in logic but sequenced after to avoid rebase churn.
 
@@ -144,7 +146,7 @@ Ordering: PR 1 first (it rewrites the config factories PR 2's file deletion depe
 1. **Config-equality transitional test:** before deleting the legacy factories, a test builds every migrated name's ConfigDict via the old patch-chain AND the new builder and asserts deep equality (pure python, no GPU). Legacy factories delete in the same PR after the test passes; the test then pins the new builder against a frozen snapshot of the dicts (committed as JSON) so future edits to the builder are intentional.
 2. **No-fallback test:** every name in `GO2_WARP_VARIANTS` resolves a preset for each off-policy algo; a made-up `Go2WarpNope` raises.
 3. **Registration test:** every variant name loads via `pg_registry` (construction only, no stepping; CPU).
-4. **Existing suite green:** `uv run python -m pytest tests/` — `test_env_presets.py`, `test_go2_warp_env.py`, `test_go2_warp_curriculum_env.py` likely need updates for the new resolution path.
+4. **Existing suite green:** `uv run python -m pytest tests/` — `test_env_presets.py`, `test_go2_warp_env.py`, `test_go2_warp_curriculum_env.py` likely need updates for the new resolution path; `test_go2_osc_env.py` is rewritten by PR 2 (see above).
 5. **Smoke run:** 200k steps of `train_fast_sac.py --env Go2WarpOscFlatSoftPhysical` (now with DR + eval cadence) before any real training jobs. Per project convention, no cross-run bit-identity gating (GPU nondeterminism); within-run sanity only.
 
 ## Risks
