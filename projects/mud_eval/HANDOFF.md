@@ -177,6 +177,28 @@ finer dt — not the feared 5×). `recordings/cs_stand_f43.png`.
 **M2 OSC slots into this same per-substep loop** — recompute τ each substep (read
 state → J/M from solver.mj_data → τ → control.joint_f) right before solver.step.
 
+## WALKABLE GROUND — the fix is use_mujoco_cpu=True (not a model/group issue)
+
+Symptom: the robot fell through the flat ground plane off the mud (BOTH go2.xml AND
+the original URDF) — only the mud caught it. NOT a robot-model or collision-group
+problem: CPU mujoco (`mj_forward` on solver.mj_data) DOES generate plane↔foot
+contacts (inspect_contacts.py: base_z=0.22 → ncon=16 plane↔calf; the 78 excludes
+are all robot self-pairs, world body 0 is NOT excluded). The masks/colors also
+permit it (plane color2/contype4, robot color1/contype2, conaffinities cross-allow).
+
+ROOT CAUSE: the GPU **mujoco_warp 0.0.2** collision path silently drops robot↔PLANE
+contacts. The example never exposed it (robot is always spawned over the mud; its
+contact is 100% via the MPM coupler, never mujoco collision).
+
+FIX: `SolverMuJoCo(use_mujoco_cpu=True)` — the CPU mujoco backend resolves the plane
+contacts. Verified (gate_ground_cpu.py): robot stands on flat ground (y=-1, z~0.22)
+AND still on the mud (y=1.5, z~0.26 — MPM forces go through xfrc_applied in the CPU
+path). Graph capture must be off (mud_costep._no_capture) — the CPU path does
+GPU→CPU copies that can't run during capture. BONUS: M2 OSC J/M then come from the
+ACTIVELY-stepped solver.mj_data. Cost: CPU stepping + per-substep transfers (slower,
+fine for eval). Spawn is now parameterized: patched_config(spawn_xyz=, yaw_pi_mult=);
+mud is along +Y (thick y0-1 → medium y1-2 → thin y2-3), so face +Y = yaw_pi_mult 0.5.
+
 ## CHECKPOINTS to eval (worktree `checkpoints/`, 2026-06-09 physical-motor retrains)
 
 ```

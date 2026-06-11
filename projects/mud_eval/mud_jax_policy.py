@@ -63,7 +63,8 @@ def _build_fast_sac_policy(ckpt_dir: Path):
     return select, params, norm, meta
 
 
-def patched_config(ckpt_dir, base_config_path, out_path, mjcf_model: str | None = None) -> str:
+def patched_config(ckpt_dir, base_config_path, out_path, mjcf_model: str | None = None,
+                   spawn_xyz=(0.0, 1.5, 0.40), yaw_pi_mult: float = 0.0) -> str:
     """Write a config.yaml override so the Newton robot spawns at the POLICY's
     default pose and uses its training PD gains (Kp/Kd) — otherwise the policy
     sees a non-zero joint_pos_offset at spawn and a stiffer-than-trained PD.
@@ -87,14 +88,14 @@ def patched_config(ckpt_dir, base_config_path, out_path, mjcf_model: str | None 
     cfg["policy"]["pd_gains_ke"] = float(ctrl["Kp"])
     cfg["policy"]["pd_gains_kd"] = float(ctrl["Kd"])
     cfg["policy"]["action_scale"] = float(ctrl["action_scale"])
-    # Spawn UPRIGHT (example tilts via a non-z yaw axis); the policy trained
-    # seeing gravity ~[0,0,-1] when level.
+    # Spawn UPRIGHT about +Z (example tilts via a non-z yaw axis). yaw_pi_mult
+    # rotates about +Z: 0.5 => +90deg so body +X (the policy's "forward") points
+    # to world +Y — the mud's long axis (thick y0-1 -> medium y1-2 -> thin y2-3).
     cfg["robot"]["initial_yaw_axis"] = [0.0, 0.0, 1.0]
-    cfg["robot"]["initial_yaw_angle_pi_mult"] = 0.0
-    # Spawn OVER the mud (the only collider — the ground plane doesn't catch the
-    # rigid body, so the example's y=-1.5 spawn free-falls). Mud spans ~x[-1,1]
-    # y[0,3]; put the robot in the middle, feet just above the ~0.12 m mud top.
-    cfg["robot"]["initial_position"] = [0.0, 1.5, 0.40]
+    cfg["robot"]["initial_yaw_angle_pi_mult"] = float(yaw_pi_mult)
+    # Spawn position. Traversal setup: y<0 on the flat ground plane
+    # (builder.add_ground_plane), facing +Y, then walk forward into the mud.
+    cfg["robot"]["initial_position"] = [float(v) for v in spawn_xyz]
     yaml.safe_dump(cfg, open(out_path, "w"))
     return str(out_path)
 
