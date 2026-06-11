@@ -293,3 +293,16 @@ extracting the *commanded* stiffness over a rollout told the real story:
 - **Derive kd from commanded kp** (kd∝√kp, ζ≈1) instead of adding damping action
   dims — halves the added params and keeps the loop critically damped as the
   policy varies stiffness.
+- **Variable impedance MATTERS on soft contact — confirmed on Newton MPM mud**
+  (2026-06-11; `journals/2026-06-11-newton-mud-eval.md`, `lessons/newton_mud_eval.md`).
+  Zero-shot on graded mud, the variable-impedance ckpts penetrate the thick
+  (densest) mud ~45% deeper than joint-PD and **fixed**-soft OSC, which TIE (both
+  bog at the edge, y≈0.22; var per-foot y0.32, per-axis y0.34). Only the
+  *stiffenable* policies (commanding s up to 2× → kp up to [6000,6000,8000]) push
+  through, holding the highest posture. This is the "use a task that demands
+  stiffness modulation: soft/variable contact" prediction realized — fixed
+  compliance ≈ stiff PD; adaptive stiffening wins. **Caveat:** all are FLAT-trained
+  (physical motor) tested zero-shot; even the winner still bogs/grinds to a stop in
+  thick mud. The controller can't fix what training didn't prepare for → training on
+  mud / mud-like DR (randomized ground compliance, sinking, drag) is the next lever,
+  with the Newton harness as the measuring stick.

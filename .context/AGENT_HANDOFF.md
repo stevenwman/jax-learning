@@ -260,7 +260,8 @@ Full benchmark history (tables, seeds, wandb IDs, pre/post-fix breakdown) moved 
 
 ### Roadmap
 See `TODO.md` for full prioritized list. Summary:
-- **Done:** Warp env + sim2sim closed, DR per_step, post-truncation-fix sweep, torque-speed actuator, PushT env + vendored gym-pusht.
+- **Done:** Warp env + sim2sim closed, DR per_step, post-truncation-fix sweep, torque-speed actuator, PushT env + vendored gym-pusht, Go2 Cartesian-impedance/OSC + variable impedance (`go2-osc-impedance` worktree).
+- **Newton MPM mud eval** (`projects/mud_eval/`, 2026-06-11): self-contained harness running the trained Go2 policies zero-shot in soft-terrain (Newton MPM triple-mud). Headline: variable impedance penetrates thick mud ~45% deeper than joint-PD / fixed-soft OSC. Open challenge: flat-trained policies still bog → train on mud / mud-like DR. See `journals/2026-06-11`, `lessons/newton_mud_eval.md`, `projects/mud_eval/HANDOFF.md`.
 - **Short-term:** Terrain curriculum validation, push-force curriculum, W&B HP tuning agent.
 - **Mid-term:** Vision RL (CNN encoder, DrQ), real robot deployment.
 - **Long-term:** DIAYN → METRA → USD (skill discovery on real Go2).

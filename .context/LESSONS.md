@@ -278,3 +278,13 @@ failure, DR doesn't extrapolate).
 - **DR covers parameter ranges, not model structure** — but "structural difference" was actually just damping=2 vs 0.1. Read the XML first.
 - **Read the XML before numerical tests** — 20x damping diff found in 5 lines of XML, after hours of sim2sim experiments
 - **MJX and CPU MuJoCo diverge over time** — not f32/f64 (tested), not settings. Bursty contact solver divergence at foot contact boundaries. DR + kicks for robustness.
+- **Variable impedance MATTERS on soft contact (Newton mud)** — zero-shot on graded mud, var-impedance penetrates thick mud ~45% deeper than joint-PD and FIXED-soft OSC (which tie). Stiffenable compliance wins; fixed doesn't. But flat-trained → all still bog; train on mud/mud-DR next. See `newton_mud_eval.md`.
+
+## [Newton MPM Mud Eval](lessons/newton_mud_eval.md) — soft-terrain eval harness
+
+- **mujoco_warp 0.0.2 (GPU) silently drops robot↔PLANE contacts** — robot falls through flat ground; CPU mujoco (`mj_forward` on solver.mj_data) makes the contacts fine. Fix: `SolverMuJoCo(use_mujoco_cpu=True)` — keeps the MPM coupling, not slower (MPM dominates).
+- **Instrument the narrowphase, not the masks** — when a contact silently doesn't happen, check `ncon` on a known-penetrating pose; don't reason about contype/group.
+- **Co-step robot + MPM at the controller rate** — the example decimates the mud to 50 Hz (force held across robot substeps); fold the MPM step into the substep loop. Implicit MPM converges faster at finer dt (cost << 5×).
+- **OSC J/M from the solver's own cpu mujoco** (`mj_jacSite`+`mj_fullM`), inject via `control.joint_f`→qfrc_applied (allocate it; zero the joint PD). mujoco_warp has no full_m/jac.
+- **Eval a jax_rl ckpt outside the stack** — `np.load(actor_params.npy)` + build FastSAC from `jax_rl.algos` (skip `jax_rl.training`'s mujoco_playground import). obs_dim = 36 + action_dim; joint slices are 12 (not action_dim).
+- **Newton add_mjcf loads the trained MJCF** — go2.xml feet are class "foot" (else missed); the example's `joint_key.index+6` posing breaks on 0-dof `*_foot_joint`.

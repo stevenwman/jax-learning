@@ -36,6 +36,24 @@ Worktree `go2-osc-impedance`. Spec + journal + lesson written.
       config components (Actuation/Terrain on MjSpec/Controller). Commits
       4c5e5fa·8908b3d·0fe5a40·50b78b7; behaviour-preserving (sanity 36/36 +
       within-run traj-equiv per stage); names unchanged. Spec status IMPLEMENTED.
+- [x] **Newton MPM mud eval (zero-shot soft terrain)** — built `projects/mud_eval/`
+      (self-contained: vendored Newton 0.1.3 + dedicated venv; real jax_rl actor
+      drop-in + obs adapter). Migrated to the trained go2.xml (add_mjcf), co-stepped
+      robot+MPM at 250 Hz, fixed walkable ground (`use_mujoco_cpu=True` — GPU
+      mujoco_warp drops plane contacts), integrated the OSC + variable-impedance
+      controllers (J/M from the cpu mjData, per-substep `joint_f`). **Headline:**
+      on graded mud, var-impedance penetrates the thick mud ~45% deeper than
+      joint-PD and fixed-soft OSC (which tie) — stiffenable compliance wins, fixed
+      doesn't. Commits `0aa5c71`·`38a4e1f`·`39b05fd`. Journal 2026-06-11,
+      `lessons/newton_mud_eval.md`, `projects/mud_eval/HANDOFF.md`.
+- [ ] **Train on mud / mud-like DR** — THE open challenge. The mud-eval policies
+      are FLAT-trained, tested zero-shot; even the var-impedance winner still
+      bogs/grinds to a stop in thick mud (training wasn't prepared for sinking,
+      draggy terrain). Next lever is on the training side: train on the mud (or
+      mud-like DR — randomized ground compliance / sinking / drag) so the policy
+      learns to commit stiffness + foot placement for soft terrain. The Newton
+      harness is the measuring stick. (Newton isn't JAX-traceable → either an
+      MJX/Warp soft-contact proxy for training, or a different train loop.)
 
 ## Parked — DrQ-v2 vision RL port (Phase A)
 
