@@ -431,8 +431,9 @@ FAST_SAC_PRESETS["Go2WarpJoystickFlatNoAccel"] = (
     _FAST_SAC_BASE_ALGO,
 )
 # Hardware-conservative preset: 45d state (no accel) + action_scale=0.25.
-# Partially aligned with unitree_rl_lab Go2 deploy contract — see the env
-# registration in mjx_backend.py for the matched/unmatched delta. Reduces
+# Partially aligned with unitree_rl_lab Go2 deploy contract — see the
+# Go2WarpJoystickUnitree entry in go2_warp_variants.py for the
+# matched/unmatched delta. Reduces
 # sim2real surface area but is NOT bitwise Unitree parity.
 FAST_SAC_PRESETS["Go2WarpJoystickUnitree"] = (
     dataclasses.replace(_FAST_SAC_BASE_CFG, env_name="Go2WarpJoystickUnitree"),

@@ -26,7 +26,6 @@ from jax_rl.training.env_bundle import EnvBundle
 # ── Register custom envs with Playground's registry ─────────────────────
 def _register_custom_envs():
     from jax_rl.envs.locomotion.go2_warp_joystick import WarpJoystick
-    from jax_rl.envs.locomotion.go2_warp_joystick import default_config as warp_default_config
 
     def _reg(name, config_factory, cls=WarpJoystick, task="flat_terrain"):
         """Register a custom env if not already present. Defaults to the single
@@ -39,181 +38,23 @@ def _register_custom_envs():
                 name, functools.partial(cls, task=task), config_factory
             )
 
-    _reg("Go2WarpJoystickFlat", warp_default_config)
-    # Cartesian impedance / OSC variant: the 12-d action is four foot-position
-    # targets (trunk frame) driven by a per-leg operational-space controller
-    # instead of joint PD. Same task / obs / reward as the joint-PD joystick.
-    # See jax_rl/envs/locomotion/go2_warp_osc_joystick.py.
-    from jax_rl.envs.locomotion.go2_warp_osc_joystick import (
-        default_config as warp_osc_default_config,
-    )
-    _reg("Go2WarpOscJoystickFlat", warp_osc_default_config)
-    # Jᵀ Cartesian-impedance ablation: use_op_space_inertia=False — no Λ
-    # unit-mass normalization, real N/m gains, feet keep their natural
-    # anisotropic inertia (heavy along the leg). Tests whether Λ's unit-mass
-    # feet are what drive the bounding/pogo gait of the Λ-OSC variant. Gains
-    # hold-probed (N/m, not the acceleration-gains of the Λ variant).
-    def _warp_osc_default_config_jt():
-        cfg = warp_osc_default_config()
-        cfg.osc.use_op_space_inertia = False
-        cfg.osc.kp = [1500.0, 1500.0, 2500.0]
-        cfg.osc.kd = [60.0, 60.0, 80.0]
-        return cfg
-    _reg("Go2WarpOscJoystickFlatJt", _warp_osc_default_config_jt)
-    # Stiffness sweep (Λ-OSC). Scale the baseline Cartesian gains by s; kd scales
-    # as sqrt(s) so the damping ratio stays ~critical (kd ≈ 2·sqrt(kp)) — this
-    # varies the natural frequency / stiffness while holding ζ≈1. Tests how the
-    # trained-policy gait (bounce, tracking, effort) varies with stiffness, and
-    # whether spring stiffness drives the pogo (stiffer = more stored spring
-    # energy). The open-loop hold-probe showed a static weight-bearing floor near
-    # s≈0.5 (no gravity FF); a trained policy may stand below it via active stance.
-    _OSC_BASE_KP = [3000.0, 3000.0, 4000.0]
-    _OSC_BASE_KD = [110.0, 110.0, 130.0]
-    def _make_osc_kp_config(scale):
-        def factory():
-            cfg = warp_osc_default_config()
-            cfg.osc.kp = [k * scale for k in _OSC_BASE_KP]
-            cfg.osc.kd = [d * scale ** 0.5 for d in _OSC_BASE_KD]
-            return cfg
-        return factory
-    for _scale, _suffix in [(0.25, "Kp025"), (0.5, "Kp05"), (2.0, "Kp2"), (4.0, "Kp4")]:
-        _reg(f"Go2WarpOscJoystickFlat{_suffix}", _make_osc_kp_config(_scale))
-    # Variable impedance: action grows to 16-d (12 foot targets + 4 per-foot
-    # stiffness scalars); each maps log-spaced to s∈[0.25,2] scaling that foot's
-    # baseline Cartesian gains (kd∝√s). Policy learns to stiffen stance / soften
-    # swing legs. See jax_rl/envs/locomotion/go2_warp_osc_var_impedance.py.
-    from jax_rl.envs.locomotion.go2_warp_osc_var_impedance import (
-        default_config as warp_osc_var_default_config,
-        default_config_per_axis as warp_osc_var_per_axis_config,
-        default_config_damping as warp_osc_var_damping_config,
-        default_config_damping_axis as warp_osc_var_damping_axis_config,
-    )
-    _reg("Go2WarpOscVarImpedanceFlat", warp_osc_var_default_config)
-    # Per-foot-per-axis stiffness (+12 → action 24): policy picks vertical-stiff /
-    # tangential-soft per leg.
-    _reg("Go2WarpOscVarImpedanceAxisFlat", warp_osc_var_per_axis_config)
-    # ── Flat + PHYSICAL motor model (zero-shot-from-flat experiment) ─────────
-    # Same controllers/gains as the rough-physical eval envs, but on FLAT ground.
-    # Policies train WITH the physical motor model (DC-motor torque-speed curve +
-    # mjlab per-joint armature) then zero-shot transfer onto rough-physical
-    # (Go2Warp*RoughUni). Mirrors the original zero-shot protocol, now with the
-    # motor model held consistent across train + eval.
-    def _physical(base_factory):
-        def factory():
-            cfg = base_factory()
-            cfg.torque_speed_model = True
-            cfg.physical_armature = True
-            return cfg
-        return factory
-    def _osc_soft_physical():   # kp/kd mirror osc_soft_rough_config (s=0.5)
-        cfg = warp_osc_default_config()
-        cfg.osc.kp = [1500.0, 1500.0, 2000.0]
-        cfg.osc.kd = [78.0, 78.0, 92.0]
-        cfg.torque_speed_model = True
-        cfg.physical_armature = True
-        return cfg
-    for _name, _fac in [
-        ("Go2WarpJoystickFlatPhysical", _physical(warp_default_config)),               # joint-PD
-        ("Go2WarpOscFlatSoftPhysical", _osc_soft_physical),                            # fixed-soft OSC
-        ("Go2WarpOscVarFlatPhysical", _physical(warp_osc_var_default_config)),         # variable per-foot (locked critical)
-        ("Go2WarpOscVarAxisFlatPhysical", _physical(warp_osc_var_per_axis_config)),    # variable per-axis
-        ("Go2WarpOscVarDampingFlatPhysical", _physical(warp_osc_var_damping_config)),  # decoupled K+D (per-foot)
-        ("Go2WarpOscVarDampingAxisFlatPhysical", _physical(warp_osc_var_damping_axis_config)),  # decoupled K+D (per-axis)
-    ]:
-        _reg(_name, _fac)
-    # Variable impedance under DOMAIN-RANDOMIZED kick strength: per-episode kick
-    # bound ~ U[0.5, 2.5] m/s (into the ≥2 m/s pure-impedance failure regime),
-    # vs the default fixed ±0.75. Tests whether the policy learns to stiffen on
-    # demand to reject hard disturbances.
-    # Hard-kick comparison ladder: identical DR'd kick U[0.5,2.5] m/s applied to
-    # conventional joint-PD, fixed-soft OSC, scalar variable impedance, and
-    # per-axis variable impedance. Each step isolates one factor — (a) does
-    # Cartesian impedance help disturbance rejection at all (vs joint-PD), (b)
-    # does stiffness modulation help (vs fixed), (c) does per-axis beat scalar.
-    def _hardkick(base_factory):
-        def factory():
-            cfg = base_factory()
-            cfg.push_config.vel_min = 0.5
-            cfg.push_config.vel_max = 2.5
-            return cfg
-        return factory
-    for _name, _base in [
-        ("Go2WarpJoystickFlatHardKick", warp_default_config),                             # joint-PD control
-        ("Go2WarpOscJoystickFlatKp05HardKick", _make_osc_kp_config(0.5)),                 # fixed-soft OSC control
-        ("Go2WarpOscVarImpedanceHardKickFlat", warp_osc_var_default_config),              # scalar +4
-        ("Go2WarpOscVarImpedanceAxisHardKickFlat", warp_osc_var_per_axis_config),         # per-axis +12
-    ]:
-        _reg(_name, _hardkick(_base))
-    # (Removed 2026-06-09: the box-terrain "rough curriculum" envs —
-    # Go2Warp{,Osc,OscVar,OscVarAxis}RoughCurriculum — spawned the robot on the
-    # flat border so it never actually saw rough; superseded by the rough
-    # HEIGHTFIELD envs below. File go2_warp_osc_curriculum.py deleted with them.)
-    #
-    # Go2 on a rough HEIGHTFIELD floor (real continuous rough, borrowed from
-    # mjlab's noise recipe). Uni = uniform (jagged ~7 cm foot-scale). Gains match
-    # the flat runs so flat-trained policies zero-shot transfer (the headline).
-    # Terrain is config-driven now (RoughHF via terrain_from_config reads the
-    # rough_* keys these factories stamp), so the rough envs are just the plain
-    # controller class + a rough config — no rough mixin/subclass.
-    from jax_rl.envs.locomotion.go2_warp_osc_rough import (
-        joint_rough_config, osc_soft_rough_config,
-        var_rough_config, var_axis_rough_config,
-    )
-    def _bind_rough_cfg(fac, prof, amp):
-        return lambda: fac(prof, amp)
-    for _ctag, _rfac in [
-        ("Joint", joint_rough_config),
-        ("Osc", osc_soft_rough_config),
-        ("OscVar", var_rough_config),
-        ("OscVarAxis", var_axis_rough_config),
-    ]:
-        for _ptag, _prof, _amp in [("Uni", "uniform", 0.07)]:   # perlin "A" dropped (too smooth)
-            _reg(f"Go2Warp{_ctag}Rough{_ptag}", _bind_rough_cfg(_rfac, _prof, _amp))
-    # Variant: linear torque-speed actuator limit (approximates motor saturation).
-    # Playground's registry.load passes config_overrides=None by default, which
-    # would clobber a partial(..., config_overrides=...). Bake the flag into a
-    # dedicated default_config factory instead.
-    def _warp_default_config_torque_speed():
-        cfg = warp_default_config()
-        cfg.torque_speed_model = True
-        return cfg
-    _reg("Go2WarpJoystickFlatTorqueSpeed", _warp_default_config_torque_speed)
-    # Ablation: actor obs without accelerometer (state 45d, priv 119d) — an obs
-    # variant (not a controller swap), so it keeps its own class.
-    from jax_rl.envs.locomotion.go2_warp_joystick import WarpJoystickNoAccel
-    _reg("Go2WarpJoystickFlatNoAccel", warp_default_config, cls=WarpJoystickNoAccel)
-    # Prototype: flat-ground PosTrack — delta_xy_yaw obs + Lorentzian reward.
-    # Designed to share parameterization with Go2WarpSplitbeltPosTrack so
-    # cross-deploy is direct. See jax_rl/envs/locomotion/go2_warp_flat_postrack.py.
-    from jax_rl.envs.locomotion.go2_warp_flat_postrack import (
-        WarpFlatPosTrack as WarpFlatPosTrack,
-        default_config as warp_flat_postrack_default_config,
-    )
-    _reg("Go2WarpFlatPosTrackProto", warp_flat_postrack_default_config,
-         cls=WarpFlatPosTrack)
-    # Hardware-conservative variant: 45d state (no accel) + action_scale=0.25.
-    # Named "Unitree" for the parts that are partially aligned with
-    # unitree_rl_lab's Go2 deploy contract:
-    #   - matched: action_scale 0.25, no accelerometer in actor obs,
-    #     Kp=20/Kd=0.5 (already shared)
-    #   - NOT matched: explicit per-term obs scales (gyro×0.2, jvel×0.05);
-    #     we rely on running obs_norm for whitening instead. Reward scaling,
-    #     command sampling, and event randomization also differ.
-    # Closer-than-default to the working Unitree stack; not bitwise parity.
-    def _warp_default_config_unitree():
-        cfg = warp_default_config()
-        cfg.action_scale = 0.25
-        return cfg
-    _reg("Go2WarpJoystickUnitree", _warp_default_config_unitree, cls=WarpJoystickNoAccel)
-    from jax_rl.envs.locomotion.go2_warp_curriculum import WarpJoystickCurriculum
-    from jax_rl.envs.locomotion.go2_warp_curriculum import default_config as curriculum_default_config
-    _reg("Go2WarpJoystickCurriculum", curriculum_default_config, cls=WarpJoystickCurriculum)
-    def _curriculum_ts_default_config():
-        cfg = curriculum_default_config()
-        cfg.torque_speed_model = True
-        return cfg
-    _reg("Go2WarpJoystickCurriculumTorqueSpeed", _curriculum_ts_default_config,
-         cls=WarpJoystickCurriculum)
+    # All named Go2 Warp envs (joint-PD / OSC / variable-impedance / hardkick /
+    # physical / rough / curriculum / PosTrack) are declared as DATA — one
+    # EnvVariant per name — in go2_warp_variants.py, which also carries the
+    # research rationale for each family. Register them all here.
+    from jax_rl.envs.locomotion.go2_warp_variants import GO2_WARP_VARIANTS
+
+    def _resolve_cls(cls_name: str):
+        from jax_rl.envs.locomotion.go2_warp_joystick import WarpJoystick, WarpJoystickNoAccel
+        from jax_rl.envs.locomotion.go2_warp_curriculum import WarpJoystickCurriculum
+        from jax_rl.envs.locomotion.go2_warp_flat_postrack import WarpFlatPosTrack
+        return {"WarpJoystick": WarpJoystick, "WarpJoystickNoAccel": WarpJoystickNoAccel,
+                "WarpJoystickCurriculum": WarpJoystickCurriculum,
+                "WarpFlatPosTrack": WarpFlatPosTrack}[cls_name]
+
+    for _name, _v in GO2_WARP_VARIANTS.items():
+        _reg(_name, _v.config, cls=_resolve_cls(_v.cls))
+
     from jax_rl.envs.locomotion.go2_bongo_handstand import BongoHandstand
     from jax_rl.envs.locomotion.go2_bongo_handstand import default_config as bongo_default_config
     _reg("Go2BongoHandstand", bongo_default_config, cls=BongoHandstand,

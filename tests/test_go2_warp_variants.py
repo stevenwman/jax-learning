@@ -33,6 +33,20 @@ def test_variant_configs_match_legacy_registration():
         _deep_eq(legacy, new, path=name)
 
 
+def test_registry_uses_variant_cls():
+    from mujoco_playground import registry as pg_registry
+    import jax_rl.training.env_backends.mjx_backend  # noqa: F401
+    from jax_rl.envs.locomotion.go2_warp_variants import GO2_WARP_VARIANTS
+    # construction-only; pick the 6 non-default-cls + 2 default-cls names to keep runtime sane
+    check = {n: v for n, v in GO2_WARP_VARIANTS.items()
+             if v.cls != "WarpJoystick"} | {
+        "Go2WarpJoystickFlat": GO2_WARP_VARIANTS["Go2WarpJoystickFlat"],
+        "Go2WarpOscFlatSoftPhysical": GO2_WARP_VARIANTS["Go2WarpOscFlatSoftPhysical"]}
+    for name, v in check.items():
+        env = pg_registry.load(name)
+        assert type(env).__name__ == v.cls, f"{name}: {type(env).__name__} != {v.cls}"
+
+
 def test_joint_pd_rejects_cartesian_knobs():
     from jax_rl.envs.locomotion.go2_warp_variants import go2_config
     with pytest.raises(ValueError, match="cartesian controller"):

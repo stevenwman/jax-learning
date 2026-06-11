@@ -194,6 +194,14 @@ def _flat_postrack_config():
 def _kp_sweep_gains(scale):
     """Λ-OSC stiffness-sweep gains: kp×s, kd×√s (ζ stays ~critical).
 
+    Scaling kd as √s keeps the damping ratio ~critical (kd ≈ 2·√kp) — the
+    sweep varies the natural frequency / stiffness while holding ζ≈1. Tests
+    how the trained-policy gait (bounce, tracking, effort) varies with
+    stiffness, and whether spring stiffness drives the pogo (stiffer = more
+    stored spring energy). The open-loop hold-probe showed a static
+    weight-bearing floor near s≈0.5 (no gravity FF); a trained policy may
+    stand below it via active stance.
+
     MUST stay computed expressions (not rounded literals) to match the legacy
     factory bit-for-bit — e.g. Kp05 kd ≈ [77.78, 77.78, 91.92], which is NOT
     the SoftPhysical literals [78, 78, 92]."""
@@ -209,28 +217,51 @@ _SOFT_OSC_GAINS = dict(            # s=0.5 sweep gains ROUNDED — literal by de
 )
 
 def _cfg(**knobs):
-    """Bind go2_config knobs into a zero-arg config callable."""
+    """Bind go2_config knobs into a zero-arg config callable.
+
+    Every knob is BAKED into the factory (no config_overrides): Playground's
+    registry.load passes config_overrides=None by default, which would clobber
+    a partial(..., config_overrides=...) — so per-variant flags must live in a
+    dedicated default_config factory."""
     return functools.partial(go2_config, **knobs)
 
 
 GO2_WARP_VARIANTS = {
     # ── Joint-PD family ──────────────────────────────────────────────────
     "Go2WarpJoystickFlat": EnvVariant(config=_cfg()),
+    # Linear torque-speed actuator limit (approximates motor saturation).
     "Go2WarpJoystickFlatTorqueSpeed": EnvVariant(config=_cfg(motor="torque_speed")),
     "Go2WarpJoystickFlatNoAccel": EnvVariant(
         config=_cfg(), cls="WarpJoystickNoAccel",
-        notes="actor obs without accelerometer (state 45d)"),
+        notes="actor obs without accelerometer (state 45d, priv 119d) — an "
+              "obs variant (not a controller swap), so it keeps its own class"),
+    # Hardware-conservative variant, named "Unitree" for the parts partially
+    # aligned with unitree_rl_lab's Go2 deploy contract:
+    #   - matched: action_scale 0.25, no accelerometer in actor obs,
+    #     Kp=20/Kd=0.5 (already shared)
+    #   - NOT matched: explicit per-term obs scales (gyro×0.2, jvel×0.05);
+    #     we rely on running obs_norm for whitening instead. Reward scaling,
+    #     command sampling, and event randomization also differ.
+    # Closer-than-default to the working Unitree stack; not bitwise parity.
     "Go2WarpJoystickUnitree": EnvVariant(
         config=_cfg(action_scale=0.25), cls="WarpJoystickNoAccel",
         notes="hardware-conservative: no-accel obs + action_scale 0.25"),
-    "Go2WarpJoystickFlatPhysical": EnvVariant(config=_cfg(motor="physical")),
-    "Go2WarpJoystickFlatHardKick": EnvVariant(config=_cfg(push=(0.5, 2.5))),
     # ── Fixed-gain OSC family ────────────────────────────────────────────
+    # Cartesian impedance / OSC: the 12-d action is four foot-position targets
+    # (trunk frame) driven by a per-leg operational-space controller instead of
+    # joint PD. Same task / obs / reward as the joint-PD joystick — the
+    # controller is picked FROM the config (osc block present), not the class.
     "Go2WarpOscJoystickFlat": EnvVariant(config=_cfg(controller="osc")),
+    # Jᵀ Cartesian-impedance ablation: use_op_space_inertia=False — no Λ
+    # unit-mass normalization, real N/m gains, feet keep their natural
+    # anisotropic inertia (heavy along the leg). Tests whether Λ's unit-mass
+    # feet are what drive the bounding/pogo gait of the Λ-OSC variant. Gains
+    # hold-probed (N/m, not the acceleration-gains of the Λ variant).
     "Go2WarpOscJoystickFlatJt": EnvVariant(
         config=_cfg(controller="osc", use_op_space_inertia=False,
                     osc_kp=[1500.0, 1500.0, 2500.0], osc_kd=[60.0, 60.0, 80.0]),
         notes="Jᵀ-impedance ablation: real N/m gains, no Λ"),
+    # Stiffness sweep (Λ-OSC): see _kp_sweep_gains for the design rationale.
     "Go2WarpOscJoystickFlatKp025": EnvVariant(
         config=_cfg(controller="osc", **_kp_sweep_gains(0.25))),
     "Go2WarpOscJoystickFlatKp05": EnvVariant(
@@ -239,31 +270,71 @@ GO2_WARP_VARIANTS = {
         config=_cfg(controller="osc", **_kp_sweep_gains(2.0))),
     "Go2WarpOscJoystickFlatKp4": EnvVariant(
         config=_cfg(controller="osc", **_kp_sweep_gains(4.0))),
-    "Go2WarpOscJoystickFlatKp05HardKick": EnvVariant(
-        config=_cfg(controller="osc", push=(0.5, 2.5), **_kp_sweep_gains(0.5))),
-    "Go2WarpOscFlatSoftPhysical": EnvVariant(
-        config=_cfg(controller="osc", motor="physical", **_SOFT_OSC_GAINS)),
     # ── Variable-impedance family ────────────────────────────────────────
+    # Action grows to 16-d (12 foot targets + 4 per-foot stiffness scalars);
+    # each maps log-spaced to s∈[0.25,2] scaling that foot's baseline Cartesian
+    # gains (kd∝√s). Policy learns to stiffen stance / soften swing legs.
     "Go2WarpOscVarImpedanceFlat": EnvVariant(config=_cfg(controller="var_impedance")),
     "Go2WarpOscVarImpedanceAxisFlat": EnvVariant(
-        config=_cfg(controller="var_impedance", stiffness_granularity="per_axis")),
+        config=_cfg(controller="var_impedance", stiffness_granularity="per_axis"),
+        notes="per-foot-per-axis stiffness (+12 → action 24): policy picks "
+              "vertical-stiff / tangential-soft per leg"),
+    # ── Flat + PHYSICAL motor model (zero-shot-from-flat experiment) ─────
+    # Same controllers/gains as the rough-physical eval envs, but on FLAT
+    # ground. Policies train WITH the physical motor model (DC-motor
+    # torque-speed curve + mjlab per-joint armature) then zero-shot transfer
+    # onto rough-physical (Go2Warp*RoughUni). Mirrors the original zero-shot
+    # protocol, now with the motor model held consistent across train + eval.
+    "Go2WarpJoystickFlatPhysical": EnvVariant(
+        config=_cfg(motor="physical"), notes="joint-PD"),
+    "Go2WarpOscFlatSoftPhysical": EnvVariant(
+        config=_cfg(controller="osc", motor="physical", **_SOFT_OSC_GAINS),
+        notes="fixed-soft OSC (kp/kd mirror the rough soft gains, s=0.5)"),
     "Go2WarpOscVarFlatPhysical": EnvVariant(
-        config=_cfg(controller="var_impedance", motor="physical")),
+        config=_cfg(controller="var_impedance", motor="physical"),
+        notes="variable per-foot (locked critical)"),
     "Go2WarpOscVarAxisFlatPhysical": EnvVariant(
         config=_cfg(controller="var_impedance", stiffness_granularity="per_axis",
-                    motor="physical")),
+                    motor="physical"),
+        notes="variable per-axis"),
     "Go2WarpOscVarDampingFlatPhysical": EnvVariant(
         config=_cfg(controller="var_impedance", damping_action=True,
-                    motor="physical")),
+                    motor="physical"),
+        notes="decoupled K+D (per-foot)"),
     "Go2WarpOscVarDampingAxisFlatPhysical": EnvVariant(
         config=_cfg(controller="var_impedance", stiffness_granularity="per_axis",
-                    damping_action=True, motor="physical")),
+                    damping_action=True, motor="physical"),
+        notes="decoupled K+D (per-axis)"),
+    # ── Hard-kick comparison ladder ──────────────────────────────────────
+    # DOMAIN-RANDOMIZED kick strength: per-episode kick bound ~ U[0.5, 2.5] m/s
+    # (into the ≥2 m/s pure-impedance failure regime), vs the default fixed
+    # ±0.75. Identical DR'd kick applied to conventional joint-PD, fixed-soft
+    # OSC, scalar variable impedance, and per-axis variable impedance. Each
+    # step isolates one factor — (a) does Cartesian impedance help disturbance
+    # rejection at all (vs joint-PD), (b) does stiffness modulation help (vs
+    # fixed), (c) does per-axis beat scalar — i.e. does the policy learn to
+    # stiffen on demand to reject hard disturbances.
+    "Go2WarpJoystickFlatHardKick": EnvVariant(
+        config=_cfg(push=(0.5, 2.5)), notes="joint-PD control"),
+    "Go2WarpOscJoystickFlatKp05HardKick": EnvVariant(
+        config=_cfg(controller="osc", push=(0.5, 2.5), **_kp_sweep_gains(0.5)),
+        notes="fixed-soft OSC control"),
     "Go2WarpOscVarImpedanceHardKickFlat": EnvVariant(
-        config=_cfg(controller="var_impedance", push=(0.5, 2.5))),
+        config=_cfg(controller="var_impedance", push=(0.5, 2.5)),
+        notes="scalar +4"),
     "Go2WarpOscVarImpedanceAxisHardKickFlat": EnvVariant(
         config=_cfg(controller="var_impedance", stiffness_granularity="per_axis",
-                    push=(0.5, 2.5))),
-    # ── Rough heightfield (physical motor; gains match flat for zero-shot) ──
+                    push=(0.5, 2.5)),
+        notes="per-axis +12"),
+    # ── Rough HEIGHTFIELD floor ──────────────────────────────────────────
+    # Real continuous rough, borrowed from mjlab's noise recipe. Uni = uniform
+    # (jagged ~7 cm foot-scale; perlin "A" dropped — too smooth). Gains match
+    # the flat runs so flat-trained policies zero-shot transfer (the headline).
+    # Terrain is config-driven (RoughHF via terrain_from_config reads the
+    # rough_* keys), so the rough envs are just the plain controller class + a
+    # rough config — no rough mixin/subclass. (The earlier box-terrain "rough
+    # curriculum" envs were removed 2026-06-09: they spawned the robot on the
+    # flat border so it never actually saw rough; superseded by these.)
     "Go2WarpJointRoughUni": EnvVariant(
         config=_cfg(motor="physical", terrain=("uniform", 0.07))),
     "Go2WarpOscRoughUni": EnvVariant(
@@ -283,5 +354,8 @@ GO2_WARP_VARIANTS = {
         config=_curriculum_torque_speed_config, cls="WarpJoystickCurriculum",
         train={"reset_mode": "per_step"}),
     "Go2WarpFlatPosTrackProto": EnvVariant(
-        config=_flat_postrack_config, cls="WarpFlatPosTrack"),
+        config=_flat_postrack_config, cls="WarpFlatPosTrack",
+        notes="prototype flat-ground PosTrack — delta_xy_yaw obs + Lorentzian "
+              "reward; shares parameterization with Go2WarpSplitbeltPosTrack "
+              "so cross-deploy is direct"),
 }
