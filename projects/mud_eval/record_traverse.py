@@ -27,7 +27,8 @@ CKPT = sys.argv[1]
 NF = int(sys.argv[2]) if len(sys.argv) > 2 else 120
 SPAWN_Y = float(sys.argv[3]) if len(sys.argv) > 3 else -1.0
 SPAWN_Z = float(sys.argv[4]) if len(sys.argv) > 4 else 0.10
-TAG = "traverse"
+YAW = float(sys.argv[5]) if len(sys.argv) > 5 else 0.5   # 0.5=face +Y (thick-first); -0.5=face -Y (thin-first)
+TAG = sys.argv[6] if len(sys.argv) > 6 else "traverse"
 OUT = HERE / "recordings"; OUT.mkdir(exist_ok=True)
 
 _meta = json.load(open(Path(CKPT) / "meta.json"))
@@ -38,7 +39,7 @@ mud_cpu.enable()                          # CPU backend -> walkable ground
 ex.Go2Policy = MudJaxPolicy
 cfg = patched_config(CKPT, HERE / "vendor/newton/examples/mpm/mpm_go2_multi/config.yaml",
                      "/tmp/mud_cfg_trav.yaml", mjcf_model=str(HERE / "models/unitree_go2/go2.xml"),
-                     spawn_xyz=(0.0, SPAWN_Y, SPAWN_Z), yaw_pi_mult=0.5)   # face +Y
+                     spawn_xyz=(0.0, SPAWN_Y, SPAWN_Z), yaw_pi_mult=YAW)
 sys.argv = ["trav", "--viewer", "gl", "--headless", "--num-frames", str(NF),
             "--policy-path", CKPT, "--config", cfg, "--voxel-size", "0.05", "--max-iterations", "8"]
 parser = newton.examples.create_parser()
@@ -56,9 +57,9 @@ parser.add_argument("--plot-forces-mode", choices=["magnitude", "xyz"], default=
 viewer, args = newton.examples.init(parser)
 example = ex.Example(viewer, args)
 mud_costep.apply(example)
-example._auto_forward = True               # forward command (+X body = +Y world here)
-# side camera looking across the mud strip (mud spans y[-1,3], x[-1,1]); robot walks +Y
-viewer.set_camera(wp.vec3(4.0, 1.0, 1.3), -20.0, 180.0)
+example._auto_forward = True               # forward command (body +X)
+# wide side camera framing the whole strip (mud y[0,3], runway either end); robot walks along Y
+viewer.set_camera(wp.vec3(5.5, 1.5, 2.1), -26.0, 180.0)
 
 jq = np.asarray(example.state_0.joint_q.numpy())
 print(f"[TRAV] spawn base xyz={jq[:3].round(2)} facing +Y | walking into mud y0->y3", flush=True)
