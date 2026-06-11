@@ -279,6 +279,7 @@ failure, DR doesn't extrapolate).
 - **Read the XML before numerical tests** — 20x damping diff found in 5 lines of XML, after hours of sim2sim experiments
 - **MJX and CPU MuJoCo diverge over time** — not f32/f64 (tested), not settings. Bursty contact solver divergence at foot contact boundaries. DR + kicks for robustness.
 - **Variable impedance MATTERS on soft contact (Newton mud)** — zero-shot on graded mud, var-impedance penetrates thick mud ~45% deeper than joint-PD and FIXED-soft OSC (which tie). Stiffenable compliance wins; fixed doesn't. But flat-trained → all still bog; train on mud/mud-DR next. See `newton_mud_eval.md`.
+- **Silent preset fallback trained OSC envs without DR for weeks** — preset lookups for a known env family should RAISE on unknown names; variants-as-data (one declaration per env: config+train+cls in `go2_warp_variants.py`) killed the patch-chain traceability problem. Pre-2026-06-11 OSC runs not comparable to new ones.
 
 ## [Newton MPM Mud Eval](lessons/newton_mud_eval.md) — soft-terrain eval harness
 

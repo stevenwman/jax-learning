@@ -306,3 +306,34 @@ extracting the *commanded* stiffness over a rollout told the real story:
   thick mud. The controller can't fix what training didn't prepare for → training on
   mud / mud-like DR (randomized ground compliance, sinking, drag) is the next lever,
   with the Newton harness as the measuring stick.
+
+---
+
+## Silent Preset Fallback Trained OSC Envs Without DR for Weeks (2026-06-11)
+
+**What happened:** the preset getters in `env_presets.py` only knew the
+older Go2 names. Unknown `Go2Warp*` names (every OSC/physical/rough env)
+fell through silently to the bare base config — so all OSC envs trained
+with **no DomainRandWrapper** (`reset_mode` default) and
+`eval_every_n_episodes=5000` (≈zero mid-run evals). Nothing crashed;
+training "worked"; the regime was just wrong for weeks. Discovered only
+during the 2026-06-11 variants audit.
+
+**Fix (two rules):**
+1. **Preset lookups for a known env family should RAISE on unknown
+   names.** All 6 getters now route `Go2Warp*` through
+   `_resolve_go2_variant`, which raises `ValueError` (with the known-names
+   list) instead of falling back. A fallback default is correct for
+   genuinely open-ended env names; for a closed family it is a silent
+   misconfiguration machine.
+2. **Variants-as-data kills the patch-chain traceability problem.** One
+   declaration per env (`EnvVariant`: config knobs + host class + train
+   overrides + notes) in `go2_warp_variants.py`; backend registration and
+   preset resolution both loop the same table. "What does env X train
+   with" is now one table lookup instead of tracing 3–4 subclass /
+   config-factory files — which is exactly how the no-DR bug stayed
+   invisible.
+
+**Cut date:** OSC runs trained before 2026-06-11 are NOT comparable to
+runs after (no DR vs per_step DR + eval-every-500). Journal:
+`journals/2026-06-11-env-variants-refactor.md`.

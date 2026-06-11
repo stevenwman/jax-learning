@@ -321,8 +321,11 @@ INSIDE the substep loop (read state → J/M from solver.mj_data → τ → contr
 → solver.step, per sim_dt step). So OSC needs a per-substep hook, NOT the
 once/frame compute_joint_targets interface. Subclass/override the example step loop.
 
-**Soft OSC ckpt spec — FULLY PINNED** (`oscflatsoftphysical`, mjx_backend.py:108
-`_osc_soft_physical` + osc defaults in go2_warp_osc_joystick.py:36-50):
+**Soft OSC ckpt spec — FULLY PINNED** (`Go2WarpOscFlatSoftPhysical` declared in
+`jax_rl/envs/locomotion/go2_warp_variants.py` (OSC section, `_SOFT_OSC_GAINS`);
+OSC mechanics + gain defaults live on the `OSC` class in
+`jax_rl/envs/locomotion/go2_warp_components.py` — the legacy
+`go2_warp_osc_joystick.py` was deleted 2026-06-11):
 `osc.kp=[1500,1500,2000]`, `osc.kd=[78,78,92]` (Cartesian x,y,z, shared across legs),
 `use_op_space_inertia=True` (Λ/Khatib → needs mj_fullM), `target_mode="abs_body"`
 (target = nominal_foot + action_delta, static — NOT recomputed each substep; only

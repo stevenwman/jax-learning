@@ -173,7 +173,7 @@ jax-learning/
 │   └── record_video.py       #   Loads any checkpoint, renders rollout + _traj.npz
 ├── scripts/archive/train_offpolicy.py # LEGACY: unified dispatcher, kept as reference only (alongside live_viewer.py, record_video_cpu.py)
 ├── jax_rl/algos/             # ppo.py, sac.py, td3.py, fast_td3.py, fast_sac.py, flash_sac.py, ppo_contraction.py, tdmpc2.py
-├── jax_rl/envs/locomotion/   # go2_warp_base.py, go2_warp_joystick.py, go2_warp_curriculum.py, go2_bongo_handstand.py, go2_constants.py, go2_rendering.py, go2_sensors.py (MJX locomotion files deleted 2026-04-09)
+├── jax_rl/envs/locomotion/   # go2_warp_base.py, go2_warp_joystick.py, go2_warp_variants.py (EnvVariant table — ALL 29 Go2 Warp env declarations), go2_warp_components.py (Actuation/Terrain/Controller incl. OSC), go2_osc.py, go2_warp_curriculum.py, go2_bongo_handstand.py, go2_constants.py, go2_rendering.py, go2_sensors.py (MJX locomotion files deleted 2026-04-09; go2_warp_osc_{joystick,var_impedance,rough}.py deleted 2026-06-11 — OSC envs are config presets over WarpJoystick)
 ├── jax_rl/configs/           # train_config.py, *_config.py, env_presets.py, flash_sac_config.py
 ├── jax_rl/networks/          # builders.py (Actor/DeterministicActor/VCritic), flash_blocks.py, activations.py, distributions.py, encoders/, heads/
 ├── jax_rl/utils/             # reward_scaling.py, normalization.py, frame_stack.py, distributional.py, eval.py, export.py, rollout.py
@@ -194,10 +194,15 @@ Training wrappers (Vmap, Episode, AutoReset, DR) are vendored in `jax_rl/envs/wr
 ### Config system
 Each algo has its own config dataclass. Presets in `env_presets.py` return `(TrainConfig, AlgoConfig)` tuples. PPO-specific fields live in `PPOConfig`, not `TrainConfig`. CLI overrides via `dataclasses.replace(cfg, lr=args.lr)`.
 
+**Go2 Warp names resolve from the variants table** (2026-06-11): all 6 preset getters route `Go2Warp*` (non-splitbelt) names through `_resolve_go2_variant`, which reads `GO2_WARP_VARIANTS` in `jax_rl/envs/locomotion/go2_warp_variants.py` and applies each variant's train/algo overrides. **Unknown `Go2Warp*` names RAISE** `ValueError` (previously they fell back silently to the base config — the bug that trained OSC envs without DR for weeks). `mjx_backend.py` registers Go2 envs by looping the same table. Variant configs are snapshot-pinned in `tests/data/go2_warp_variants_snapshot.json` (regen one-liner in `tests/test_go2_warp_variants.py`).
+
 ### Checkpoint format
 Every checkpoint contains: `meta.json` (full config), `metrics.csv` (training curve), `actor_params.npy` (inference), `orbax/` (training resume). `load_actor_for_inference()` loads just actor_params.npy — no orbax needed.
 
 ### Available Go2 envs
+
+**29 Go2 Warp variants are declared in `jax_rl/envs/locomotion/go2_warp_variants.py`** — that table is the single source of truth (one `EnvVariant` per env: config knobs + host class + train overrides + research notes). Families: joint-PD (Flat/TorqueSpeed/NoAccel/Unitree), fixed-gain OSC (+Jᵀ ablation, Kp sweep), variable impedance (per-foot/per-axis, ±damping), flat-physical motor, hard-kick ladder, rough heightfield, curriculum, PosTrack proto. **The 21 OSC / physical-motor / rough variants default to `reset_mode=per_step` (DR ON) + `eval_every_n_episodes=500` since 2026-06-11** — OSC runs from before that date trained without DR (silent preset fallback) and are not comparable. Highlights:
+
 | Env name | Terrain | Actuator | Notes |
 |----------|---------|----------|-------|
 | `Go2WarpJoystickFlat` | Flat | Ideal PD | Primary benchmark env |

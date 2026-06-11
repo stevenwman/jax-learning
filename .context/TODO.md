@@ -36,6 +36,33 @@ Worktree `go2-osc-impedance`. Spec + journal + lesson written.
       config components (Actuation/Terrain on MjSpec/Controller). Commits
       4c5e5fa·8908b3d·0fe5a40·50b78b7; behaviour-preserving (sanity 36/36 +
       within-run traj-equiv per stage); names unchanged. Spec status IMPLEMENTED.
+- [x] **Variants-as-data refactor (2026-06-11)** — every Go2 Warp env is ONE
+      `EnvVariant` declaration in `go2_warp_variants.py` (config via
+      `go2_config()` + cls + train overrides + notes); mjx_backend Go2 block is
+      a 6-line loop; preset getters resolve Go2 names from the table and RAISE
+      on unknown `Go2Warp*` (silent fallback dead); 3 legacy OSC modules +
+      `WarpOscJoystick`/`WarpOscVarImpedance` classes deleted; OSC mechanics +
+      gains state fully moved onto the `OSC` component. Snapshot pin
+      `tests/data/go2_warp_variants_snapshot.json`. Commits af4bf7f..d15d026.
+      **⚠️ DR cut date 2026-06-11:** 21 OSC/physical/rough variants now default
+      to per_step DR + eval_every_n_episodes=500 — the silent fallback had been
+      training OSC envs with NO DR and ~zero mid-run evals, so pre-cut OSC runs
+      are NOT comparable to new ones. Smoke (200k FastSAC OscFlatSoftPhysical):
+      best eval 87.5, 17 evals, ~600+ sps. See journal
+      `2026-06-11-env-variants-refactor.md`.
+- [ ] **Fix 6 pre-existing test failures** (not from the variants refactor):
+      (1) `test_go2_warp_curriculum_env.py::test_generated_scene_file_written`
+      (GPU-marked); (2) `tests/manipulation/factory/test_factory_action_chain.py`
+      ×2 (`denormalize` unexpected kwarg `unidirectional_rot`); (3)
+      `tests/test_pusht_parity.py` ×3 (pymunk `add_collision_handler` API drift
+      / gym_pusht import).
+- [ ] **Migrate G1/splitbelt/bongo/factory to the variants pattern** if it
+      proves out on Go2 — same EnvVariant table + raise-on-unknown preset
+      resolution per env family.
+- [ ] **Consider retraining OSC baselines under the new DR defaults** —
+      anything OSC trained pre-2026-06-11 (incl. the headline rough/physical
+      comparisons and mud-eval ckpts) trained without DR; comparisons against
+      new-default runs need refreshed baselines.
 - [x] **Newton MPM mud eval (zero-shot soft terrain)** — built `projects/mud_eval/`
       (self-contained: vendored Newton 0.1.3 + dedicated venv; real jax_rl actor
       drop-in + obs adapter). Migrated to the trained go2.xml (add_mjcf), co-stepped
