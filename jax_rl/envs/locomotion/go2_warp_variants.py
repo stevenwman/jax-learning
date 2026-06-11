@@ -50,8 +50,10 @@ def go2_config(
     if motor not in ("ideal", "torque_speed", "physical"):
         raise ValueError(f"unknown motor: {motor!r}")
     if controller == "joint_pd" and (
-        osc_kp is not None or osc_kd is not None
-        or use_op_space_inertia is not True or target_mode != "abs_body"
+        osc_kp is not None 
+        or osc_kd is not None
+        or use_op_space_inertia is not True 
+        or target_mode != "abs_body"
     ):
         raise ValueError(
             "osc_kp/osc_kd/use_op_space_inertia/target_mode require a "
@@ -370,6 +372,13 @@ GO2_WARP_VARIANTS = {
         config=_cfg(controller="var_impedance", stiffness_granularity="per_axis",
                     motor="physical", terrain=("uniform", 0.07)),
         train=_DR_TRAIN),
+    "Go2WarpOscVarDampingAxisRoughUni": EnvVariant(
+        config=_cfg(controller="var_impedance", stiffness_granularity="per_axis",
+                    damping_action=True, motor="physical",
+                    terrain=("uniform", 0.07)),
+        train=_DR_TRAIN,
+        notes="decoupled K+D per-axis on rough — zero-shot eval target for the "
+              "VarDampingAxisFlatPhysical DR-era ckpts (added 2026-06-11)"),
     # ── Env-module configs (lazy imports) ────────────────────────────────
     "Go2WarpJoystickCurriculum": EnvVariant(
         config=_curriculum_config, cls="WarpJoystickCurriculum",

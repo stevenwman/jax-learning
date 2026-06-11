@@ -50,6 +50,7 @@ Select an algorithm tab below to see its presets. Defaults (gamma=0.99, reward_s
     | Go2WarpOscVarAxisFlatPhysical | 4,096 | 100M | 3e-04 | 20 | 4 | 0.01 | gamma=0.97, num_updates_per_batch=4, policy_hidden_dim=(512, 256, 128), value_hidden_dim=(512, 256, 128), max_grad_norm=1, eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpOscVarAxisRoughUni | 4,096 | 100M | 3e-04 | 20 | 4 | 0.01 | gamma=0.97, num_updates_per_batch=4, policy_hidden_dim=(512, 256, 128), value_hidden_dim=(512, 256, 128), max_grad_norm=1, eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpOscVarDampingAxisFlatPhysical | 4,096 | 100M | 3e-04 | 20 | 4 | 0.01 | gamma=0.97, num_updates_per_batch=4, policy_hidden_dim=(512, 256, 128), value_hidden_dim=(512, 256, 128), max_grad_norm=1, eval_every_n_episodes=500, reset_mode=per_step |
+    | Go2WarpOscVarDampingAxisRoughUni | 4,096 | 100M | 3e-04 | 20 | 4 | 0.01 | gamma=0.97, num_updates_per_batch=4, policy_hidden_dim=(512, 256, 128), value_hidden_dim=(512, 256, 128), max_grad_norm=1, eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpOscVarDampingFlatPhysical | 4,096 | 100M | 3e-04 | 20 | 4 | 0.01 | gamma=0.97, num_updates_per_batch=4, policy_hidden_dim=(512, 256, 128), value_hidden_dim=(512, 256, 128), max_grad_norm=1, eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpOscVarFlatPhysical | 4,096 | 100M | 3e-04 | 20 | 4 | 0.01 | gamma=0.97, num_updates_per_batch=4, policy_hidden_dim=(512, 256, 128), value_hidden_dim=(512, 256, 128), max_grad_norm=1, eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpOscVarImpedanceAxisFlat | 4,096 | 100M | 3e-04 | 20 | 4 | 0.01 | gamma=0.97, num_updates_per_batch=4, policy_hidden_dim=(512, 256, 128), value_hidden_dim=(512, 256, 128), max_grad_norm=1, eval_every_n_episodes=500, reset_mode=per_step |
@@ -94,6 +95,7 @@ Select an algorithm tab below to see its presets. Defaults (gamma=0.99, reward_s
     | Go2WarpOscVarAxisFlatPhysical | 128 | 5M | 0.001 | 512 | 8 | eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpOscVarAxisRoughUni | 128 | 5M | 0.001 | 512 | 8 | eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpOscVarDampingAxisFlatPhysical | 128 | 5M | 0.001 | 512 | 8 | eval_every_n_episodes=500, reset_mode=per_step |
+    | Go2WarpOscVarDampingAxisRoughUni | 128 | 5M | 0.001 | 512 | 8 | eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpOscVarDampingFlatPhysical | 128 | 5M | 0.001 | 512 | 8 | eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpOscVarFlatPhysical | 128 | 5M | 0.001 | 512 | 8 | eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpOscVarImpedanceAxisFlat | 128 | 5M | 0.001 | 512 | 8 | eval_every_n_episodes=500, reset_mode=per_step |
@@ -136,6 +138,7 @@ Select an algorithm tab below to see its presets. Defaults (gamma=0.99, reward_s
     | Go2WarpOscVarAxisFlatPhysical | 128 | 5M | 3e-04 | 256 | 4 | eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpOscVarAxisRoughUni | 128 | 5M | 3e-04 | 256 | 4 | eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpOscVarDampingAxisFlatPhysical | 128 | 5M | 3e-04 | 256 | 4 | eval_every_n_episodes=500, reset_mode=per_step |
+    | Go2WarpOscVarDampingAxisRoughUni | 128 | 5M | 3e-04 | 256 | 4 | eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpOscVarDampingFlatPhysical | 128 | 5M | 3e-04 | 256 | 4 | eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpOscVarFlatPhysical | 128 | 5M | 3e-04 | 256 | 4 | eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpOscVarImpedanceAxisFlat | 128 | 5M | 3e-04 | 256 | 4 | eval_every_n_episodes=500, reset_mode=per_step |
@@ -178,6 +181,7 @@ Select an algorithm tab below to see its presets. Defaults (gamma=0.99, reward_s
     | Go2WarpOscVarAxisFlatPhysical | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97, noise_min=0.01, noise_max=0.05, eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpOscVarAxisRoughUni | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97, noise_min=0.01, noise_max=0.05, eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpOscVarDampingAxisFlatPhysical | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97, noise_min=0.01, noise_max=0.05, eval_every_n_episodes=500, reset_mode=per_step |
+    | Go2WarpOscVarDampingAxisRoughUni | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97, noise_min=0.01, noise_max=0.05, eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpOscVarDampingFlatPhysical | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97, noise_min=0.01, noise_max=0.05, eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpOscVarFlatPhysical | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97, noise_min=0.01, noise_max=0.05, eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpOscVarImpedanceAxisFlat | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97, noise_min=0.01, noise_max=0.05, eval_every_n_episodes=500, reset_mode=per_step |
@@ -223,6 +227,7 @@ Select an algorithm tab below to see its presets. Defaults (gamma=0.99, reward_s
     | Go2WarpOscVarAxisFlatPhysical | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97, eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpOscVarAxisRoughUni | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97, eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpOscVarDampingAxisFlatPhysical | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97, eval_every_n_episodes=500, reset_mode=per_step |
+    | Go2WarpOscVarDampingAxisRoughUni | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97, eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpOscVarDampingFlatPhysical | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97, eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpOscVarFlatPhysical | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97, eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpOscVarImpedanceAxisFlat | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97, eval_every_n_episodes=500, reset_mode=per_step |
@@ -267,6 +272,7 @@ Select an algorithm tab below to see its presets. Defaults (gamma=0.99, reward_s
     | Go2WarpOscVarAxisFlatPhysical | 1,024 | 100M | 3e-04 | 2,048 | 8 | gamma=0.97, eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpOscVarAxisRoughUni | 1,024 | 100M | 3e-04 | 2,048 | 8 | gamma=0.97, eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpOscVarDampingAxisFlatPhysical | 1,024 | 100M | 3e-04 | 2,048 | 8 | gamma=0.97, eval_every_n_episodes=500, reset_mode=per_step |
+    | Go2WarpOscVarDampingAxisRoughUni | 1,024 | 100M | 3e-04 | 2,048 | 8 | gamma=0.97, eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpOscVarDampingFlatPhysical | 1,024 | 100M | 3e-04 | 2,048 | 8 | gamma=0.97, eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpOscVarFlatPhysical | 1,024 | 100M | 3e-04 | 2,048 | 8 | gamma=0.97, eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpOscVarImpedanceAxisFlat | 1,024 | 100M | 3e-04 | 2,048 | 8 | gamma=0.97, eval_every_n_episodes=500, reset_mode=per_step |
