@@ -14,6 +14,21 @@ Self-sufficient: vendored Newton + dedicated venv; no dependency on the
 
 ---
 
+## RESULT — compliant-vs-stiff on graded mud (thick-first traversal, 280 frames)
+
+Trained Go2 policies walked from flat ground (use_mujoco_cpu) into the thick mud
+(densest, ρ2000). Penetration depth (y into thick mud) + posture (torso z):
+
+| policy | y reached | torso z | notes |
+|---|---|---|---|
+| joint-PD (baseline) | 0.226 | 0.23 | bogs at the thick-mud edge |
+| OSC soft (fixed kp[1500,1500,2000]) | 0.222 | 0.27 | same penetration, higher/springier posture |
+| **var-impedance per-foot** (kp up to [6000,6000,8000]) | **0.322** | **0.29** | **~45% deeper, still advancing — adaptive stiffening WINS** |
+
+The variable-impedance policy (commands per-foot stiffness s∈[0.25,2]× base) pushes
+~0.1 m further into the thick mud than joint-PD / soft-OSC and holds the highest
+posture. Videos: traverse{,_osc,_var}_thick.mp4 + the thin-first ramps.
+
 ## STATUS (2026-06-10)
 
 | stage | state |
@@ -25,7 +40,7 @@ Self-sufficient: vendored Newton + dedicated venv; no dependency on the
 | **Co-step robot+MPM at sim_dt (250 Hz), per-substep coupling** | ✅ DONE — M1 re-verified stands z~0.21 (mud_costep.py) |
 | **Walkable ground (use_mujoco_cpu) + flat-ground→mud traversal VIDEO** | ✅ DONE — joint-PD walks ground, BOGS at thick-mud edge (record_traverse.py) |
 | M2 OSC controller (mjData Jacobian → Jᵀ·Λ·F torque injection) | pending — now natively wired to go2.xml |
-| M3 variable-impedance (stiffness-tail decode) | pending |
+| **M3 variable-impedance (stiffness-tail decode)** | ✅ DONE — per-foot var penetrates thick mud ~45% deeper (the win) |
 
 ---
 

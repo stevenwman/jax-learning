@@ -63,15 +63,24 @@ viewer, args = newton.examples.init(parser)
 example = ex.Example(viewer, args)
 mud_costep.apply(example)
 if OSC:                                     # wire the operational-space controller (PD zeroed in config)
+    _ad = int(_meta["action_dim"])
+    # variable impedance (M3) when action > 12: tail decodes per-foot/per-axis
+    # stiffness (+ damping). base gains [3000,3000,4000]/[110,110,130], s in [0.25,2].
+    _var = None
+    if _ad > 12:
+        _gran = "per_foot" if _ad in (16, 20) else "per_axis"
+        _var = dict(granularity=_gran, damping_action=(_ad in (20, 36)),
+                    s_min=0.25, s_max=2.0, z_min=0.5, z_max=2.0,
+                    kp_base=[3000.0, 3000.0, 4000.0], kd_base=[110.0, 110.0, 130.0])
     example.control.joint_f = wp.zeros(int(example.model.joint_dof_count), dtype=wp.float32,
                                        device=example.model.device)
     _ctrl = mud_osc.MudOscController(example.solver, OSC_KP, OSC_KD, OSC_TLIM,
                                      use_op_space_inertia=True, ridge=1e-4,
-                                     home_joints=_meta["control"]["default_pose_policy"])
+                                     home_joints=_meta["control"]["default_pose_policy"], var=_var)
     example.policy.osc_mode = True
     mud_costep.set_substep_control(lambda exmp: exmp.control.joint_f.assign(
-        _ctrl.compute_joint_f(exmp.state_0, exmp.policy.last_deltas)))
-    print("[TRAV] OSC controller wired (per-substep joint_f, PD off)", flush=True)
+        _ctrl.compute_joint_f(exmp.state_0, exmp.policy.last_deltas, exmp.policy.last_act)))
+    print(f"[TRAV] OSC wired ({'var-' + _var['granularity'] if _var else 'fixed-soft'}, PD off)", flush=True)
 example._auto_forward = True               # forward command (body +X)
 # wide side camera framing the whole strip (mud y[0,3], runway either end); robot walks along Y
 viewer.set_camera(wp.vec3(5.5, 1.5, 2.1), -26.0, 180.0)

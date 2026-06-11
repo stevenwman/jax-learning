@@ -57,6 +57,32 @@ def sync_mjdata(mj_data, joint_q, joint_qd):
     mj_data.qvel[6:6 + 12] = jqd[6:18]
 
 
+def _log_action_scale(a, lo, hi):
+    """a in [-1,1] -> [lo,hi] log-spaced (a=0 -> sqrt(lo*hi)). Port of
+    go2_warp_components.log_action_scale."""
+    u = 0.5 * (np.clip(a, -1.0, 1.0) + 1.0)
+    return lo * (hi / lo) ** u
+
+
+def impedance_gains_np(action, kp_base, kd_base, granularity, s_min, s_max,
+                       damping_action, z_min, z_max):
+    """Decode per-leg Cartesian gains (kp, kd) each (4,3) from the action tail.
+    kp = s*kp_base, kd = zeta*sqrt(s)*kd_base. Numpy port of impedance_gains."""
+    n = 4 if granularity == "per_foot" else 12
+    s = _log_action_scale(np.asarray(action[12:12 + n]), s_min, s_max)
+    if damping_action:
+        zeta = _log_action_scale(np.asarray(action[12 + n:12 + 2 * n]), z_min, z_max)
+    else:
+        zeta = np.ones_like(s)
+    if granularity == "per_foot":
+        s = s[:, None]; zeta = zeta[:, None]          # (4,1) broadcast over xyz
+    else:
+        s = s.reshape(4, 3); zeta = zeta.reshape(4, 3)
+    kp = s * np.asarray(kp_base, float)
+    kd = zeta * np.sqrt(s) * np.asarray(kd_base, float)
+    return kp, kd
+
+
 class MudOscController:
     """Per-substep operational-space controller for the Newton co-step loop. Holds
     the OSC setup (foot sites, leg dofs, nominal foot, gains) and, given the live
@@ -65,7 +91,7 @@ class MudOscController:
     Requires use_mujoco_cpu (solver.mj_data is the actively-stepped data)."""
 
     def __init__(self, solver, kp, kd, torque_limit, use_op_space_inertia=True,
-                 ridge=1e-4, home_joints=None):
+                 ridge=1e-4, home_joints=None, var=None):
         self.m = solver.mj_model
         self.d = solver.mj_data
         self.foot_sites, self.trunk, self.leg_dofs = find_legs(self.m)
@@ -78,16 +104,27 @@ class MudOscController:
         self.kp = np.asarray(kp, float); self.kd = np.asarray(kd, float)
         self.torque_limit = np.asarray(torque_limit, float)
         self.use_lambda = bool(use_op_space_inertia); self.ridge = float(ridge)
+        # var=None -> fixed gains; else a dict {granularity, damping_action, s_min,
+        # s_max, z_min, z_max, kp_base, kd_base} -> variable impedance (M3): kp/kd
+        # decoded from the action tail each control step.
+        self.var = var
 
-    def compute_joint_f(self, state, deltas) -> np.ndarray:
-        """deltas: (4,3) foot-position deltas in the trunk frame (metres). Returns
+    def compute_joint_f(self, state, deltas, action=None) -> np.ndarray:
+        """deltas: (4,3) foot deltas (trunk frame). action: full policy action
+        (needed in variable-impedance mode to decode the stiffness tail). Returns
         the (nv,) generalized joint force, OSC torque in the 12 actuated dofs."""
+        if self.var is not None and action is not None:
+            kp, kd = impedance_gains_np(action, self.var["kp_base"], self.var["kd_base"],
+                                        self.var["granularity"], self.var["s_min"], self.var["s_max"],
+                                        self.var["damping_action"], self.var["z_min"], self.var["z_max"])
+        else:
+            kp, kd = self.kp, self.kd
         jq = np.asarray(state.joint_q.numpy()); jqd = np.asarray(state.joint_qd.numpy())
         sync_mjdata(self.d, jq, jqd)
         mujoco.mj_forward(self.m, self.d)
         targets = self.nominal + np.asarray(deltas).reshape(4, 3)
         tau = osc_torque(self.m, self.d, self.foot_sites, self.leg_dofs, self.trunk,
-                         targets, self.kp, self.kd, self.torque_limit,
+                         targets, kp, kd, self.torque_limit,
                          use_op_space_inertia=self.use_lambda, ridge=self.ridge)
         jf = np.zeros(self.nv, np.float32)
         jf[6:6 + 12] = tau                              # 12 actuated dofs (FL,FR,RL,RR)

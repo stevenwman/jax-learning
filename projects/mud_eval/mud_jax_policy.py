@@ -155,8 +155,9 @@ class MudJaxPolicy:
         quat = quat / (np.linalg.norm(quat) + 1e-9)   # Newton free-joint quat isn't unit-norm
         linvel_w = jqd[0:3]
         angvel_w = jqd[3:6]
-        joint_pos = jq[7:7 + self.act_dim]
-        joint_vel = jqd[6:6 + self.act_dim]
+        njoints = self.default_pose.shape[0]    # 12 actuated joints (NOT act_dim; var ckpts have act_dim>12)
+        joint_pos = jq[7:7 + njoints]
+        joint_vel = jqd[6:6 + njoints]
 
         gyro = _quat_rotate_inverse(quat, angvel_w)
         gravity = _quat_rotate_inverse(quat, self._grav_dir)
@@ -185,10 +186,13 @@ class MudJaxPolicy:
             action = np.asarray(self._select(self._params, jnp.asarray(_normalize(obs, self._norm))))
         self.last_act = action.astype(np.float32)
         if self.osc_mode:
-            # 12-d action = 4 foot-position deltas (trunk frame); held for the OSC
-            # controller, which recomputes torque each substep. joint_target_pos
-            # below is unused (PD gains are zeroed in OSC mode).
+            # action[:12] = 4 foot-position deltas (trunk frame); held for the OSC
+            # controller, which recomputes torque each substep. The joint target
+            # below is unused (PD gains are zeroed in OSC mode); action may be >12
+            # (variable impedance), so don't map it to 12 joint targets here.
             self.last_deltas = (action[:12].reshape(4, 3) * self.action_scale).astype(np.float32)
-        targets = self.default_pose + action * self.action_scale   # joint order FL,FR,RL,RR
+            targets = self.default_pose
+        else:
+            targets = self.default_pose + action * self.action_scale   # joint order FL,FR,RL,RR
         padded = np.concatenate([np.zeros(6, np.float32), targets]).astype(np.float32)
         return wp.from_numpy(padded, dtype=wp.float32, device=self._wp_device)
