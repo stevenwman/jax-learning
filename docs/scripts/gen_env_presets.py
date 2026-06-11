@@ -16,7 +16,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from jax_rl.configs.env_presets import (
     PRESETS, SAC_PRESETS, TD3_PRESETS, FAST_TD3_PRESETS, FAST_SAC_PRESETS,
     FLASH_SAC_PRESETS, TDMPC2_PRESETS,
+    get_preset, get_sac_preset, get_td3_preset, get_fast_td3_preset,
+    get_fast_sac_preset, get_flash_sac_preset,
 )
+from jax_rl.envs.locomotion.go2_warp_variants import GO2_WARP_VARIANTS
 from jax_rl.configs.train_config import TrainConfig
 from jax_rl.configs.ppo_config import PPOConfig
 from jax_rl.configs.sac_config import SACConfig
@@ -25,6 +28,16 @@ from jax_rl.configs.fast_td3_config import FastTD3Config
 from jax_rl.configs.fast_sac_config import FastSACConfig
 from jax_rl.configs.flash_sac_config import FlashSACConfig
 from jax_rl.configs.tdmpc2_config import TDMPC2Config
+
+
+def _with_go2(presets: dict, getter) -> dict:
+    """Append Go2 Warp variant presets resolved through `getter`.
+
+    Go2 Warp (non-splitbelt) names no longer live in the static preset tables —
+    they resolve from GO2_WARP_VARIANTS inside each getter — so the docs must
+    resolve them the same way to list them.
+    """
+    return {**presets, **{name: getter(name) for name in sorted(GO2_WARP_VARIANTS)}}
 
 
 def _fmt(v) -> str:
@@ -151,6 +164,17 @@ def render_offpolicy_presets(title: str, getter_name: str,
             if k not in skip_keys:
                 notes_parts.append(f"{k}={_fmt(v)}")
 
+        # TrainConfig diffs beyond the table columns (mirrors the PPO renderer).
+        # num_eval_episodes / handle_truncation are baked into every off-policy
+        # base cfg — skipped to keep Notes signal-only.
+        cfg_diff = _diff_from_default(cfg, TrainConfig)
+        cfg_skip = {"env_name", "ppo", "episode_length", "gamma", "reward_scaling",
+                    "num_eval_episodes", "handle_truncation",
+                    "num_envs", "total_timesteps", "lr"}
+        for k, v in cfg_diff.items():
+            if k not in cfg_skip:
+                notes_parts.append(f"{k}={_fmt(v)}")
+
         notes = ", ".join(notes_parts) if notes_parts else ""
         utd = getattr(algo_cfg, "grad_updates_per_step", "-")
 
@@ -247,18 +271,18 @@ uv run python docs/scripts/gen_env_presets.py
 
 Presets return fully-configured `(TrainConfig, AlgoConfig)` tuples with tuned hyperparameters per environment. CLI flags override individual fields via `dataclasses.replace()`.
 
-If an environment is not listed, a default config is used with the environment name set.
+If an environment is not listed, a default config is used with the environment name set. `Go2Warp*` rows (except the splitbelt family) resolve from the variants table in `jax_rl/envs/locomotion/go2_warp_variants.py` rather than static preset entries.
 
 Select an algorithm tab below to see its presets. Defaults (gamma=0.99, reward_scaling=1) are omitted from rows and only appear in Notes when overridden.
 
 """
     tabs = [
-        _as_tab("PPO", render_ppo_presets(PRESETS)),
-        _as_tab("SAC", render_offpolicy_presets("SAC Presets", "get_sac_preset", SAC_PRESETS, SACConfig, "train_sac.py")),
-        _as_tab("TD3", render_offpolicy_presets("TD3 Presets", "get_td3_preset", TD3_PRESETS, TD3Config, "train_td3.py")),
-        _as_tab("FastTD3", render_offpolicy_presets("FastTD3 Presets", "get_fast_td3_preset", FAST_TD3_PRESETS, FastTD3Config, "train_fast_td3.py")),
-        _as_tab("FastSAC", render_offpolicy_presets("FastSAC Presets", "get_fast_sac_preset", FAST_SAC_PRESETS, FastSACConfig, "train_fast_sac.py")),
-        _as_tab("FlashSAC", render_offpolicy_presets("FlashSAC Presets", "get_flash_sac_preset", FLASH_SAC_PRESETS, FlashSACConfig, "train_flashsac.py")),
+        _as_tab("PPO", render_ppo_presets(_with_go2(PRESETS, get_preset))),
+        _as_tab("SAC", render_offpolicy_presets("SAC Presets", "get_sac_preset", _with_go2(SAC_PRESETS, get_sac_preset), SACConfig, "train_sac.py")),
+        _as_tab("TD3", render_offpolicy_presets("TD3 Presets", "get_td3_preset", _with_go2(TD3_PRESETS, get_td3_preset), TD3Config, "train_td3.py")),
+        _as_tab("FastTD3", render_offpolicy_presets("FastTD3 Presets", "get_fast_td3_preset", _with_go2(FAST_TD3_PRESETS, get_fast_td3_preset), FastTD3Config, "train_fast_td3.py")),
+        _as_tab("FastSAC", render_offpolicy_presets("FastSAC Presets", "get_fast_sac_preset", _with_go2(FAST_SAC_PRESETS, get_fast_sac_preset), FastSACConfig, "train_fast_sac.py")),
+        _as_tab("FlashSAC", render_offpolicy_presets("FlashSAC Presets", "get_flash_sac_preset", _with_go2(FLASH_SAC_PRESETS, get_flash_sac_preset), FlashSACConfig, "train_flashsac.py")),
         _as_tab("TDMPC2", render_tdmpc2_presets(TDMPC2_PRESETS)),
     ]
     output = header + "\n\n".join(tabs) + "\n"

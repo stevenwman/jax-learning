@@ -26,7 +26,7 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--reward-scaling` | float | - | Multiply rewards by this factor (default: 1.0) |
 | `--episode-length` | int | from preset | Max steps per episode (default: from env preset) |
 | `--log-interval` | int | - | Print training stats every N iterations |
-| `--eval-every` | int | - | Evaluate every N episodes (default: every 512 episodes) |
+| `--eval-every` | int | from preset | Evaluate every N episodes (default: every 5000 episodes; Go2 OSC/physical presets set 500) |
 | `--wandb` | flag | off | Enable W&B experiment tracking |
 | `--wandb-project` | str | `jax-rl` | W&B project name (default: jax-rl) |
 | `--frame-stack` | int | - | Number of stacked observation frames (default: 1, use 3 for locomotion) |
@@ -50,7 +50,7 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--policy-hidden-dim` | int+ | - | Actor network hidden layer sizes (e.g., 512 256 128) |
 | `--value-hidden-dim` | int+ | - | Critic network hidden layer sizes (e.g., 512 256 128) |
 | `--entropy-coef` | float | - | Entropy bonus coefficient (higher = more exploration) |
-| `--eval-every` | int | - | Evaluate every N episodes (default: every 512 episodes) |
+| `--eval-every` | int | from preset | Evaluate every N episodes (default: every 5000 episodes; Go2 OSC/physical presets set 500) |
 | `--reward-scaling` | float | - | Multiply rewards by this factor (default: 1.0) |
 | `--episode-length` | int | from preset | Max steps per episode (default: from env preset) |
 | `--log-interval` | int | - | Print training stats every N iterations |
@@ -101,7 +101,7 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--reward-scaling` | float | - | Multiply rewards by this factor (default: 1.0) |
 | `--episode-length` | int | from preset | Max steps per episode (default: from env preset) |
 | `--target-entropy-scale` | float | from preset | target_entropy = -scale * action_dim (default: from algo config) |
-| `--eval-every` | int | - | Evaluate every N episodes (default: every 512 episodes) |
+| `--eval-every` | int | from preset | Evaluate every N episodes (default: every 5000 episodes; Go2 OSC/physical presets set 500) |
 | `--obs-norm` | flag | off | Enable sample-time obs normalization (recommended for humanoid tasks) |
 | `--wandb` | flag | off | Enable W&B experiment tracking (requires wandb installed) |
 | `--wandb-project` | str | `jax-rl` | W&B project name (default: jax-rl) |
@@ -129,7 +129,7 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--reward-scaling` | float | - | Multiply rewards by this factor (default: 1.0) |
 | `--episode-length` | int | from preset | Max steps per episode (default: from env preset) |
 | `--exploration-noise` | float | from preset | Exploration noise std for TD3 (default: from algo config) |
-| `--eval-every` | int | - | Evaluate every N episodes (default: every 512 episodes) |
+| `--eval-every` | int | from preset | Evaluate every N episodes (default: every 5000 episodes; Go2 OSC/physical presets set 500) |
 | `--obs-norm` | flag | off | Enable sample-time obs normalization (recommended for humanoid tasks) |
 | `--wandb` | flag | off | Enable W&B experiment tracking (requires wandb installed) |
 | `--wandb-project` | str | `jax-rl` | W&B project name (default: jax-rl) |
@@ -157,7 +157,7 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--batch-size` | int | from preset | Batch size for gradient updates (default: from algo config) |
 | `--grad-updates-per-step` | int | from preset | Gradient updates per environment step (default: from algo config) |
 | `--buffer-size` | int | from preset | Replay buffer capacity (default: from algo config) |
-| `--eval-every` | int | - | Evaluate every N episodes (default: every 512 episodes) |
+| `--eval-every` | int | from preset | Evaluate every N episodes (default: every 5000 episodes; Go2 OSC/physical presets set 500) |
 | `--obs-norm` | flag | off | Enable sample-time obs normalization (recommended for humanoid tasks) |
 | `--wandb` | flag | off | Enable W&B experiment tracking (requires wandb installed) |
 | `--wandb-project` | str | `jax-rl` | W&B project name (default: jax-rl) |
@@ -188,7 +188,7 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--reward-scaling` | float | - | Multiply rewards by this factor (default: 1.0) |
 | `--episode-length` | int | from preset | Max steps per episode (default: from env preset) |
 | `--exploration-noise` | float | from preset | Exploration noise std for TD3 (default: from algo config) |
-| `--eval-every` | int | - | Evaluate every N episodes (default: every 512 episodes) |
+| `--eval-every` | int | from preset | Evaluate every N episodes (default: every 5000 episodes; Go2 OSC/physical presets set 500) |
 | `--obs-norm` | flag | off | Enable sample-time obs normalization (recommended for humanoid tasks) |
 | `--wandb` | flag | off | Enable W&B experiment tracking (requires wandb installed) |
 | `--wandb-project` | str | `jax-rl` | W&B project name (default: jax-rl) |
@@ -222,7 +222,7 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--no-reward-norm` | flag | off | Disable adaptive reward normalization |
 | `--G-max` | float | - | Target max magnitude for discounted returns (reward norm) |
 | `--no-weight-norm` | flag | off | Disable weight normalization after optimizer steps |
-| `--eval-every` | int | - | Evaluate every N episodes |
+| `--eval-every` | int | from preset | Evaluate every N episodes (default: every 5000 episodes; Go2 OSC/physical presets set 500) |
 | `--reset-mode` | str | - | 'per_step' enables DomainRandWrapper / TerrainCurriculumDRWrapper |
 | `--wandb` | flag | off | Enable W&B experiment tracking |
 | `--wandb-project` | str | `jax-rl` | W&B project name |
@@ -299,6 +299,7 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--lock-cmd` | float | - | Pin cmd = [VX, VY, YAW] every step (overrides env's Markov-chain resample). Use to test linear-only (VY=YAW=0), rotation-only (VX=VY=0), or combined. Mutually exclusive with --kicks / --varied-cmds. |
 | `--resolution` | int int | `[640, 480]` | Render resolution. Defaults to 640x480; use 1280 720 for HD, 1920 1080 for full HD. |
 | `--video-quality` | int | `8` | imageio video quality (1-10, default 8). Higher = bigger file + sharper, lower = smaller. |
+| `--stochastic` | flag | off | Sample from the policy distribution instead of the deterministic mean. Useful when the trained policy is multi-modal and the mean falls in a low-reward valley between modes. |
 
 ---
 
