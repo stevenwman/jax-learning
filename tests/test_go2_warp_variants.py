@@ -33,6 +33,18 @@ def test_variant_configs_match_legacy_registration():
         _deep_eq(legacy, new, path=name)
 
 
+def test_joint_pd_rejects_cartesian_knobs():
+    from jax_rl.envs.locomotion.go2_warp_variants import go2_config
+    with pytest.raises(ValueError, match="cartesian controller"):
+        go2_config(controller="joint_pd", osc_kp=[1, 1, 1])
+
+
+def test_fixed_gain_osc_rejects_var_impedance_knobs():
+    from jax_rl.envs.locomotion.go2_warp_variants import go2_config
+    with pytest.raises(ValueError, match="var_impedance"):
+        go2_config(controller="osc", damping_action=True)
+
+
 def test_variants_file_is_import_light():
     """The variants FILE must import only stdlib + ml_collections.
 

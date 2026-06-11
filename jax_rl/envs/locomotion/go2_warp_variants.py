@@ -14,9 +14,14 @@ function-locally inside their config callable.
 
 import dataclasses
 import functools
-from typing import Union
+from typing import Callable, Union
 
 from ml_collections import config_dict
+
+# Λ-OSC base gains, shared by the builder defaults and the Kp sweep
+# (mirrors the legacy factories' _OSC_BASE_KP/KD sharing).
+_OSC_BASE_KP = [3000.0, 3000.0, 4000.0]
+_OSC_BASE_KD = [110.0, 110.0, 130.0]
 
 
 def go2_config(
@@ -44,6 +49,20 @@ def go2_config(
         raise ValueError(f"unknown controller: {controller!r}")
     if motor not in ("ideal", "torque_speed", "physical"):
         raise ValueError(f"unknown motor: {motor!r}")
+    if controller == "joint_pd" and (
+        osc_kp is not None or osc_kd is not None
+        or use_op_space_inertia is not True or target_mode != "abs_body"
+    ):
+        raise ValueError(
+            "osc_kp/osc_kd/use_op_space_inertia/target_mode require a "
+            f"cartesian controller, got controller={controller!r}")
+    if controller != "var_impedance" and (
+        damping_action or stiffness_granularity != "per_foot"
+        or tuple(var_s) != (0.25, 2.0) or tuple(var_zeta) != (0.5, 2.0)
+    ):
+        raise ValueError(
+            "damping_action/stiffness_granularity/var_s/var_zeta require "
+            f"controller='var_impedance', got controller={controller!r}")
 
     if action_scale is None:
         # Joint PD: action is a joint-target delta in rad. Cartesian: action
@@ -112,8 +131,8 @@ def go2_config(
     )
 
     if controller in ("osc", "var_impedance"):
-        kp = list(osc_kp) if osc_kp is not None else [3000.0, 3000.0, 4000.0]
-        kd = list(osc_kd) if osc_kd is not None else [110.0, 110.0, 130.0]
+        kp = list(osc_kp) if osc_kp is not None else list(_OSC_BASE_KP)
+        kd = list(osc_kd) if osc_kd is not None else list(_OSC_BASE_KD)
         cfg.osc = config_dict.create(
             target_mode=target_mode,       # {abs_body, delta_current}
             use_op_space_inertia=use_op_space_inertia,  # True=Khatib OSC (Λ); False=Jᵀ
@@ -147,10 +166,10 @@ def go2_config(
 
 @dataclasses.dataclass(frozen=True)
 class EnvVariant:
-    config: object                    # Callable[[], ConfigDict]
+    config: Callable[[], config_dict.ConfigDict]
     cls: str = "WarpJoystick"
-    train: dict = dataclasses.field(default_factory=dict)
-    algo: dict = dataclasses.field(default_factory=dict)   # {algo_name: {field: val}}
+    train: dict[str, object] = dataclasses.field(default_factory=dict)
+    algo: dict[str, dict] = dataclasses.field(default_factory=dict)   # {algo_name: {field: val}}
     notes: str = ""
 
 
@@ -179,8 +198,8 @@ def _kp_sweep_gains(scale):
     factory bit-for-bit — e.g. Kp05 kd ≈ [77.78, 77.78, 91.92], which is NOT
     the SoftPhysical literals [78, 78, 92]."""
     return dict(
-        osc_kp=[k * scale for k in (3000.0, 3000.0, 4000.0)],
-        osc_kd=[d * scale**0.5 for d in (110.0, 110.0, 130.0)],
+        osc_kp=[k * scale for k in _OSC_BASE_KP],
+        osc_kd=[d * scale**0.5 for d in _OSC_BASE_KD],
     )
 
 
