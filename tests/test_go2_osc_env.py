@@ -69,10 +69,10 @@ def test_leg_dof_block_isolation(env):
     """
     s = env.reset(jax.random.PRNGKey(0))
     d = mjx.forward(env.mjx_model, s.data)
-    leg_dofs = np.asarray(env._leg_dof_ids)          # (4,3)
+    leg_dofs = np.asarray(env._controller._leg_dof_ids)          # (4,3)
     all_leg = set(range(6, 18))
     for i in range(4):
-        site = int(env._osc_foot_site_ids[i])
+        site = int(env._controller._foot_site_ids[i])
         jacp, _ = mjx.jac(env.mjx_model, d, d.site_xpos[site],
                           env.mjx_model.site_bodyid[site])
         jacp = np.asarray(jacp)                       # (nv, 3)
@@ -95,7 +95,7 @@ def test_leg_dof_site_names_match_by_leg(env):
     """
     from jax_rl.envs.locomotion import go2_constants as consts
     m = env.mj_model
-    leg_dofs = np.asarray(env._leg_dof_ids)        # (4,3) qvel indices
+    leg_dofs = np.asarray(env._controller._leg_dof_ids)   # (4,3) qvel indices
     for i in range(4):
         site_leg = consts.FEET_SITES[i].split("_")[0]   # e.g. "FL"
         for d in leg_dofs[i]:
@@ -116,6 +116,7 @@ def test_nominal_foot_body_matches_reset_pose(env):
     the numpy-FK nominal. This cross-checks the two FK paths against each other.
     """
     s = env.reset(jax.random.PRNGKey(3))
-    feet_body = np.asarray(env._feet_in_body(s.data))   # (4,3) live mjx path
-    nominal = np.asarray(env._nominal_foot_body)         # (4,3) numpy-FK path
+    feet_body = np.asarray(
+        env._controller._feet_in_body(env, s.data))            # (4,3) live mjx path
+    nominal = np.asarray(env._controller._nominal_foot_body)   # (4,3) numpy-FK path
     assert np.allclose(feet_body, nominal, atol=1e-5), (feet_body - nominal)

@@ -11,7 +11,6 @@ from typing import Any, Dict, Optional, Union
 import jax
 import jax.numpy as jp
 from ml_collections import config_dict
-import mujoco
 from mujoco import mjx
 from mujoco.mjx._src import math
 import numpy as np
@@ -19,7 +18,6 @@ import numpy as np
 from mujoco_playground._src import mjx_env
 from jax_rl.envs.locomotion import go2_warp_base
 from jax_rl.envs.locomotion import go2_constants as consts
-from jax_rl.envs.locomotion import go2_osc
 from jax_rl.envs.obs_spec import ObsTerm, IncludeGroup, compute_obs
 from jax_rl.envs.reward_spec import RewardTerm, compute_rewards
 
@@ -284,69 +282,9 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
         self, data: mjx.Data, action: jax.Array
     ) -> mjx.Data:
         """Low-level controller at physics rate (decimation), delegated to the
-        Controller component (JointPD / OSC / VarImpedance) chosen from config."""
+        Controller component (JointPD / OSC / VarImpedance) chosen from config.
+        The OSC mechanics live on the controller (see go2_warp_components)."""
         return self._controller.apply(self, data, action)
-
-    # ── OSC mechanics (used by the OSC / VarImpedance controllers) ───────
-    # Kept on the host so they stay callable as ``env._…`` (their white-box
-    # tests + the OSC controller's apply/setup). No-ops' worth of cost for a
-    # joint-PD env (just unused). Moved verbatim from the former WarpOscJoystick.
-
-    def _compute_nominal_foot_body(self) -> np.ndarray:
-        """Foot positions in the trunk frame at the 'home' keyframe (numpy FK)."""
-        m = self._mj_model
-        d = mujoco.MjData(m)
-        d.qpos[:] = m.keyframe("home").qpos
-        mujoco.mj_forward(m, d)
-        body_pos = d.xpos[self._torso_body_id]
-        R = d.xmat[self._torso_body_id].reshape(3, 3)
-        feet_w = d.site_xpos[self._osc_foot_site_ids]   # (4,3) world
-        return (feet_w - body_pos) @ R                  # rows: Rᵀ·(foot−trunk)
-
-    def _feet_in_body(self, data: mjx.Data) -> jax.Array:
-        """Current foot positions expressed in the trunk frame, (4,3)."""
-        body_pos = data.xpos[self._torso_body_id]
-        R = data.xmat[self._torso_body_id].reshape(3, 3)
-        feet_w = data.site_xpos[self._osc_foot_site_ids]
-        return (feet_w - body_pos) @ R
-
-    def _run_osc(self, data, deltas, kp, kd):
-        """Decimation loop: drive feet to (nominal + deltas) at gains kp/kd.
-
-        kp/kd are (3,) shared across legs (fixed impedance) or (4,3) per-foot
-        (variable impedance). The OSC and VarImpedance controllers both call this.
-
-        STABILITY-CRITICAL: the impedance torque is recomputed every physics
-        substep (250 Hz), NOT once per 50 Hz control step. The unit-mass loop
-        q̈ = kp·err − kd·ẋ with kp up to 4000 has ω_n ≈ 63 rad/s; held over a
-        50 Hz step (h=0.02) the discrete loop diverges (ρ≈2.8), but at the
-        250 Hz substep (h=0.004) ρ≈0.8 (stable, audited). Do NOT hoist the
-        torque computation out of this scan.
-        """
-        dynamic = self._osc_target_mode == "delta_current"
-        base_targets = self._nominal_foot_body + deltas             # used if static
-        model = self.mjx_model
-        a2j = self._act_to_joint
-
-        def substep(data, _):
-            if dynamic:
-                # Chase a moving anchor: target = current foot + delta, in
-                # trunk frame, recomputed each substep.
-                targets = self._feet_in_body(data) + deltas
-            else:
-                targets = base_targets
-            tau_joint = go2_osc.compute_leg_impedance_torque(
-                model, data,
-                self._osc_foot_site_ids, self._leg_dof_ids, self._torso_body_id,
-                targets, kp, kd, self._osc_torque_limit,
-                use_op_space_inertia=self._osc_use_lambda, ridge=self._osc_ridge,
-            )
-            tau_joint = self._apply_torque_speed_limit(tau_joint, data.qvel[6:])
-            tau_act = tau_joint[a2j]     # joint order → actuator order
-            data = data.replace(ctrl=tau_act)
-            return mjx.step(model, data), None
-
-        return jax.lax.scan(substep, data, (), self.n_substeps)[0]
 
     def step(self, state: mjx_env.State, action: jax.Array) -> mjx_env.State:
         # Random velocity kick every push_interval steps. The magnitude bound is

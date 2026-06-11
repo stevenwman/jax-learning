@@ -36,7 +36,7 @@ def find_legs(mj_model):
 
 def nominal_foot_body(mj_model, foot_site_ids, trunk_body_id, home_qpos):
     """Foot positions in the trunk frame at the home pose (FK), (4,3). Mirrors
-    go2_warp_joystick._compute_nominal_foot_body."""
+    go2_warp_components.OSC._compute_nominal_foot_body."""
     d = mujoco.MjData(mj_model)
     d.qpos[:] = home_qpos
     mujoco.mj_forward(mj_model, d)
