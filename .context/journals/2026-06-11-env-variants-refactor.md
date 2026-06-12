@@ -330,3 +330,47 @@ Go2WarpOscVarDampingAxisFlatPhysicalMudDR4xSlowFirm. Ckpts seed0
 20260612_012032_*, seed1 20260612_014631_*.
 
 Open: is variable-impedance ESSENTIAL or does slow+firm rescue joint-PD too? (testing)
+
+### R5 — slow+firm on joint-PD: TOTAL FAIL → variable-impedance is ESSENTIAL
+joint-PD + slow+firm: final y=3.388 — never entered the mud (froze at spawn, drifted
+backward, z0.23). The exact recipe that robustly clears the mud on var-impedance makes
+joint-PD FREEZE. joint-PD's response to harder mud DR + conservative reward = barely
+move (R1 jPD-4× y2.78 → R5 jPD slow+firm y3.39, progressively more timid). Variable
+impedance uses the same signals to learn active stiffening + traversal. CONCLUSION:
+stiffness modulation is NECESSARY for mud traversal; reward+DR alone can't rescue
+fixed-gain control.
+
+## ═══ AUTONOMOUS MUD-TRAINING RUN — FINAL SUMMARY ═══
+Goal: improve training so the Go2 policy traverses Newton MPM mud (held-out test).
+Metric: final y on thin→thick maxfwd (vx=1.5) Newton traverse; mud y0-3, y<0 = cleared.
+
+Full ladder:
+| round | recipe | final y | outcome |
+|---|---|---|---|
+| R0 | var-imp, 1× DR | 1.29 | bog (medium) |
+| R0 | joint-PD, 1× DR | 1.62 | bog (medium) |
+| R1 | var-imp, 4× DR | 0.68 | reached thick |
+| R1 | joint-PD, 4× DR | 2.78 | REGRESSED (timid) |
+| R2 | var, 4× + firm-plant | −1.38 (s0) / 0.78-fell (s1) | clears but seed-variant |
+| R4 | var, 4× + slow+firm | −0.36 (s0) / −2.20 (s1) | **ROBUST: both clear upright** |
+| R5 | joint-PD, slow+firm | 3.39 | froze at spawn |
+
+ROBUST RECIPE = variable-impedance + 4× mud DR + firm-planting reward (feet_slip
+-0.1→-0.6, orientation -5→-8) + reduced velocity pressure (tracking_lin_vel 10→4).
+
+Three compounding levers, each addressing a distinct failure:
+1. variable-impedance control (stiffness modulation) — ESSENTIAL; joint-PD can't and
+   gets MORE timid with harder mud training.
+2. 4× mud DR — pushes bog→thick (resistance exposure).
+3. firm-planting reward (feet_slip) — targets TRACTION, the actual Newton bog mechanism
+   (force probe: Newton bogs at ~3N, not resistance). Gets through thick mud.
+4. reduced velocity pressure — trades the destabilizing lunge for stable steps (robust
+   across seeds; firm-plant alone was a coin-flip).
+
+User's "slower AND firmly plant feet" intuition VALIDATED, both halves necessary, and
+for the right mechanistic reason (firm=traction, slow=stability). Pitch is a real
+command-scaled driving mechanism (lean→push), not an artifact.
+
+Best ckpts: var slow+firm seed0 20260612_012032_*, seed1 20260612_014631_*.
+Videos in projects/mud_eval/recordings/: slowfirm_thinfirst_maxfwd, slowfirm_seed1_maxfwd,
+firm_thinfirst_maxfwd, var4x_thinfirst_maxfwd, jointpd4x_thinfirst_maxfwd.
