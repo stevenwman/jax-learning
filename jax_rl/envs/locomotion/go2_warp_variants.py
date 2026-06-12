@@ -379,6 +379,15 @@ GO2_WARP_VARIANTS = {
               "regime where the frozen DR ckpt BOGS (upright, ~0 net progress, "
               "lin-track err ≈ commanded speed). Coeff sweep 2026-06-11: upright "
               "through 8×, falls at 12×+. Magnitudes uncalibrated vs Newton MPM."),
+    # Joint-PD CONTROL for the mud-training comparison: same DR (Isaac coeffs +
+    # depth U[0.03,0.22]) and physical motor as ...MudDR, but conventional joint
+    # PD instead of variable Cartesian impedance. Tests whether var-impedance's
+    # deep-mud edge (the mud_eval headline) survives mud training. 12-d action.
+    "Go2WarpJoystickFlatPhysicalMudDR": EnvVariant(
+        config=_cfg(motor="physical", mud=dict(depth_range=(0.03, 0.22))),
+        train=_DR_TRAIN,
+        notes="joint-PD control + mud DR — the joint-PD arm of the "
+              "var-impedance-vs-joint-PD mud-training comparison"),
     # ── Hard-kick comparison ladder ──────────────────────────────────────
     # DOMAIN-RANDOMIZED kick strength: per-episode kick bound ~ U[0.5, 2.5] m/s
     # (into the ≥2 m/s pure-impedance failure regime), vs the default fixed
