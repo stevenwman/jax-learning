@@ -99,8 +99,25 @@ print(f"[TRAV] forward command vx={VX}", flush=True)
 # wide side camera framing the whole strip (mud y[0,3], runway either end); robot walks along Y
 viewer.set_camera(wp.vec3(5.5, 1.5, 2.1), -26.0, 180.0)
 
+# ── PARITY with warp/MJX training spawn ──────────────────────────────────────
+# The vendored example spawns the splayed INITIAL_Q pose (hip ±0.1, thigh 0.8-1.0,
+# calf -1.5) at base z~0.54 and lets it DROP (mud_model.set_home_pose silently does
+# NOT override it). That start state is out-of-distribution: warp training ALWAYS
+# starts SETTLED at the home pose (0, 0.9, -1.8), base z 0.27. Overwrite state_0 to
+# the home pose + standing height, then re-run FK so body_q agrees. Leaves the
+# initial yaw (joint_q[3:7]) and xy spawn (joint_q[0:2]) untouched. Home is uniform
+# across the 4 legs, so the policy_joint_names<->Newton joint_key leg-order mismatch
+# is moot (every leg gets [hip=0, thigh=0.9, calf=-1.8]).
+_home_pose = np.asarray(_meta["control"]["default_pose_policy"], np.float32)
+_jq = example.state_0.joint_q.numpy()
+_jq[7:7 + _home_pose.shape[0]] = _home_pose   # 12 leg joints -> warp home
+_jq[2] = 0.27                                 # base z -> warp standing height (no drop-in)
+example.state_0.joint_q.assign(_jq)
+newton.eval_fk(example.model, example.state_0.joint_q, example.state_0.joint_qd, example.state_0)
+
 jq = np.asarray(example.state_0.joint_q.numpy())
-print(f"[TRAV] spawn base xyz={jq[:3].round(2)} facing +Y | walking into mud y0->y3", flush=True)
+print(f"[TRAV] spawn base xyz={jq[:3].round(2)} joints={jq[7:19].round(2)} (PARITY: warp home) "
+      f"facing -Y(thin-first if yaw<0) | walking into mud", flush=True)
 def _pitch_deg(quat_xyzw):
     """Body pitch (deg) about the lateral axis from the free-joint quat. >0 =
     nose-down (pitch forward). Newton free-joint quat is (x,y,z,w)."""

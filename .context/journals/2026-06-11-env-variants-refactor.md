@@ -459,3 +459,37 @@ flat gait + Newton next.
 
 NOTE: dropped the PD-RMA gait 2×2 baseline — RMA breaks mud (PD already can't do mud), so
 the 2×2 became academic. Pivoted GPU to the NoAir middle profile (on-mandate: mud perf).
+
+## ═══ SPAWN-PARITY BUG (found 2026-06-12, user-flagged) ═══
+**The Newton eval spawned the robot in a different state than warp training.** User
+noticed the RMA Newton video "doesn't even move forward, spawns in the air." Investigated:
+- Newton (`record_traverse_maxfwd.py`) spawned the vendored example's `INITIAL_Q` pose
+  (hip ±0.1, thigh 0.8/1.0, calf -1.5 — splayed, straight-ish) at base **z≈0.54**, then
+  let it DROP. (`mud_model.set_home_pose` was SUPPOSED to override but silently doesn't;
+  `initial_position` z is ignored too — the example FK-places the base from the pose.)
+- Warp/MJX training ALWAYS starts SETTLED at the keyframe `home` pose **(0, 0.9, -1.8)**
+  uniform, base **z=0.27**, feet on ground. So every Newton eval had an OOD drop-in
+  transient from a splayed pose the policy never trained from.
+**Fix** (record_traverse_maxfwd.py, post-build state override): overwrite
+`state_0.joint_q[7:19]` = home pose, `[2]` = 0.27, then `newton.eval_fk`. Leaves yaw +
+xy untouched. Home is uniform across legs so the policy↔Newton leg-order mismatch is moot.
+**Validated SOUND** — winner (slow+firm) re-baselined under parity still CLEARS:
+y 3.30→**-0.16** upright (was -0.36 with the drop-in; drop-in gave slightly more depth,
+conclusion unchanged). RMA still FAILS under parity (drifts backward, collapses z→0.057).
+
+## ═══ NoAir VERDICT — feet_air_time was the SOLE tripod driver 🎯 ═══
+All three profiles, parity spawn, thin-first max-fwd (vx=1.5), seed0:
+| profile | feet_air_time | clearance/height | flat gait | Newton final y |
+|---|---|---|---|---|
+| slow+firm (winner) | +0.1 | kept | TRIPOD (RR parked) | clears -0.16 |
+| RMA-minimal | 0 | DROPPED | partial fix (RR tucked) | COLLAPSES (fail) |
+| **NoAir** | **0** | **kept** | **CLEAN (4 legs cycle)** | **clears -2.42** |
+- NoAir flat: 1.06 m/s, stance 0.340 (normal), all 4 legs cycle full-range (FR/FL/RR/RL
+  cycles 20/37/30/31, thigh ranges 0.44-0.73) — NO parked leg. Mild FR asymmetry only.
+- NoAir Newton: y -2.42 (DEEPER than winner -0.16). Tripod fixed AND traverse preserved.
+**Conclusion:** `feet_air_time` (+0.1, REWARDS time-in-air → pays to park a leg) was the
+sole tripod driver. `feet_clearance/-height` are the load-bearing mud-EXTRACTION terms —
+RMA failed because it dropped THOSE too. NoAir kills only air_time → best of both.
+NoAir is the new recommended recipe. CAVEAT: seed0 only (winner was 2-seed robust);
+confirm seed1 before declaring bulletproof. Videos: noair_FLAT_fwd.mp4,
+noair_PARITY_thinfirst.mp4; winner_PARITY_thinfirst.mp4, rma_PARITY_thinfirst.mp4.
