@@ -388,6 +388,24 @@ GO2_WARP_VARIANTS = {
         train=_DR_TRAIN,
         notes="joint-PD control + mud DR — the joint-PD arm of the "
               "var-impedance-vs-joint-PD mud-training comparison"),
+    # R1 of the autonomous mud-training iteration: EXPAND the mud-coeff DR to
+    # span 1×→4× Isaac (f 14→60, c1 9→40, c2 6→28), depth unchanged. R0 (1×)
+    # bogged both arms in medium mud (var y1.29, joint-PD y1.62, never thick).
+    # Stronger/wider mud DR pushes into the "biting" regime (coeff sweep: 4× =
+    # labored). area_range left at Isaac default.
+    "Go2WarpOscVarDampingAxisFlatPhysicalMudDR4x": EnvVariant(
+        config=_cfg(controller="var_impedance", stiffness_granularity="per_axis",
+                    damping_action=True, motor="physical",
+                    mud=dict(depth_range=(0.03, 0.22), f_range=(14.0, 60.0),
+                             c1_range=(9.0, 40.0), c2_range=(6.0, 28.0))),
+        train=_DR_TRAIN,
+        notes="var-impedance + mud DR spanning 1→4× Isaac coeffs (R1)"),
+    "Go2WarpJoystickFlatPhysicalMudDR4x": EnvVariant(
+        config=_cfg(motor="physical",
+                    mud=dict(depth_range=(0.03, 0.22), f_range=(14.0, 60.0),
+                             c1_range=(9.0, 40.0), c2_range=(6.0, 28.0))),
+        train=_DR_TRAIN,
+        notes="joint-PD + mud DR spanning 1→4× Isaac coeffs (R1)"),
     # ── Hard-kick comparison ladder ──────────────────────────────────────
     # DOMAIN-RANDOMIZED kick strength: per-episode kick bound ~ U[0.5, 2.5] m/s
     # (into the ≥2 m/s pure-impedance failure regime), vs the default fixed

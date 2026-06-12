@@ -184,3 +184,20 @@ field still trains a real (different) skill — disturbance rejection — but it
 mud-traversal proxy. Newton MPM stays the only valid mud test. (Caveat: single ckpt,
 single depth, quasi-static-ish; the force during a successful dynamic stride could be
 higher — but this policy never achieves one in thick mud, which is itself the point.)
+
+## Autonomous mud-training iteration (multi-hour, 2026-06-11 eve)
+
+Metric: final y on Newton thin→thick traverse, max-forward (vx=1.5), 750 frames
+(lower = deeper into mud = better). Thick y0-1, medium y1-2, thin y2-3.
+
+### R0 — 1× Isaac-coeff mud DR (depth U[0.03,0.22]), both control arms
+| arm | flat eval | Newton final y | posture z |
+|---|---|---|---|
+| var-impedance (per-axis + damping, 36-d) | 279.3 | **1.29** (deep medium) | ~0.30 |
+| joint-PD (12-d) | 274.5 | **1.62** (early-mid medium) | ~0.24 (crouched) |
+
+Var-impedance penetrates ~0.33 m deeper + taller posture — the mud_eval headline
+(compliant beats stiff in mud) SURVIVES mud training. But BOTH cooked: neither reaches
+thick (y<1); both bog in medium. Mud DR at 1× cost ~nothing on flat (both ~275-280),
+consistent with the weak-disturbance force finding (analytic 1× = 34% bodyweight).
+→ triggers R1 per the decision rule.
