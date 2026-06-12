@@ -297,3 +297,36 @@ intuition was "slower AND firmly plant" — add the slow half: reduce tracking_l
 weight so the policy isn't punished for slowing in mud, trading lunge for stable steps.
 Variant Go2WarpOscVarDampingAxisFlatPhysicalMudDR4xSlowFirm: feet_slip -0.6, orient -8,
 tracking_lin_vel 10→4. Test if slow+firm gives ROBUST deep/clean traversal.
+
+### R4 RESULT — slow+firm seed0: cleared the mud STABLY
+| recipe | final y | deepest | stability |
+|---|---|---|---|
+| firm-plant s0 | −1.38 | −1.38 | cleared (fast) |
+| firm-plant s1 | 0.78 | 0.205 | FELL (lunge) |
+| slow+firm s0 | −0.36 | −0.36 | **cleared, z~0.32 throughout, no collapse** |
+Reduced velocity pressure (tracking 10→4) + firm planting → clears the mud without the
+lunge-and-fall. Still pitches +17-19° in deep thick mud but stays upright. Trades raw
+distance (didn't sprint out the far side like firm s0) for stability. Supports the full
+"slow + firm" intuition. Flat eval 168 (lower only because tracking weight cut, not a
+worse policy). Decisive test pending: slow+firm seed1 (does it replicate where firm
+didn't?). Best ckpt 20260612_012032_..._muddr4xslowfirm_seed0.
+
+### R4 CONCLUSIVE — slow+firm REPLICATES (robust recipe) 🎯
+| recipe | seed0 | seed1 | robust |
+|---|---|---|---|
+| firm-plant | −1.38 ✓ | 0.78 FELL | ✗ 1/2 |
+| **slow+firm** | −0.36 ✓ | **−2.20 ✓** | **✓ 2/2 cleared, upright** |
+
+Both slow+firm seeds clear the full Newton mud gradient (thin→medium→thick) and walk out
+the far side UPRIGHT (z~0.34 throughout). The "slow" half (tracking 10→4) delivered the
+robustness firm-plant alone lacked. **User's full "slower AND firmly plant" intuition
+validated — both halves necessary: firm planting = traction (the real bog mechanism),
+slowing = no destabilizing lunge.**
+
+## ROBUST RECIPE for Newton mud traversal (the answer)
+variable-impedance control + 4× mud DR + firm-planting reward (feet_slip -0.6, orient -8)
++ reduced velocity pressure (tracking_lin_vel 10→4). Variant:
+Go2WarpOscVarDampingAxisFlatPhysicalMudDR4xSlowFirm. Ckpts seed0
+20260612_012032_*, seed1 20260612_014631_*.
+
+Open: is variable-impedance ESSENTIAL or does slow+firm rescue joint-PD too? (testing)

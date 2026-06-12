@@ -38,6 +38,7 @@ Select an algorithm tab below to see its presets. Defaults (gamma=0.99, reward_s
     | Go2WarpJoystickFlatPhysical | 4,096 | 100M | 3e-04 | 20 | 4 | 0.01 | gamma=0.97, num_updates_per_batch=4, policy_hidden_dim=(512, 256, 128), value_hidden_dim=(512, 256, 128), max_grad_norm=1, eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpJoystickFlatPhysicalMudDR | 4,096 | 100M | 3e-04 | 20 | 4 | 0.01 | gamma=0.97, num_updates_per_batch=4, policy_hidden_dim=(512, 256, 128), value_hidden_dim=(512, 256, 128), max_grad_norm=1, eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpJoystickFlatPhysicalMudDR4x | 4,096 | 100M | 3e-04 | 20 | 4 | 0.01 | gamma=0.97, num_updates_per_batch=4, policy_hidden_dim=(512, 256, 128), value_hidden_dim=(512, 256, 128), max_grad_norm=1, eval_every_n_episodes=500, reset_mode=per_step |
+    | Go2WarpJoystickFlatPhysicalMudDR4xSlowFirm | 4,096 | 100M | 3e-04 | 20 | 4 | 0.01 | gamma=0.97, num_updates_per_batch=4, policy_hidden_dim=(512, 256, 128), value_hidden_dim=(512, 256, 128), max_grad_norm=1, eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpJoystickFlatTorqueSpeed | 4,096 | 100M | 3e-04 | 20 | 4 | 0.01 | gamma=0.97, num_updates_per_batch=4, policy_hidden_dim=(512, 256, 128), value_hidden_dim=(512, 256, 128), max_grad_norm=1 |
     | Go2WarpJoystickUnitree | 4,096 | 100M | 3e-04 | 20 | 4 | 0.01 | gamma=0.97, num_updates_per_batch=4, policy_hidden_dim=(512, 256, 128), value_hidden_dim=(512, 256, 128), max_grad_norm=1 |
     | Go2WarpOscFlatSoftPhysical | 4,096 | 100M | 3e-04 | 20 | 4 | 0.01 | gamma=0.97, num_updates_per_batch=4, policy_hidden_dim=(512, 256, 128), value_hidden_dim=(512, 256, 128), max_grad_norm=1, eval_every_n_episodes=500, reset_mode=per_step |
@@ -93,6 +94,7 @@ Select an algorithm tab below to see its presets. Defaults (gamma=0.99, reward_s
     | Go2WarpJoystickFlatPhysical | 128 | 5M | 0.001 | 512 | 8 | eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpJoystickFlatPhysicalMudDR | 128 | 5M | 0.001 | 512 | 8 | eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpJoystickFlatPhysicalMudDR4x | 128 | 5M | 0.001 | 512 | 8 | eval_every_n_episodes=500, reset_mode=per_step |
+    | Go2WarpJoystickFlatPhysicalMudDR4xSlowFirm | 128 | 5M | 0.001 | 512 | 8 | eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpJoystickFlatTorqueSpeed | 128 | 5M | 0.001 | 512 | 8 |  |
     | Go2WarpJoystickUnitree | 128 | 5M | 0.001 | 512 | 8 |  |
     | Go2WarpOscFlatSoftPhysical | 128 | 5M | 0.001 | 512 | 8 | eval_every_n_episodes=500, reset_mode=per_step |
@@ -146,6 +148,7 @@ Select an algorithm tab below to see its presets. Defaults (gamma=0.99, reward_s
     | Go2WarpJoystickFlatPhysical | 128 | 5M | 3e-04 | 256 | 4 | eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpJoystickFlatPhysicalMudDR | 128 | 5M | 3e-04 | 256 | 4 | eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpJoystickFlatPhysicalMudDR4x | 128 | 5M | 3e-04 | 256 | 4 | eval_every_n_episodes=500, reset_mode=per_step |
+    | Go2WarpJoystickFlatPhysicalMudDR4xSlowFirm | 128 | 5M | 3e-04 | 256 | 4 | eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpJoystickFlatTorqueSpeed | 128 | 5M | 3e-04 | 256 | 4 |  |
     | Go2WarpJoystickUnitree | 128 | 5M | 3e-04 | 256 | 4 |  |
     | Go2WarpOscFlatSoftPhysical | 128 | 5M | 3e-04 | 256 | 4 | eval_every_n_episodes=500, reset_mode=per_step |
@@ -199,6 +202,7 @@ Select an algorithm tab below to see its presets. Defaults (gamma=0.99, reward_s
     | Go2WarpJoystickFlatPhysical | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97, noise_min=0.01, noise_max=0.05, eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpJoystickFlatPhysicalMudDR | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97, noise_min=0.01, noise_max=0.05, eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpJoystickFlatPhysicalMudDR4x | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97, noise_min=0.01, noise_max=0.05, eval_every_n_episodes=500, reset_mode=per_step |
+    | Go2WarpJoystickFlatPhysicalMudDR4xSlowFirm | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97, noise_min=0.01, noise_max=0.05, eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpJoystickFlatTorqueSpeed | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97, noise_min=0.01, noise_max=0.05 |
     | Go2WarpJoystickUnitree | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97, noise_min=0.01, noise_max=0.05 |
     | Go2WarpOscFlatSoftPhysical | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97, noise_min=0.01, noise_max=0.05, eval_every_n_episodes=500, reset_mode=per_step |
@@ -255,6 +259,7 @@ Select an algorithm tab below to see its presets. Defaults (gamma=0.99, reward_s
     | Go2WarpJoystickFlatPhysical | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97, eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpJoystickFlatPhysicalMudDR | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97, eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpJoystickFlatPhysicalMudDR4x | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97, eval_every_n_episodes=500, reset_mode=per_step |
+    | Go2WarpJoystickFlatPhysicalMudDR4xSlowFirm | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97, eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpJoystickFlatTorqueSpeed | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97 |
     | Go2WarpJoystickUnitree | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97 |
     | Go2WarpOscFlatSoftPhysical | 1,024 | 100M | 3e-04 | 8,192 | 8 | gamma=0.97, eval_every_n_episodes=500, reset_mode=per_step |
@@ -310,6 +315,7 @@ Select an algorithm tab below to see its presets. Defaults (gamma=0.99, reward_s
     | Go2WarpJoystickFlatPhysical | 1,024 | 100M | 3e-04 | 2,048 | 8 | gamma=0.97, eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpJoystickFlatPhysicalMudDR | 1,024 | 100M | 3e-04 | 2,048 | 8 | gamma=0.97, eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpJoystickFlatPhysicalMudDR4x | 1,024 | 100M | 3e-04 | 2,048 | 8 | gamma=0.97, eval_every_n_episodes=500, reset_mode=per_step |
+    | Go2WarpJoystickFlatPhysicalMudDR4xSlowFirm | 1,024 | 100M | 3e-04 | 2,048 | 8 | gamma=0.97, eval_every_n_episodes=500, reset_mode=per_step |
     | Go2WarpJoystickFlatTorqueSpeed | 1,024 | 100M | 3e-04 | 2,048 | 8 | gamma=0.97 |
     | Go2WarpJoystickUnitree | 1,024 | 100M | 3e-04 | 2,048 | 8 | gamma=0.97 |
     | Go2WarpOscFlatSoftPhysical | 1,024 | 100M | 3e-04 | 2,048 | 8 | gamma=0.97, eval_every_n_episodes=500, reset_mode=per_step |

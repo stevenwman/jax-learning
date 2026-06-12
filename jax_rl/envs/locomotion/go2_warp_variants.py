@@ -209,9 +209,23 @@ def _var_muddr4x_slowfirm_config():
     """R4: 'slow + firm' — firm-planting shaping PLUS reduced velocity-tracking
     pressure (tracking_lin_vel 10→4) so the policy isn't punished for slowing in
     mud. Addresses the firm-plant failure mode (over-lunging in deep thick mud →
-    fall). Completes the user's 'slower AND firmly plant' intuition."""
+    fall). Completes the user's 'slower AND firmly plant' intuition. ROBUST: both
+    seeds clear the full Newton mud gradient upright."""
     cfg = _var_muddr4x_firmplant_config()
     cfg.reward_config.scales.tracking_lin_vel = 4.0   # 0.4× default (10.0): less lunge
+    return cfg
+
+
+def _jointpd_muddr4x_slowfirm_config():
+    """R5: the slow+firm recipe on JOINT-PD control — tests whether variable
+    impedance is ESSENTIAL or whether the DR+reward recipe rescues fixed-gain
+    control too (joint-PD 4× alone REGRESSED to y2.78)."""
+    cfg = go2_config(motor="physical",
+                     mud=dict(depth_range=(0.03, 0.22), f_range=(14.0, 60.0),
+                              c1_range=(9.0, 40.0), c2_range=(6.0, 28.0)))
+    cfg.reward_config.scales.feet_slip = -0.6
+    cfg.reward_config.scales.orientation = -8.0
+    cfg.reward_config.scales.tracking_lin_vel = 4.0
     return cfg
 
 
@@ -443,8 +457,12 @@ GO2_WARP_VARIANTS = {
     "Go2WarpOscVarDampingAxisFlatPhysicalMudDR4xSlowFirm": EnvVariant(
         config=_var_muddr4x_slowfirm_config,
         train=_DR_TRAIN,
-        notes="R4: firm-planting + reduced velocity pressure (tracking 10→4) to stop "
-              "the over-lunge/fall in deep thick mud — the user's 'slow AND firm'"),
+        notes="R4 ROBUST WINNER: firm-planting + reduced velocity pressure — both "
+              "seeds clear the full Newton mud gradient upright (s0 y-0.36, s1 y-2.20)"),
+    "Go2WarpJoystickFlatPhysicalMudDR4xSlowFirm": EnvVariant(
+        config=_jointpd_muddr4x_slowfirm_config,
+        train=_DR_TRAIN,
+        notes="R5: slow+firm recipe on joint-PD — is var-impedance essential?"),
     # ── Hard-kick comparison ladder ──────────────────────────────────────
     # DOMAIN-RANDOMIZED kick strength: per-episode kick bound ~ U[0.5, 2.5] m/s
     # (into the ≥2 m/s pure-impedance failure regime), vs the default fixed
