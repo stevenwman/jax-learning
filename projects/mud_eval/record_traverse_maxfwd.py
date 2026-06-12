@@ -31,6 +31,9 @@ SPAWN_Z = float(sys.argv[4]) if len(sys.argv) > 4 else 0.10
 YAW = float(sys.argv[5]) if len(sys.argv) > 5 else 0.5   # 0.5=face +Y (thick-first); -0.5=face -Y (thin-first)
 TAG = sys.argv[6] if len(sys.argv) > 6 else "traverse"
 OSC = (len(sys.argv) > 7 and sys.argv[7].lower() == "osc")   # OSC controller vs joint-PD
+# Forward command vx (read BEFORE sys.argv is reassigned for the Newton parser below).
+# Lower it (e.g. 0.5) to test whether pitch-forward is a max-command lunge artifact.
+VX = float(sys.argv[8]) if len(sys.argv) > 8 else 1.5
 # soft-OSC ckpt gains (mjx_backend _osc_soft_physical); other OSC ckpts differ
 OSC_KP = np.array([1500.0, 1500.0, 2000.0]); OSC_KD = np.array([78.0, 78.0, 92.0])
 OSC_TLIM = np.array([23.7, 23.7, 45.43] * 4)
@@ -85,9 +88,6 @@ example._auto_forward = True               # forward command (body +X)
 # MAX forward velocity (vx=1.5 = cmd_a[0] upper bound). Wrap apply_control so the
 # command is set immediately before it's consumed — the headless keyboard block in
 # example.step() zeros self.command each frame, so setting it earlier doesn't stick.
-# Forward command vx is the 8th CLI arg (default 1.5 = cmd_a[0] max). Lower it
-# (e.g. 0.5) to test whether the pitch-forward gait is a max-command lunge artifact.
-VX = float(sys.argv[8]) if len(sys.argv) > 8 else 1.5
 _orig_apply_control = example.apply_control
 def _maxfwd_apply_control():
     example.command[0, 0] = VX
