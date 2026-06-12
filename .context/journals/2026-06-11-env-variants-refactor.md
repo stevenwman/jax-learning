@@ -493,3 +493,40 @@ RMA failed because it dropped THOSE too. NoAir kills only air_time → best of b
 NoAir is the new recommended recipe. CAVEAT: seed0 only (winner was 2-seed robust);
 confirm seed1 before declaring bulletproof. Videos: noair_FLAT_fwd.mp4,
 noair_PARITY_thinfirst.mp4; winner_PARITY_thinfirst.mp4, rma_PARITY_thinfirst.mp4.
+
+## ═══ CORRECTION (2026-06-12) — the "NoAir fixed the tripod" claim is WRONG ═══
+The NoAir-fixed-the-tripod / seed1-is-clean conclusions above were measured with the
+WRONG metric: per-leg JOINT-CYCLE COUNT (thigh oscillations). A leg can swing on a
+regular cycle while almost never bearing weight. The honest metric is FOOT CONTACT.
+Built a contact raster (.temp/foot_raster.py: replay qpos → mj_forward → per-foot
+floor-contact sensors + foot site-z). Steady-window RR (back-right) duty / mean height:
+| profile (var-impedance) | RR duty | RR mean height |
+|---|---|---|
+| slow+firm seed1 | 6% | 8.4 cm |
+| NoAir | 4% | 9.3 cm (WORST) |
+| RMA-faithful | 12% | 3.2 cm |
+RR is HANGING in ALL of them — NoAir did NOT fix it (its RR is the most airborne).
+The faithful-RMA reward (all 10 paper terms; ckpt 20260612_171201) gave a no-tripod-by-
+joint-cycle but CROUCHED (0.243 m), forward-pitched (+11°) scurry — and RR still 12%/3.2cm.
+
+**ROOT CAUSE LOCALIZED — it's the CONTROLLER, not the reward.** Discriminator (same
+contact raster on a JOINT-PD flat policy, jointpd_firm_FLAT_fwd_traj.npz):
+| controller | FR | FL | RR | RL |
+|---|---|---|---|---|
+| joint-PD firm | 57% | 54% | 49% | 46% |  ← SYMMETRIC clean trot
+| slow+firm s1 (var-imp) | 52% | 44% | 6% | 36% |  ← RR hangs
+Joint-PD does NOT hang RR. The hang appears ONLY under variable-impedance/OSC control,
+across EVERY seed + reward profile (slow+firm s0/s1, NoAir, RMA-faithful) → systematic,
+NOT seed variance, NOT reward. The Go2 MJCF leg bodies are positionally symmetric
+(FL/RL +0.0465, FR/RR -0.0465; identical -0.213 calves). impedance_gains() decode is
+symmetric (reshape(4,3), all feet identical). Two live hypotheses:
+  (1) an OSC-specific per-foot asymmetry (Jacobian / leg-dof / nominal-foot for foot
+      i=3=RR — "always the last leg" smells off-by-one), OR
+  (2) var-impedance simply ENABLES a cheap 3-legged local optimum (lock a leg stiff +
+      lift it to dodge contact-gated feet_slip + save energy) that joint-PD can't reach
+      (joint-PD must actively cycle all 4 to stay up). Always-RR argues for (1) or a
+      consistent symmetry-breaking bias.
+Leg index order (controller): qpos[7:]/qvel[6:]/FEET_SITES all FL,FR,RL,RR → RR = i=3.
+NEXT: forward-pass symmetry test (identical commanded action → is RR's OSC torque/foot
+force symmetric to RL?) to split code-bug vs learned-optimum. See go2_warp_components.py
+OSC `_run_osc` + `_compute_nominal_foot_body`.
