@@ -141,7 +141,7 @@ def test_osc_physical_variants_default_per_step_dr():
     targets = [n for n in GO2_WARP_VARIANTS
                if ("Osc" in n or n.endswith("Physical") or n.endswith("RoughUni"))
                and "Curriculum" not in n]
-    assert len(targets) == 30, sorted(targets)
+    assert len(targets) == 31, sorted(targets)
     for name in targets:
         cfg, _ = ep.get_fast_sac_preset(name)
         assert cfg.reset_mode == "per_step", name

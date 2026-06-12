@@ -216,6 +216,19 @@ def _var_muddr4x_slowfirm_config():
     return cfg
 
 
+def _var_muddr4x_slowslip_config():
+    """R6 ablation: slow + feet_slip ONLY (no orientation change) — isolates
+    whether the firm-planting (feet_slip) term is the load-bearing reward lever
+    vs the orientation penalty. var + 4× DR + feet_slip -0.6 + tracking 4."""
+    cfg = go2_config(controller="var_impedance", stiffness_granularity="per_axis",
+                     damping_action=True, motor="physical",
+                     mud=dict(depth_range=(0.03, 0.22), f_range=(14.0, 60.0),
+                              c1_range=(9.0, 40.0), c2_range=(6.0, 28.0)))
+    cfg.reward_config.scales.feet_slip = -0.6        # firm planting (only reward change)
+    cfg.reward_config.scales.tracking_lin_vel = 4.0  # slow
+    return cfg
+
+
 def _jointpd_muddr4x_slowfirm_config():
     """R5: the slow+firm recipe on JOINT-PD control — tests whether variable
     impedance is ESSENTIAL or whether the DR+reward recipe rescues fixed-gain
@@ -462,7 +475,11 @@ GO2_WARP_VARIANTS = {
     "Go2WarpJoystickFlatPhysicalMudDR4xSlowFirm": EnvVariant(
         config=_jointpd_muddr4x_slowfirm_config,
         train=_DR_TRAIN,
-        notes="R5: slow+firm recipe on joint-PD — is var-impedance essential?"),
+        notes="R5: slow+firm recipe on joint-PD — FROZE at spawn; var-impedance essential"),
+    "Go2WarpOscVarDampingAxisFlatPhysicalMudDR4xSlowSlip": EnvVariant(
+        config=_var_muddr4x_slowslip_config,
+        train=_DR_TRAIN,
+        notes="R6 ablation: slow + feet_slip only (no orient) — is feet_slip THE lever?"),
     # ── Hard-kick comparison ladder ──────────────────────────────────────
     # DOMAIN-RANDOMIZED kick strength: per-episode kick bound ~ U[0.5, 2.5] m/s
     # (into the ≥2 m/s pure-impedance failure regime), vs the default fixed
