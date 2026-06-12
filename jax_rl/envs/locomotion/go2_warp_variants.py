@@ -205,6 +205,16 @@ def _var_muddr4x_firmplant_config():
     return cfg
 
 
+def _var_muddr4x_slowfirm_config():
+    """R4: 'slow + firm' — firm-planting shaping PLUS reduced velocity-tracking
+    pressure (tracking_lin_vel 10→4) so the policy isn't punished for slowing in
+    mud. Addresses the firm-plant failure mode (over-lunging in deep thick mud →
+    fall). Completes the user's 'slower AND firmly plant' intuition."""
+    cfg = _var_muddr4x_firmplant_config()
+    cfg.reward_config.scales.tracking_lin_vel = 4.0   # 0.4× default (10.0): less lunge
+    return cfg
+
+
 # ── Lazy config callables (env-module configs; import inside the call) ──────
 def _curriculum_config():
     from jax_rl.envs.locomotion.go2_warp_curriculum import default_config
@@ -428,7 +438,13 @@ GO2_WARP_VARIANTS = {
     "Go2WarpOscVarDampingAxisFlatPhysicalMudDR4xFirm": EnvVariant(
         config=_var_muddr4x_firmplant_config,
         train=_DR_TRAIN,
-        notes="var-impedance 4× mud DR + firm-planting reward shaping (R2)"),
+        notes="var-impedance 4× mud DR + firm-planting reward shaping (R2): seed0 "
+              "CLEARED the mud (y-1.4); seed1 reached deep thick then fell (lunge)"),
+    "Go2WarpOscVarDampingAxisFlatPhysicalMudDR4xSlowFirm": EnvVariant(
+        config=_var_muddr4x_slowfirm_config,
+        train=_DR_TRAIN,
+        notes="R4: firm-planting + reduced velocity pressure (tracking 10→4) to stop "
+              "the over-lunge/fall in deep thick mud — the user's 'slow AND firm'"),
     # ── Hard-kick comparison ladder ──────────────────────────────────────
     # DOMAIN-RANDOMIZED kick strength: per-episode kick bound ~ U[0.5, 2.5] m/s
     # (into the ≥2 m/s pure-impedance failure regime), vs the default fixed

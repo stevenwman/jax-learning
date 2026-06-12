@@ -249,3 +249,51 @@ New variant Go2WarpOscVarDampingAxisFlatPhysicalMudDR4xFirm: var-impedance + 4×
 + feet_slip -0.1→-0.6 (firm planting) + orientation -5→-8 (discourage lean). Velocity
 tracking left default. Head-to-head vs lean-and-drive var-4× (y=0.68). If deeper →
 firm planting wins (validates intuition); if shallower → lean-and-drive was better.
+
+### R2 RESULT — firm-planting reward shaping SOLVES the traverse 🎯
+| policy | final y | depth | posture z | pitch |
+|---|---|---|---|---|
+| R1 var-4× lean-and-drive | 0.68 | deep thick (didn't exit) | 0.30 | +15° |
+| **R2 var-4× + FIRM PLANT** | **−1.38** | **THROUGH the whole gradient, out the far side** | 0.33 (tall) | +4° at exit |
+
+Full ladder (thin-first maxfwd vx=1.5, lower y = deeper; mud y0-3, y<0 = cleared):
+R0 var 1.29 / joint-PD 1.62 → R1 var **0.68** / joint-PD **2.78 (regressed)** →
+R2 var+firmplant **−1.38 (CLEARED THE MUD)**.
+
+**Winning recipe = variable-impedance control + 4× mud DR + firm-planting reward**
+(feet_slip -0.1→-0.6, orientation -5→-8). The policy crosses thin→medium→thick and
+walks out, taller posture than lean-and-drive.
+
+**Mechanistic insight (connects to the force-probe finding):** the Newton bog is
+TRACTION LOSS on a yielding substrate (not resistance — force probe showed Newton bogs
+at ~3N). Pure DR coeff-scaling (resistance) only got partway (var-4× to y0.68). The
+feet_slip penalty directly targets TRACTION — it trains the foot to plant firmly and
+not slide, which is exactly what the yielding mud destroys. Tell: the firm-plant policy
+STILL pitches hard (+25° at the densest thick mud, f530) — MORE than lean-and-drive —
+yet succeeds, because firm planting gives the foot grip to convert that lean into
+forward thrust instead of slipping. So firm planting didn't remove the lean; it made
+the lean EFFECTIVE. The user's "plant feet firmly" intuition was right, and for the
+right reason (traction, the actual failure mode).
+
+Caveats: n=1 seed per arm; the orientation vs feet_slip contributions aren't isolated
+(pitch data suggests feet_slip dominates). Next: seed-replicate the firm-plant win;
+then ablate feet_slip vs orientation. Best ckpt:
+checkpoints/20260612_002529_fast_sac_go2warposcvardampingaxisflatphysicalmuddr4xfirm_seed0
+
+### R3 — seed replication of firm-plant: PARTIAL (real but stability-limited)
+| firm-plant | deepest y | final y | end |
+|---|---|---|---|
+| seed 0 | −1.38 | −1.38 | cleared ✓ |
+| seed 1 | 0.205 (deep thick) | 0.78 | z=0.065 FELL |
+Both seeds drive DEEP into thick mud (beat R1 lean-drive 0.68 and R0 1.29 at their
+deepest), but seed-1 over-lunged to y0.205 then collapsed. So firm-planting reward
+ROBUSTLY improves penetration; CLEAN full traversal is seed-dependent / at the
+stability limit. Tempers the R2 headline: firm-plant is a clear improvement, not yet a
+robust solution. Failure mode = over-lunging in deep thick mud (chasing vx=1.5).
+
+### R4 — "slow + firm" (complete the user's hypothesis)
+Firm planting kept FULL velocity-tracking pressure → policy lunges + falls. User's
+intuition was "slower AND firmly plant" — add the slow half: reduce tracking_lin_vel
+weight so the policy isn't punished for slowing in mud, trading lunge for stable steps.
+Variant Go2WarpOscVarDampingAxisFlatPhysicalMudDR4xSlowFirm: feet_slip -0.6, orient -8,
+tracking_lin_vel 10→4. Test if slow+firm gives ROBUST deep/clean traversal.
