@@ -154,6 +154,24 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
                 self._reward_pose(data.qpos[7:])),
             RewardTerm("base_height", lambda data, **kw:
                 self._cost_base_height(data)),
+            # ── RMA "natural constraints" (arXiv 2107.04034) ───────────────
+            # Bioenergetic terms that shape a natural gait WITHOUT explicit
+            # swing/air-time shaping. Default scale 0; the RMA reward profile
+            # turns them on at the paper's coefficients.
+            # ground_impact/torque_smoothness need foot-force + prev-step carry
+            # state. Subclasses with their own reset/step (postrack &c) don't
+            # supply those and don't use RMA reward → no-op to 0 there (their
+            # scale is 0 anyway). Guards are trace-time (None / static key check).
+            RewardTerm("ground_impact", lambda info, foot_force=None, **kw:
+                self._cost_ground_impact(foot_force, info["last_foot_force"])
+                if foot_force is not None else jp.zeros(())),
+            RewardTerm("torque_smoothness", lambda data, info, **kw:
+                self._cost_torque_smoothness(data.actuator_force, info["last_torque"])
+                if "last_torque" in info else jp.zeros(())),
+            RewardTerm("action_magnitude", lambda action, **kw:
+                self._cost_action_magnitude(action)),
+            RewardTerm("joint_speed", lambda data, **kw:
+                self._cost_joint_speed(data.qvel[6:])),
         ]
 
         # Controller geometry/gains (no-op for JointPD; OSC/VarImpedance cache
@@ -269,6 +287,10 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
             "feet_air_time": jp.zeros(4),
             "last_contact": jp.zeros(4, dtype=bool),
             "swing_peak": jp.zeros(4),
+            # RMA smoothness/impact terms need the previous step's torque + foot
+            # contact force (default 0 -> first step's delta is just the value).
+            "last_torque": jp.zeros(self._mj_model.nu),
+            "last_foot_force": jp.zeros(4),
             "step_count": jp.int32(0),
             "reward_components": {
                 k: jp.zeros(()) for k in self._config.reward_config.scales.keys()
@@ -319,11 +341,14 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
         # Pass info so per-episode force-field params (mud &c) reach the substep.
         data = self._apply_control(data, action, state.info)
 
-        # Foot contact detection.
-        contact = jp.array([
-            data.sensordata[self._mj_model.sensor_adr[sid]] > 0
+        # Foot contact detection. The floor-contact touch sensor reads the
+        # per-foot normal-force MAGNITUDE; >0 == in contact, raw value == the
+        # force used by the RMA ground-impact term.
+        foot_force = jp.array([
+            data.sensordata[self._mj_model.sensor_adr[sid]]
             for sid in self._feet_floor_found_sensor
         ])
+        contact = foot_force > 0
         contact_filt = contact | state.info["last_contact"]
         first_contact = (state.info["feet_air_time"] > 0.0) * contact_filt
         state.info["feet_air_time"] += self.dt
@@ -337,7 +362,8 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
 
         # Compute weighted reward.
         rewards = self._get_reward(
-            data, action, state.info, state.metrics, done, first_contact, contact
+            data, action, state.info, state.metrics, done, first_contact, contact,
+            foot_force,
         )
         rewards = {
             k: v * self._config.reward_config.scales[k]
@@ -351,6 +377,10 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
         # Update info.
         state.info["last_last_act"] = state.info["last_act"]
         state.info["last_act"] = action
+        # RMA smoothness/impact carry-state (this step's torque + foot force
+        # become next step's "previous").
+        state.info["last_torque"] = data.actuator_force
+        state.info["last_foot_force"] = foot_force
         state.info["step_count"] = step_count + 1
         state.info["steps_until_next_cmd"] -= 1
         state.info["rng"], key1, key2 = jax.random.split(rng, 3)
@@ -408,12 +438,14 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
         done: jax.Array,
         first_contact: jax.Array,
         contact: jax.Array,
+        foot_force: jax.Array | None = None,
     ) -> dict[str, jax.Array]:
         del metrics  # UNUSED — kept for potential curriculum-dependent rewards
         return compute_rewards(
             self._reward_spec,
             data=data, action=action, info=info,
             done=done, first_contact=first_contact, contact=contact,
+            foot_force=foot_force,
         )
 
     # ── Tracking rewards ────────────────────────────────────────────────
@@ -460,6 +492,31 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
     ) -> jax.Array:
         del last_last_act  # UNUSED — passed but never read; kept for potential jerk penalty
         return jp.sum(jp.square(act - last_act))
+
+    # ── RMA "natural constraints" (arXiv 2107.04034, Sec III-A) ─────────────
+    def _cost_ground_impact(
+        self, foot_force: jax.Array, last_foot_force: jax.Array
+    ) -> jax.Array:
+        """RMA Ground Impact: -||f_t - f_{t-1}||^2 over the 4 feet (penalizes
+        abrupt contact-force changes = hard foot strikes). foot_force = per-foot
+        normal-force magnitude from the floor-contact touch sensors."""
+        return jp.sum(jp.square(foot_force - last_foot_force))
+
+    def _cost_torque_smoothness(
+        self, torques: jax.Array, last_torque: jax.Array
+    ) -> jax.Array:
+        """RMA Smoothness: -||tau_t - tau_{t-1}||^2 (torque jerk)."""
+        return jp.sum(jp.square(torques - last_torque))
+
+    def _cost_action_magnitude(self, action: jax.Array) -> jax.Array:
+        """RMA Action Magnitude: -||a||^2. Only the first 12 dims (joint position
+        targets) — excludes the variable-impedance stiffness/damping dims so the
+        term doesn't fight impedance modulation."""
+        return jp.sum(jp.square(action[:12]))
+
+    def _cost_joint_speed(self, qvel_joints: jax.Array) -> jax.Array:
+        """RMA Joint Speed: -||qdot||^2 over the 12 actuated joints."""
+        return jp.sum(jp.square(qvel_joints))
 
     # ── Joint costs ─────────────────────────────────────────────────────
 

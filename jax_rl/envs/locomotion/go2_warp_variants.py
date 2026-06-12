@@ -113,6 +113,14 @@ def go2_config(
                 stand_still=-1.0,
                 pose=0.5,
                 base_height=-5.0,
+                # RMA "natural constraints" (arXiv 2107.04034) terms not in the
+                # default reward — default 0 (off) so existing variants are
+                # unchanged; the RMA reward profile turns them on. See the
+                # _rma_faithful_config callable below for the paper coefficients.
+                ground_impact=0.0,      # -||f_foot,t - f_foot,t-1||^2 (contact-force smoothness)
+                torque_smoothness=0.0,  # -||tau_t - tau_t-1||^2 (torque jerk)
+                action_magnitude=0.0,   # -||a||^2 (position-target dims only)
+                joint_speed=0.0,        # -||qvel_joints||^2
             ),
             tracking_sigma=0.25,
             max_foot_height=0.1,
@@ -187,6 +195,65 @@ class EnvVariant:
     train: dict[str, object] = dataclasses.field(default_factory=dict)
     algo: dict[str, dict] = dataclasses.field(default_factory=dict)   # {algo_name: {field: val}}
     notes: str = ""
+
+
+# ── FAITHFUL RMA reward (all 10 "natural constraints", arXiv 2107.04034 Sec III-A) ──
+def _rma_faithful(cfg):
+    """Reproduce RMA's full reward term set + paper coefficients (NOT just the
+    feet-term subtraction in _rma_feet). RMA shapes a natural gait from
+    bioenergetic terms (work, ground-impact, torque-smoothness, action-magnitude,
+    joint-speed) INSTEAD of explicit swing shaping — those effort terms are what
+    we previously skipped. Paper table (|coeff|):
+      Work 0.002 | Ground Impact 0.02 | Smoothness(torque jerk) 0.001 |
+      Action Magnitude 0.07 | Joint Speed 0.002 | Orientation 1.5 |
+      Z-accel(v_z^2) 2.0 | Foot Slip 0.8.
+    Forward(20) + Lateral/Rotation(21) are RMA's FIXED min(vx,0.35)+yaw penalty;
+    our env is command-conditioned (joystick), so we KEEP command tracking
+    (tracking_lin_vel/ang_vel) instead — else the policy ignores the eval command.
+    All non-RMA gait/aux terms (feet_air_time/clearance/height, pose, stand_still,
+    base_height, action_rate, plain torque magnitude, dof_pos_limits) are ZEROED.
+    termination kept (env safety, not a gait term). Mutates + returns cfg."""
+    s = cfg.reward_config.scales
+    # RMA effort / smoothness / impact terms (paper coefficients, as penalties).
+    s.energy = -0.002            # RMA Work: -|tau . dq|
+    s.ground_impact = -0.02      # RMA Ground Impact: -||df_foot||^2
+    s.torque_smoothness = -0.001 # RMA Smoothness: -||dtau||^2
+    s.action_magnitude = -0.07   # RMA Action Magnitude: -||a||^2 (pos-target dims)
+    s.joint_speed = -0.002       # RMA Joint Speed: -||qdot||^2
+    s.orientation = -1.5         # RMA Orientation: -||roll,pitch||^2
+    s.lin_vel_z = -2.0           # RMA Z-accel: -||v_z||^2
+    s.feet_slip = -0.8           # RMA Foot Slip
+    # Zero every non-RMA term (RMA shapes gait via the effort terms above only).
+    s.feet_air_time = 0.0
+    s.feet_clearance = 0.0
+    s.feet_height = 0.0
+    s.pose = 0.0
+    s.stand_still = 0.0
+    s.base_height = 0.0
+    s.action_rate = 0.0          # RMA uses action_magnitude + torque-smoothness, not da
+    s.torques = 0.0              # RMA has no plain torque-magnitude term (work covers it)
+    s.dof_pos_limits = 0.0
+    return cfg
+
+
+def _var_flat_rma_faithful_config():
+    """Faithful RMA reward on the var-impedance FLAT physical env (no mud) — the
+    direct gait test: does RMA's full effort-term reward (not the broken subtractive
+    _rma_feet) produce a clean natural gait? Comparison point for the tripod."""
+    cfg = go2_config(controller="var_impedance", stiffness_granularity="per_axis",
+                     damping_action=True, motor="physical")
+    return _rma_faithful(cfg)
+
+
+def _var_muddr4x_rma_faithful_config():
+    """Faithful RMA reward + 4x mud DR on var-impedance — tests whether RMA's
+    bioenergetic gait shaping ALSO traverses Newton mud (vs the hand-shaped
+    slow+firm / NoAir recipes)."""
+    cfg = go2_config(controller="var_impedance", stiffness_granularity="per_axis",
+                     damping_action=True, motor="physical",
+                     mud=dict(depth_range=(0.03, 0.22), f_range=(14.0, 60.0),
+                              c1_range=(9.0, 40.0), c2_range=(6.0, 28.0)))
+    return _rma_faithful(cfg)
 
 
 # ── RMA-style reward profile (minimal "natural constraints", arXiv 2107.04034) ──
@@ -554,6 +621,17 @@ GO2_WARP_VARIANTS = {
         notes="slow+firm with feet_air_time→0 ONLY (keep clearance/height) — middle "
               "profile: kill the tripod's park-a-leg reward while preserving mud "
               "extraction (RMA dropped too much → bogged Newton at entry)"),
+    "Go2WarpOscVarDampingAxisFlatPhysicalRMAFaithful": EnvVariant(
+        config=_var_flat_rma_faithful_config,
+        train=_DR_TRAIN,
+        notes="FAITHFUL RMA reward (all 10 natural-constraint terms + paper coeffs, "
+              "arXiv 2107.04034) on flat var-impedance — gait test (does RMA's effort-"
+              "term shaping give a clean gait, vs the broken subtractive _rma_feet)"),
+    "Go2WarpOscVarDampingAxisFlatPhysicalMudDR4xRMAFaithful": EnvVariant(
+        config=_var_muddr4x_rma_faithful_config,
+        train=_DR_TRAIN,
+        notes="FAITHFUL RMA reward + 4x mud DR on var-impedance — does RMA's "
+              "bioenergetic gait shaping also traverse Newton mud?"),
     "Go2WarpOscVarDampingAxisFlatPhysicalMudDR4xSlowFirmRMA": EnvVariant(
         config=_var_muddr4x_slowfirm_rma_config,
         train=_DR_TRAIN,
