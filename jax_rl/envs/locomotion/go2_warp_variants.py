@@ -253,6 +253,20 @@ def _var_muddr4x_slowfirm_config():
     return cfg
 
 
+def _var_muddr4x_slowfirm_noair_config():
+    """Middle profile between slow+firm and RMA. RMA zeroed air_time AND
+    clearance AND height → cleaned the flat gait partially but DESTROYED the
+    Newton traverse (bogged at entry: clearance/height are the foot-extraction
+    incentive that lifts feet OUT of mud). Diagnosis: feet_air_time (+0.1
+    REWARDS time-in-air → lets the policy PARK one leg = tripod), while
+    feet_clearance/-height are load-bearing for mud extraction. So zero ONLY
+    feet_air_time; keep clearance/height (mud) and the firm-plant shaping.
+    Tests: is feet_air_time the sole tripod driver, with mud preserved?"""
+    cfg = _var_muddr4x_slowfirm_config()
+    cfg.reward_config.scales.feet_air_time = 0.0   # kill the park-a-leg reward (tripod)
+    return cfg
+
+
 def _var_muddr4x_slowslip_config():
     """R6 ablation: slow + feet_slip ONLY (no orientation change) — isolates
     whether the firm-planting (feet_slip) term is the load-bearing reward lever
@@ -534,6 +548,12 @@ GO2_WARP_VARIANTS = {
         config=_var_muddr1x_slowfirm_config,
         train=_DR_TRAIN,
         notes="#5 ablation: slow+firm reward at 1× Isaac mud DR — is 4× DR dispensable?"),
+    "Go2WarpOscVarDampingAxisFlatPhysicalMudDR4xSlowFirmNoAir": EnvVariant(
+        config=_var_muddr4x_slowfirm_noair_config,
+        train=_DR_TRAIN,
+        notes="slow+firm with feet_air_time→0 ONLY (keep clearance/height) — middle "
+              "profile: kill the tripod's park-a-leg reward while preserving mud "
+              "extraction (RMA dropped too much → bogged Newton at entry)"),
     "Go2WarpOscVarDampingAxisFlatPhysicalMudDR4xSlowFirmRMA": EnvVariant(
         config=_var_muddr4x_slowfirm_rma_config,
         train=_DR_TRAIN,
