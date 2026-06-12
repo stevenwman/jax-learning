@@ -189,6 +189,22 @@ class EnvVariant:
     notes: str = ""
 
 
+# ── Reward-shaped mud config (R2: firm-planting hypothesis test) ────────────
+def _var_muddr4x_firmplant_config():
+    """var-impedance + 1→4× mud DR + reward shaping toward FIRM FOOT PLANTING:
+    heavier feet_slip penalty (penalize contact-phase foot sliding) + heavier
+    orientation penalty (discourage the forward lean the lean-and-drive policy
+    uses). Tests whether 'slow + firm' beats 'lean + drive' on Newton mud.
+    Velocity tracking left at default so the policy still chooses to advance."""
+    cfg = go2_config(controller="var_impedance", stiffness_granularity="per_axis",
+                     damping_action=True, motor="physical",
+                     mud=dict(depth_range=(0.03, 0.22), f_range=(14.0, 60.0),
+                              c1_range=(9.0, 40.0), c2_range=(6.0, 28.0)))
+    cfg.reward_config.scales.feet_slip = -0.6      # 6× default (-0.1): firm planting
+    cfg.reward_config.scales.orientation = -8.0    # 1.6× default (-5.0): less lean
+    return cfg
+
+
 # ── Lazy config callables (env-module configs; import inside the call) ──────
 def _curriculum_config():
     from jax_rl.envs.locomotion.go2_warp_curriculum import default_config
@@ -406,6 +422,13 @@ GO2_WARP_VARIANTS = {
                              c1_range=(9.0, 40.0), c2_range=(6.0, 28.0))),
         train=_DR_TRAIN,
         notes="joint-PD + mud DR spanning 1→4× Isaac coeffs (R1)"),
+    # R2: reward-shaped toward firm foot planting (heavier feet_slip + orientation
+    # penalties) on the var-impedance 4× mud DR — tests the "slow+firm beats
+    # lean+drive" hypothesis. Config callable sets reward_config overrides.
+    "Go2WarpOscVarDampingAxisFlatPhysicalMudDR4xFirm": EnvVariant(
+        config=_var_muddr4x_firmplant_config,
+        train=_DR_TRAIN,
+        notes="var-impedance 4× mud DR + firm-planting reward shaping (R2)"),
     # ── Hard-kick comparison ladder ──────────────────────────────────────
     # DOMAIN-RANDOMIZED kick strength: per-episode kick bound ~ U[0.5, 2.5] m/s
     # (into the ≥2 m/s pure-impedance failure regime), vs the default fixed

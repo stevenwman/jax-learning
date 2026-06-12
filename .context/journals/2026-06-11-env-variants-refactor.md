@@ -201,3 +201,51 @@ Var-impedance penetrates ~0.33 m deeper + taller posture — the mud_eval headli
 thick (y<1); both bog in medium. Mud DR at 1× cost ~nothing on flat (both ~275-280),
 consistent with the weak-disturbance force finding (analytic 1× = 34% bodyweight).
 → triggers R1 per the decision rule.
+
+### R1 — mud DR expanded to span 1→4× Isaac coeffs (f 14→60, c1 9→40, c2 6→28)
+| arm | flat eval | Newton final y | vs R0 | pitch |
+|---|---|---|---|---|
+| var-impedance 1-4× | 276.0 | **0.68 (THICK mud!)** | R0 1.29 → 0.68 | sustained +12-18° fwd |
+| joint-PD 1-4× | (training) | — | R0 1.62 → ? | — |
+
+**BREAKTHROUGH:** the wider/stronger mud DR pushed var-impedance from bogging in
+medium (y1.29) all the way into THICK mud (y0.68) — first policy to reach thick on the
+thin-first maxfwd traverse. So coeff-scaling DR DOES transfer to Newton, at least
+partway — despite the force-physics mismatch, exposing the policy to stronger analytic
+resistance taught it to drive through soft terrain. Flat perf barely moved (276 vs 279).
+
+**Pitch-forward CONFIRMED (user's observation):** the successful var-4× policy holds a
++12-18° nose-down lean the ENTIRE traverse (not a transient) — a deliberate lean-and-
+drive strategy under the max-forward command. Posture stays tall (z~0.30). Open
+question: is this lean optimal, or a max-command lunge artifact? Tests queued:
+(a) command-sensitivity vx=0.5 vs 1.5; (b) reward shaping toward slow-firm planting.
+
+### R1 joint-PD result — DR scaling SPLITS the controllers
+| arm | R0 (1×) | R1 (1-4×) | pitch | posture |
+|---|---|---|---|---|
+| var-impedance | 1.29 | **0.68 (thick) ✓** | +15° fwd (drive) | z~0.30 |
+| joint-PD | 1.62 | **2.78 (stuck at thin edge!) ✗** | -9° back | z~0.23 crouch |
+
+joint-PD 4× hit the first mud (y2.78) and FROZE for 670 frames — leaning back,
+crouched, never crossing thin. Stronger mud DR made fixed-gain joint-PD MORE timid
+(R0 1.62 → R1 2.78, a regression), while it broke variable-impedance THROUGH to thick
+(1.29 → 0.68). Clean support for the variable-impedance thesis: only stiffness-
+modulating control converts harder-mud training into traversal ability; joint-PD learns
+brace-and-stall. Pitch signs mirror it — success leans INTO mud (+), failure leans away
+(-). Caveat: n=1 seed each. Best policy so far: var-impedance 1-4× (y=0.68).
+
+### Command-sensitivity probe — var-4× at vx=0.5 vs 1.5 (pitch artifact test)
+| command | final y | depth | pitch | posture z |
+|---|---|---|---|---|
+| vx=1.5 (max) | 0.68 | thick | +15° | 0.30 |
+| vx=0.5 (half) | 1.18 | medium | +11° | 0.32 |
+Slower command → LESS penetration (not more); forward pitch PERSISTS at half speed
+(+11°). So the lean-forward is the policy's real mud-driving mechanism (lean→push),
+command-scaled, NOT a max-command artifact. User's "slower=firmer=better" intuition
+does NOT hold for THIS policy (lean-and-drive trained at high command). → motivates R2.
+
+### R2 — reward shaping toward FIRM PLANTING (the user's hypothesis, direct test)
+New variant Go2WarpOscVarDampingAxisFlatPhysicalMudDR4xFirm: var-impedance + 4× mud DR
++ feet_slip -0.1→-0.6 (firm planting) + orientation -5→-8 (discourage lean). Velocity
+tracking left default. Head-to-head vs lean-and-drive var-4× (y=0.68). If deeper →
+firm planting wins (validates intuition); if shallower → lean-and-drive was better.
