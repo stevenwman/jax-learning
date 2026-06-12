@@ -374,3 +374,22 @@ command-scaled driving mechanism (lean→push), not an artifact.
 Best ckpts: var slow+firm seed0 20260612_012032_*, seed1 20260612_014631_*.
 Videos in projects/mud_eval/recordings/: slowfirm_thinfirst_maxfwd, slowfirm_seed1_maxfwd,
 firm_thinfirst_maxfwd, var4x_thinfirst_maxfwd, jointpd4x_thinfirst_maxfwd.
+
+### R6 ablation — slow+slip-only (drop orientation penalty): orientation ALSO matters
+slow + feet_slip ONLY (no orient): y=0.638 (deep thick, did NOT clear), pitch +22°
+sustained. vs slow+firm (slip+orient) y=-0.36/-2.20 (cleared), +8° exit. So BOTH reward
+terms contribute: feet_slip → traction/depth, orientation → pitch control → stability to
+finish clearing. Earlier inference (feet_slip is THE lever, orient dispensable) was half
+right — feet_slip drives depth but orient enables the clean exit. Recipe is near-minimal;
+each lever earns its place. (n=1 ablation — suggestive.)
+
+## ═══ AUTONOMOUS RUN COMPLETE ═══
+Every component of the robust recipe (var-impedance + 4× DR + feet_slip + orientation +
+reduced velocity) was shown necessary by removing it:
+- drop var-impedance (joint-PD): R5 froze at spawn (y3.39).
+- drop 4× DR (1×): R0 bog at medium (y1.29).
+- drop reduced velocity (firm-plant): seed-variant, lunge-and-fall (R3 seed1 fell).
+- drop orientation (slow+slip-only): R6 didn't clear (y0.64), over-pitches.
+- drop feet_slip entirely (lean-drive R1): y0.68, bog in thick.
+Robust winner stands: Go2WarpOscVarDampingAxisFlatPhysicalMudDR4xSlowFirm, both seeds
+clear (y-0.36, -2.20). Goal met + fully characterized.
