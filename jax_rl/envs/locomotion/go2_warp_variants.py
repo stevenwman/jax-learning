@@ -229,6 +229,19 @@ def _var_muddr4x_slowslip_config():
     return cfg
 
 
+def _var_muddr1x_slowfirm_config():
+    """#5 ablation: slow+firm reward but only 1× Isaac mud DR (f 14-15, c1 9-10,
+    c2 6-7) — does the strong 4× DR still matter once you have firm-planting +
+    reduced velocity? If this also clears Newton, 4× DR is dispensable (cheaper)."""
+    cfg = go2_config(controller="var_impedance", stiffness_granularity="per_axis",
+                     damping_action=True, motor="physical",
+                     mud=dict(depth_range=(0.03, 0.22)))   # default coeffs = 1× Isaac
+    cfg.reward_config.scales.feet_slip = -0.6
+    cfg.reward_config.scales.orientation = -8.0
+    cfg.reward_config.scales.tracking_lin_vel = 4.0
+    return cfg
+
+
 def _jointpd_muddr4x_slowfirm_config():
     """R5: the slow+firm recipe on JOINT-PD control — tests whether variable
     impedance is ESSENTIAL or whether the DR+reward recipe rescues fixed-gain
@@ -479,7 +492,11 @@ GO2_WARP_VARIANTS = {
     "Go2WarpOscVarDampingAxisFlatPhysicalMudDR4xSlowSlip": EnvVariant(
         config=_var_muddr4x_slowslip_config,
         train=_DR_TRAIN,
-        notes="R6 ablation: slow + feet_slip only (no orient) — is feet_slip THE lever?"),
+        notes="R6 ablation: slow + feet_slip only (no orient) — both terms matter (y0.64)"),
+    "Go2WarpOscVarDampingAxisFlatPhysicalMudDR1xSlowFirm": EnvVariant(
+        config=_var_muddr1x_slowfirm_config,
+        train=_DR_TRAIN,
+        notes="#5 ablation: slow+firm reward at 1× Isaac mud DR — is 4× DR dispensable?"),
     # ── Hard-kick comparison ladder ──────────────────────────────────────
     # DOMAIN-RANDOMIZED kick strength: per-episode kick bound ~ U[0.5, 2.5] m/s
     # (into the ≥2 m/s pure-impedance failure regime), vs the default fixed

@@ -393,3 +393,24 @@ reduced velocity) was shown necessary by removing it:
 - drop feet_slip entirely (lean-drive R1): y0.68, bog in thick.
 Robust winner stands: Go2WarpOscVarDampingAxisFlatPhysicalMudDR4xSlowFirm, both seeds
 clear (y-0.36, -2.20). Goal met + fully characterized.
+
+## Follow-ups (post-investigation, user "go for it")
+### #1 stiffness readout — var-impedance thesis confirmed at mechanism
+Winning slow+firm ckpt, commanded per-axis stiffness scale s vs FIXED mud depth (MJX):
+| depth(m) | mean s |
+|---|---|
+| 0.00 | 0.460 |
+| 0.05 | 0.482 |
+| 0.10 | 0.519 |
+| 0.15 | 0.547 |
+| 0.22 | 0.551 |
+Monotonic ramp 0.46→0.55 (~20%) — the policy STIFFENS stance in deeper mud (s scales
+kp toward [6000,6000,8000]). Modest but consistent → variable-impedance is used as
+designed (active stiffening), the mechanism behind why joint-PD can't.
+
+### #3 thick-FIRST protocol — recipe crushes the original mud_eval headline
+slow+firm winner, spawn y=-1 facing +Y → hits DENSEST mud (thick y0-1) immediately, no
+warm-up. Final y=2.727 (powered thick→medium→thin, upright z~0.30-0.34 throughout).
+Original mud_eval headline (thick-first, 2026-06-10): var-impedance bogged at y=0.34 in
+thick. This recipe: y=2.73 — cleared thick AND medium into thin. ~8× deeper. Robust to
+protocol (thin-first AND thick-first both work). Video slowfirm_THICKfirst_maxfwd.mp4.
