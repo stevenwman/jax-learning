@@ -34,6 +34,10 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
     # Scene XML to load. Subclasses override (e.g. a rough-heightfield scene).
     _scene_xml = consts.WARP_SCENE_FLAT_XML
 
+    # gait_participation timer cap (steps). 25 @ dt=0.02 → every foot must make
+    # contact within 0.5s or the penalty saturates. See the reward term.
+    GAIT_FULL_CAP = 25.0
+
     def __init__(
         self,
         task: str = "flat_terrain",
@@ -172,6 +176,16 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
                 self._cost_action_magnitude(action)),
             RewardTerm("joint_speed", lambda data, **kw:
                 self._cost_joint_speed(data.qvel[6:])),
+            # Gait-participation: penalize how long since ALL FOUR feet last each
+            # made contact (a "since-reset" timer, NOT simultaneous 4-contact —
+            # a trot is never 4-down-at-once). A hung foot never completes the
+            # set → the timer (info["steps_since_full"]) grows → penalty. Capped
+            # + normalized to [0,1]. Forces every foot to participate within
+            # GAIT_FULL_CAP steps. Default scale 0; guarded for subclasses whose
+            # own reset/step don't maintain the timer.
+            RewardTerm("gait_participation", lambda info, **kw:
+                jp.minimum(info["steps_since_full"], self.GAIT_FULL_CAP) / self.GAIT_FULL_CAP
+                if "steps_since_full" in info else jp.zeros(())),
         ]
 
         # Controller geometry/gains (no-op for JointPD; OSC/VarImpedance cache
@@ -291,6 +305,10 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
             # contact force (default 0 -> first step's delta is just the value).
             "last_torque": jp.zeros(self._mj_model.nu),
             "last_foot_force": jp.zeros(4),
+            # gait_participation: per-foot "touched since last reset" + a timer
+            # counting steps since all four last completed a contact set.
+            "feet_touched": jp.zeros(4, dtype=bool),
+            "steps_since_full": jp.zeros(()),
             "step_count": jp.int32(0),
             "reward_components": {
                 k: jp.zeros(()) for k in self._config.reward_config.scales.keys()
@@ -349,6 +367,14 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
             for sid in self._feet_floor_found_sensor
         ])
         contact = foot_force > 0
+        # gait_participation timer: accumulate which feet have touched since the
+        # last reset; when all four have, reset timer + bitmap, else timer += 1.
+        touched = state.info["feet_touched"] | contact
+        all_touched = jp.all(touched)
+        state.info["steps_since_full"] = jp.where(
+            all_touched, 0.0, state.info["steps_since_full"] + 1.0)
+        state.info["feet_touched"] = jp.where(
+            all_touched, jp.zeros(4, dtype=bool), touched)
         contact_filt = contact | state.info["last_contact"]
         first_contact = (state.info["feet_air_time"] > 0.0) * contact_filt
         state.info["feet_air_time"] += self.dt

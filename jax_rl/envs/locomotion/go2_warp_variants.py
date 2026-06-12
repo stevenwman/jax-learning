@@ -121,6 +121,9 @@ def go2_config(
                 torque_smoothness=0.0,  # -||tau_t - tau_t-1||^2 (torque jerk)
                 action_magnitude=0.0,   # -||a||^2 (position-target dims only)
                 joint_speed=0.0,        # -||qvel_joints||^2
+                # gait participation: penalize steps-since-all-four-feet-touched
+                # (anti-leg-park). Default 0; turned on by a gait-balance variant.
+                gait_participation=0.0,
             ),
             tracking_sigma=0.25,
             max_foot_height=0.1,
@@ -331,6 +334,18 @@ def _var_muddr4x_slowfirm_noair_config():
     Tests: is feet_air_time the sole tripod driver, with mud preserved?"""
     cfg = _var_muddr4x_slowfirm_config()
     cfg.reward_config.scales.feet_air_time = 0.0   # kill the park-a-leg reward (tripod)
+    return cfg
+
+
+def _var_muddr4x_slowfirm_noair_gaitbal_config():
+    """NoAir recipe + gait-participation penalty (anti-leg-park). Targets the
+    real RR-hang cause: the policy commands one foot's Cartesian target up and
+    holds it (a learned 3-legged optimum, NOT a stiffness/controller bug). The
+    gait_participation term penalizes steps-since-all-four-feet-last-touched, so
+    a parked foot drives an ever-growing cost until it participates. Scale -2.0
+    (comparable to feet_slip -0.6 weighted ~0.2). Keeps the mud recipe intact."""
+    cfg = _var_muddr4x_slowfirm_noair_config()
+    cfg.reward_config.scales.gait_participation = -2.0
     return cfg
 
 
@@ -632,6 +647,11 @@ GO2_WARP_VARIANTS = {
         train=_DR_TRAIN,
         notes="FAITHFUL RMA reward + 4x mud DR on var-impedance — does RMA's "
               "bioenergetic gait shaping also traverse Newton mud?"),
+    "Go2WarpOscVarDampingAxisFlatPhysicalMudDR4xSlowFirmNoAirGaitBal": EnvVariant(
+        config=_var_muddr4x_slowfirm_noair_gaitbal_config,
+        train=_DR_TRAIN,
+        notes="NoAir + gait-participation penalty (anti-leg-park): does penalizing "
+              "steps-since-all-4-feet-touched fix the RR-hang 3-legged optimum?"),
     "Go2WarpOscVarDampingAxisFlatPhysicalMudDR4xSlowFirmRMA": EnvVariant(
         config=_var_muddr4x_slowfirm_rma_config,
         train=_DR_TRAIN,
