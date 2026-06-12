@@ -213,6 +213,19 @@ def _var_muddr4x_slowfirm_rma_config():
     return _rma_feet(_var_muddr4x_slowfirm_config())
 
 
+def _jointpd_muddr4x_slowfirm_rma_config():
+    """joint-PD baseline of the RMA-minimal-feet profile — isolates whether the
+    RMA reward cleans gait for any controller vs just var-impedance (2×2:
+    controller × reward). PD fails mud traversal (R5), so this is for the FLAT
+    gait comparison."""
+    cfg = go2_config(motor="physical",
+                     mud=dict(depth_range=(0.03, 0.22), f_range=(14.0, 60.0),
+                              c1_range=(9.0, 40.0), c2_range=(6.0, 28.0)))
+    cfg.reward_config.scales.orientation = -8.0
+    cfg.reward_config.scales.tracking_lin_vel = 4.0
+    return _rma_feet(cfg)
+
+
 # ── Reward-shaped mud config (R2: firm-planting hypothesis test) ────────────
 def _var_muddr4x_firmplant_config():
     """var-impedance + 1→4× mud DR + reward shaping toward FIRM FOOT PLANTING:
@@ -526,6 +539,10 @@ GO2_WARP_VARIANTS = {
         train=_DR_TRAIN,
         notes="slow+firm + RMA-minimal feet (drop air_time/clearance/height/pose/"
               "stand_still, slip→0.8) — fix the tripod gait (arXiv 2107.04034)"),
+    "Go2WarpJoystickFlatPhysicalMudDR4xSlowFirmRMA": EnvVariant(
+        config=_jointpd_muddr4x_slowfirm_rma_config,
+        train=_DR_TRAIN,
+        notes="joint-PD baseline of the RMA-minimal-feet profile (gait 2×2 vs var-imp)"),
     # ── Hard-kick comparison ladder ──────────────────────────────────────
     # DOMAIN-RANDOMIZED kick strength: per-episode kick bound ~ U[0.5, 2.5] m/s
     # (into the ≥2 m/s pure-impedance failure regime), vs the default fixed
