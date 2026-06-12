@@ -414,3 +414,48 @@ warm-up. Final y=2.727 (powered thick→medium→thin, upright z~0.30-0.34 throu
 Original mud_eval headline (thick-first, 2026-06-10): var-impedance bogged at y=0.34 in
 thick. This recipe: y=2.73 — cleared thick AND medium into thin. ~8× deeper. Robust to
 protocol (thin-first AND thick-first both work). Video slowfirm_THICKfirst_maxfwd.mp4.
+
+### #5 — 1× DR + slow+firm: 4× DR is NECESSARY (not dispensable)
+slow+firm reward at only 1× Isaac mud DR: Newton y=0.829 (deep thick, did NOT clear) vs
+4× DR slow+firm y=-0.36/-2.20 (cleared). So the strong 4× DR matters — both the DR
+strength AND the reward shaping contribute. (ckpt died at 4.44M/89%, plateaued ~167 eval
+— undertrained but unlikely to flip the "didn't clear" conclusion.) Ablation COMPLETE:
+every lever necessary (drop var-imp→froze; drop 4×→1× y0.83 no-clear; drop slow→fall;
+drop orient→y0.64 no-clear; drop feet_slip→y0.68 bog).
+
+### #8 forgetting check (winner vs flat-DR baseline on flat + rough)
+
+## ═══ GAIT REFINEMENT — RMA-minimal reward (2026-06-12) ═══
+**Motivation:** slow+firm winner walks an odd tripod-ish gait on flat (back-right foot
+held up). Hypothesis (from RMA arXiv 2107.04034 minimal reward): our gait-shaping feet
+terms cause it — `feet_air_time +0.1` REWARDS time-in-air (lets the policy park a leg),
+and a lifted foot also dodges the contact-gated `feet_slip` penalty → tripod.
+
+### RMA-minimal (drop air_time+clearance+height+pose+stand_still, feet_slip→-0.8)
+Variant `...MudDR4xSlowFirmRMA`, ckpt `20260612_152650_..._seed0`. 5M, seed0.
+- **Flat-forward gait (MJX):** walks 1.12 m/s (cmd 1.0), pitch flat (~0°, std 2.1),
+  upright (z 0.318, no fall). Tripod PARTIALLY cleared: back-right (RR) leg now CYCLES
+  (22 cycles vs 33-37 other legs) instead of fully parked — but still asymmetric, tucked
+  band (RR thigh [0.50,0.93] vs others ~1.0-1.5; RR calf never extends past -1.76 vs
+  others -1.1). Milder tripod, not a clean trot.
+- **Newton mud (the critical test): BOGGED AT ENTRY.** y frozen +3.30→+3.41 (never
+  entered mud), z sank 0.54→0.23, upright (pitch +3°) but stuck the entire 750 frames.
+  slow+firm cleared to y=-0.36. **RMA-minimal DESTROYED the Newton traverse.**
+
+**KEY FINDING — tension between flat-gait cleanliness and mud traverse:**
+The feet terms RMA drops are LOAD-BEARING for mud. `feet_clearance -2.0` + `feet_height
+-0.2` are the foot-EXTRACTION incentive (lift the foot to clear height) that pulls feet
+OUT of mud each step. Zero them → feet plant and sink → bog. So the same lift-shaping
+that causes the flat tripod is what lets the policy extract feet from mud. RMA-minimal is
+too aggressive — a dead end for the actual goal (mud traverse).
+
+### NoAir middle profile (slow+firm with feet_air_time→0 ONLY) — RUNNING
+Diagnosis splits the feet terms: `feet_air_time` (REWARDS duration-in-air = park-a-leg =
+tripod driver) vs `feet_clearance/-height` (penalties enforcing clearance = mud
+extraction). Zero ONLY feet_air_time; keep clearance/height (mud) + firm-plant shaping.
+Variant `...MudDR4xSlowFirmNoAir` (commit d47a8c9). Tests: is feet_air_time the sole
+tripod driver, with the Newton traverse preserved? Training 5M seed0 in flight; eval
+flat gait + Newton next.
+
+NOTE: dropped the PD-RMA gait 2×2 baseline — RMA breaks mud (PD already can't do mud), so
+the 2×2 became academic. Pivoted GPU to the NoAir middle profile (on-mandate: mud perf).
