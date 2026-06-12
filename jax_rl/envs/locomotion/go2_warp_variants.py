@@ -189,6 +189,30 @@ class EnvVariant:
     notes: str = ""
 
 
+# ── RMA-style reward profile (minimal "natural constraints", arXiv 2107.04034) ──
+def _rma_feet(cfg):
+    """Strip the gait-shaping feet terms RMA does NOT use (the tripod suspects):
+    feet_air_time REWARDS lifting a foot, which + heavy contact-gated feet_slip
+    both pay to keep a foot up → tripod. RMA (A1) uses ONLY a slip penalty (0.8)
+    on the feet, no air-time/clearance/height/pose/stand-still. Zero those; raise
+    slip to RMA's 0.8. Keep base_height + orientation as posture anchors (RMA
+    leans on its own term set; dropping ours risks a crouch). Mutates + returns cfg."""
+    s = cfg.reward_config.scales
+    s.feet_air_time = 0.0      # RMA: none (this REWARDED lift → tripod)
+    s.feet_clearance = 0.0     # RMA: none
+    s.feet_height = 0.0        # RMA: none
+    s.pose = 0.0               # RMA: none
+    s.stand_still = 0.0        # RMA: none
+    s.feet_slip = -0.8         # RMA's slip coefficient
+    return cfg
+
+
+def _var_muddr4x_slowfirm_rma_config():
+    """slow+firm recipe + RMA-minimal feet profile — test if dropping the
+    gait-shaping feet terms cleans the tripod gait while keeping mud traversal."""
+    return _rma_feet(_var_muddr4x_slowfirm_config())
+
+
 # ── Reward-shaped mud config (R2: firm-planting hypothesis test) ────────────
 def _var_muddr4x_firmplant_config():
     """var-impedance + 1→4× mud DR + reward shaping toward FIRM FOOT PLANTING:
@@ -497,6 +521,11 @@ GO2_WARP_VARIANTS = {
         config=_var_muddr1x_slowfirm_config,
         train=_DR_TRAIN,
         notes="#5 ablation: slow+firm reward at 1× Isaac mud DR — is 4× DR dispensable?"),
+    "Go2WarpOscVarDampingAxisFlatPhysicalMudDR4xSlowFirmRMA": EnvVariant(
+        config=_var_muddr4x_slowfirm_rma_config,
+        train=_DR_TRAIN,
+        notes="slow+firm + RMA-minimal feet (drop air_time/clearance/height/pose/"
+              "stand_still, slip→0.8) — fix the tripod gait (arXiv 2107.04034)"),
     # ── Hard-kick comparison ladder ──────────────────────────────────────
     # DOMAIN-RANDOMIZED kick strength: per-episode kick bound ~ U[0.5, 2.5] m/s
     # (into the ≥2 m/s pure-impedance failure regime), vs the default fixed
