@@ -362,6 +362,17 @@ def _var_muddr4x_slowfirm_noair_config():
     return cfg
 
 
+def _var_mass_axis_gaitbal_config():
+    """VarImpedanceMass FLAT baseline (regular DR, NO mud) WITH the gait-
+    participation anti-leg-park penalty (-2.0) — the reward that curbs the
+    RR-hang. Same controller as Go2WarpOscVarMassAxisFlatPhysical + gait_participation."""
+    cfg = go2_config(controller="var_impedance", stiffness_granularity="per_axis",
+                     damping_action=True, mass_action=True,
+                     use_op_space_inertia=False, motor="physical")
+    cfg.reward_config.scales.gait_participation = -2.0
+    return cfg
+
+
 def _var_muddr4x_slowfirm_noair_gaitbal_config():
     """NoAir recipe + gait-participation penalty (anti-leg-park). Targets the
     real RR-hang cause: the policy commands one foot's Cartesian target up and
@@ -576,6 +587,11 @@ GO2_WARP_VARIANTS = {
         config=_var_mass_axis_muddr4x_slowfirm_config,
         train=_DR_TRAIN,
         notes="virtual-mass controller + 4× mud DR + slow+firm reward (Newton traverse test)"),
+    "Go2WarpOscVarMassAxisFlatPhysicalGaitBal": EnvVariant(
+        config=_var_mass_axis_gaitbal_config,
+        train=_DR_TRAIN,
+        notes="virtual-mass FLAT baseline (regular DR, no mud) + gait_participation -2.0 "
+              "(anti-leg-park reward) — does the gait reward fix VarMass RR-hang?"),
     # ── Mud force-field variants (analytic foot-wrench OOD probe) ─────────
     # Same controller/motor as Go2WarpOscVarDampingAxisFlatPhysical + an analytic
     # mud foot-force field (MudField; see go2_warp_components.mud_foot_force and
