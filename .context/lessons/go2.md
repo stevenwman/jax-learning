@@ -402,3 +402,18 @@ differenced:
   metric — a dead term hides behind a policy that compensates via other channels.
 - When a quantity is computed in two places (train env + eval harness), a discrepancy
   surfaces ONLY at transfer and masquerades as a physics/stability problem.
+
+## Virtual-mass VERDICT on Newton mud — negative (2026-06-13)
+
+After fixing the ẍ≡0 bug (mass term was live for the first time) and taming it
+(Λ-weighted + var_a=(0,0.5) + ẍ EMA 0.3), trained on the analytic-mud ROM forces
+and evaluated on held-out Newton MPM mud: **marginal + shallower, doesn't earn its
+keep.** 6 reps → ~33% catapult (max z 2.3-7.8 m, flips, collapses); the 4 clean runs
+reach only y≈0.3 (stuck at thick-mud entry, don't clear) vs the non-mass winners
+NoAir y-2.42 / slow+firm y-0.16 (stable clears). Mechanism: **sim-to-sim ẍ gap** — the
+analytic mud the policy trains on is smooth; MPM contact ẍ is spiky, so A·ẍ blows up at
+contact even tamed. Note ROM-mud TRAINING *does* help depth (flat zero-shot bogs y1.62 →
+ROM-trained y0.3), but the mass term's instability caps it. Takeaway: an acceleration-
+feedback term is only as good as the ẍ distribution it trained on; to use it on a spiky
+substrate, train on spiky ẍ (or drop it — the non-mass recipe is the mud champion). The
+thread's lasting wins were the ẍ≡0 fix and the OSC parity infra, not the mass controller.

@@ -56,6 +56,38 @@ Worktree `go2-osc-impedance`. Spec + journal + lesson written.
       ×2 (`denormalize` unexpected kwarg `unidirectional_rot`); (3)
       `tests/test_pusht_parity.py` ×3 (pymunk `add_collision_handler` API drift
       / gym_pusht import).
+- [x] **gait_participation reward fixes the RR-hang (2026-06-12)** — every
+      var-impedance/OSC policy parks the back-right foot (contact raster: RR ~0%
+      duty across 4 rewards + the mass controller; joint-PD is symmetric). It's a
+      learned 3-legged optimum, not geometry. The anti-leg-park penalty
+      (`gait_participation=-2.0`, steps-since-all-four-touched) lifts RR 0→32%,
+      eval unchanged. Measure CONTACT not joint-cycle count (cycling RR foot can
+      still be airborne). Commit d803cee + 1f2267e.
+- [x] **Virtual mass (acceleration-feedback) controller — built, verdict NEGATIVE
+      for mud (2026-06-12/13)** — `VarImpedanceMass`: F=A·ẍ+K·err+D·ẋ, policy
+      commands per-axis virtual mass A, ẍ=finite-diff foot vel. Spec/plan
+      `.superpowers/*2026-06-12-osc-virtual-mass*`. FOUND+FIXED a ẍ≡0 bug (mass
+      term was dead in ALL prior MJX training — last_foot_vel stored post-control
+      == next-step start; fix: update at step start + EMA). Result: trains stable
+      on flat (eval ~275) but on Newton MPM mud it's MARGINAL (~33% catapult/6
+      reps even tamed var_a=0.5+ema=0.3+Λ) AND shallower (clean y~0.3 vs non-mass
+      NoAir y-2.42 / winner y-0.16). Sim-to-sim ẍ gap (smooth analytic mud vs
+      spiky MPM) defeats it. Commits 55f6622, f9933da, 7dd13a8.
+- [x] **OSC parity infra (2026-06-13, commit 57317a0)** — ckpts SELF-DESCRIBE
+      their controller via `meta['control']['osc']`; Newton `mud_osc` reads it
+      (+ got the missing ẍ EMA); `test_jax_numpy_osc_parity` pins the jax↔numpy
+      ports equal. Kills the param-mismatch class (the earlier mass "catapults"
+      were harness mismatches: Λ-vs-bare / a_max / dropped-mass, not instability).
+- [ ] **Virtual mass NEXT (if pursued):** the analytic mud ẍ is too smooth vs
+      MPM's spiky contact — either train on spikier ẍ (MPM-like transients in the
+      training env) or drop the mass term. Non-mass slow+firm/NoAir stays mud champ.
+- [ ] **PosTrack goal randomization (user wants, spec pending)** — flat PosTrack
+      is FORWARD-ONLY (only nominal_vx randomized; target_yaw fixed, goal marches
+      straight, never resampled). For velocity-track-level diversity: sample
+      marching direction θ in BODY frame (polar (r,θ) ≈ randomizing vx,vy, more
+      isotropic) + decoupled yaw-rate + mid-episode resample. Recommended:
+      marching-polar (dense Lorentzian reward, commands speed). See journal
+      2026-06-11 "PosTrack goal-condition".
 - [ ] **Migrate G1/splitbelt/bongo/factory to the variants pattern** if it
       proves out on Go2 — same EnvVariant table + raise-on-unknown preset
       resolution per env family.
