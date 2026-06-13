@@ -500,6 +500,9 @@ class VarImpedanceMass(VarImpedance):
         osc = env._config.osc
         self._a_min = float(getattr(osc, "var_a_min", 0.0))
         self._a_max = float(getattr(osc, "var_a_max", 2.0))
+        # ẍ EMA low-pass coeff α (0<α≤1; 1 = no smoothing). Tames the contact-
+        # impact ẍ spikes that otherwise drive A·ẍ chatter / catapult.
+        self._xdd_ema = float(getattr(osc, "var_xdd_ema", 1.0))
         # Mass block starts after deltas(12) + stiffness(n) + damping(n if on).
         self._mass_start = 12 + self._n_stiffness * (1 + int(self._damping_action))
 
@@ -516,11 +519,18 @@ class VarImpedanceMass(VarImpedance):
         A = lin_action_scale(
             action[self._mass_start:self._mass_start + n], self._a_min, self._a_max
         ).reshape(4, 3)
-        # ẍ = control-step finite diff of foot velocity (world frame). info is None
-        # only outside the env loop (e.g. unit probes) → no accel feedback.
+        # ẍ = control-step finite diff of foot WORLD velocity. CRITICAL: update
+        # last_foot_vel HERE (start of step) so consecutive reads are one control
+        # step apart — storing it post-control (in env.step) made v_now==last and
+        # ẍ≡0 (dead mass term). EMA-smooth to tame contact-impact spikes. info is
+        # None only outside the env loop (unit probes) → no accel feedback.
         if info is not None:
             v_now = data.sensordata[env._foot_linvel_sensor_adr].reshape(4, 3)
-            acc = (v_now - info["last_foot_vel"]) / env.dt
+            acc_raw = (v_now - info["last_foot_vel"]) / env.dt
+            a = self._xdd_ema
+            acc = (1.0 - a) * info["xdd_ema"] + a * acc_raw
+            info["last_foot_vel"] = v_now      # start-of-step vel → next step's prev
+            info["xdd_ema"] = acc              # carry smoothed ẍ
         else:
             acc = jp.zeros((4, 3))
         accel_force = A * acc                                            # (4,3)

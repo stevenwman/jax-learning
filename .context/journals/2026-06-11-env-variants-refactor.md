@@ -602,3 +602,27 @@ saved to memory feedback_apply_named_configs.
 Mass thread state: FLAT+gait = solved (stable, mass used, RR fixed). MUD still
 open (catapult at a_max=2.0; needs lower-a_max retrain, now also fold in
 gait_participation).
+
+## ═══ ẍ≡0 BUG — the virtual-mass term was DEAD in all MJX training (2026-06-12) ═══
+User's "buzzy/irregular gait" observation on the varied-cmd video led to a contact-
+frequency check (all 4 feet ~7.5 Hz chatter vs ~2 Hz clean) → traced to the ẍ
+computation, which is **exactly 0.0000** in MJX (verified: foot speed 1.15 m/s but
+finite-diff = 0).
+
+ROOT CAUSE: `ẍ = (v_now − last_foot_vel)/dt`. `last_foot_vel` was stored at the END
+of `step()` (post-control physics); next step reads `v_now` at its START from the SAME
+carried `state.data` (end-of-N == start-of-N+1 bit-identical) → diff ≡ 0. The entire
+`A·ẍ` term was zero — the mass controller was secretly just bare-K/D var-impedance.
+
+INVALIDATES prior mass conclusions:
+- flat "policy uses the mass knob" = MEANINGLESS (A × 0).
+- flat buzz (7.2 Hz) = a bare-K/D property, NOT A·ẍ chatter (earlier hypothesis WRONG).
+- Newton catapult = train(ẍ=0)/eval(ẍ≠0, mud_osc computes it correctly) MISMATCH, an
+  untrained-for A·ẍ going live at transfer — not (only) accel-feedback instability.
+
+FIX (commit pending): update `last_foot_vel` at the START of the step, inside
+VarImpedanceMass.apply (one control-step apart) + EMA-smooth ẍ (var_xdd_ema) + lower
+var_a_max. Post-fix ẍ_ema |mean abs| = 61.7 (LIVE, and large/spiky at contact → EMA +
+bounded a_max now genuinely needed). Lesson: lessons/go2.md "Finite-diff ... differenced
+a value with itself". NEXT: retrain flat (var_a≤0.5 + EMA + gait_participation) with a
+LIVE mass term → does buzz clear / does mass help? then mud.

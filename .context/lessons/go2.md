@@ -370,3 +370,35 @@ no catapult. The mass *range* is the accel-feedback stability lever; a_max=2.0
 (an unvalidated spec guess) is too large for the rough substrate. Newton transfer
 needs the Newton-side `mud_osc` ported too (48-d parse + bare law + A·ẍ via
 control-step ẍ in the costep) — done, commit e7bc97c.
+
+## Finite-diff across a step that differenced a value with itself (ẍ≡0 bug, 2026-06-12)
+
+The virtual-mass controller needs foot acceleration `ẍ = (v_now − v_prev)/dt`.
+For ~weeks-equivalent it computed **exactly 0** because of WHICH two samples it
+differenced:
+- `v_prev` (`last_foot_vel`) was stored at the END of `step()` (post-control physics).
+- next step read `v_now` at its START — but `state.data` flows UNCHANGED across the
+  step boundary, so start-of-step-N+1 == end-of-step-N bit-for-bit.
+- → `v_now` and `v_prev` were the same instant → diff ≡ 0. The `A·ẍ` term was DEAD;
+  the controller was secretly just bare-K/D var-impedance.
+
+**Why it stayed invisible:**
+1. Velocity tracking still trained fine (eval 283) — the headline metric never sees a
+   zeroed auxiliary term; the policy just ignores the dead channel.
+2. The PARALLEL eval path (Newton `mud_osc`) computed ẍ a DIFFERENT, correct way
+   (its own prev-vel tracking) → the term went live ONLY at eval, driven by an `A` the
+   policy never learned → looked like an "instability" (catapult), was really a
+   train/eval mismatch.
+
+**Fix:** update `v_prev` at the START of the step (inside the controller, right when
+`v_now` is read), so consecutive samples are one control-step apart.
+
+**Reusable rules:**
+- A finite difference across a step is only valid if the two samples are from
+  DIFFERENT times. If state flows unchanged across the boundary, "store prev at end,
+  read current at start" aliases prev==current → silent 0. Store `prev` at the SAME
+  phase you read `current`.
+- INSTRUMENT zeroable terms directly (`print |ẍ|`), don't infer from the headline
+  metric — a dead term hides behind a policy that compensates via other channels.
+- When a quantity is computed in two places (train env + eval harness), a discrepancy
+  surfaces ONLY at transfer and masquerades as a physics/stability problem.

@@ -34,6 +34,7 @@ def go2_config(
     damping_action: bool = False,              # var_impedance only
     mass_action: bool = False,                 # var_impedance only — policy virtual mass A
     var_s=(0.25, 2.0), var_zeta=(0.5, 2.0), var_a=(0.0, 2.0),
+    var_xdd_ema: float = 1.0,                  # mass only: ẍ EMA coeff (1=no smoothing)
     motor: str = "ideal",                  # "ideal" | "torque_speed" | "physical"
     terrain: Union[str, tuple] = "flat",   # "flat" | (profile, amplitude)
     push=(0.75, 0.75),
@@ -172,6 +173,7 @@ def go2_config(
                 cfg.osc.mass_action = True
                 cfg.osc.var_a_min = var_a[0]
                 cfg.osc.var_a_max = var_a[1]
+                cfg.osc.var_xdd_ema = var_xdd_ema
 
     if motor == "torque_speed":
         cfg.torque_speed_model = True
