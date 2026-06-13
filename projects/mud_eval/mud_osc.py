@@ -64,6 +64,13 @@ def _log_action_scale(a, lo, hi):
     return lo * (hi / lo) ** u
 
 
+def _lin_action_scale(a, lo, hi):
+    """a in [-1,1] -> [lo,hi] LINEAR (a=0 -> midpoint). Port of
+    go2_warp_components.lin_action_scale (virtual mass A, range may include 0)."""
+    u = 0.5 * (np.clip(a, -1.0, 1.0) + 1.0)
+    return lo + (hi - lo) * u
+
+
 def impedance_gains_np(action, kp_base, kd_base, granularity, s_min, s_max,
                        damping_action, z_min, z_max):
     """Decode per-leg Cartesian gains (kp, kd) each (4,3) from the action tail.
@@ -91,11 +98,19 @@ class MudOscController:
     Requires use_mujoco_cpu (solver.mj_data is the actively-stepped data)."""
 
     def __init__(self, solver, kp, kd, torque_limit, use_op_space_inertia=True,
-                 ridge=1e-4, home_joints=None, var=None):
+                 ridge=1e-4, home_joints=None, var=None, ctrl_dt=0.02):
         self.m = solver.mj_model
         self.d = solver.mj_data
         self.foot_sites, self.trunk, self.leg_dofs = find_legs(self.m)
         self.nv = int(self.m.nv)
+        # Virtual-mass (acceleration-feedback) state. ẍ is a CONTROL-step finite
+        # diff of foot world velocity (matches training: held across substeps,
+        # recomputed when the action changes). _jacp scratch for foot velocities.
+        self.ctrl_dt = float(ctrl_dt)
+        self._prev_ctrl_foot_vel = None     # (4,3) foot world vel at last control step
+        self._last_action = None            # detect control-step boundary
+        self._held_accel_force = np.zeros((4, 3))
+        self._jacp = np.zeros((3, int(self.m.nv)))
         hj = list(home_joints) if home_joints is not None else [0.0, 0.9, -1.8] * 4
         home_qpos = np.zeros(self.m.nq)
         home_qpos[2] = 0.3; home_qpos[3] = 1.0          # base z + quat w (trunk-frame, pose-invariant)
@@ -123,9 +138,39 @@ class MudOscController:
         sync_mjdata(self.d, jq, jqd)
         mujoco.mj_forward(self.m, self.d)
         targets = self.nominal + np.asarray(deltas).reshape(4, 3)
+
+        # Virtual mass: F += A·ẍ. A decoded from the action mass-tail; ẍ = a
+        # CONTROL-step finite diff of foot WORLD velocity (full Jacobian @ qvel,
+        # incl. base motion — matches the training foot-linvel sensor). Recomputed
+        # only when the action changes (= new control step), held across substeps.
+        accel_force = None
+        if self.var is not None and self.var.get("mass_action") and action is not None:
+            new_ctrl_step = (self._last_action is None
+                             or not np.array_equal(action, self._last_action))
+            if new_ctrl_step:
+                v_now = np.empty((4, 3))
+                for i in range(4):
+                    mujoco.mj_jacSite(self.m, self.d, self._jacp, None, int(self.foot_sites[i]))
+                    v_now[i] = self._jacp @ self.d.qvel
+                if self._prev_ctrl_foot_vel is None:
+                    acc = np.zeros((4, 3))              # first step: no history
+                else:
+                    acc = (v_now - self._prev_ctrl_foot_vel) / self.ctrl_dt
+                n = 4 if self.var["granularity"] == "per_foot" else 12
+                start = 12 + n * (1 + int(self.var["damping_action"]))
+                A = _lin_action_scale(np.asarray(action[start:start + n]),
+                                      self.var["a_min"], self.var["a_max"])
+                A = (A[:, None] if self.var["granularity"] == "per_foot"
+                     else A.reshape(4, 3))
+                self._held_accel_force = A * acc        # (4,3)
+                self._prev_ctrl_foot_vel = v_now
+                self._last_action = np.array(action)
+            accel_force = self._held_accel_force
+
         tau = osc_torque(self.m, self.d, self.foot_sites, self.leg_dofs, self.trunk,
                          targets, kp, kd, self.torque_limit,
-                         use_op_space_inertia=self.use_lambda, ridge=self.ridge)
+                         use_op_space_inertia=self.use_lambda, ridge=self.ridge,
+                         accel_force=accel_force)
         jf = np.zeros(self.nv, np.float32)
         jf[6:6 + 12] = tau                              # 12 actuated dofs (FL,FR,RL,RR)
         return jf
@@ -133,10 +178,11 @@ class MudOscController:
 
 def osc_torque(mj_model, mj_data, foot_site_ids, leg_dof_ids, trunk_body_id,
                target_foot_body, kp, kd, torque_limit,
-               use_op_space_inertia=True, ridge=1e-4):
+               use_op_space_inertia=True, ridge=1e-4, accel_force=None):
     """Cartesian-impedance joint torque, (12,) leg/joint order. Numpy port of
     compute_leg_impedance_torque. Requires mj_data already forwarded (mj_forward)
-    so xpos/xmat/site_xpos/qvel/qM are current."""
+    so xpos/xmat/site_xpos/qvel/qM are current. ``accel_force`` (4,3) = the
+    virtual-mass A·ẍ task force, added to F before Jᵀ (NOT Λ-weighted)."""
     body_pos = mj_data.xpos[trunk_body_id]
     R = mj_data.xmat[trunk_body_id].reshape(3, 3)
 
@@ -167,6 +213,8 @@ def osc_torque(mj_model, mj_data, foot_site_ids, leg_dof_ids, trunk_body_id,
             F = Lam @ wrench
         else:
             F = wrench
+        if accel_force is not None:
+            F = F + np.asarray(accel_force[i])         # A·ẍ task force (bare)
         taus.append(J.T @ F)                           # (3,) joint torque
 
     tau = np.concatenate(taus)

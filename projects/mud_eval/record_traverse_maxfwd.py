@@ -70,20 +70,33 @@ if OSC:                                     # wire the operational-space control
     # variable impedance (M3) when action > 12: tail decodes per-foot/per-axis
     # stiffness (+ damping). base gains [3000,3000,4000]/[110,110,130], s in [0.25,2].
     _var = None
+    # 48-d = per_axis deltas(12)+stiffness(12)+damping(12)+MASS(12): the virtual-
+    # mass controller (VarImpedanceMass), which uses the BARE law (no Λ-weighting)
+    # and adds A·ẍ. It's the only 48-d controller, so action_dim disambiguates it.
+    _mass = (_ad >= 48)
     if _ad > 12:
-        _gran = "per_foot" if _ad in (16, 20) else "per_axis"
-        _var = dict(granularity=_gran, damping_action=(_ad in (20, 36)),
+        if _mass:
+            _gran, _damp = "per_axis", True
+        else:
+            _gran = "per_foot" if _ad in (16, 20) else "per_axis"
+            _damp = (_ad in (20, 36))
+        _var = dict(granularity=_gran, damping_action=_damp,
                     s_min=0.25, s_max=2.0, z_min=0.5, z_max=2.0,
                     kp_base=[3000.0, 3000.0, 4000.0], kd_base=[110.0, 110.0, 130.0])
+        if _mass:
+            _var.update(mass_action=True, a_min=0.0, a_max=2.0)  # matches var_a=(0,2)
+    _use_lambda = not _mass     # mass controller trained bare (use_op_space_inertia=False)
     example.control.joint_f = wp.zeros(int(example.model.joint_dof_count), dtype=wp.float32,
                                        device=example.model.device)
     _ctrl = mud_osc.MudOscController(example.solver, OSC_KP, OSC_KD, OSC_TLIM,
-                                     use_op_space_inertia=True, ridge=1e-4,
-                                     home_joints=_meta["control"]["default_pose_policy"], var=_var)
+                                     use_op_space_inertia=_use_lambda, ridge=1e-4,
+                                     home_joints=_meta["control"]["default_pose_policy"],
+                                     var=_var, ctrl_dt=0.02)
     example.policy.osc_mode = True
     mud_costep.set_substep_control(lambda exmp: exmp.control.joint_f.assign(
         _ctrl.compute_joint_f(exmp.state_0, exmp.policy.last_deltas, exmp.policy.last_act)))
-    print(f"[TRAV] OSC wired ({'var-' + _var['granularity'] if _var else 'fixed-soft'}, PD off)", flush=True)
+    print(f"[TRAV] OSC wired ({'var-' + _var['granularity'] if _var else 'fixed-soft'}"
+          f"{', MASS A·ẍ, bare' if _mass else ''}, PD off)", flush=True)
 example._auto_forward = True               # forward command (body +X)
 # MAX forward velocity (vx=1.5 = cmd_a[0] upper bound). Wrap apply_control so the
 # command is set immediately before it's consumed — the headless keyboard block in
