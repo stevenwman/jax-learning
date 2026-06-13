@@ -111,8 +111,10 @@ if OSC:                                     # wire the operational-space control
     example.policy.osc_mode = True
     mud_costep.set_substep_control(lambda exmp: exmp.control.joint_f.assign(
         _ctrl.compute_joint_f(exmp.state_0, exmp.policy.last_deltas, exmp.policy.last_act)))
+    _massinfo = (f", MASS A·ẍ a_max={_var['a_max']} ema={_var['xdd_ema']}"
+                 if _mass else "")
     print(f"[TRAV] OSC wired ({'var-' + _var['granularity'] if _var else 'fixed-soft'}"
-          f"{', MASS A·ẍ, bare' if _mass else ''}, PD off)", flush=True)
+          f"{_massinfo}, {'Λ' if _use_lambda else 'bare'}, PD off)", flush=True)
 example._auto_forward = True               # forward command (body +X)
 # MAX forward velocity (vx=1.5 = cmd_a[0] upper bound). Wrap apply_control so the
 # command is set immediately before it's consumed — the headless keyboard block in
