@@ -375,6 +375,19 @@ def _var_mass_axis_gaitbal_config():
     return cfg
 
 
+def _var_mass_axis_gaitbal_smooth_config():
+    """VarMass FLAT + gait_participation, now with a LIVE ẍ (post-fix) tamed:
+    var_a=(0,0.5) (smaller mass range) + var_xdd_ema=0.3 (EMA low-pass on ẍ) to
+    kill the contact-impact spike that drove chatter/catapult. The real test of a
+    genuinely-active mass controller."""
+    cfg = go2_config(controller="var_impedance", stiffness_granularity="per_axis",
+                     damping_action=True, mass_action=True,
+                     use_op_space_inertia=False, motor="physical",
+                     var_a=(0.0, 0.5), var_xdd_ema=0.3)
+    cfg.reward_config.scales.gait_participation = -2.0
+    return cfg
+
+
 def _var_muddr4x_slowfirm_noair_gaitbal_config():
     """NoAir recipe + gait-participation penalty (anti-leg-park). Targets the
     real RR-hang cause: the policy commands one foot's Cartesian target up and
@@ -594,6 +607,11 @@ GO2_WARP_VARIANTS = {
         train=_DR_TRAIN,
         notes="virtual-mass FLAT baseline (regular DR, no mud) + gait_participation -2.0 "
               "(anti-leg-park reward) — does the gait reward fix VarMass RR-hang?"),
+    "Go2WarpOscVarMassAxisFlatPhysicalGaitBalSmooth": EnvVariant(
+        config=_var_mass_axis_gaitbal_smooth_config,
+        train=_DR_TRAIN,
+        notes="VarMass + gait + LIVE ẍ tamed (var_a=(0,0.5), xdd_ema=0.3) — post ẍ≡0 "
+              "fix; does a genuinely-active mass term clear the buzz / help?"),
     # ── Mud force-field variants (analytic foot-wrench OOD probe) ─────────
     # Same controller/motor as Go2WarpOscVarDampingAxisFlatPhysical + an analytic
     # mud foot-force field (MudField; see go2_warp_components.mud_foot_force and
