@@ -112,6 +112,59 @@ def test_zero_torque_at_equilibrium():
         assert np.allclose(np.asarray(tau), 0.0, atol=1e-5), (use_lambda, tau)
 
 
+def test_jax_numpy_osc_parity():
+    """The training jax `compute_leg_impedance_torque` and the Newton-eval numpy
+    `mud_osc.osc_torque` must give the SAME torque for identical inputs — pins the
+    two OSC ports equal (the math that drifted: Λ-weighting, mass A·ẍ, gain decode).
+    Covers bare + Λ and a nonzero accel_force."""
+    import sys
+    import pathlib
+    sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "projects" / "mud_eval"))
+    import mud_osc
+
+    m = mujoco.MjModel.from_xml_string(_LEG_XML)
+    qpos = np.array(_QPOS); qvel = np.array([0.2, -0.1, 0.3])
+    # CPU mujoco (numpy path)
+    dc = mujoco.MjData(m); dc.qpos[:] = qpos; dc.qvel[:] = qvel; mujoco.mj_forward(m, dc)
+    # mjx (jax path)
+    mx = mjx.put_model(m)
+    dx = mjx.make_data(mx).replace(qpos=jp.asarray(qpos), qvel=jp.asarray(qvel))
+    dx = mjx.forward(mx, dx)
+
+    site = np.array([m.site("foot").id]); dofs = np.array([[0, 1, 2]])
+    body = m.body("trunk").id
+    tgt = jp.asarray(_foot_body_pos(mx, dx, dict(foot_site=site, leg_dofs=dofs, body=body))
+                     + np.array([0.02, -0.01, 0.015]))[None]   # (1,3)
+    kp = jp.array([[120.0, 120.0, 150.0]]); kd = jp.array([[6.0, 6.0, 7.0]])
+    af = jp.array([[0.4, -0.2, 0.3]])
+    for use_lambda in (False, True):
+        tj = compute_leg_impedance_torque(
+            mx, dx, site, dofs, body, tgt, kp, kd, _BIG_LIMIT,
+            use_op_space_inertia=use_lambda, accel_force=af)
+        tn = mud_osc.osc_torque(
+            m, dc, site, dofs, body, np.asarray(tgt), np.asarray(kp), np.asarray(kd),
+            np.asarray(_BIG_LIMIT), use_op_space_inertia=use_lambda, accel_force=np.asarray(af))
+        assert np.allclose(np.asarray(tj), tn, atol=1e-4), (use_lambda, np.asarray(tj), tn)
+
+
+def test_jax_numpy_gain_decode_parity():
+    """impedance_gains (jax) == impedance_gains_np (mud_osc) for the same action."""
+    import sys
+    import pathlib
+    sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "projects" / "mud_eval"))
+    import mud_osc
+    from jax_rl.envs.locomotion.go2_warp_components import impedance_gains
+    kpb = jp.array([3000.0, 3000.0, 4000.0]); kdb = jp.array([110.0, 110.0, 130.0])
+    rng = np.random.RandomState(0)
+    act = rng.uniform(-1, 1, 36)   # per_axis + damping
+    kp_j, kd_j = impedance_gains(jp.asarray(act), kpb, kdb, granularity="per_axis",
+                                 s_min=0.25, s_max=2.0, damping_action=True, z_min=0.5, z_max=2.0)
+    kp_n, kd_n = mud_osc.impedance_gains_np(act, np.asarray(kpb), np.asarray(kdb),
+                                            "per_axis", 0.25, 2.0, True, 0.5, 2.0)
+    assert np.allclose(np.asarray(kp_j), kp_n, atol=1e-5)
+    assert np.allclose(np.asarray(kd_j), kd_n, atol=1e-5)
+
+
 def test_accel_force_enters_as_jt_a_xdd():
     """Virtual-mass law: passing accel_force=A·ẍ adds EXACTLY Jᵀ·(A·ẍ) to the
     joint torque (the F = wrench + A·ẍ term, NOT Λ-weighted). Isolated by the

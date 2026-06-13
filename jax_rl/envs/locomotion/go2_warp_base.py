@@ -244,9 +244,35 @@ class Go2WarpEnv(mjx_env.MjxEnv):
         default_pose_sdk = default_pose_policy[np.array(policy_to_sdk)]
         sdk_joint_names = [policy_joint_names[i] for i in policy_to_sdk]
 
+        # OSC / variable-impedance controller config — so the Newton eval harness
+        # (projects/mud_eval/mud_osc.py) configures itself from the ckpt instead of
+        # GUESSING params (the param-mismatch that caused the mass-controller
+        # catapult + bare-vs-Λ errors). None for joint-PD envs.
+        osc_meta = None
+        _osc = getattr(self._config, "osc", None)
+        if _osc is not None:
+            osc_meta = {
+                "use_op_space_inertia": bool(_osc.use_op_space_inertia),
+                "target_mode": str(_osc.target_mode),
+                "ridge": float(_osc.ridge),
+                "kp": [float(x) for x in _osc.kp],
+                "kd": [float(x) for x in _osc.kd],
+                "stiffness_granularity": str(getattr(_osc, "stiffness_granularity", "")),
+                "damping_action": bool(getattr(_osc, "damping_action", False)),
+                "mass_action": bool(getattr(_osc, "mass_action", False)),
+                "var_s_min": float(getattr(_osc, "var_s_min", 0.25)),
+                "var_s_max": float(getattr(_osc, "var_s_max", 2.0)),
+                "var_zeta_min": float(getattr(_osc, "var_zeta_min", 0.5)),
+                "var_zeta_max": float(getattr(_osc, "var_zeta_max", 2.0)),
+                "var_a_min": float(getattr(_osc, "var_a_min", 0.0)),
+                "var_a_max": float(getattr(_osc, "var_a_max", 2.0)),
+                "var_xdd_ema": float(getattr(_osc, "var_xdd_ema", 1.0)),
+            }
+
         return {
             "Kp": float(self._config.Kp),
             "Kd": float(self._config.Kd),
+            "osc": osc_meta,
             "action_scale": float(self._config.action_scale),
             "policy_dt": float(self._config.ctrl_dt),
             "physics_dt": float(self._config.sim_dt),

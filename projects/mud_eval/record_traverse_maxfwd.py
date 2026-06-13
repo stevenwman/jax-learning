@@ -70,31 +70,38 @@ if OSC:                                     # wire the operational-space control
     # variable impedance (M3) when action > 12: tail decodes per-foot/per-axis
     # stiffness (+ damping). base gains [3000,3000,4000]/[110,110,130], s in [0.25,2].
     _var = None
-    # 48-d = per_axis deltas(12)+stiffness(12)+damping(12)+MASS(12): the virtual-
-    # mass controller (VarImpedanceMass), which uses the BARE law (no Λ-weighting)
-    # and adds A·ẍ. It's the only 48-d controller, so action_dim disambiguates it.
-    _mass = (_ad >= 48)
-    if _ad > 12:
-        if _mass:
-            _gran, _damp = "per_axis", True
-        else:
-            _gran = "per_foot" if _ad in (16, 20) else "per_axis"
-            _damp = (_ad in (20, 36))
-        _var = dict(granularity=_gran, damping_action=_damp,
-                    s_min=0.25, s_max=2.0, z_min=0.5, z_max=2.0,
-                    kp_base=[3000.0, 3000.0, 4000.0], kd_base=[110.0, 110.0, 130.0])
-        if _mass:
-            # meta doesn't store the mass controller params → env-var overrides
-            # (defaults reproduce the original bare / a_max=2 / no-EMA mass ckpt).
-            import os
-            _amax = float(os.environ.get("MASS_A_MAX", "2.0"))
-            _ema = float(os.environ.get("MASS_XDD_EMA", "1.0"))
-            _var.update(mass_action=True, a_min=0.0, a_max=_amax, xdd_ema=_ema)
-    # use_op_space_inertia: mass ckpts default bare; set MASS_USE_LAMBDA=1 for the
-    # Λ-weighted mass variants (meta can't disambiguate them yet). Non-mass OSC
-    # ckpts are Λ-weighted.
-    import os as _os
-    _use_lambda = (_os.environ.get("MASS_USE_LAMBDA", "0") == "1") if _mass else True
+    import os
+    # PREFER the controller config saved in the ckpt meta (self-describing,
+    # added 2026-06-13). Falls back to action_dim inference + env-var overrides
+    # for older ckpts whose meta predates the osc block.
+    _oscm = _meta["control"].get("osc")
+    if _oscm is not None:
+        _mass = bool(_oscm.get("mass_action", False))
+        _use_lambda = bool(_oscm["use_op_space_inertia"])
+        if _ad > 12:
+            _var = dict(granularity=_oscm["stiffness_granularity"],
+                        damping_action=bool(_oscm["damping_action"]),
+                        s_min=_oscm["var_s_min"], s_max=_oscm["var_s_max"],
+                        z_min=_oscm["var_zeta_min"], z_max=_oscm["var_zeta_max"],
+                        kp_base=_oscm["kp"], kd_base=_oscm["kd"])
+            if _mass:
+                _var.update(mass_action=True, a_min=_oscm["var_a_min"],
+                            a_max=_oscm["var_a_max"], xdd_ema=_oscm["var_xdd_ema"])
+    else:
+        # Legacy ckpt (no osc in meta): infer from action_dim + env-var overrides.
+        # 48-d = per_axis deltas(12)+stiffness(12)+damping(12)+MASS(12).
+        _mass = (_ad >= 48)
+        if _ad > 12:
+            _gran = "per_axis" if (_mass or _ad not in (16, 20)) else "per_foot"
+            _damp = _mass or (_ad in (20, 36))
+            _var = dict(granularity=_gran, damping_action=_damp,
+                        s_min=0.25, s_max=2.0, z_min=0.5, z_max=2.0,
+                        kp_base=[3000.0, 3000.0, 4000.0], kd_base=[110.0, 110.0, 130.0])
+            if _mass:
+                _var.update(mass_action=True, a_min=0.0,
+                            a_max=float(os.environ.get("MASS_A_MAX", "2.0")),
+                            xdd_ema=float(os.environ.get("MASS_XDD_EMA", "1.0")))
+        _use_lambda = (os.environ.get("MASS_USE_LAMBDA", "0") == "1") if _mass else True
     example.control.joint_f = wp.zeros(int(example.model.joint_dof_count), dtype=wp.float32,
                                        device=example.model.device)
     _ctrl = mud_osc.MudOscController(example.solver, OSC_KP, OSC_KD, OSC_TLIM,
