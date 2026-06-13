@@ -556,3 +556,29 @@ ckpt 20260612_210553_...):
   varmass_FLAT_fwd.mp4.
 - Mud sibling `...MudDR4xSlowFirm` (mass + 4× DR + slow+firm) training next → Newton
   traverse vs NoAir(-2.42)/winner(-0.16) to see if the mass DOF helps the bog.
+
+## ═══ VirtualMass on Newton mud — ACCEL-FEEDBACK INSTABILITY (2026-06-12) ═══
+Ported VarImpedanceMass into the Newton harness (mud_osc: 48-d parse, bare law,
+A·ẍ via CONTROL-step finite-diff of foot world vel; commit e7bc97c). The
+record_traverse mud_osc previously could NOT run a 48-d/bare/mass action — would
+have silently dropped mass + mis-set damping + wrong Λ-weighting (3 mismatches);
+the port fixes that so the transfer test is valid.
+
+**Mud sibling** `Go2WarpOscVarMassAxisFlatPhysicalMudDR4xSlowFirm` (mass+4×DR+
+slow+firm, ckpt 20260612_213203_..., MJX eval 162.8) on Newton (parity spawn):
+- **CATAPULTS.** Walks into mud cleanly f0-50 (y3.30→2.6), then ~f60-100 the
+  A·ẍ feedback blows up: base z → 2.0 m, pitch flips ±53°, robot launched +
+  tumbling. Crashes back, ends collapsed (y-0.69, z0.057). NOT a clear.
+- **Diagnostic** (clamp a_max 2.0→0.5 at eval): **no catapult** — max z=0.32,
+  upright z~0.29, walks smooth (y3.30→0.25). Confirms the instability is the
+  **A·ẍ magnitude**: MPM mud's sharp contact transients spike ẍ; A up to 2.0
+  → explosive force. (NB: a_max=0.5 eval ≠ valid policy — policy trained at 2.0
+  → clamp remaps its A; only y0.25 reached, didn't clear.)
+- ROOT CAUSE: var_a_max=2.0 (an unvalidated guess, flagged in the spec) is too
+  large for robust Newton transfer. Flat MJX was stable (smooth analytic env);
+  MPM mud's contact sharpness + the accel-feedback amplifies into a catapult —
+  the exact stability risk the spec called out.
+- NEXT (the fix): RETRAIN VarMass with var_a_max≈0.5 (and/or ẍ EMA smoothing) so
+  the policy learns within a stable mass range, then re-eval Newton. The plain
+  controllers (NoAir -2.42, winner -0.16) remain the bar to beat.
+Videos: varmass_PARITY_thinfirst.mp4 (catapult), varmass_DIAG_amax05.mp4 (stable).
