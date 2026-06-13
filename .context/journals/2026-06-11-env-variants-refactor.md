@@ -669,3 +669,36 @@ velocity-track-level diversity: sample marching direction θ in BODY frame (pola
 randomizing vx,vy, more isotropic than the velocity box) + decoupled yaw-rate +
 mid-episode resample. Recommended formulation: marching-polar (keeps dense Lorentzian
 reward, commands speed). User wants to pursue — spec when resumed.
+
+## ═══ MUD TEST RESULT — live tamed mass: marginal + shallower (2026-06-13, overnight) ═══
+Trained `...MudDR4xSlowFirmSmooth` (Λ + LIVE tamed mass var_a=(0,0.5) ema=0.3 + ROM/
+analytic mud 4×DR + slow+firm + gait, MJX eval 162.5). Newton eval (parity harness,
+verified `a_max=0.5 ema=0.3, Λ`):
+- **Non-deterministic / marginally stable.** 6 reps: 2 CATAPULT (max z 2.3 & 7.8 m,
+  flips, ends collapsed past mud y-1.3/-1.6), 4 clean (max z 0.37 = spawn settle only).
+  ~33% catapult rate. Same ckpt+config → different rollout (Newton MPM nondeterministic;
+  controller on the stability edge). Taming cut the rate vs a_max=2 (always catapulted)
+  but did NOT kill it — the sim-to-sim ẍ gap (smooth analytic-mud training vs spiky MPM)
+  still drives A·ẍ blow-ups.
+- **Clean runs don't clear:** reach only y≈0.22-0.35 (stuck at thick-mud ENTRY).
+- **Baseline (#1 flat-Λ zero-shot, never saw mud):** stable, bogs at y=1.62 (medium).
+
+**So: ROM-mud training DOES help depth** (zero-shot y1.62 → ROM-trained y~0.3, deeper) —
+answers the user's question: training WITH the analytic disturbance forces improves
+Newton performance. **BUT the virtual mass HURTS overall**: marginally unstable (~33%
+catapult) AND shallower than the non-mass winners (NoAir y-2.42, slow+firm y-0.16, both
+stable clears). The mass term doesn't earn its keep on the held-out MPM mud.
+
+**Thread's real deliverables (valuable regardless of the mass verdict):** (1) the ẍ≡0
+finite-diff bug fix (mass term was dead in all prior training); (2) OSC parity infra —
+ckpts self-describe controller via meta + jax↔numpy parity test, killing the
+param-mismatch class that caused the earlier "catapults"-as-mismatches.
+
+**4 videos:** #3 .temp/videos/mudsmooth_FLAT_fwd.mp4, #4 .temp/videos/mudsmooth_FLAT_varied.mp4,
+#2 projects/mud_eval/recordings/mudsmooth_rep{1,3,4}.mp4 (clean) + mudsmooth_rep2.mp4
+(the z7.8m catapult), #1 flatlambda_baseline_thinfirst.mp4 (zero-shot, bogs y1.6).
+
+**NEXT (open):** the mass approach needs either (a) train ON spiky ẍ (MPM-like contact
+transients in the training env — the analytic mud is too smooth), or (b) drop it — the
+non-mass slow+firm/NoAir recipe remains the mud champion. The ẍ≡0 fix + parity infra
+stay regardless.
