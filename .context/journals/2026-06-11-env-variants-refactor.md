@@ -626,3 +626,46 @@ var_a_max. Post-fix ẍ_ema |mean abs| = 61.7 (LIVE, and large/spiky at contact 
 bounded a_max now genuinely needed). Lesson: lessons/go2.md "Finite-diff ... differenced
 a value with itself". NEXT: retrain flat (var_a≤0.5 + EMA + gait_participation) with a
 LIVE mass term → does buzz clear / does mass help? then mud.
+
+## ═══ VirtualMass post-fix: buzz is the CONTROLLER, + OSC parity infra (2026-06-13) ═══
+After the ẍ≡0 fix, retrained with a LIVE+tamed mass (var_a=(0,0.5), xdd_ema=0.3):
+- **Bare** (use_op_space_inertia=False) + gait + smooth: eval 271.6, stable, but the
+  ~8 Hz foot CHATTER PERSISTS (8.1/8.1/8.0/8.1 Hz). So the buzz is NOT the mass term
+  (dead before AND live now → unchanged) — it's the bare-K/D controller itself.
+- **Λ-weighted** (use_op_space_inertia=True), else identical: 3 feet drop 8→6.6-7.1 Hz
+  (RL worse 8.8, gait uneven, eval noisier 215±108 w/ some falls). So bare-K/D is A
+  contributor (~15-20%) but NOT the whole story; still above clean-ref ~5.5 Hz.
+  CONFOUND: clean-ref (slow+firm) also differs in REWARD (tracking=4 vs default 10) —
+  high tracking pressure → frantic gait, contributes independent of controller. Buzz
+  is multi-factor (bare-K/D + tracking pressure + maybe kp). Not chased further.
+- Videos: varmass_smooth_FLAT_fwd (bare buzz), varmass_lambda_FLAT_{fwd,varied} (Λ).
+
+**OSC parity infrastructure (commit 57317a0) — kills the param-mismatch class.**
+Root cause of the catapult + bare-vs-Λ + dead-vs-live-ẍ errors was NOT bad math (the
+jax↔numpy ports were each correct) — it was the Newton eval harness GUESSING controller
+params meta didn't store. Fixes:
+1. `get_control_metadata` now emits `meta['control']['osc']` (use_op_space_inertia,
+   granularity, damping/mass_action, var_{s,zeta,a}, var_xdd_ema, kp/kd) → ckpts
+   self-describe; `record_traverse_maxfwd` PREFERS it (env-var/action_dim = legacy
+   fallback for pre-2026-06-13 ckpts).
+2. `mud_osc` got the ẍ EMA it was missing (commit e6c49bd).
+3. `test_jax_numpy_osc_parity` + `_gain_decode_parity` pin compute_leg_impedance_torque
+   == mud_osc.osc_torque (Λ/bare/mass/decode) to fp tol — future drift fails CI.
+NOTE: deferred the heavier shared array-agnostic math core (#2 in the proposal) — #1+#3
+kill the realized failures; revisit only if duplication bites again.
+
+**IN-FLIGHT (overnight autonomous):** training `...MudDR4xSlowFirmSmooth` (Λ + live
+tamed mass + ROM/analytic mud 4×DR + slow+firm + gait). On completion: produce 4 videos
+— (1) flat-Λ zero-shot on Newton mud [baseline], (2) mud-trained on Newton mud [catapult
+gone? mass help?], (3) mud-trained flat fwd, (4) mud-trained flat varied-cmd. Newton two
+need env-var override (MASS_USE_LAMBDA=1 MASS_A_MAX=0.5 MASS_XDD_EMA=0.3 — predate the
+self-describing meta). Bar: NoAir y-2.42, winner y-0.16.
+
+**PosTrack goal-condition (investigated, not built):** flat PosTrack
+(go2_warp_flat_postrack.py) holds a goal POSITION + obs=delta-to-goal, but is
+FORWARD-ONLY: only nominal_vx randomized (0.3-1.5), target_yaw fixed = spawn, goal
+marches straight, never resampled. nominal_yaw_rate knob scaffolded but =0. To get
+velocity-track-level diversity: sample marching direction θ in BODY frame (polar (r,θ) ≈
+randomizing vx,vy, more isotropic than the velocity box) + decoupled yaw-rate +
+mid-episode resample. Recommended formulation: marching-polar (keeps dense Lorentzian
+reward, commands speed). User wants to pursue — spec when resumed.

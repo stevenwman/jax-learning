@@ -78,3 +78,27 @@ than joint-PD and fixed-soft OSC (which tie). Stiffenable compliance helps; fixe
 compliance doesn't — confirming the "use a task that demands stiffness modulation"
 prediction. But all policies (flat-trained) still bog in thick mud → the next lever
 is training on mud / mud-like DR, not the controller.
+
+## Don't let the eval harness GUESS controller params — self-describe + parity-test (2026-06-13)
+
+Porting the OSC/var-impedance/mass controller to the Newton eval (`mud_osc.py`, a
+numpy port of the jax `compute_leg_impedance_torque`) bit THREE times — each a
+"catapult"/garbage rollout that looked like a physics instability but was a
+controller MISMATCH:
+1. mass term `A·ẍ` silently dropped (Newton ran without it).
+2. `use_op_space_inertia` (Λ vs bare) guessed wrong (`_use_lambda = not _mass`).
+3. `var_a_max` / `var_xdd_ema` hardcoded ≠ the trained values.
+
+Root cause was NOT bad math — the jax↔numpy ports were each correct. It was the
+harness GUESSING params the ckpt `meta` didn't store. Fixes that actually hold:
+- **Self-describe:** `get_control_metadata` emits `meta['control']['osc']` (the full
+  controller config). The eval reads it instead of inferring from `action_dim` +
+  env-vars. A ckpt now carries everything needed to reproduce its controller.
+- **Parity test:** `tests/test_go2_osc.py::test_jax_numpy_osc_parity` feeds identical
+  `(J,M,err,v,action)` to both implementations and asserts equal torque (Λ/bare/mass/
+  decode) to fp tol — future drift fails CI without forcing a shared class.
+
+**Rule:** when the same controller runs in two code paths (train env + eval harness),
+(a) the ckpt must SELF-DESCRIBE its controller config — never infer it at eval; and
+(b) a cross-implementation parity test pins the two equal. Inferring controller
+identity from `action_dim` is a trap (48-d was ambiguous: bare-mass vs Λ-mass).
