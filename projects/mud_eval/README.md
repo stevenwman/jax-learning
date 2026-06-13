@@ -39,6 +39,20 @@ Dedicated venv built off jax-learning's proven Warp-1.12-on-RTX-5080 stack:
   Jacobian + `mj_fullM`, injected as joint forces.
 - **M3** — variable-impedance (decode the stiffness tail).
 
+## OSC / controller integration
+
+The OSC and variable-impedance controllers are STABILITY-CRITICAL and must be
+recomputed every physics substep (250 Hz), so they don't fit the once-per-frame
+`compute_joint_targets` interface — they hook into the co-step loop instead. Each
+substep: the solver's **own CPU mujoco** (`solver.mj_data`, which Newton's
+`SolverMuJoCo` always builds) supplies the foot-site Jacobian J (`mj_jacSite`) and
+mass matrix M (`mj_fullM`); the resulting torque is injected via Newton
+`control.joint_f` (joint PD disabled). The numpy OSC port (`mud_osc.py`) is kept in
+parity with the jax training controller because the checkpoint self-describes its
+controller config in `meta["control"]["osc"]`, plus a jax↔numpy parity test. The
+virtual-mass controller smooths ẍ via an EMA. See `HANDOFF.md` (M2/M3 sections)
+for the full math, gotchas, and gain specs.
+
 ## Policies to test (jax-learning worktree `checkpoints/`, 2026-06-09 physical-motor retrains)
 
 These are the compliance-helps-on-rough winners — natural to re-test on graded mud:

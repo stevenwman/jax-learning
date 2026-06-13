@@ -77,8 +77,9 @@ uv run python scripts/train_fast_sac.py --env Go2WarpJoystickFlat --num-envs 102
 # FastSAC + per-step domain randomization (recommended for sim-to-real transfer)
 uv run python scripts/train_fast_sac.py --env Go2WarpJoystickFlat --num-envs 1024 --reset-mode per_step
 
-# FlashSAC on Go2 (standalone loop)
-uv run python scripts/train_flashsac.py --env Go2WarpJoystickFlat --total-timesteps 10000000
+# Cartesian-impedance / OSC control (the policy commands foot targets + per-axis
+# stiffness/damping, not joint targets) — helps on soft/rough contact
+uv run python scripts/train_fast_sac.py --env Go2WarpOscVarDampingAxisFlatPhysical --reset-mode per_step
 
 # Sim2sim validation on CPU MuJoCo (same unitree MJCF)
 MUJOCO_GL=egl uv run python deploy/sim2sim_direct.py \
@@ -87,6 +88,10 @@ MUJOCO_GL=egl uv run python deploy/sim2sim_direct.py \
 ```
 
 **Go2 backend:** `Go2WarpJoystickFlat` uses MuJoCo Warp with full cylinder collision geometry (unitree MJCF). Eliminates the MJX → real sim2sim gap. Asymmetric critic: 48d actor obs (deployable sensors) + 122d privileged critic obs.
+
+**Control paradigms (Go2):** the same `WarpJoystick` env runs four interchangeable low-level controllers, selected from config — **joint-PD** (default), **Cartesian-impedance / OSC** (policy commands foot xyz targets), **variable impedance** (+ per-foot/per-axis stiffness, optional damping), and **virtual mass** (+ acceleration-feedback inertia). All ~55 Go2 Warp envs are declared as data in `jax_rl/envs/locomotion/go2_warp_variants.py` (one `EnvVariant` per env). See the [env presets reference](https://stevenwman.github.io/jax-learning/reference/env-presets/).
+
+**Held-out soft-terrain eval (Newton MPM mud):** `projects/mud_eval/` is a separate, two-way-coupled granular-mud sim (Newton MPM, own venv) used as a *held-out* transfer test — policies train on flat/analytic-mud in JAX and are evaluated on the MPM mud they never saw. Variable-impedance penetrates thick mud markedly deeper than joint-PD; the `slow+firm` / `NoAir` reward recipes clear the full mud gradient. See `projects/mud_eval/README.md`.
 
 ### Recording videos
 
@@ -158,12 +163,19 @@ Full CLI reference: [docs.../reference/cli-flags](https://stevenwman.github.io/j
 │   ├── configs/                # Hyperparameter dataclasses + env presets
 │   ├── networks/               # Encoder + head builders (MLP, Gaussian, C51, etc.)
 │   ├── envs/
-│   │   ├── locomotion/         #   Go2 (Warp; MJX files removed 2026-04-09), bongo handstand
+│   │   ├── locomotion/         #   Go2 Warp family + G1, bongo. Composable: WarpJoystick host
+│   │   │                       #   + Controller (JointPD/OSC/VarImpedance/VarImpedanceMass,
+│   │   │                       #   go2_warp_components.py + go2_osc.py) + Actuation + Terrain;
+│   │   │                       #   all ~55 envs declared as data in go2_warp_variants.py
 │   │   ├── manipulation/       #   PushT (vendored gym-pusht + shape-agnostic PushEnv)
 │   │   └── wrappers/           #   Vmap, Episode, AutoReset, DomainRand, FrameStack, ActionDelay, TerrainCurriculumDR
 │   ├── buffers/                # Off-policy replay + PPO rollout buffers
 │   └── utils/                  # Normalization, distributional math
 │
+├── projects/
+│   └── mud_eval/               # Held-out Newton MPM mud transfer eval (separate venv).
+│                               #   Numpy OSC port (mud_osc.py) kept in parity with the
+│                               #   training controller via meta self-describe + a parity test.
 ├── deploy/                     # Sim2sim + real-hardware deploy (separate Python 3.12 venv)
 ├── docs/                       # MkDocs site source
 ├── tests/                      # pytest suite (includes docs-drift tests)
@@ -192,6 +204,7 @@ FastTD3 CheetahRun 515.9 is at 5M steps (shorter than the ~880 number under 86M-
 - **JAX-native** — everything on GPU via JAX/Flax. No PyTorch dependency.
 - **MuJoCo Playground** — MJX or Warp for GPU-parallelized physics (1024+ envs). Warp is primary for Go2 (full cylinder collision).
 - **Asymmetric critic** — off-policy algos support privileged critic obs (122d) with deployable actor obs (48d). Critic is discarded at deployment.
+- **Pluggable low-level control** — the Go2 `WarpJoystick` env selects its controller (joint-PD / Cartesian-impedance OSC / variable impedance / virtual mass) from config; the policy's action space changes accordingly. The control law is shared, and the held-out Newton eval re-implements it in numpy kept in parity by a checkpoint that self-describes its controller (`meta["control"]["osc"]`) + a jax↔numpy parity test.
 - **Closure-based networks** — algos build their networks once in `__init__` as closures; JIT-friendly, trace-stable.
 - **Truncation-aware** — off-policy loss masks pure-timeout transitions; `done`-terminated transitions keep their bootstrap-zero target.
 

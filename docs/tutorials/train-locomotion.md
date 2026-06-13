@@ -64,7 +64,7 @@ This runs 20 million timesteps across 1024 parallel environments. On an RTX 4090
 
 !!! tip "Useful flags"
     - `--wandb` — log metrics to Weights & Biases for experiment tracking
-    - `--reset-mode per_step` — use `DomainRandWrapper` for per-episode domain randomization (randomized friction, mass, center-of-mass, motor strength, and more) declared by the env
+    - `--reset-mode per_step` — use `DomainRandWrapper` for per-episode domain randomization (randomized friction, mass, center-of-mass, motor strength, and more) declared by the env. The OSC/physical/rough Go2 variants (`Go2WarpOsc*`, `*Physical`, `*Rough`) default to per-step domain randomization.
     - `--seed 42` — set the random seed for reproducibility
 
 ## Step 4: Monitor Training
@@ -104,6 +104,17 @@ The video is saved to the checkpoint directory. It shows the Go2 following rando
 ## Step 6: What's Next
 
 - **Try FlashSAC:** `uv run python scripts/train_flashsac.py --env Go2WarpJoystickFlat --seed 100` — uses inverted residual blocks, BatchNorm, and adaptive reward scaling. Eval 284.5 on Go2 at 10M steps (single seed, post-truncation-fix — variance across seeds not yet characterized).
+- **Try a compliant (OSC / variable-impedance) controller:** instead of joint-PD position targets, the Go2 Warp env can use a Cartesian-impedance controller whose action commands per-foot stiffness. Train one with:
+
+    ```bash
+    uv run python scripts/train_fast_sac.py \
+        --env Go2WarpOscVarDampingAxisFlatPhysical \
+        --num-envs 1024 \
+        --total-timesteps 50000000 \
+        --reset-mode per_step --wandb
+    ```
+
+    These OSC/physical/rough variants default to per-step domain randomization (see the "Useful flags" note in Step 3).
 - **Deploy to real hardware:** See the [Sim-to-Real](sim2real.md) tutorial
 - **Add domain randomization:** Append `--reset-mode per_step` to the `train_fast_sac.py` command (Step 3) — `DomainRandWrapper` applies the env's declared DR specs per episode, which transfers better to real robots. (Note: `train_flashsac.py` does not support `--reset-mode` or `--frame-stack`.)
 - **Try a custom task:** See [Custom Environment](custom-env.md) to build your own Go2 task

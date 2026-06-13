@@ -154,6 +154,7 @@ deploy/.venv/bin/python deploy/deploy_go2.py \
 - **Deploy env** uses standard MuJoCo (unitree_mujoco's Go2 model) with the same motor + PD setup. The deploy code loads the policy as pure numpy — no JAX needed.
 - **Two venvs**: training (`.venv/`, Python 3.13, JAX) and deploy (`deploy/.venv/`, Python 3.12, CycloneDDS). They don't share dependencies.
 - **PD gains must match**: Warp-trained policies use Kp=20/Kd=0.5, MJX-trained use Kp=35/Kd=0.1. The sim2sim script must use the same gains as training.
+- **New OSC/variable-impedance training envs are sim-side research only**: the Warp Go2 training env now supports Cartesian-impedance (OSC) and variable-impedance controllers (the `Go2WarpOsc*` variants), but the deploy path is still joint-PD position targets — those policies are not deployed via this pipeline.
 
 ## Architecture
 
