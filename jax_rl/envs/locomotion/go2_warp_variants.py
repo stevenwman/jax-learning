@@ -32,7 +32,8 @@ def go2_config(
     target_mode: str = "abs_body",
     stiffness_granularity: str = "per_foot",   # var_impedance only
     damping_action: bool = False,              # var_impedance only
-    var_s=(0.25, 2.0), var_zeta=(0.5, 2.0),
+    mass_action: bool = False,                 # var_impedance only — policy virtual mass A
+    var_s=(0.25, 2.0), var_zeta=(0.5, 2.0), var_a=(0.0, 2.0),
     motor: str = "ideal",                  # "ideal" | "torque_speed" | "physical"
     terrain: Union[str, tuple] = "flat",   # "flat" | (profile, amplitude)
     push=(0.75, 0.75),
@@ -60,12 +61,13 @@ def go2_config(
             "osc_kp/osc_kd/use_op_space_inertia/target_mode require a "
             f"cartesian controller, got controller={controller!r}")
     if controller != "var_impedance" and (
-        damping_action or stiffness_granularity != "per_foot"
+        damping_action or mass_action or stiffness_granularity != "per_foot"
         or tuple(var_s) != (0.25, 2.0) or tuple(var_zeta) != (0.5, 2.0)
+        or tuple(var_a) != (0.0, 2.0)
     ):
         raise ValueError(
-            "damping_action/stiffness_granularity/var_s/var_zeta require "
-            f"controller='var_impedance', got controller={controller!r}")
+            "damping_action/mass_action/stiffness_granularity/var_s/var_zeta/var_a "
+            f"require controller='var_impedance', got controller={controller!r}")
 
     if action_scale is None:
         # Joint PD: action is a joint-target delta in rad. Cartesian: action
@@ -162,6 +164,14 @@ def go2_config(
             cfg.osc.damping_action = damping_action
             cfg.osc.var_zeta_min = var_zeta[0]
             cfg.osc.var_zeta_max = var_zeta[1]
+            # Virtual-mass action (acceleration feedback): policy commands A per
+            # foot/axis, F += A·ẍ (ẍ = finite-diff foot vel). Emit ONLY when on,
+            # so existing var-impedance configs are unchanged. See
+            # .superpowers/specs/2026-06-12-osc-virtual-mass-design.md.
+            if mass_action:
+                cfg.osc.mass_action = True
+                cfg.osc.var_a_min = var_a[0]
+                cfg.osc.var_a_max = var_a[1]
 
     if motor == "torque_speed":
         cfg.torque_speed_model = True
@@ -320,6 +330,21 @@ def _var_muddr4x_slowfirm_config():
     seeds clear the full Newton mud gradient upright."""
     cfg = _var_muddr4x_firmplant_config()
     cfg.reward_config.scales.tracking_lin_vel = 4.0   # 0.4× default (10.0): less lunge
+    return cfg
+
+
+def _var_mass_axis_muddr4x_slowfirm_config():
+    """Virtual-MASS controller (K+D+A per axis, F=A·ẍ+K·err+D·ẋ, bare) + 4× mud
+    DR + slow+firm reward — the Newton-traverse test for the mass knob. Mirrors
+    _var_muddr4x_slowfirm_config but with mass_action + use_op_space_inertia=False."""
+    cfg = go2_config(controller="var_impedance", stiffness_granularity="per_axis",
+                     damping_action=True, mass_action=True,
+                     use_op_space_inertia=False, motor="physical",
+                     mud=dict(depth_range=(0.03, 0.22), f_range=(14.0, 60.0),
+                              c1_range=(9.0, 40.0), c2_range=(6.0, 28.0)))
+    cfg.reward_config.scales.feet_slip = -0.6
+    cfg.reward_config.scales.orientation = -8.0
+    cfg.reward_config.scales.tracking_lin_vel = 4.0
     return cfg
 
 
@@ -537,6 +562,20 @@ GO2_WARP_VARIANTS = {
                     damping_action=True, motor="physical"),
         train=_DR_TRAIN,
         notes="decoupled K+D (per-axis)"),
+    # ── Virtual MASS (acceleration-feedback) variants ────────────────────
+    # VarImpedanceMass: policy commands K + D + virtual mass A per foot/axis;
+    # F = A·ẍ + K·err + D·ẋ (bare, use_op_space_inertia=False), ẍ = finite-diff
+    # foot vel. 48-d action. Spec: 2026-06-12-osc-virtual-mass-design.md.
+    "Go2WarpOscVarMassAxisFlatPhysical": EnvVariant(
+        config=_cfg(controller="var_impedance", stiffness_granularity="per_axis",
+                    damping_action=True, mass_action=True,
+                    use_op_space_inertia=False, motor="physical"),
+        train=_DR_TRAIN,
+        notes="decoupled K+D+A (per-axis virtual mass) — FLAT baseline, regular DR, no mud"),
+    "Go2WarpOscVarMassAxisFlatPhysicalMudDR4xSlowFirm": EnvVariant(
+        config=_var_mass_axis_muddr4x_slowfirm_config,
+        train=_DR_TRAIN,
+        notes="virtual-mass controller + 4× mud DR + slow+firm reward (Newton traverse test)"),
     # ── Mud force-field variants (analytic foot-wrench OOD probe) ─────────
     # Same controller/motor as Go2WarpOscVarDampingAxisFlatPhysical + an analytic
     # mud foot-force field (MudField; see go2_warp_components.mud_foot_force and

@@ -224,10 +224,22 @@ def log_action_scale(a: jax.Array, lo: float, hi: float) -> jax.Array:
     return lo * (hi / lo) ** u
 
 
-def var_action_size(granularity: str, damping_action: bool) -> int:
-    """12 foot targets + stiffness (+ damping when enabled), per granularity."""
+def lin_action_scale(a: jax.Array, lo: float, hi: float) -> jax.Array:
+    """Map action a∈[-1,1] → [lo,hi] LINEARLY (a=0 → midpoint). Used for the
+    virtual mass A, whose range may include 0 (log-spacing can't)."""
+    u = 0.5 * (jp.clip(a, -1.0, 1.0) + 1.0)
+    return lo + (hi - lo) * u
+
+
+def var_action_size(granularity: str, damping_action: bool,
+                    mass_action: bool = False) -> int:
+    """12 foot targets + stiffness (+ damping) (+ mass), per granularity.
+
+    Each enabled block adds ``n = _N_STIFFNESS[granularity]`` dims: stiffness
+    always, damping when ``damping_action``, virtual mass when ``mass_action``.
+    """
     n = _N_STIFFNESS[granularity]
-    return 12 + n * (2 if damping_action else 1)
+    return 12 + n * (1 + int(damping_action) + int(mass_action))
 
 
 def impedance_gains(action, kp_base, kd_base, *, granularity, s_min, s_max,
@@ -376,11 +388,13 @@ class OSC(Controller):
         feet_w = data.site_xpos[self._foot_site_ids]
         return (feet_w - body_pos) @ R
 
-    def _run_osc(self, env, data, deltas, kp, kd, info=None):
+    def _run_osc(self, env, data, deltas, kp, kd, info=None, accel_force=None):
         """Decimation loop: drive feet to (nominal + deltas) at gains kp/kd.
 
         kp/kd are (3,) shared across legs (fixed impedance) or (4,3) per-foot
         (variable impedance). The OSC and VarImpedance controllers both call this.
+        ``accel_force`` (4,3) = the virtual-mass A·ẍ task force, constant across
+        the substep loop (computed once per control step); None for plain OSC.
 
         STABILITY-CRITICAL: the impedance torque is recomputed every physics
         substep (250 Hz), NOT once per 50 Hz control step. The unit-mass loop
@@ -407,6 +421,7 @@ class OSC(Controller):
                 self._foot_site_ids, self._leg_dof_ids, env._torso_body_id,
                 targets, kp, kd, self._torque_limit,
                 use_op_space_inertia=self._use_lambda, ridge=self._ridge,
+                accel_force=accel_force,
             )
             tau_joint = env._apply_torque_speed_limit(tau_joint, data.qvel[6:])
             tau_act = tau_joint[a2j]     # joint order → actuator order
@@ -459,6 +474,59 @@ class VarImpedance(OSC):
         return self._run_osc(env, data, deltas, kp, kd, info)
 
 
+class VarImpedanceMass(VarImpedance):
+    """VarImpedance + a policy-commanded virtual MASS A (per foot/axis).
+
+    Adds the acceleration-feedback term to the bare-impedance force:
+
+        F = A·ẍ + K·err + D·ẋ          (use_op_space_inertia=False)
+
+    ẍ is the foot acceleration, sensed as a CONTROL-STEP finite difference of the
+    foot velocity (info["last_foot_vel"] vs the current foot-linvel sensor), held
+    constant across the substep decimation loop. A is decoded LINEARLY from the
+    action tail to [var_a_min, var_a_max]. See the virtual-mass spec.
+    """
+
+    def action_size(self, env) -> int:
+        osc = env._config.osc
+        return var_action_size(
+            str(getattr(osc, "stiffness_granularity", "per_foot")),
+            bool(getattr(osc, "damping_action", False)),
+            mass_action=True,
+        )
+
+    def setup(self, env) -> None:
+        super().setup(env)
+        osc = env._config.osc
+        self._a_min = float(getattr(osc, "var_a_min", 0.0))
+        self._a_max = float(getattr(osc, "var_a_max", 2.0))
+        # Mass block starts after deltas(12) + stiffness(n) + damping(n if on).
+        self._mass_start = 12 + self._n_stiffness * (1 + int(self._damping_action))
+
+    def apply(self, env, data, action, info=None):
+        deltas = action[:12].reshape(4, 3) * env._config.action_scale   # (4,3)
+        kp, kd = impedance_gains(
+            action, self._kp, self._kd,
+            granularity=self._granularity,
+            s_min=self._s_min, s_max=self._s_max,
+            damping_action=self._damping_action,
+            z_min=self._z_min, z_max=self._z_max,
+        )
+        n = self._n_stiffness
+        A = lin_action_scale(
+            action[self._mass_start:self._mass_start + n], self._a_min, self._a_max
+        ).reshape(4, 3)
+        # ẍ = control-step finite diff of foot velocity (world frame). info is None
+        # only outside the env loop (e.g. unit probes) → no accel feedback.
+        if info is not None:
+            v_now = data.sensordata[env._foot_linvel_sensor_adr].reshape(4, 3)
+            acc = (v_now - info["last_foot_vel"]) / env.dt
+        else:
+            acc = jp.zeros((4, 3))
+        accel_force = A * acc                                            # (4,3)
+        return self._run_osc(env, data, deltas, kp, kd, info, accel_force=accel_force)
+
+
 def controller_from_config(config) -> Controller:
     """Pick the controller from the config shape (legacy bridge): no ``osc``
     block → JointPD; ``osc`` without ``stiffness_granularity`` → OSC; with it →
@@ -468,6 +536,8 @@ def controller_from_config(config) -> Controller:
         return JointPD()
     if getattr(osc, "stiffness_granularity", None) is None:
         return OSC()
+    if getattr(osc, "mass_action", False):
+        return VarImpedanceMass()
     return VarImpedance()
 
 

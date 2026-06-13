@@ -112,6 +112,29 @@ def test_zero_torque_at_equilibrium():
         assert np.allclose(np.asarray(tau), 0.0, atol=1e-5), (use_lambda, tau)
 
 
+def test_accel_force_enters_as_jt_a_xdd():
+    """Virtual-mass law: passing accel_force=A·ẍ adds EXACTLY Jᵀ·(A·ẍ) to the
+    joint torque (the F = wrench + A·ẍ term, NOT Λ-weighted). Isolated by the
+    with/without-accel_force delta so the proof is independent of the wrench."""
+    mx, d, ids = _setup(_QPOS, qvel=[0.2, -0.1, 0.3])
+    err = np.array([0.02, -0.01, 0.015])
+    tgt = jp.asarray(_foot_body_pos(mx, d, ids) + err)[None]
+    af = jp.array([[0.5, -0.3, 0.4]])              # (1,3) A·ẍ, small (no clip)
+    common = dict(use_op_space_inertia=False)
+    tau0 = compute_leg_impedance_torque(
+        mx, d, ids["foot_site"], ids["leg_dofs"], ids["body"],
+        tgt, _KP, _KD, _BIG_LIMIT, accel_force=None, **common)
+    tau1 = compute_leg_impedance_torque(
+        mx, d, ids["foot_site"], ids["leg_dofs"], ids["body"],
+        tgt, _KP, _KD, _BIG_LIMIT, accel_force=af, **common)
+    site, dofs = ids["foot_site"][0], ids["leg_dofs"][0]
+    jacp, _ = mjx.jac(mx, d, d.site_xpos[site], mx.site_bodyid[site])
+    J = np.asarray(jacp[dofs].T)
+    expected = J.T @ np.asarray(af[0])             # Jᵀ·A·ẍ
+    assert np.allclose(np.asarray(tau1 - tau0), expected, atol=1e-5), (
+        np.asarray(tau1 - tau0), expected)
+
+
 @pytest.mark.parametrize("axis", [0, 1, 2])
 def test_osc_mode_foot_accel_equals_kp_err(axis):
     """Defining OSC property: q̈_foot == kp ⊙ err (Λ cancels inertia)."""

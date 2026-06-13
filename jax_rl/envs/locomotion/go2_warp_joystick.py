@@ -305,6 +305,9 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
             # contact force (default 0 -> first step's delta is just the value).
             "last_torque": jp.zeros(self._mj_model.nu),
             "last_foot_force": jp.zeros(4),
+            # Previous control-step foot velocity (4,3) for the virtual-mass
+            # controller's ẍ = finite-diff foot accel. 0 at reset.
+            "last_foot_vel": jp.zeros((4, 3)),
             # gait_participation: per-foot "touched since last reset" + a timer
             # counting steps since all four last completed a contact set.
             "feet_touched": jp.zeros(4, dtype=bool),
@@ -407,6 +410,10 @@ class WarpJoystick(go2_warp_base.Go2WarpEnv):
         # become next step's "previous").
         state.info["last_torque"] = data.actuator_force
         state.info["last_foot_force"] = foot_force
+        # This step's foot velocity → next step's "previous" for the virtual-mass
+        # ẍ finite difference (world-frame foot linvel sensor, (4,3)).
+        state.info["last_foot_vel"] = (
+            data.sensordata[self._foot_linvel_sensor_adr].reshape(4, 3))
         state.info["step_count"] = step_count + 1
         state.info["steps_until_next_cmd"] -= 1
         state.info["rng"], key1, key2 = jax.random.split(rng, 3)

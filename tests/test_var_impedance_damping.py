@@ -66,3 +66,18 @@ def test_action_size():
     assert var_action_size("per_foot", False) == 16   # current behavior
     assert var_action_size("per_foot", True) == 20     # +4 damping
     assert var_action_size("per_axis", True) == 36      # +12 damping
+
+
+def test_action_size_with_mass():
+    # virtual mass adds another n-block (n = 4 per_foot, 12 per_axis)
+    assert var_action_size("per_axis", True, mass_action=True) == 48   # 12+12+12+12
+    assert var_action_size("per_axis", False, mass_action=True) == 36  # 12+12+12
+    assert var_action_size("per_foot", True, mass_action=True) == 24   # 12+4+4+4
+
+
+def test_lin_action_scale_endpoints_and_mid():
+    from jax_rl.envs.locomotion.go2_warp_components import lin_action_scale
+    # a=-1 → lo, a=+1 → hi, a=0 → midpoint; lo=0 allowed (unlike log scale)
+    assert float(lin_action_scale(jp.array(-1.0), 0.0, 2.0)) == 0.0
+    assert float(lin_action_scale(jp.array(1.0), 0.0, 2.0)) == 2.0
+    assert float(lin_action_scale(jp.array(0.0), 0.0, 2.0)) == 1.0

@@ -57,6 +57,7 @@ def compute_leg_impedance_torque(
     use_op_space_inertia: bool = True,
     ridge: float = 1e-4,
     feedforward: Optional[jp.ndarray] = None,  # (3*n_legs,) optional FF torque
+    accel_force: Optional[jp.ndarray] = None,  # (n_legs, 3) virtual-mass task force A·ẍ
 ) -> jp.ndarray:
     """Cartesian impedance torque for all legs, shape (3*n_legs,).
 
@@ -101,6 +102,12 @@ def compute_leg_impedance_torque(
             F = Lambda @ wrench                     # operational-space force
         else:
             F = wrench
+
+        # Virtual-mass acceleration-feedback term: add A·ẍ as a task-space force
+        # (already in force units), so it is NOT Λ-weighted — the bare F = wrench
+        # + A·ẍ law (use_op_space_inertia=False). See the virtual-mass spec.
+        if accel_force is not None:
+            F = F + accel_force[i]                  # (3,)
 
         taus.append(J.T @ F)                        # (3,) joint torque
 
