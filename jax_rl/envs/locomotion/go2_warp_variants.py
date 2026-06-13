@@ -388,6 +388,19 @@ def _var_mass_axis_gaitbal_smooth_config():
     return cfg
 
 
+def _var_mass_axis_gaitbal_smooth_lambda_config():
+    """GaitBalSmooth but Λ-WEIGHTED impedance (use_op_space_inertia=True). Tests
+    whether the ~8 Hz foot chatter is caused by the BARE K/D law: the only
+    clean-ish reference gait (slow+firm, ~5.5 Hz) is Λ-weighted. Mass term A·ẍ is
+    still a bare task-space force (added after Λ); only the K/D part changes."""
+    cfg = go2_config(controller="var_impedance", stiffness_granularity="per_axis",
+                     damping_action=True, mass_action=True,
+                     use_op_space_inertia=True, motor="physical",
+                     var_a=(0.0, 0.5), var_xdd_ema=0.3)
+    cfg.reward_config.scales.gait_participation = -2.0
+    return cfg
+
+
 def _var_muddr4x_slowfirm_noair_gaitbal_config():
     """NoAir recipe + gait-participation penalty (anti-leg-park). Targets the
     real RR-hang cause: the policy commands one foot's Cartesian target up and
@@ -612,6 +625,11 @@ GO2_WARP_VARIANTS = {
         train=_DR_TRAIN,
         notes="VarMass + gait + LIVE ẍ tamed (var_a=(0,0.5), xdd_ema=0.3) — post ẍ≡0 "
               "fix; does a genuinely-active mass term clear the buzz / help?"),
+    "Go2WarpOscVarMassAxisFlatPhysicalGaitBalSmoothLambda": EnvVariant(
+        config=_var_mass_axis_gaitbal_smooth_lambda_config,
+        train=_DR_TRAIN,
+        notes="GaitBalSmooth but Λ-weighted (use_op_space_inertia=True) — is the "
+              "~8Hz foot chatter the bare-K/D law? (Λ-weighted ref runs ~5.5Hz)"),
     # ── Mud force-field variants (analytic foot-wrench OOD probe) ─────────
     # Same controller/motor as Go2WarpOscVarDampingAxisFlatPhysical + an analytic
     # mud foot-force field (MudField; see go2_warp_components.mud_foot_force and

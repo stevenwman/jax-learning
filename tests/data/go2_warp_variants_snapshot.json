@@ -4913,6 +4913,105 @@
   "soft_joint_pos_limit_factor": 0.95,
   "torque_speed_model": true
  },
+ "Go2WarpOscVarMassAxisFlatPhysicalGaitBalSmoothLambda": {
+  "Kd": 0.5,
+  "Kp": 20.0,
+  "action_repeat": 1,
+  "action_scale": 0.12,
+  "command_config": {
+   "a": [
+    1.5,
+    0.8,
+    1.2
+   ],
+   "b": [
+    0.9,
+    0.25,
+    0.5
+   ]
+  },
+  "contact_mode": "training",
+  "ctrl_dt": 0.02,
+  "episode_length": 1000,
+  "impl": "warp",
+  "naccdmax": 4000,
+  "naconmax": 32768,
+  "njmax": 100,
+  "noise_config": {
+   "level": 1.0,
+   "scales": {
+    "accelerometer": 0.1,
+    "gravity": 0.05,
+    "gyro": 0.2,
+    "joint_pos": 0.03,
+    "joint_vel": 1.5,
+    "linvel": 0.1
+   }
+  },
+  "osc": {
+   "damping_action": true,
+   "gravity_ff": "none",
+   "kd": [
+    110.0,
+    110.0,
+    130.0
+   ],
+   "kp": [
+    3000.0,
+    3000.0,
+    4000.0
+   ],
+   "mass_action": true,
+   "ridge": 0.0001,
+   "stiffness_granularity": "per_axis",
+   "target_mode": "abs_body",
+   "use_op_space_inertia": true,
+   "var_a_max": 0.5,
+   "var_a_min": 0.0,
+   "var_s_max": 2.0,
+   "var_s_min": 0.25,
+   "var_xdd_ema": 0.3,
+   "var_zeta_max": 2.0,
+   "var_zeta_min": 0.5
+  },
+  "physical_armature": true,
+  "push_config": {
+   "interval": 350,
+   "vel_max": 0.75,
+   "vel_min": 0.75
+  },
+  "reward_config": {
+   "max_foot_height": 0.1,
+   "scales": {
+    "action_magnitude": 0.0,
+    "action_rate": -0.01,
+    "ang_vel_xy": -0.05,
+    "base_height": -5.0,
+    "dof_pos_limits": -1.0,
+    "energy": -0.001,
+    "feet_air_time": 0.1,
+    "feet_clearance": -2.0,
+    "feet_height": -0.2,
+    "feet_slip": -0.1,
+    "gait_participation": -2.0,
+    "ground_impact": 0.0,
+    "joint_speed": 0.0,
+    "lin_vel_z": -0.5,
+    "orientation": -5.0,
+    "pose": 0.5,
+    "stand_still": -1.0,
+    "termination": -1.0,
+    "torque_smoothness": 0.0,
+    "torques": -0.0002,
+    "tracking_ang_vel": 5.0,
+    "tracking_lin_vel": 10.0
+   },
+   "tracking_sigma": 0.25
+  },
+  "sim_dt": 0.004,
+  "soft_joint_pos_limit_factor": 0.95,
+  "torque_speed_model": true
+ },
  "Go2WarpOscVarMassAxisFlatPhysicalMudDR4xSlowFirm": {
   "Kd": 0.5,
   "Kp": 20.0,
