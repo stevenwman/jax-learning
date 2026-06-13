@@ -388,6 +388,25 @@ def _var_mass_axis_gaitbal_smooth_config():
     return cfg
 
 
+def _var_mass_axis_muddr4x_slowfirm_smooth_config():
+    """THE mud test for the (now LIVE, post-ẍ≡0-fix) virtual mass: Λ-weighted
+    impedance (matches every prior mud result → isolates the mass term added on
+    top of the proven recipe) + tamed live ẍ (var_a=(0,0.5), xdd_ema=0.3) + 4× mud
+    DR + slow+firm reward + gait_participation. Catapult should be gone (tamed ẍ).
+    Bar to beat: NoAir y-2.42, winner y-0.16."""
+    cfg = go2_config(controller="var_impedance", stiffness_granularity="per_axis",
+                     damping_action=True, mass_action=True,
+                     use_op_space_inertia=True, motor="physical",
+                     var_a=(0.0, 0.5), var_xdd_ema=0.3,
+                     mud=dict(depth_range=(0.03, 0.22), f_range=(14.0, 60.0),
+                              c1_range=(9.0, 40.0), c2_range=(6.0, 28.0)))
+    cfg.reward_config.scales.feet_slip = -0.6
+    cfg.reward_config.scales.orientation = -8.0
+    cfg.reward_config.scales.tracking_lin_vel = 4.0
+    cfg.reward_config.scales.gait_participation = -2.0
+    return cfg
+
+
 def _var_mass_axis_gaitbal_smooth_lambda_config():
     """GaitBalSmooth but Λ-WEIGHTED impedance (use_op_space_inertia=True). Tests
     whether the ~8 Hz foot chatter is caused by the BARE K/D law: the only
@@ -615,6 +634,11 @@ GO2_WARP_VARIANTS = {
         config=_var_mass_axis_muddr4x_slowfirm_config,
         train=_DR_TRAIN,
         notes="virtual-mass controller + 4× mud DR + slow+firm reward (Newton traverse test)"),
+    "Go2WarpOscVarMassAxisFlatPhysicalMudDR4xSlowFirmSmooth": EnvVariant(
+        config=_var_mass_axis_muddr4x_slowfirm_smooth_config,
+        train=_DR_TRAIN,
+        notes="THE mud test: Λ-weighted + LIVE tamed ẍ (var_a=0.5, ema=0.3) + slow+firm "
+              "+ gait + 4× DR. Post ẍ≡0-fix; catapult should be gone. Bar: NoAir -2.42"),
     "Go2WarpOscVarMassAxisFlatPhysicalGaitBal": EnvVariant(
         config=_var_mass_axis_gaitbal_config,
         train=_DR_TRAIN,
