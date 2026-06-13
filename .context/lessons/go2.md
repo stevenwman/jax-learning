@@ -337,3 +337,36 @@ during the 2026-06-11 variants audit.
 **Cut date:** OSC runs trained before 2026-06-11 are NOT comparable to
 runs after (no DR vs per_step DR + eval-every-500). Journal:
 `journals/2026-06-11-env-variants-refactor.md`.
+
+## Virtual-mass OSC + the RR-hang (2026-06-12)
+
+**RR-hang is var-impedance-systematic, but reward-fixable.** Every Cartesian-
+impedance/OSC policy (4 reward profiles + the new acceleration-feedback mass
+controller) parks the back-right foot: contact raster (replay qpos → CPU
+`mj_forward` → `*_floor_found` sensors, duty% over a steady window) shows RR ~0%
+while FR/FL/RL are 36–63%. Joint-PD is symmetric (49–57%). CRITICAL: a per-leg
+joint-CYCLE count is misleading — RR's joints cycle 44× while its foot never
+touches; you must measure CONTACT duty, not joint motion. So it's a learned
+3-legged optimum the richer var-impedance action space can reach, not a hard
+foot-geometry lock.
+
+**Fix = `gait_participation` reward (anti-leg-park).** Penalize
+steps-since-all-four-feet-last-completed-a-contact (scale −2.0, comparable to
+feet_slip −0.6 weighted). On the mass controller it lifted RR 0%→32% contact —
+all four feet plant — with eval unchanged (276 vs 283). Earlier reward tries
+(RMA-minimal, NoAir) didn't fix it because they only *removed* swing-shaping;
+they lacked an explicit participation penalty. RR still a touch light (32 vs
+44–58); a larger weight evens it further at some cost to the other terms.
+
+**Virtual mass via acceleration feedback:** `F = A·ẍ + K·err + D·ẋ` (bare,
+`use_op_space_inertia=False`), policy commands per-axis A, ẍ = control-step
+finite-diff of foot world velocity (held across substeps). Needs NO external-
+force estimate — the contact force's effect rides in through the sensed ẍ. The
+torque-delta proof: passing `A·ẍ` adds exactly `Jᵀ·(A·ẍ)` (`test_accel_force_
+enters_as_jt_a_xdd`). STABLE on flat (trains to eval 283, policy actively
+modulates A); CATAPULTS on Newton MPM mud — the sharper contact transients spike
+ẍ and A·ẍ (a_max=2.0) flings the robot 2 m up + flips ±53°. Clamp a_max→0.5 →
+no catapult. The mass *range* is the accel-feedback stability lever; a_max=2.0
+(an unvalidated spec guess) is too large for the rough substrate. Newton transfer
+needs the Newton-side `mud_osc` ported too (48-d parse + bare law + A·ẍ via
+control-step ẍ in the costep) — done, commit e7bc97c.

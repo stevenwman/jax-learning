@@ -582,3 +582,23 @@ slow+firm, ckpt 20260612_213203_..., MJX eval 162.8) on Newton (parity spawn):
   the policy learns within a stable mass range, then re-eval Newton. The plain
   controllers (NoAir -2.42, winner -0.16) remain the bar to beat.
 Videos: varmass_PARITY_thinfirst.mp4 (catapult), varmass_DIAG_amax05.mp4 (stable).
+
+## ═══ gait_participation FIXES the VarMass RR-hang (2026-06-12) ═══
+(Correction to the earlier "RR-hang unfixable / mass-orthogonal" claim — it was
+unfixable by the rewards I'd TRIED, not in general.)
+Trained `Go2WarpOscVarMassAxisFlatPhysicalGaitBal` — VarMass FLAT baseline
+(regular DR, NO mud) + gait_participation -2.0 (the anti-leg-park reward the
+other agent added). User had explicitly asked to use that reward; I'd missed it
+on the first VarMass baseline (default reward, gait_participation=0) — refeedback
+saved to memory feedback_apply_named_configs.
+- eval best 275.9 (≈ no-gait 283; reward addition didn't cost tracking).
+- CONTACT RASTER (the discriminator): VarMass no-gait FR50/FL36/**RR0**/RL63 →
+  VarMass +gaitbal FR58/FL44/**RR32**/RL54. RR foot now PLANTS (0→32% duty); all
+  four feet contact. Tripod fixed. (RR still lightest at 32 vs 44-58 — a heavier
+  gait_participation weight would even it more, at some risk to other terms.)
+- Videos: varmass_gaitbal_FLAT_fwd.mp4 (locked fwd), varmass_gaitbal_FLAT_varied.mp4
+  (--varied-cmds 100 --cmd-max 1.2 0.7 1.0: random vx/vy/yaw every 2s → turning/
+  strafe behavior diversity).
+Mass thread state: FLAT+gait = solved (stable, mass used, RR fixed). MUD still
+open (catapult at a_max=2.0; needs lower-a_max retrain, now also fold in
+gait_participation).
