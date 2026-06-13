@@ -84,8 +84,17 @@ if OSC:                                     # wire the operational-space control
                     s_min=0.25, s_max=2.0, z_min=0.5, z_max=2.0,
                     kp_base=[3000.0, 3000.0, 4000.0], kd_base=[110.0, 110.0, 130.0])
         if _mass:
-            _var.update(mass_action=True, a_min=0.0, a_max=2.0)  # matches var_a=(0,2)
-    _use_lambda = not _mass     # mass controller trained bare (use_op_space_inertia=False)
+            # meta doesn't store the mass controller params → env-var overrides
+            # (defaults reproduce the original bare / a_max=2 / no-EMA mass ckpt).
+            import os
+            _amax = float(os.environ.get("MASS_A_MAX", "2.0"))
+            _ema = float(os.environ.get("MASS_XDD_EMA", "1.0"))
+            _var.update(mass_action=True, a_min=0.0, a_max=_amax, xdd_ema=_ema)
+    # use_op_space_inertia: mass ckpts default bare; set MASS_USE_LAMBDA=1 for the
+    # Λ-weighted mass variants (meta can't disambiguate them yet). Non-mass OSC
+    # ckpts are Λ-weighted.
+    import os as _os
+    _use_lambda = (_os.environ.get("MASS_USE_LAMBDA", "0") == "1") if _mass else True
     example.control.joint_f = wp.zeros(int(example.model.joint_dof_count), dtype=wp.float32,
                                        device=example.model.device)
     _ctrl = mud_osc.MudOscController(example.solver, OSC_KP, OSC_KD, OSC_TLIM,

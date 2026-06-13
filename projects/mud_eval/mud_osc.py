@@ -111,6 +111,7 @@ class MudOscController:
         self._last_action = None            # detect control-step boundary
         self._held_accel_force = np.zeros((4, 3))
         self._jacp = np.zeros((3, int(self.m.nv)))
+        self._xdd_ema_state = np.zeros((4, 3))   # smoothed ẍ (EMA), matches training
         hj = list(home_joints) if home_joints is not None else [0.0, 0.9, -1.8] * 4
         home_qpos = np.zeros(self.m.nq)
         home_qpos[2] = 0.3; home_qpos[3] = 1.0          # base z + quat w (trunk-frame, pose-invariant)
@@ -153,9 +154,13 @@ class MudOscController:
                     mujoco.mj_jacSite(self.m, self.d, self._jacp, None, int(self.foot_sites[i]))
                     v_now[i] = self._jacp @ self.d.qvel
                 if self._prev_ctrl_foot_vel is None:
-                    acc = np.zeros((4, 3))              # first step: no history
+                    acc_raw = np.zeros((4, 3))          # first step: no history
                 else:
-                    acc = (v_now - self._prev_ctrl_foot_vel) / self.ctrl_dt
+                    acc_raw = (v_now - self._prev_ctrl_foot_vel) / self.ctrl_dt
+                # EMA low-pass on ẍ (matches training var_xdd_ema; 1.0 = none).
+                a_ema = float(self.var.get("xdd_ema", 1.0))
+                acc = (1.0 - a_ema) * self._xdd_ema_state + a_ema * acc_raw
+                self._xdd_ema_state = acc
                 n = 4 if self.var["granularity"] == "per_foot" else 12
                 start = 12 + n * (1 + int(self.var["damping_action"]))
                 A = _lin_action_scale(np.asarray(action[start:start + n]),
