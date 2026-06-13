@@ -530,3 +530,29 @@ Leg index order (controller): qpos[7:]/qvel[6:]/FEET_SITES all FL,FR,RL,RR → R
 NEXT: forward-pass symmetry test (identical commanded action → is RR's OSC torque/foot
 force symmetric to RL?) to split code-bug vs learned-optimum. See go2_warp_components.py
 OSC `_run_osc` + `_compute_nominal_foot_body`.
+
+## ═══ VIRTUAL MASS controller (acceleration feedback) — 2026-06-12 ═══
+New `VarImpedanceMass` controller (commit 55f6622). Law `F = A·ẍ + K·err + D·ẋ`,
+**bare** (use_op_space_inertia=False), policy commands virtual mass A per foot/axis
+(48-d action), `ẍ` = control-step finite-diff of foot velocity (info["last_foot_vel"]),
+A·ẍ added as a task-space force before Jᵀ. Spec/plan in `.superpowers/{specs,plans}/
+2026-06-12-osc-virtual-mass*`. Proven in test (`test_accel_force_enters_as_jt_a_xdd`):
+τ-delta == Jᵀ·(A·ẍ) to 3e-8. No F_ext estimate (accel feedback observes the
+disturbance's *effect*). A decoded LINEARLY (range [0,2] includes 0, log-scale can't →
+new `lin_action_scale`).
+
+**FLAT baseline** `Go2WarpOscVarMassAxisFlatPhysical` (regular DR, NO mud, 5M seed0,
+ckpt 20260612_210553_...):
+- Trains STABLE, **best eval 283.1** (≈ VarDampingAxis ~280) — no accel-feedback
+  divergence at var_a_max=2.0. The controller works.
+- Policy ACTIVELY USES the mass knob: A std 0.23, range used [0.27,1.60] of [0,2],
+  per-foot/axis structure (FR_x light 0.81, FL/RR_x heavy ~1.15). Not ignored.
+- 1.02 m/s, crouched z=0.247.
+- **RR-HANG PERSISTS** (contact raster FR=50 FL=36 RR=**0** RL=63 %duty). RR foot never
+  plants — joints cycle (44×) but the foot pedals in air. So the mass knob does NOT fix
+  the tripod. This is the **4th distinct var-impedance variant** with RR=0 contact
+  (joint-PD is symmetric) → RR-hang is OSC-geometry-specific, reward- AND mass-orthogonal.
+  Still points at `_compute_nominal_foot_body`/`_run_osc` foot-i=3 asymmetry. Video
+  varmass_FLAT_fwd.mp4.
+- Mud sibling `...MudDR4xSlowFirm` (mass + 4× DR + slow+firm) training next → Newton
+  traverse vs NoAir(-2.42)/winner(-0.16) to see if the mass DOF helps the bog.
