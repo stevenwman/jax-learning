@@ -304,14 +304,21 @@ SAC_PRESETS: dict[str, tuple[TrainConfig, SACConfig]] = {
 }
 
 
-def get_sac_preset(env_name: str) -> tuple[TrainConfig, SACConfig]:
-    """Return SAC preset (TrainConfig, SACConfig) for env, or a default."""
-    resolved = _resolve_go2_variant(env_name, _SAC_BASE_CFG, _SAC_BASE_ALGO, "sac")
+def _resolve_preset(env_name, base_cfg, base_algo, presets, algo_name):
+    """Shared preset-resolution order (was duplicated across all 5 off-policy
+    getters): a Go2 variant from GO2_WARP_VARIANTS first, then the algo's preset
+    table, then the base config with env_name patched in."""
+    resolved = _resolve_go2_variant(env_name, base_cfg, base_algo, algo_name)
     if resolved is not None:
         return resolved
-    if env_name in SAC_PRESETS:
-        return SAC_PRESETS[env_name]
-    return dataclasses.replace(_SAC_BASE_CFG, env_name=env_name), _SAC_BASE_ALGO
+    if env_name in presets:
+        return presets[env_name]
+    return dataclasses.replace(base_cfg, env_name=env_name), base_algo
+
+
+def get_sac_preset(env_name: str) -> tuple[TrainConfig, SACConfig]:
+    """Return SAC preset (TrainConfig, SACConfig) for env, or a default."""
+    return _resolve_preset(env_name, _SAC_BASE_CFG, _SAC_BASE_ALGO, SAC_PRESETS, "sac")
 
 
 # TD3 presets — vanilla TD3 with 1:1 gradient ratio
@@ -348,12 +355,7 @@ TD3_PRESETS: dict[str, tuple[TrainConfig, TD3Config]] = {
 
 def get_td3_preset(env_name: str) -> tuple[TrainConfig, TD3Config]:
     """Return TD3 preset (TrainConfig, TD3Config) for env, or a default."""
-    resolved = _resolve_go2_variant(env_name, _TD3_BASE_CFG, _TD3_BASE_ALGO, "td3")
-    if resolved is not None:
-        return resolved
-    if env_name in TD3_PRESETS:
-        return TD3_PRESETS[env_name]
-    return dataclasses.replace(_TD3_BASE_CFG, env_name=env_name), _TD3_BASE_ALGO
+    return _resolve_preset(env_name, _TD3_BASE_CFG, _TD3_BASE_ALGO, TD3_PRESETS, "td3")
 
 
 # FastTD3 presets — Seo et al. 2025 (arXiv:2512.01996)
@@ -393,12 +395,7 @@ FAST_TD3_PRESETS: dict[str, tuple[TrainConfig, FastTD3Config]] = {
 
 def get_fast_td3_preset(env_name: str) -> tuple[TrainConfig, FastTD3Config]:
     """Return FastTD3 preset (TrainConfig, FastTD3Config) for env, or a default."""
-    resolved = _resolve_go2_variant(env_name, _FAST_TD3_BASE_CFG, _FAST_TD3_BASE_ALGO, "fast_td3")
-    if resolved is not None:
-        return resolved
-    if env_name in FAST_TD3_PRESETS:
-        return FAST_TD3_PRESETS[env_name]
-    return dataclasses.replace(_FAST_TD3_BASE_CFG, env_name=env_name), _FAST_TD3_BASE_ALGO
+    return _resolve_preset(env_name, _FAST_TD3_BASE_CFG, _FAST_TD3_BASE_ALGO, FAST_TD3_PRESETS, "fast_td3")
 
 
 # FastSAC presets — Seo et al. 2025 (arXiv:2512.01996)
@@ -476,12 +473,7 @@ FAST_SAC_PRESETS["Go2WarpSplitbeltPoseDR"] = (
 
 def get_fast_sac_preset(env_name: str) -> tuple[TrainConfig, FastSACConfig]:
     """Return FastSAC preset (TrainConfig, FastSACConfig) for env, or a default."""
-    resolved = _resolve_go2_variant(env_name, _FAST_SAC_BASE_CFG, _FAST_SAC_BASE_ALGO, "fast_sac")
-    if resolved is not None:
-        return resolved
-    if env_name in FAST_SAC_PRESETS:
-        return FAST_SAC_PRESETS[env_name]
-    return dataclasses.replace(_FAST_SAC_BASE_CFG, env_name=env_name), _FAST_SAC_BASE_ALGO
+    return _resolve_preset(env_name, _FAST_SAC_BASE_CFG, _FAST_SAC_BASE_ALGO, FAST_SAC_PRESETS, "fast_sac")
 
 
 
@@ -587,12 +579,7 @@ FLASH_SAC_PRESETS["FactoryGearMesh"] = (
 
 def get_flash_sac_preset(env_name: str) -> tuple[TrainConfig, FlashSACConfig]:
     """Return FlashSAC preset (TrainConfig, FlashSACConfig) for env, or a default."""
-    resolved = _resolve_go2_variant(env_name, _FLASH_SAC_BASE_CFG, _FLASH_SAC_BASE_ALGO, "flash_sac")
-    if resolved is not None:
-        return resolved
-    if env_name in FLASH_SAC_PRESETS:
-        return FLASH_SAC_PRESETS[env_name]
-    return dataclasses.replace(_FLASH_SAC_BASE_CFG, env_name=env_name), _FLASH_SAC_BASE_ALGO
+    return _resolve_preset(env_name, _FLASH_SAC_BASE_CFG, _FLASH_SAC_BASE_ALGO, FLASH_SAC_PRESETS, "flash_sac")
 
 
 def get_preset(env_name: str) -> TrainConfig:
