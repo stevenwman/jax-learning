@@ -98,20 +98,20 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--num-envs` | int | from preset | Number of parallel environments (default: from env preset) |
 | `--total-timesteps` | int | from preset | Total environment steps to train (default: from env preset) |
 | `--lr` | float | from preset | Learning rate for actor and critic (default: from algo config) |
-| `--reward-scaling` | float | - | Multiply rewards by this factor (default: 1.0) |
 | `--episode-length` | int | from preset | Max steps per episode (default: from env preset) |
-| `--target-entropy-scale` | float | from preset | target_entropy = -scale * action_dim (default: from algo config) |
 | `--eval-every` | int | from preset | Evaluate every N episodes (default: every 5000 episodes; Go2 OSC/physical presets set 500) |
-| `--obs-norm` | flag | off | Enable sample-time obs normalization (recommended for humanoid tasks) |
 | `--wandb` | flag | off | Enable W&B experiment tracking (requires wandb installed) |
 | `--wandb-project` | str | `jax-rl` | W&B project name (default: jax-rl) |
+| `--reset-mode` | str | - | Reset mode: legacy (AutoReset) or per_step (DomainRandWrapper) |
+| `--reward-scaling` | float | - | Multiply rewards by this factor (default: 1.0) |
+| `--obs-norm` | flag | off | Enable sample-time obs normalization (recommended for humanoid tasks) |
 | `--frame-stack` | int | - | Number of stacked observation frames (default: 1, use 3 for locomotion) |
 | `--action-delay-ms` | int | - | Fixed action delay in ms (e.g., 120 for Go2 sim2real) |
 | `--action-delay-range-ms` | int int | - | Randomized action delay range in ms (e.g., 40 120) |
-| `--reset-mode` | str | - | Reset mode: legacy (AutoReset) or per_step (DomainRandWrapper) |
-| `--buffer-size` | int | - | Replay buffer capacity (default: 4M) |
-| `--batch-size` | int | - | Batch size (default: 512) |
-| `--grad-updates-per-step` | int | - | Gradient updates per env step |
+| `--buffer-size` | int | from preset | Replay buffer capacity (default: from algo config) |
+| `--batch-size` | int | from preset | Batch size for gradient updates (default: from algo config) |
+| `--grad-updates-per-step` | int | from preset | Gradient updates per environment step (default: from algo config) |
+| `--target-entropy-scale` | float | from preset | target_entropy = -scale * action_dim (default: from algo config) |
 
 ---
 
@@ -126,17 +126,17 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--num-envs` | int | from preset | Number of parallel environments (default: from env preset) |
 | `--total-timesteps` | int | from preset | Total environment steps to train (default: from env preset) |
 | `--lr` | float | from preset | Learning rate for actor and critic (default: from algo config) |
-| `--reward-scaling` | float | - | Multiply rewards by this factor (default: 1.0) |
 | `--episode-length` | int | from preset | Max steps per episode (default: from env preset) |
-| `--exploration-noise` | float | from preset | Exploration noise std for TD3 (default: from algo config) |
 | `--eval-every` | int | from preset | Evaluate every N episodes (default: every 5000 episodes; Go2 OSC/physical presets set 500) |
-| `--obs-norm` | flag | off | Enable sample-time obs normalization (recommended for humanoid tasks) |
 | `--wandb` | flag | off | Enable W&B experiment tracking (requires wandb installed) |
 | `--wandb-project` | str | `jax-rl` | W&B project name (default: jax-rl) |
+| `--reset-mode` | str | - | Reset mode: legacy (AutoReset) or per_step (DomainRandWrapper) |
+| `--reward-scaling` | float | - | Multiply rewards by this factor (default: 1.0) |
+| `--obs-norm` | flag | off | Enable sample-time obs normalization (recommended for humanoid tasks) |
 | `--frame-stack` | int | - | Number of stacked observation frames (default: 1, use 3 for locomotion) |
 | `--action-delay-ms` | int | - | Fixed action delay in ms (e.g., 120 for Go2 sim2real) |
 | `--action-delay-range-ms` | int int | - | Randomized action delay range in ms (e.g., 40 120) |
-| `--reset-mode` | str | - | Reset mode: legacy (AutoReset) or per_step (DomainRandWrapper) |
+| `--exploration-noise` | float | from preset | Exploration noise std for TD3 (default: from algo config) |
 
 ---
 
@@ -151,20 +151,20 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--num-envs` | int | from preset | Number of parallel environments (default: from env preset) |
 | `--total-timesteps` | int | from preset | Total environment steps to train (default: from env preset) |
 | `--lr` | float | from preset | Learning rate for actor and critic (default: from algo config) |
-| `--reward-scaling` | float | - | Multiply rewards by this factor (default: 1.0) |
 | `--episode-length` | int | from preset | Max steps per episode (default: from env preset) |
-| `--target-entropy-scale` | float | from preset | target_entropy = -scale * action_dim (default: from algo config) |
-| `--batch-size` | int | from preset | Batch size for gradient updates (default: from algo config) |
-| `--grad-updates-per-step` | int | from preset | Gradient updates per environment step (default: from algo config) |
-| `--buffer-size` | int | from preset | Replay buffer capacity (default: from algo config) |
 | `--eval-every` | int | from preset | Evaluate every N episodes (default: every 5000 episodes; Go2 OSC/physical presets set 500) |
-| `--obs-norm` | flag | off | Enable sample-time obs normalization (recommended for humanoid tasks) |
 | `--wandb` | flag | off | Enable W&B experiment tracking (requires wandb installed) |
 | `--wandb-project` | str | `jax-rl` | W&B project name (default: jax-rl) |
+| `--reset-mode` | str | - | Reset mode: legacy (AutoReset) or per_step (DomainRandWrapper) |
+| `--reward-scaling` | float | - | Multiply rewards by this factor (default: 1.0) |
+| `--obs-norm` | flag | off | Enable sample-time obs normalization (recommended for humanoid tasks) |
 | `--frame-stack` | int | - | Number of stacked observation frames (default: 1, use 3 for locomotion) |
 | `--action-delay-ms` | int | - | Fixed action delay in ms (e.g., 120 for Go2 sim2real) |
 | `--action-delay-range-ms` | int int | - | Randomized action delay range in ms (e.g., 40 120) |
-| `--reset-mode` | str | - | Reset mode: legacy (AutoReset) or per_step (DomainRandWrapper) |
+| `--buffer-size` | int | from preset | Replay buffer capacity (default: from algo config) |
+| `--batch-size` | int | from preset | Batch size for gradient updates (default: from algo config) |
+| `--grad-updates-per-step` | int | from preset | Gradient updates per environment step (default: from algo config) |
+| `--target-entropy-scale` | float | from preset | target_entropy = -scale * action_dim (default: from algo config) |
 | `--v-min` | float | from preset | C51 critic support lower bound (default: from algo config, -20 for FastSAC) |
 | `--v-max` | float | from preset | C51 critic support upper bound (default: from algo config, +20 for FastSAC) |
 | `--num-atoms` | int | from preset | C51 critic atom count (default: from algo config, 101) |
@@ -185,20 +185,20 @@ uv run python docs/scripts/gen_cli_reference.py
 | `--num-envs` | int | from preset | Number of parallel environments (default: from env preset) |
 | `--total-timesteps` | int | from preset | Total environment steps to train (default: from env preset) |
 | `--lr` | float | from preset | Learning rate for actor and critic (default: from algo config) |
-| `--reward-scaling` | float | - | Multiply rewards by this factor (default: 1.0) |
 | `--episode-length` | int | from preset | Max steps per episode (default: from env preset) |
-| `--exploration-noise` | float | from preset | Exploration noise std for TD3 (default: from algo config) |
 | `--eval-every` | int | from preset | Evaluate every N episodes (default: every 5000 episodes; Go2 OSC/physical presets set 500) |
-| `--obs-norm` | flag | off | Enable sample-time obs normalization (recommended for humanoid tasks) |
 | `--wandb` | flag | off | Enable W&B experiment tracking (requires wandb installed) |
 | `--wandb-project` | str | `jax-rl` | W&B project name (default: jax-rl) |
+| `--reset-mode` | str | - | Reset mode: legacy (AutoReset) or per_step (DomainRandWrapper) |
+| `--reward-scaling` | float | - | Multiply rewards by this factor (default: 1.0) |
+| `--obs-norm` | flag | off | Enable sample-time obs normalization (recommended for humanoid tasks) |
 | `--frame-stack` | int | - | Number of stacked observation frames (default: 1, use 3 for locomotion) |
 | `--action-delay-ms` | int | - | Fixed action delay in ms (e.g., 120 for Go2 sim2real) |
 | `--action-delay-range-ms` | int int | - | Randomized action delay range in ms (e.g., 40 120) |
-| `--reset-mode` | str | - | Reset mode: legacy (AutoReset) or per_step (DomainRandWrapper) |
-| `--batch-size` | int | from preset | Batch size for gradient updates (default: from algo config) |
-| `--grad-updates-per-step` | int | from preset | Gradient updates per env step (default: from algo config) |
 | `--buffer-size` | int | from preset | Replay buffer capacity (default: from algo config) |
+| `--batch-size` | int | from preset | Batch size for gradient updates (default: from algo config) |
+| `--grad-updates-per-step` | int | from preset | Gradient updates per environment step (default: from algo config) |
+| `--exploration-noise` | float | from preset | Exploration noise std for TD3 (default: from algo config) |
 
 ---
 

@@ -5,7 +5,10 @@ Each utility is a stateless function or lightweight class. No Trainer base class
 """
 
 from jax_rl.training.checkpointing import save_checkpoint, load_checkpoint, load_actor_for_inference
-from jax_rl.training.cli_utils import apply_cli_overrides
+from jax_rl.training.cli_utils import (
+    apply_cli_overrides,
+    add_common_train_args, add_env_shaping_args, add_replay_args,
+)
 from jax_rl.training.episode_tracker import EpisodeTracker
 from jax_rl.training.env_bundle import EnvBundle, BackendKind
 from jax_rl.training.env_setup import make_envs, make_env_bundle, make_identity_norm_state
