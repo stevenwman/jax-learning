@@ -135,7 +135,7 @@ JAX_PLATFORMS=cpu PYGLET_HEADLESS=1 PYTHONPATH=$WT \
     <tr><th>Question</th><th>File</th></tr>
     <tr><td>what envs exist / what is a variant <span class="pill">start here</span></td><td><code>envs/locomotion/go2_warp_variants.py</code></td></tr>
     <tr><td>the env: obs, reward, step</td><td><code>envs/locomotion/go2_warp_joystick.py</code></td></tr>
-    <tr><td>the controllers + the impedance math</td><td><code>envs/locomotion/go2_warp_components.py</code> + <code>go2_osc.py</code></td></tr>
+    <tr><td>the controllers + the impedance math</td><td><code>envs/locomotion/components/controllers.py</code> + <code>go2_osc.py</code> &nbsp;<span style="color:var(--muted);font-size:12px">(mud force field: <code>components/force_fields.py</code>)</span></td></tr>
     <tr><td>reward terms (17, weighted by a scales dict)</td><td><code>go2_warp_joystick.py :: _reward_spec</code></td></tr>
     <tr><td>CLI → config → env → loop</td><td><code>scripts/train_fast_sac.py</code> → <code>configs/env_presets.py</code> → <code>training/env_backends/mjx_backend.py</code> → <code>training/offpolicy_loop.py</code></td></tr>
   </table>
