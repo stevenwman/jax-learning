@@ -24,16 +24,39 @@ import mud_cpu                # noqa: E402
 import mud_osc                # noqa: E402
 from mud_jax_policy import MudJaxPolicy, patched_config  # noqa: E402
 
-CKPT = sys.argv[1]
-NF = int(sys.argv[2]) if len(sys.argv) > 2 else 120
-SPAWN_Y = float(sys.argv[3]) if len(sys.argv) > 3 else -1.0
-SPAWN_Z = float(sys.argv[4]) if len(sys.argv) > 4 else 0.10
-YAW = float(sys.argv[5]) if len(sys.argv) > 5 else 0.5   # 0.5=face +Y (thick-first); -0.5=face -Y (thin-first)
-TAG = sys.argv[6] if len(sys.argv) > 6 else "traverse"
-OSC = (len(sys.argv) > 7 and sys.argv[7].lower() == "osc")   # OSC controller vs joint-PD
-# Forward command vx (read BEFORE sys.argv is reassigned for the Newton parser below).
-# Lower it (e.g. 0.5) to test whether pitch-forward is a max-command lunge artifact.
-VX = float(sys.argv[8]) if len(sys.argv) > 8 else 1.5
+# Parse THIS script's args FIRST — before sys.argv is reassigned for the Newton
+# parser (~line 60). Named flags (preferred, self-documenting) are used when any
+# `--flag` is present; otherwise the LEGACY positional form still works:
+#   <ckpt> [frames] [spawn_y] [spawn_z] [yaw] [tag] [osc|joint-pd] [vx]
+import argparse  # noqa: E402
+_raw = sys.argv[1:]
+if len(_raw) > 1 and any(a.startswith("--") for a in _raw[1:]):
+    _p = argparse.ArgumentParser(
+        prog="record_traverse_maxfwd.py",
+        description="Record a Go2 policy walking a thin->thick Newton MPM mud traverse. "
+                    "Metric = final base y (LOWER = deeper = better; y<0 = cleared).")
+    _p.add_argument("ckpt", help="path to the trained checkpoint dir (e.g. .../best)")
+    _p.add_argument("--frames", type=int, default=120, help="frames to record (eval uses 750)")
+    _p.add_argument("--spawn-y", type=float, default=-1.0, help="spawn y on the ground plane (thin-first uses 3.3)")
+    _p.add_argument("--spawn-z", type=float, default=0.10, help="spawn z / base-height hint")
+    _p.add_argument("--yaw", type=float, default=0.5,
+                    help="yaw as multiple of pi: 0.5=face +Y (thick-first), -0.5=face -Y (thin-first)")
+    _p.add_argument("--tag", default="traverse", help="output filename tag (recordings/<tag>.mp4)")
+    _p.add_argument("--controller", choices=["osc", "joint-pd"], default="joint-pd",
+                    help="osc/var-impedance (action_dim>12) vs joint-PD (12-d)")
+    _p.add_argument("--vx", type=float, default=1.5, help="forward velocity command (max-forward = 1.5)")
+    _a = _p.parse_args(_raw)
+    CKPT, NF, SPAWN_Y, SPAWN_Z, YAW, TAG = _a.ckpt, _a.frames, _a.spawn_y, _a.spawn_z, _a.yaw, _a.tag
+    OSC, VX = (_a.controller == "osc"), _a.vx
+else:
+    CKPT = sys.argv[1]
+    NF = int(sys.argv[2]) if len(sys.argv) > 2 else 120
+    SPAWN_Y = float(sys.argv[3]) if len(sys.argv) > 3 else -1.0
+    SPAWN_Z = float(sys.argv[4]) if len(sys.argv) > 4 else 0.10
+    YAW = float(sys.argv[5]) if len(sys.argv) > 5 else 0.5   # 0.5=face +Y (thick-first); -0.5=face -Y (thin-first)
+    TAG = sys.argv[6] if len(sys.argv) > 6 else "traverse"
+    OSC = (len(sys.argv) > 7 and sys.argv[7].lower() == "osc")   # OSC controller vs joint-PD
+    VX = float(sys.argv[8]) if len(sys.argv) > 8 else 1.5   # read BEFORE the Newton sys.argv reassignment
 # soft-OSC ckpt gains (mjx_backend _osc_soft_physical); other OSC ckpts differ
 OSC_KP = np.array([1500.0, 1500.0, 2000.0]); OSC_KD = np.array([78.0, 78.0, 92.0])
 OSC_TLIM = np.array([23.7, 23.7, 45.43] * 4)
