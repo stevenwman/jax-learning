@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Go2 Mud — Train &amp; Eval: Start Here</title>
+<style>
+  :root{
+    --bg:#0f1419; --panel:#171d26; --panel2:#1d2530; --ink:#e6edf3; --muted:#9aa7b4;
+    --accent:#6cc4ff; --accent2:#7ee787; --warn:#f0b429; --danger:#ff7b72; --line:#2a3340;
+    --code:#0b0f14; --mono:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{max-width:920px;margin:0 auto;padding:40px 24px 96px;}
+  h1{font-size:30px;margin:0 0 6px;letter-spacing:-.02em}
+  .sub{color:var(--muted);margin:0 0 28px;font-size:17px}
+  h2{font-size:21px;margin:42px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--line);letter-spacing:-.01em}
+  h3{font-size:16px;margin:22px 0 8px;color:var(--accent)}
+  p{margin:10px 0}
+  a{color:var(--accent);text-decoration:none}
+  code{font-family:var(--mono);font-size:.86em;background:#222b36;padding:1px 6px;border-radius:5px;color:#cfe3ff}
+  pre{background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px;overflow:auto;
+    font-family:var(--mono);font-size:13.5px;line-height:1.55;margin:12px 0}
+  pre .c{color:#6b7785}            /* comment */
+  pre .k{color:var(--accent2)}     /* key token */
+  pre .f{color:var(--warn)}        /* flag */
+  .lede{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);
+    border-radius:10px;padding:16px 20px;margin:18px 0;font-size:16px}
+  .two{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:18px 0}
+  .world{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  .world h4{margin:0 0 6px;font-size:15px}
+  .world.train h4{color:var(--accent)} .world.eval h4{color:var(--accent2)}
+  .world .v{color:var(--muted);font-size:13.5px}
+  .arrow{display:flex;align-items:center;color:var(--muted);font-size:22px}
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:14.5px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.03em}
+  td code{white-space:nowrap}
+  .gotcha{border-radius:10px;padding:12px 16px;margin:10px 0;border:1px solid var(--line);background:var(--panel)}
+  .gotcha b{color:var(--warn)}
+  .gotcha.red{border-left:3px solid var(--danger)} .gotcha.red b{color:var(--danger)}
+  .gotcha.amber{border-left:3px solid var(--warn)}
+  .pill{display:inline-block;background:#243042;color:var(--accent);border-radius:20px;padding:2px 11px;font-size:12.5px;margin:2px 4px 2px 0;font-family:var(--mono)}
+  .decode span{display:inline-block;margin:3px 0}
+  .decode .seg{background:#222b36;border:1px solid var(--line);border-radius:6px;padding:2px 8px;margin:2px;font-family:var(--mono);font-size:13px}
+  .decode .seg b{color:var(--accent2)}
+  .foot{margin-top:48px;color:var(--muted);font-size:13px;border-top:1px solid var(--line);padding-top:16px}
+  .toc{color:var(--muted);font-size:14px;margin:0 0 8px}
+  .toc a{margin-right:14px}
+  .kbd{font-family:var(--mono);font-size:12px;background:#222b36;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:1px 6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Go2 Mud — Train &amp; Eval</h1>
+  <p class="sub">The shortest path from zero to "I trained a Go2 policy and scored it on the held-out mud." Read top to bottom once.</p>
+  <p class="toc">
+    <a href="#model">Mental model</a><a href="#controller">Controllers</a><a href="#run">Run it</a>
+    <a href="#names">Variant names</a><a href="#map">File map</a><a href="#gotchas">Gotchas</a>
+  </p>
+
+  <h2 id="model">The mental model (1 paragraph)</h2>
+  <div class="lede">
+    You <b>train</b> a Go2 policy in JAX on <i>flat ground + an analytic "mud" force model</i> (fast, GPU, jittable).
+    You <b>evaluate transfer</b> on a separate <b>Newton MPM granular-mud sim</b> the policy <i>never saw</i> — that's
+    the held-out test, and it has its own venv because Newton physics can't run inside <code>jax.jit</code>.
+    <b>Two worlds, two venvs.</b> Training proves a recipe; Newton mud is the judge.
+  </div>
+  <div class="two">
+    <div class="world train"><h4>① TRAIN &nbsp;(JAX, main venv, GPU)</h4>
+      <div class="v">flat + analytic mud · jitted · 256 parallel envs · → <code>checkpoints/</code></div></div>
+    <div class="arrow">→</div>
+    <div class="world eval"><h4>② EVAL &nbsp;(Newton MPM, own venv)</h4>
+      <div class="v">held-out granular mud · CPU actor + MPM · hand-written step loop · → a number + an .mp4</div></div>
+  </div>
+
+  <h2 id="controller">The controller idea (or nothing makes sense)</h2>
+  <p>A Go2 variant picks one <b>low-level controller</b> from config. The policy's action <i>means different things</i> per controller:</p>
+  <table>
+    <tr><th>Controller</th><th>What the action is</th></tr>
+    <tr><td><code>joint-PD</code></td><td>joint position targets (the normal thing)</td></tr>
+    <tr><td><code>OSC / variable-impedance</code></td><td>foot <i>xyz targets</i> + per-axis <i>stiffness / damping</i> (Cartesian impedance)</td></tr>
+    <tr><td><code>virtual-mass</code></td><td>… + a commanded foot-acceleration term</td></tr>
+  </table>
+  <p>The mud research finding in one line: <b>variable-impedance penetrates mud deeper than joint-PD.</b></p>
+
+  <h2 id="run">Run it (2 commands)</h2>
+  <h3>① Train (main venv, GPU)</h3>
+<pre><span class="c"># a known-good mud recipe (var-impedance + 4× mud DR + slow+firm reward)</span>
+XLA_CLIENT_MEM_FRACTION=0.65 uv run python scripts/train_fast_sac.py \
+  <span class="f">--env</span> <span class="k">Go2WarpOscVarDampingAxisFlatPhysicalMudDR4xSlowFirm</span> \
+  <span class="f">--total-timesteps</span> 5000000 <span class="f">--num-envs</span> 256 <span class="f">--buffer-size</span> 2097152 <span class="f">--wandb</span>
+<span class="c"># → checkpoints/&lt;timestamp&gt;_..._seed0/best</span></pre>
+
+  <h3>② Eval on Newton mud (separate venv, CPU actor + MPM)</h3>
+<pre><span class="c"># NEW: named flags (self-documenting). Run from the repo root.</span>
+WT=$(pwd)
+JAX_PLATFORMS=cpu PYGLET_HEADLESS=1 PYTHONPATH=$WT \
+  projects/mud_eval/.venv/bin/python projects/mud_eval/record_traverse_maxfwd.py \
+  $WT/checkpoints/&lt;run&gt;/best \
+  <span class="f">--frames</span> 750 <span class="f">--spawn-y</span> 3.3 <span class="f">--yaw</span> -0.5 <span class="f">--controller</span> osc <span class="f">--tag</span> myeval
+<span class="c"># metric: final base y on the thin→thick traverse.</span>
+<span class="c">#   LOWER = deeper = better.  y &lt; 0 = cleared the whole mud gradient.</span>
+<span class="c"># bar to beat:  NoAir ≈ -2.4 (clears) · slow+firm ≈ -0.2 (clears)</span></pre>
+  <p style="color:var(--muted);font-size:14px">(The old positional form <code>… best 750 3.3 0.10 -0.5 myeval osc</code> still works — but use the flags.)</p>
+
+  <h2 id="names">Decode a variant name (systematic, not random)</h2>
+  <p>The 55 envs are declared as data in <code>jax_rl/envs/locomotion/go2_warp_variants.py</code> — <b>that table is the map of everything.</b> A name is just its config knobs concatenated:</p>
+  <p class="decode">
+    <span class="seg"><b>Go2Warp</b> · Go2, Warp backend</span>
+    <span class="seg"><b>OscVarDampingAxis</b> · var-impedance, per-axis K+D</span>
+    <span class="seg"><b>FlatPhysical</b> · flat terrain, physical motor</span>
+    <span class="seg"><b>MudDR4x</b> · 4× analytic-mud DR</span>
+    <span class="seg"><b>SlowFirm</b> · reward profile</span>
+  </p>
+
+  <h2 id="map">Where to look when…</h2>
+  <h3>Training side &nbsp;<span style="color:var(--muted);font-weight:400;font-size:13px">jax_rl/</span></h3>
+  <table>
+    <tr><th>Question</th><th>File</th></tr>
+    <tr><td>what envs exist / what is a variant <span class="pill">start here</span></td><td><code>envs/locomotion/go2_warp_variants.py</code></td></tr>
+    <tr><td>the env: obs, reward, step</td><td><code>envs/locomotion/go2_warp_joystick.py</code></td></tr>
+    <tr><td>the controllers + the impedance math</td><td><code>envs/locomotion/go2_warp_components.py</code> + <code>go2_osc.py</code></td></tr>
+    <tr><td>reward terms (17, weighted by a scales dict)</td><td><code>go2_warp_joystick.py :: _reward_spec</code></td></tr>
+    <tr><td>CLI → config → env → loop</td><td><code>scripts/train_fast_sac.py</code> → <code>configs/env_presets.py</code> → <code>training/env_backends/mjx_backend.py</code> → <code>training/offpolicy_loop.py</code></td></tr>
+  </table>
+  <h3>Eval side &nbsp;<span style="color:var(--muted);font-weight:400;font-size:13px">projects/mud_eval/</span></h3>
+  <table>
+    <tr><th>Question</th><th>File</th></tr>
+    <tr><td>run the traverse <span class="pill">the eval</span></td><td><code>record_traverse_maxfwd.py</code></td></tr>
+    <tr><td>Newton-side controller (numpy port of <code>go2_osc.py</code>)</td><td><code>mud_osc.py</code></td></tr>
+    <tr><td>policy loader / obs adapter</td><td><code>mud_jax_policy.py</code></td></tr>
+    <tr><td>robot + mud co-step loop</td><td><code>mud_costep.py</code></td></tr>
+    <tr><td>dev history / deeper math</td><td><code>HANDOFF.md</code> &nbsp;(<code>archive/</code> = old scaffolding)</td></tr>
+  </table>
+
+  <h2 id="gotchas">The 5 gotchas that will bite you</h2>
+  <div class="gotcha"><b>1 · Two venvs.</b> <code>uv run …</code> for training; <code>projects/mud_eval/.venv/bin/python …</code> for eval. They don't share dependencies.</div>
+  <div class="gotcha"><b>2 · A reward is a profile.</b> All 17 terms always compute; a "reward" is just a <code>reward_config.scales</code> dict (scale 0 = off). <code>SlowFirm</code> / <code>NoAir</code> are scale dicts.</div>
+  <div class="gotcha"><b>3 · Checkpoints self-describe their controller</b> in <code>meta["control"]["osc"]</code>. The eval reads it — never hardcode controller params. A jax↔numpy parity test pins the two implementations equal.</div>
+  <div class="gotcha"><b>4 · Spawn parity.</b> The Newton eval starts the robot at the training home pose <code>(0, 0.9, -1.8)</code>, base z 0.27. Mismatches here look like physics bugs (they're not).</div>
+  <div class="gotcha red"><b>5 · One GPU.</b> Training and the Newton eval <b>cannot run at the same time</b> (16 GB). <code>JAX_PLATFORMS=cpu</code> on the eval is mandatory (the actor is CPU-bound by design; MPM keeps the GPU via Warp).</div>
+
+  <h3 style="margin-top:34px">The 2-minute "does it work" loop</h3>
+  <p>Train a known-good recipe → grab <code>best/</code> → run the eval → read the final <code>y</code>. If <code>y &lt; 0</code>, it cleared the mud. That's the whole feedback loop.</p>
+
+  <div class="foot">
+    Generated for the <code>go2-osc-impedance</code> line of work. Deeper context: <code>.context/lessons/{go2,newton_mud_eval}.md</code>,
+    <code>projects/mud_eval/HANDOFF.md</code>, and the root <code>README.md</code>. Open this file directly in a browser
+    (<span class="kbd">file://…/docs/onboarding-mud-go2.html</span>).
+  </div>
+
+</div>
+</body>
+</html>
