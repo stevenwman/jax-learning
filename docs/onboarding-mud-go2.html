@@ -91,8 +91,9 @@
   <h2 id="run">Run it (2 commands)</h2>
   <h3>① Train (main venv, GPU)</h3>
 <pre><span class="c"># a known-good mud recipe (var-impedance + 4× mud DR + slow+firm reward)</span>
+<span class="c"># 'mud-slowfirm' is a short alias → Go2WarpOscVarDampingAxisFlatPhysicalMudDR4xSlowFirm</span>
 XLA_CLIENT_MEM_FRACTION=0.65 uv run python scripts/train_fast_sac.py \
-  <span class="f">--env</span> <span class="k">Go2WarpOscVarDampingAxisFlatPhysicalMudDR4xSlowFirm</span> \
+  <span class="f">--env</span> <span class="k">mud-slowfirm</span> \
   <span class="f">--total-timesteps</span> 5000000 <span class="f">--num-envs</span> 256 <span class="f">--buffer-size</span> 2097152 <span class="f">--wandb</span>
 <span class="c"># → checkpoints/&lt;timestamp&gt;_..._seed0/best</span></pre>
 
@@ -117,6 +118,16 @@ JAX_PLATFORMS=cpu PYGLET_HEADLESS=1 PYTHONPATH=$WT \
     <span class="seg"><b>MudDR4x</b> · 4× analytic-mud DR</span>
     <span class="seg"><b>SlowFirm</b> · reward profile</span>
   </p>
+  <p>…which is precise but monstrous (up to <b>63 chars</b>). So the ones you actually train have <b>short aliases</b> (in <code>go2_warp_variants.py :: GO2_ENV_ALIASES</code>) — <code>--env mud-slowfirm</code> resolves to the canonical name. The long names stay the source of truth; aliases are just handles.</p>
+  <table>
+    <tr><th>Alias</th><th>Canonical / what it is</th></tr>
+    <tr><td><code>flat-jointpd</code></td><td>joint-PD flat benchmark</td></tr>
+    <tr><td><code>flat-varimp</code></td><td>variable-impedance flat baseline</td></tr>
+    <tr><td><code>mud-slowfirm</code></td><td>var-imp + 4× mud DR + slow+firm — <b>robust mud winner</b> (clears)</td></tr>
+    <tr><td><code>mud-noair</code></td><td>+ NoAir reward — <b>deepest traverse</b></td></tr>
+    <tr><td><code>mud-mass</code></td><td>virtual-mass controller on mud</td></tr>
+    <tr><td><code>mud-jointpd</code></td><td>joint-PD on mud (the control that bogs)</td></tr>
+  </table>
 
   <h2 id="map">Where to look when…</h2>
   <h3>Training side &nbsp;<span style="color:var(--muted);font-weight:400;font-size:13px">jax_rl/</span></h3>
