@@ -846,3 +846,30 @@ GO2_WARP_VARIANTS = {
               "reward; shares parameterization with Go2WarpSplitbeltPosTrack "
               "so cross-deploy is direct"),
 }
+
+
+# ── Ergonomic short aliases ────────────────────────────────────────────────
+# The canonical env names above are SELF-DESCRIBING (every segment is a config
+# knob: robot+backend · controller · granularity · terrain · motor · mud-DR ·
+# reward-profile), which makes them precise but monstrous — up to 63 chars. These
+# aliases are short handles for the variants we train often. The canonical names
+# remain the single source of truth (all checkpoints, docs, and the variants
+# table use them); aliases only resolve to a canonical name at preset lookup
+# (see env_presets._resolve_go2_variant). Adding one is one line; never RENAME a
+# canonical (that breaks checkpoints/docs) — alias instead.
+#
+#   uv run python scripts/train_fast_sac.py --env mud-slowfirm   # ← instead of the 51-char name
+GO2_ENV_ALIASES = {
+    # flat baselines (no mud) — the controller comparison
+    "flat-jointpd": "Go2WarpJoystickFlat",                              # joint-PD benchmark
+    "flat-varimp":  "Go2WarpOscVarDampingAxisFlatPhysical",            # variable impedance (per-axis K+D)
+    "flat-mass":    "Go2WarpOscVarMassAxisFlatPhysical",               # + virtual mass
+
+    # Newton-mud training recipes (var-impedance + 4x analytic-mud DR + a reward profile)
+    "mud-firm":     "Go2WarpOscVarDampingAxisFlatPhysicalMudDR4xFirm",          # firm-plant reward
+    "mud-slowfirm": "Go2WarpOscVarDampingAxisFlatPhysicalMudDR4xSlowFirm",      # ROBUST winner (clears mud)
+    "mud-noair":    "Go2WarpOscVarDampingAxisFlatPhysicalMudDR4xSlowFirmNoAir", # deepest traverse
+    "mud-gaitbal":  "Go2WarpOscVarDampingAxisFlatPhysicalMudDR4xSlowFirmNoAirGaitBal",  # + anti-leg-park
+    "mud-mass":     "Go2WarpOscVarMassAxisFlatPhysicalMudDR4xSlowFirmSmooth",   # virtual-mass on mud
+    "mud-jointpd":  "Go2WarpJoystickFlatPhysicalMudDR4xSlowFirm",               # joint-PD on mud (control)
+}

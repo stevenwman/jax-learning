@@ -9,7 +9,7 @@ from jax_rl.configs.fast_td3_config import FastTD3Config
 from jax_rl.configs.fast_sac_config import FastSACConfig
 from jax_rl.configs.flash_sac_config import FlashSACConfig
 from jax_rl.configs.train_config import TrainConfig
-from jax_rl.envs.locomotion.go2_warp_variants import GO2_WARP_VARIANTS
+from jax_rl.envs.locomotion.go2_warp_variants import GO2_WARP_VARIANTS, GO2_ENV_ALIASES
 
 
 def _resolve_go2_variant(env_name, base_cfg, base_algo, algo_name):
@@ -25,6 +25,9 @@ def _resolve_go2_variant(env_name, base_cfg, base_algo, algo_name):
     config — so a variant can carry per-algo train deltas without polluting
     ``train``.
     """
+    # Resolve a short ergonomic alias (e.g. "mud-slowfirm") to its canonical
+    # Go2 name up front, so cfg.env_name + the registry lookup all use canonical.
+    env_name = GO2_ENV_ALIASES.get(env_name, env_name)
     v = GO2_WARP_VARIANTS.get(env_name)
     if v is None:
         if env_name.startswith("Go2Warp") and not env_name.startswith("Go2WarpSplitbelt"):
