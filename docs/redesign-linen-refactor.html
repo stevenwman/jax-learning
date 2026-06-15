@@ -160,7 +160,7 @@
 
   <h2 id="mig">Migration — strangler-fig, not big-bang</h2>
   <p>You're sandbox-now; nothing below stalls research. Each step ships green on its own.</p>
-  <div class="step"><div class="n">1</div><div class="b"><b>Stand up <code>jax_rl/control/</code></b>, move <i>one</i> controller, env delegates to it. Proves the contract before touching anything combinatorial.</div></div>
+  <div class="step"><div class="n">1</div><div class="b"><b>Stand up the controller package</b>, env delegates to it. Proves the contract before touching anything combinatorial. <span class="ship">done 2026-06-15</span><br><span style="color:var(--muted);font-size:13.5px">Landed as an in-place split: <code>go2_warp_components.py</code> (656 lines, 4 concerns) → <code>envs/locomotion/components/</code> (actuation / terrain / controllers / force_fields), isolating the mud <code>ForceField</code> (Bleed 1). Controllers were <i>already</i> clean strategy objects, so this was a verbatim relocation (smoke signatures byte-identical), not an extraction. Kept under <code>locomotion/</code> not <code>jax_rl/control/</code> — they still read ~14 <code>env._*</code> internals; promotion waits for decoupling.</span></div></div>
   <div class="step"><div class="n">2</div><div class="b"><b><code>make_go2(...)</code> builder alongside the 55 names.</b> New work uses the builder; old names become thin shims → delete later.</div></div>
   <div class="step"><div class="n">3</div><div class="b"><b>Add the import-direction lint.</b> Move mud-specific variant declarations out of core into <code>projects/</code>.</div></div>
   <div class="step"><div class="n">4</div><div class="b"><b>Collapse the numpy OSC</b> into the shared-spec executor; the parity test guards it.</div></div>
@@ -225,6 +225,7 @@ def _(): return make_go2(controller=VarImpedance(...), terrain=<span class="d">M
     Branch <code>linen_refactor</code> (forked from <code>new_slate_linen_clean</code> = linen + 7 cleanup commits).
     Baseline to abort to: <code>new_slate_linen_clean</code>. Artifacts (checkpoints / vids / wandb) parked in <code>jax-learning-go2mud-artifacts/</code>.
     This doc is the plan, not the spec — each move gets its own brainstorm + spec before code.
+    <br><br><b style="color:var(--accent2)">Progress 2026-06-15:</b> infra in place — smoke harness (<code>scripts/smoke_refactor.py</code>) + layer-dep lint (<code>tests/test_layer_deps.py</code>); Move&nbsp;#1 landed (components split, commit <code>fc084ed</code>). Journal: <code>.context/journals/2026-06-15.md</code>. Next: Move&nbsp;#2 (the <code>make_go2</code> builder) — needs its own spec before code.
   </div>
 
 </div>
