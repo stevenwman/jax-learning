@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>linen_refactor — Repo Redesign Outline</title>
+<style>
+  :root{
+    --bg:#0f1419; --panel:#171d26; --panel2:#1d2530; --ink:#e6edf3; --muted:#9aa7b4;
+    --accent:#6cc4ff; --accent2:#7ee787; --warn:#f0b429; --danger:#ff7b72; --line:#2a3340;
+    --code:#0b0f14; --mono:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{max-width:920px;margin:0 auto;padding:40px 24px 96px;}
+  h1{font-size:30px;margin:0 0 6px;letter-spacing:-.02em}
+  .sub{color:var(--muted);margin:0 0 28px;font-size:17px}
+  h2{font-size:21px;margin:42px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--line);letter-spacing:-.01em}
+  h3{font-size:16px;margin:22px 0 8px;color:var(--accent)}
+  p{margin:10px 0}
+  a{color:var(--accent);text-decoration:none}
+  code{font-family:var(--mono);font-size:.86em;background:#222b36;padding:1px 6px;border-radius:5px;color:#cfe3ff}
+  pre{background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px 18px;overflow:auto;
+    font-family:var(--mono);font-size:13.5px;line-height:1.55;margin:12px 0}
+  pre .c{color:#6b7785}
+  pre .k{color:var(--accent2)}
+  pre .f{color:var(--warn)}
+  pre .d{color:var(--danger)}
+  .lede{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);
+    border-radius:10px;padding:16px 20px;margin:18px 0;font-size:16px}
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:14.5px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.03em}
+  td code{white-space:nowrap}
+  .gotcha{border-radius:10px;padding:12px 16px;margin:10px 0;border:1px solid var(--line);background:var(--panel)}
+  .gotcha b{color:var(--warn)}
+  .gotcha.red{border-left:3px solid var(--danger)} .gotcha.red b{color:var(--danger)}
+  .gotcha.amber{border-left:3px solid var(--warn)}
+  .gotcha.green{border-left:3px solid var(--accent2)} .gotcha.green b{color:var(--accent2)}
+  .pill{display:inline-block;background:#243042;color:var(--accent);border-radius:20px;padding:2px 11px;font-size:12.5px;margin:2px 4px 2px 0;font-family:var(--mono)}
+  .foot{margin-top:48px;color:var(--muted);font-size:13px;border-top:1px solid var(--line);padding-top:16px}
+  .toc{color:var(--muted);font-size:14px;margin:0 0 8px}
+  .toc a{margin-right:14px}
+  /* layer stack */
+  .stack{margin:18px 0}
+  .layer{border:1px solid var(--line);border-radius:10px;padding:13px 18px;margin:8px 0;background:var(--panel)}
+  .layer .nm{font-weight:700;font-family:var(--mono)}
+  .layer .ds{color:var(--muted);font-size:14px;margin-top:3px}
+  .layer.algo{border-left:3px solid var(--accent2)} .layer.algo .nm{color:var(--accent2)}
+  .layer.env{border-left:3px solid var(--accent)} .layer.env .nm{color:var(--accent)}
+  .layer.exp{border-left:3px solid var(--warn)} .layer.exp .nm{color:var(--warn)}
+  .dep{text-align:center;color:var(--muted);font-size:13px;margin:2px 0}
+  .rule{background:var(--panel2);border:1px dashed var(--line);border-radius:8px;padding:10px 14px;margin:10px 0;
+    font-family:var(--mono);font-size:13.5px;color:var(--accent2)}
+  .step{display:flex;gap:12px;margin:12px 0;align-items:flex-start}
+  .step .n{flex:0 0 28px;height:28px;border-radius:50%;background:#243042;color:var(--accent);
+    display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;font-family:var(--mono)}
+  .step .b{flex:1}
+  .step .b b{color:var(--ink)}
+  .ship{display:inline-block;background:#1b2a1b;color:var(--accent2);border:1px solid #2a4a2a;border-radius:6px;
+    padding:1px 8px;font-size:12px;font-family:var(--mono);margin-left:6px}
+  .badbox,.goodbox{border-radius:10px;padding:12px 16px;margin:8px 0;border:1px solid var(--line);font-size:14.5px}
+  .badbox{background:#1f1417;border-left:3px solid var(--danger)}
+  .goodbox{background:#13201a;border-left:3px solid var(--accent2)}
+  .badbox h4,.goodbox h4{margin:0 0 6px;font-size:13px;text-transform:uppercase;letter-spacing:.03em}
+  .badbox h4{color:var(--danger)} .goodbox h4{color:var(--accent2)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Repo Redesign — <code>linen_refactor</code></h1>
+  <p class="sub">How this repo would be built if we did it again. Goals &amp; assumptions first, then the one rule that fixes the slop, then the moves — in ship order.</p>
+  <p class="toc">
+    <a href="#why">Goals</a><a href="#diag">Diagnosis</a><a href="#target">Target shape</a>
+    <a href="#moves">The moves</a><a href="#keep">Keep</a><a href="#mig">Migration</a><a href="#builder">Builder placement</a><a href="#open">Open Qs</a>
+  </p>
+
+  <div class="lede">
+    <b>Thesis:</b> the repo wants to be ManiSkill-shaped — a reusable <i>algo</i> library + a standardized <i>env/benchmark</i> suite + <i>research</i> that consumes both. The slop came from the dependency arrows pointing the wrong way: <b>research bled into the library, the library bled into the algos.</b> Fix the arrows and most of the convolution dissolves. Everything below serves that one correction.
+  </div>
+
+  <h2 id="why">Goals &amp; assumptions (the lens)</h2>
+  <table>
+    <tr><th>Goal</th><th>Assumption it rests on</th></tr>
+    <tr><td>Research code reads like it <b>uses an SDK</b>, not patches one</td><td>Adding a controller / terrain / reward should never require opening a core env file</td></tr>
+    <tr><td>Keep the <b>algo zoo + benchmark breadth</b> (ManiSkill-style), don't collapse to one robot</td><td>Multi-algo comparison (FastSAC etc.) and multiple envs stay first-class</td></tr>
+    <tr><td><b>Isolate the mud research</b> so it leverages structure but stays "systems-y"</td><td>Mud is one project among future ones; core must not know the word "mud"</td></tr>
+    <tr><td>Optimize for <b>fast iteration now</b>, clean path to <b>share later</b></td><td>Sandbox today → lab library tomorrow; refactor must not stall research</td></tr>
+    <tr><td>One fact lives in <b>one place</b></td><td>The heavy doc-sync checklist is a symptom of config duplicated across 4 files</td></tr>
+  </table>
+
+  <h2 id="diag">Diagnosis — where the arrows broke</h2>
+
+  <div class="badbox">
+    <h4>Bleed 1 · research → core</h4>
+    Mud variants are declared <i>inside</i> <code>go2_warp_variants.py</code> (a core env module). Core now knows <code>MudDR4xSlowFirm</code> exists. <code>projects/mud_eval</code> reaches into env internals (sensor adrs, controller math). Mud is a <b>research project</b> — it should import <code>jax_rl</code>; core should never name it.
+  </div>
+  <div class="badbox">
+    <h4>Bleed 2 · env → algo</h4>
+    <code>env_presets.py</code> fuses algo hyperparameters with env-name defaults, so the algo library depends on which env strings exist. Backwards.
+  </div>
+  <div class="gotcha amber">
+    <b>The loudest symptom</b> — names like <code>Go2WarpOscVarDampingAxisFlatPhysicalMudDR4xSlowFirmNoAirGaitBal</code> (63 chars). You're <i>naming points</i> in a product space (<code>base × controller × terrain × DR × command × reward</code>) instead of <i>constructing</i> them. 55 frozen enums = combinatorial blow-up of a thing that wants to be a builder.
+  </div>
+
+  <h2 id="target">Target shape — 3 layers, one-way deps</h2>
+  <div class="stack">
+    <div class="layer exp">
+      <div class="nm">projects/ &nbsp;(experiments)</div>
+      <div class="ds">mud, deploy-prep, sweeps. Imports the two below. <b>Never imported by them.</b> Owns its own DR/terrain/reward declarations.</div>
+    </div>
+    <div class="dep">▲ imports&nbsp;&nbsp;│&nbsp;&nbsp;may not be imported ▼</div>
+    <div class="layer env">
+      <div class="nm">jax_rl/envs/ &nbsp;(tasks + plugin contracts)</div>
+      <div class="ds">Go2 base physics/obs/action, controller contract, terrain/DR hooks, a task registry. Knows nothing about "mud" or any experiment.</div>
+    </div>
+    <div class="dep">▲ imports&nbsp;&nbsp;│&nbsp;&nbsp;may not be imported ▼</div>
+    <div class="layer algo">
+      <div class="nm">jax_rl/algos/ &nbsp;(env-agnostic learners)</div>
+      <div class="ds">SAC / TD3 / FastSAC / FastTD3 / TDMPC2. Knows nothing about Go2, controllers, or env names.</div>
+    </div>
+  </div>
+  <div class="rule">enforce with ONE lint:&nbsp; <span style="color:var(--ink)">jax_rl/** may not import projects/**</span></div>
+  <p>That single rule, CI-enforced, prevents every future re-bleed. The layers above it are just the natural consequence of obeying it.</p>
+
+  <h2 id="moves">The moves (each ships independently)</h2>
+
+  <h3>1 · Controllers → first-class package <span class="ship">strangler step 1</span></h3>
+  <p><code>jax_rl/control/</code> with a contract: <code>compute_tau(state, spec) -&gt; tau</code>. joint-PD / OSC / var-impedance / virtual-mass become <b>peers</b>, testable in isolation. Env takes a controller <i>instance</i>; research adds a new one from outside without touching <code>go2_warp_base.py</code>. Today they're tangled into the env <code>step()</code>.</p>
+
+  <h3>2 · Variants → builder, not enum</h3>
+  <div class="badbox"><h4>now</h4>55 frozen names, up to 63 chars, in a core module.</div>
+  <div class="goodbox"><h4>target</h4>a spec object that constructs the point in the product space:</div>
+<pre>make_go2(
+  controller=<span class="k">VarImpedance</span>(s=.., zeta=.., a=..),
+  terrain=<span class="k">mud</span>, dr=<span class="f">"4x"</span>, command=<span class="k">slow_firm</span>, reward=<span class="k">gait_bal</span>)</pre>
+  <p>Keep ~6 <b>named presets</b> for reproducibility; everything else is constructed. The short aliases added this session (<code>mud-slowfirm</code> →&nbsp;…) are already step one — a flat lookup over a space that wants real axes.</p>
+
+  <h3>3 · One controller spec, two executors — kill the jax/numpy drift</h3>
+  <p>The real tax: <code>mud_osc.py</code> (numpy, for Newton) <b>duplicates</b> the jax OSC. Every fix lands twice (the EMA bug, the stale print label). Target: the controller is a <b>pure dataclass spec</b> + a math kernel; the jax executor and the numpy executor both <i>reconstruct from the same spec</i>. The self-describing <code>meta["control"]["osc"]</code> we already emit is the seed — lean all the way in and a parity test becomes a first-class contract, not bespoke glue.</p>
+
+  <h3>4 · Newton = an eval backend behind a protocol</h3>
+  <p>Define <code>EvalBackend</code> (warp-train, newton-mpm-eval). Record/traverse scripts target the <i>protocol</i>, not "where the env hides its sensors." Separate venv stays (Newton can't run under <code>jax.jit</code> — correct call); we just give the seam a name instead of letting <code>mud_eval</code> reach through it.</p>
+
+  <h3>5 · Presets split</h3>
+  <p><code>algo_cfg</code> (env-agnostic) and <code>env_spec</code> are different objects. An <i>experiment</i> pairs them and lives in the experiments layer. The library core stops depending on experiment wiring — undoes Bleed&nbsp;2.</p>
+
+  <h3>6 · Collapse the doc-sync matrix</h3>
+  <p>The heavy <code>CLAUDE.md</code> doc-sync checklist (env → <code>go2_constants.py</code> → <code>mjcf_comparison.md</code> → <code>env_presets</code> → docs) exists because <b>one fact lives in four places</b>. Define gains/constants <b>once</b>, import everywhere; the cross-ref burden shrinks to near-zero.</p>
+
+  <h2 id="keep">Keep — these were right</h2>
+  <div class="gotcha green"><b>variants-as-data instinct</b> — just relocate it out of core and make it compositional.</div>
+  <div class="gotcha green"><b>self-describing control metadata</b> — it's the seed of move #3, not cruft.</div>
+  <div class="gotcha green"><b>the snapshot / config-drift test</b> — caught real bugs this session; the churn is the feature, not noise.</div>
+  <div class="gotcha green"><b>separate Newton venv</b> — deps are genuinely incompatible.</div>
+  <div class="gotcha green"><b>.context/ agent-handoff docs</b> — heavy but load-bearing for picking work back up.</div>
+
+  <h2 id="mig">Migration — strangler-fig, not big-bang</h2>
+  <p>You're sandbox-now; nothing below stalls research. Each step ships green on its own.</p>
+  <div class="step"><div class="n">1</div><div class="b"><b>Stand up <code>jax_rl/control/</code></b>, move <i>one</i> controller, env delegates to it. Proves the contract before touching anything combinatorial.</div></div>
+  <div class="step"><div class="n">2</div><div class="b"><b><code>make_go2(...)</code> builder alongside the 55 names.</b> New work uses the builder; old names become thin shims → delete later.</div></div>
+  <div class="step"><div class="n">3</div><div class="b"><b>Add the import-direction lint.</b> Move mud-specific variant declarations out of core into <code>projects/</code>.</div></div>
+  <div class="step"><div class="n">4</div><div class="b"><b>Collapse the numpy OSC</b> into the shared-spec executor; the parity test guards it.</div></div>
+  <div class="step"><div class="n">5</div><div class="b"><b>Split presets</b> into <code>algo_cfg</code> + <code>env_spec</code>; relocate experiment pairings.</div></div>
+
+  <h2 id="builder">Builder placement — the real sub-decisions</h2>
+  <p>"Where does the builder live" isn't one question — it's five, and they're the load-bearing ones for move #2. The headline answer first, then the parts:</p>
+  <div class="lede">
+    <b>Builder <i>machinery</i> lives in core; the <i>catalog</i> is federated.</b> <code>make_go2(...)</code> sits in <code>jax_rl/envs/</code> and enumerates <b>nothing</b> — it takes typed axis <i>plugins</i> (controller, terrain, reward, DR). Generic axes (flat, rough, standard rewards) ship in core; experiment-specific axes (mud terrain, mud DR) live in <code>projects/</code> and register their own named presets. That's how <code>mud-slowfirm</code> stays a real, resolvable name while core never says the word "mud."
+  </div>
+
+  <table>
+    <tr><th>Sub-decision</th><th>Options</th><th>Lean</th></tr>
+    <tr>
+      <td><b>Builder vs catalog</b> — one module or two?</td>
+      <td>(a) one file does both · (b) split: <code>build.py</code> = machinery, <code>catalog</code> = named points</td>
+      <td><b>Two.</b> Catalog stays readable as <i>data</i>; machinery stays testable.</td>
+    </tr>
+    <tr>
+      <td><b>Axis API</b> — how does the builder take a terrain/controller?</td>
+      <td>(a) strings <code>terrain="mud"</code> · (b) typed plugin objects <code>terrain=Mud(...)</code></td>
+      <td><b>Typed objects.</b> Strings re-introduce a closed enum core must know → re-bleed. Objects keep core open: it calls <code>terrain.apply(env)</code>, never names concretes.</td>
+    </tr>
+    <tr>
+      <td><b>Where do concrete axes live?</b></td>
+      <td>(a) all in core · (b) generic in core, experiment-specific in <code>projects/</code></td>
+      <td><b>Split.</b> <code>Flat</code>/<code>Rough</code>/std rewards in core; <code>MudTerrain</code>/<code>MudDR</code> in <code>projects/mud_eval</code>. Obeys the one-way-dep rule by construction.</td>
+    </tr>
+    <tr>
+      <td><b>Catalog mechanism</b> — how names register?</td>
+      <td>(a) central dict literal · (b) <code>@register</code> decorator · (c) pyproject entry-points</td>
+      <td><b>Decorator now</b> (federated, each preset self-registers where defined). <b>Entry-points later</b> for library-grade external plugins.</td>
+    </tr>
+    <tr>
+      <td><b>String→env resolution</b> (<code>--env mud-slowfirm</code>) — who owns it, lazy import?</td>
+      <td>(a) eager global registry · (b) resolver merges core + experiment registries, experiment imported on demand</td>
+      <td><b>Lazy-merged.</b> A plain <code>jax_rl</code> user doesn't pay for mud; the CLI imports the experiment package only when its name is requested.</td>
+    </tr>
+  </table>
+
+  <p>Concretely, the three files and who owns what:</p>
+<pre><span class="c"># jax_rl/envs/go2/build.py    — CORE · open, enumerates nothing</span>
+def make_go2(*, controller: <span class="k">Controller</span>, terrain: <span class="k">Terrain</span>,
+             reward: <span class="k">Reward</span>, dr: <span class="k">DR</span>, command: <span class="k">Command</span>) -&gt; EnvConfig: ...
+
+<span class="c"># jax_rl/envs/go2/catalog.py  — CORE · generic named points only</span>
+<span class="f">@register</span>(<span class="k">"flat-jointpd"</span>)
+def _(): return make_go2(controller=JointPD(), terrain=Flat(), ...)
+
+<span class="c"># projects/mud_eval/envs.py   — EXPERIMENT · owns "mud", registers its own names</span>
+<span class="f">@register</span>(<span class="k">"mud-slowfirm"</span>)
+def _(): return make_go2(controller=VarImpedance(...), terrain=<span class="d">Mud("4x")</span>,
+                         reward=SlowFirm(), ...)</pre>
+  <p>The <code>@register</code> calls in <code>projects/</code> only fire when that package is imported — so the dependency arrow stays <code>projects → envs</code>, never back. <code>Mud</code> is a <code>Terrain</code> the experiment <i>defines</i>; core's builder only ever sees the protocol.</p>
+
+  <h2 id="open">Open questions (decide before / during)</h2>
+  <div class="gotcha green"><b>Resolved:</b> manipulation / PushT stays in <code>jax_rl/envs/</code> as a first-class benchmark — not spun out.</div>
+  <div class="gotcha"><b>Decorator vs entry-points</b> for the catalog: start with the decorator (in-repo, simple); revisit entry-points only when an <i>external</i> package needs to add envs. Don't pay that cost now.</div>
+  <div class="gotcha"><b>Per-axis granularity:</b> is "DR" one axis or several (terrain-DR vs dynamics-DR vs command-DR)? Decide when the second experiment needs a different mix — premature to split now.</div>
+
+  <div class="foot">
+    Branch <code>linen_refactor</code> (forked from <code>new_slate_linen_clean</code> = linen + 7 cleanup commits).
+    Baseline to abort to: <code>new_slate_linen_clean</code>. Artifacts (checkpoints / vids / wandb) parked in <code>jax-learning-go2mud-artifacts/</code>.
+    This doc is the plan, not the spec — each move gets its own brainstorm + spec before code.
+  </div>
+
+</div>
+</body>
+</html>
