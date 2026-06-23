@@ -23,8 +23,8 @@ Usage:
 from __future__ import annotations
 
 import warp as wp
-import newton.examples.mpm.mpm_go2_multi.example_mpm_go2_multi as ex
-from newton.examples.mpm.mpm_go2_multi.twoway_coupling_go2 import (
+import mpm_go2_multi.example_mpm_go2_multi as ex
+from mpm_go2_multi.twoway_coupling_go2 import (
     compute_body_forces, subtract_body_force,
 )
 

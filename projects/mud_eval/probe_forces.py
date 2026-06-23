@@ -14,14 +14,23 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE / "vendor"))
+# Official newton submodule lives at vendor/newton/ (repo root); the importable
+# `newton` package is one level in. HERE makes the relocated student example
+# importable as `mpm_go2_multi`.
+sys.path.insert(0, str(HERE / "vendor" / "newton"))
+sys.path.insert(0, str(HERE))
+sys.path.insert(0, str(HERE.parents[1]))   # repo root -> `import jax_rl` (no PYTHONPATH needed)
+
+import os
+# Run the JAX policy actor on CPU: tiny MLP; Newton/warp owns the GPU.
+os.environ.setdefault("JAX_PLATFORMS", "cpu")
 
 import numpy as np            # noqa: E402
 import warp as wp             # noqa: E402
 import torch                  # noqa: E402  (vendored scene-build interop)
 import imageio.v2 as iio      # noqa: E402
 import newton.examples        # noqa: E402
-import newton.examples.mpm.mpm_go2_multi.example_mpm_go2_multi as ex  # noqa: E402
+import mpm_go2_multi.example_mpm_go2_multi as ex  # noqa: E402
 import mud_model              # noqa: E402
 import mud_costep             # noqa: E402
 import mud_cpu                # noqa: E402
@@ -43,8 +52,9 @@ mud_model.enable()
 mud_costep.enable(sim_substeps=5)
 mud_cpu.enable()
 ex.Go2Policy = MudJaxPolicy
-cfg = patched_config(CKPT, HERE / "vendor/newton/examples/mpm/mpm_go2_multi/config.yaml",
-                     "/tmp/mud_cfg_probe.yaml", mjcf_model=str(HERE / "models/unitree_go2/go2.xml"),
+cfg = patched_config(CKPT, HERE / "mpm_go2_multi/config.yaml",
+                     "/tmp/mud_cfg_probe.yaml",
+                     mjcf_model=str(HERE.parents[1] / "jax_rl/envs/locomotion/xmls/unitree_go2/go2.xml"),
                      spawn_xyz=(0.0, SPAWN_Y, SPAWN_Z), yaw_pi_mult=YAW, osc_mode=True)
 sys.argv = ["probe", "--viewer", "gl", "--headless", "--num-frames", str(NF),
             "--policy-path", CKPT, "--config", cfg, "--voxel-size", "0.05", "--max-iterations", "8"]

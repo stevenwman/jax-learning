@@ -1,5 +1,11 @@
 # mud_eval — test jax-learning Go2 policies in Newton's triple-mud MPM sim
 
+> **Setup → [`SETUP.md`](SETUP.md)** (authoritative). The Newton physics is now a
+> git submodule (official `newton-physics/newton` @ `8c37ad26`) and the student's
+> MPM example is vendored in-repo under `mpm_go2_multi/`. The "vendor Newton via
+> rsync from Newton_stuff" notes in the sections below / `HANDOFF.md` are
+> **superseded** by that submodule setup.
+
 Self-contained eval harness: drop our **JAX-trained Go2 policies** (joint-PD /
 OSC / variable-impedance) into the **Newton MPM** two-way-coupled *triple-mud*
 environment (thin / medium / thick mud) and see how they cope. Eval/rollout

@@ -1,6 +1,8 @@
+# Newton physics backend is a git submodule (official newton-physics/newton @ 8c37ad26).
+# Everything else under vendor/ stays ignored.
+vendor/*
+!vendor/newton
 .venv/
-vendor/
-models/
 recordings/
 outputs/
 __pycache__/

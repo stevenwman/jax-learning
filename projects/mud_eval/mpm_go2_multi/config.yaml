@@ -1,0 +1,212 @@
+# =============================================================================
+# Hyperparameters for example_mpm_go2_multi.py
+#
+# Loaded by the script via --config <path>. Default path is config.yaml next to
+# the script. Any CLI flag (e.g. --voxel-size) overrides the value here.
+# =============================================================================
+
+
+# ---------------------------------------------------------------------------
+# Time stepping
+# ---------------------------------------------------------------------------
+simulation:
+  fps: 50               # frames per simulated second
+
+  sim_substeps: 4       # rigid-body substeps per MPM step (frame_dt / sim_substeps).
+                        # 1/50 / 4 = 0.005 s 
+
+
+# ---------------------------------------------------------------------------
+# Robot URDF placement (initial pose at t=0) test
+# ---------------------------------------------------------------------------
+robot:
+  urdf_relative_path: "go2_description/go2_description.urdf"
+  initial_position: [0.0, -1.5, 0.42]      # x, y, z (meters)
+  initial_yaw_axis: [0.0, 0.3, 1.1]        # axis for the initial yaw rotation
+  initial_yaw_angle_pi_mult: 0.5           # rotation angle as a multiple of pi
+  floating: true
+  enable_self_collisions: false
+  collapse_fixed_joints: true
+  ignore_inertial_definitions: false
+
+
+# ---------------------------------------------------------------------------
+# Newton ModelBuilder defaults (joints and contact shapes)
+# ---------------------------------------------------------------------------
+builder_defaults:
+  joint:
+    armature: 0.06     # rotational inertia added to each joint DOF
+    limit_ke: 1.0e3    # joint-limit spring stiffness
+    limit_kd: 1.0e1    # joint-limit damping
+  shape:
+    ke: 5.0e4          # contact normal stiffness
+    kd: 5.0e2          # contact normal damping
+    kf: 1.0e3          # contact friction stiffness
+    mu: 0.75           # Coulomb friction coefficient
+
+
+# ---------------------------------------------------------------------------
+# Policy + PD control
+# These override PD_GAINS_KE / PD_GAINS_KD / DEFAULT_ACTION_SCALE / INITIAL_Q
+# from load_go2_policy.py for this run only.
+# ---------------------------------------------------------------------------
+policy:
+  # Values below match the robot_lab/mud Go2 training (UNITREE_GO2_CFG +
+  # rough_env_cfg). The 45-dim flat policy is deployed with these; changing them
+  # will desync the policy from how it was trained.
+  pd_gains_ke: 25.0      # joint PD position gain (training DCMotor stiffness)
+  pd_gains_kd: 1.4 # 0.8       # joint PD damping gain (training DCMotor damping)
+  action_scale: 0.25     # only used for legacy 48-dim policies; 45-dim uses per-joint scale in load_go2_policy.py
+  # Per-joint initial positions (radians) = training default offset.
+  # All hips 0.0, all thighs 0.8, all calves -1.5.
+  initial_joint_q:
+    FL_hip_joint:    0.0
+    FL_thigh_joint:  0.8
+    FL_calf_joint:  -1.5
+    FR_hip_joint:    0.0
+    FR_thigh_joint:  0.8
+    FR_calf_joint:  -1.5
+    RL_hip_joint:    0.0
+    RL_thigh_joint:  0.8
+    RL_calf_joint:  -1.5
+    RR_hip_joint:    0.0
+    RR_thigh_joint:  0.8
+    RR_calf_joint:  -1.5
+
+
+# ---------------------------------------------------------------------------
+# Soft / particle contact (Newton-side, used by the rigid solver)
+# ---------------------------------------------------------------------------
+particle_contact:
+  ke: 1.0e4    # particle-vs-body contact stiffness
+  kd: 0.0      # particle-vs-body contact damping
+  mu: 0.15     # particle-vs-body friction coefficient
+
+
+# ---------------------------------------------------------------------------
+# MPM solver numerics
+# ---------------------------------------------------------------------------
+mpm:
+  voxel_size: 0.03           # MPM grid spacing (m). Smaller = finer + slower.
+  tolerance: 1.0e-6          # implicit solver convergence tolerance
+  max_iterations: 250        # implicit solver max iterations
+  transfer_scheme: pic       # particle->grid transfer ("pic" | "flip" | "apic")
+  strain_basis: P0           # strain basis ("P0" | "P1")
+  grid_type: sparse          # "sparse" | "fixed"
+  air_drag: 1.0              # passive damping on grid velocities
+
+
+# ---------------------------------------------------------------------------
+# MPM-only bounding box around all spawned particles
+# (Static walls; not visible to the rigid solver.)
+#
+# mode:
+#   auto     — fence the XY AABB of all spawned particles (default)
+#   explicit — use the x_range / y_range / height fields below
+# ---------------------------------------------------------------------------
+bounding_walls:
+  enabled: false              # if false, no MPM containment walls are created
+  mode: auto                 # "auto" | "explicit"
+  thickness: 0.10            # wall thickness (m)
+  padding: 0.05              # auto mode: padding around particle AABB (m)
+  height: null               # auto mode: total wall height (m). null => z_max(particles) + padding
+  # Used only when mode == "explicit":
+  x_range: [-1.6, 1.6]       # world-space [x_lo, x_hi] interior of the bed (m)
+  y_range: [-0.1, 3.6]       # world-space [y_lo, y_hi] interior of the bed (m)
+  explicit_height: 0.5       # total wall height (m) when mode == "explicit"
+
+
+# ---------------------------------------------------------------------------
+# Materials. Each entry defines:
+#   spawn:   where particles are seeded + density + render color
+#   plastic params (yield_stress, etc.) — only applied if apply_material is true
+# ---------------------------------------------------------------------------
+materials:
+
+  # This is like a "sticky" mud; sticks together and hard for the robot to walk through. Need to play around with the friction params
+  # thick_mud:
+  #   spawn:
+  #     bounds_lo: [-1, 0.0, 0.02]
+  #     bounds_hi: [ 1, 1, 0.11]
+  #     density: 2200.0
+  #     color: [0.231, 0.118, 0.0]      # RGB in [0, 1] — dark brown
+  #   apply_material: true
+  #   yield_stress: 2.0e4        # How much material resists to plastic deformation
+  #   tensile_yield_ratio: 0.6   # "Stickiness between particles" 
+  #   yield_pressure: 1.0e4      # How much the material is able to compress
+  #   hardening: 3.0             # How much material strengthes/stiffens with plastic compression
+
+  thick_mud:
+    spawn:
+      bounds_lo: [-1, 0.0, 0.02]
+      bounds_hi: [ 1, 1, 0.11]
+      density: 2000.0
+      color: [0.231, 0.118, 0.0]      # RGB in [0, 1] — dark brown
+    apply_material: true
+    yield_stress: 2.0e2        # How much material resists to plastic deformation
+    tensile_yield_ratio: 0.6   # "Stickiness between particles" 
+    yield_pressure: 1.0e4      # How much the material is able to compress
+    hardening: 1.5             # How much material strengthes/stiffens with plastic compression
+
+
+  medium_mud:
+    spawn:
+      bounds_lo: [-1, 1, 0.02]
+      bounds_hi: [ 1, 2, 0.11]
+      density: 1600.0
+      color: [0.322, 0.161, 0.008]    # RGB in [0, 1] — medium brown
+    apply_material: true
+    yield_stress: 2.0e3
+    tensile_yield_ratio: 0.6
+    yield_pressure: 1.0e4
+    hardening: 3.0
+
+  thin_mud:
+    spawn:
+      bounds_lo: [-1, 2, 0.02]
+      bounds_hi: [ 1, 3, 0.11]
+      density: 1000.0
+      color: [0.412, 0.220, 0.016]    # RGB in [0, 1] — lighter brown
+    apply_material: false             # currently uses default solver params
+    yield_stress: 2.0e2
+    tensile_yield_ratio: 0.3
+    yield_pressure: 1.0e4
+    hardening: 2.0
+
+
+# ---------------------------------------------------------------------------
+# Particle render defaults
+# ---------------------------------------------------------------------------
+render:
+  default_particle_color: [0.1, 0.1, 0.2]
+
+
+# ---------------------------------------------------------------------------
+# MuJoCo (rigid) solver
+# ---------------------------------------------------------------------------
+mujoco_solver:
+  ls_parallel: true
+  njmax: 50           # max simultaneous constraints
+
+
+# ---------------------------------------------------------------------------
+# Per-frame collider impulse buffer size. Should be >= number of MPM grid
+# nodes that can simultaneously contact the robot in one step.
+# ---------------------------------------------------------------------------
+buffers:
+  max_collider_nodes: 1048576       # = 1 << 20
+
+
+# ---------------------------------------------------------------------------
+# Particle spawn density / seeding
+# ---------------------------------------------------------------------------
+particle_spawn:
+  particles_per_cell: 3       # particles per MPM cell along each axis
+  jitter_multiplier: 2.0      # random jitter in units of particle radius
+
+
+# ---------------------------------------------------------------------------
+# Control (keyboard / auto-drive)
+# ---------------------------------------------------------------------------
+control:
+  auto_forward: true          # if true, robot walks forward until a key is pressed
